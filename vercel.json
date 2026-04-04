@@ -2,19 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "routes": [
-    {
-      "src": "/api/supabase-proxy/(.*)",
-      "dest": "/api/supabase-proxy/$1"
-    },
-    {
-      "src": "/api/llm",
-      "dest": "/api/llm"
-    },
-    {
-      "src": "/(.*)",
-      "destination": "/index.html"
-    }
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "env": {
     "VITE_SUPABASE_URL": "https://mbwreoglhudppiwaxlsp.supabase.co",
