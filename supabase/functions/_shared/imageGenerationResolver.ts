@@ -67,8 +67,10 @@ const IMAGE_MODELS = {
 } as const;
 
 const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+const FALLBACK_GATEWAY_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const PROVIDER = 'lovable-ai';
 const API_KEY_ENV = 'LOVABLE_API_KEY';
+const FALLBACK_API_KEY_ENV = 'OPENROUTER_API_KEY';
 
 // ── Role → Quality mapping ──────────────────────────────────────────────────
 
@@ -117,7 +119,7 @@ export function resolveImageGenerationConfig(input: ImageGenResolverInput): Imag
   const model = selectModel(effectiveQuality, input.styleMode);
 
   // Verify gateway availability
-  const apiKey = typeof Deno !== 'undefined' ? Deno.env.get(API_KEY_ENV) : undefined;
+  const apiKey = typeof Deno !== 'undefined' ? (Deno.env.get(API_KEY_ENV) || Deno.env.get(FALLBACK_API_KEY_ENV)) : undefined;
   let fallbackUsed = false;
   let finalModel = model;
 
@@ -133,8 +135,8 @@ export function resolveImageGenerationConfig(input: ImageGenResolverInput): Imag
   return {
     provider: PROVIDER,
     model: finalModel,
-    gatewayUrl: GATEWAY_URL,
-    apiKeyEnvVar: API_KEY_ENV,
+    gatewayUrl: apiKey && Deno?.env?.get(API_KEY_ENV) ? GATEWAY_URL : FALLBACK_GATEWAY_URL,
+    apiKeyEnvVar: Deno?.env?.get(API_KEY_ENV) ? API_KEY_ENV : FALLBACK_API_KEY_ENV,
     settings: {
       modalities: ['image', 'text'],
     },

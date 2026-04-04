@@ -13,7 +13,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
     if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -539,7 +539,7 @@ ${dnaProfile ? `\nBLUEPRINT MODE: DNA-Informed — ideas must structurally align
       }];
 
       console.log(`[ci-blueprint] calling AI for ${candidateCount} candidates (mode=${optimizerMode})`);
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const resp = await fetch(gw.url, {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -692,7 +692,7 @@ One-page pitch: ${c.one_page_pitch}
         },
       }];
 
-      const scoreResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const scoreResp = await fetch(gw.url, {
         method: "POST",
         headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({

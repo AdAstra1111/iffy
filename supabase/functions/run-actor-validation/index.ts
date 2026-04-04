@@ -125,7 +125,7 @@ async function generateImage(prompt: string, apiKey: string, referenceUrls: stri
     // Add the text prompt
     content.push({ type: "text", text: prompt });
 
-    const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const resp = await fetch(gw.url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -181,7 +181,7 @@ Deno.serve(async (req) => {
     const { runId } = await req.json();
     if (!runId) return jsonRes({ error: "runId required" }, 400);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
     if (!LOVABLE_API_KEY) return jsonRes({ error: "LOVABLE_API_KEY not configured" }, 500);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

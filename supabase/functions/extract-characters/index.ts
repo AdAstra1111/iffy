@@ -126,9 +126,7 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
-
+    const gw = resolveGateway();
     // Build messages: use PDF (multimodal) or text
     const systemMessage = {
       role: "system",
@@ -142,10 +140,10 @@ serve(async (req) => {
       content: `Extract all named character names from this script, and count how many scenes each character appears in:\n\n${truncated}`,
     };
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const aiResponse = await fetch(gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${gw.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

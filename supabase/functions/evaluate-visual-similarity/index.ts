@@ -6,13 +6,15 @@
  * Output: { dimensions: { face, hair, age, body, overall }, summary, anchorContext }
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { resolveGateway } from "../_shared/llm.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const gw = resolveGateway();
+const GATEWAY_URL = gw.url;
 
 interface SimilarityDimension {
   score: number;       // 0-100
@@ -38,8 +40,8 @@ serve(async (req: Request) => {
   }
 
   try {
-    const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!apiKey) throw new Error("LOVABLE_API_KEY not configured");
+    const apiKey = gw.apiKey || Deno.env.get("OPENROUTER_API_KEY");
+    if (!apiKey) throw new Error("No AI API key configured — set LOVABLE_API_KEY or OPENROUTER_API_KEY");
 
     const { candidateUrl, anchorUrls, characterName } = await req.json();
 
@@ -125,7 +127,7 @@ Respond ONLY with valid JSON matching this schema:
 Be honest. If a dimension cannot be assessed, score 50 with confidence "unavailable".
 Do not inflate scores. A score of 70+ means genuinely strong resemblance.`;
 
-    const resp = await fetch(GATEWAY_URL, {
+    const resp = await fetch(gw.url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

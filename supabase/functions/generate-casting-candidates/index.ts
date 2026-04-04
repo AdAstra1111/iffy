@@ -592,8 +592,7 @@ async function generateImage(
 ): Promise<string | null> {
   try {
     const resp = await fetch(
-      "https://ai.gateway.lovable.dev/v1/chat/completions",
-      {
+        gw.url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,

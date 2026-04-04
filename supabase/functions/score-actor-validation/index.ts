@@ -75,7 +75,7 @@ Score guide: 10=identical person, 7-9=same person with natural variation, 4-6=am
     { type: "text", text: prompt },
   ];
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const resp = await fetch(gw.url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,

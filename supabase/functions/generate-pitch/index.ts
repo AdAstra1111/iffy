@@ -30,8 +30,8 @@ serve(async (req) => {
       source_dna_profile_id, source_engine_key, dna_constraint_mode,
     } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("No AI API key configured — set LOVABLE_API_KEY or OPENROUTER_API_KEY");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -858,10 +858,11 @@ ${coverageContext ? "\nMode: Coverage Transformer" : "Mode: Greenlight Radar —
 
       console.log(`[generate-pitch] AI call attempt ${attempt + 1}, batch=${currentBatchSize}`);
 
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+      const gw = resolveGateway();
+      const resp = await fetch(gw.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${gw.apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

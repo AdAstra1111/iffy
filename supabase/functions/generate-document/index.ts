@@ -1,6 +1,9 @@
 // generate-document v2026-03-27T09 — canonical version creation convergence
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
+  resolveGateway,
+} from "../_shared/llm.ts";
+import {
   resolveDocumentGenerationMode,
   assertLLMAllowed,
   buildModeDiagnostic,
@@ -156,10 +159,11 @@ const MAX_PER_DOC_CHARS = 12000;
 
 // ─── LLM Gateway ───
 
-const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const gw = resolveGateway();
+const GATEWAY_URL = gw.url;
 
 async function callLLM(apiKey: string, system: string, user: string, model = "google/gemini-2.5-flash"): Promise<string> {
-  const res = await fetch(GATEWAY_URL, {
+  const res = await fetch(gw.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
@@ -192,7 +196,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const apiKey = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY") || serviceKey;
+    const apiKey = gw.apiKey || Deno.env.get("OPENROUTER_API_KEY") || serviceKey;
 
     const body = await req.json();
     const forwardedUserId = body?.userId ?? body?.user_id ?? null;

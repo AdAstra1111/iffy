@@ -16,8 +16,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("No AI API key configured — set LOVABLE_API_KEY or OPENROUTER_API_KEY");
 
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -166,10 +166,11 @@ Each must have a distinct creative_angle, intent, and visual_language.
 All must remain faithful to the actual project world.`;
 
     // ── Call AI with tool calling for structured output ──
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const gw = resolveGateway();
+    const aiResponse = await fetch(gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${gw.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
