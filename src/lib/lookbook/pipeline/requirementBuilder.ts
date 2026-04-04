@@ -1,0 +1,385 @@
+/**
+ * requirementBuilder — Builds the full LookBook requirement set from slot intent + narrative.
+ *
+ * This is the canonical source of "what the LookBook needs" in fresh_from_scratch mode.
+ * Requirements are NOT derived from gaps. They are derived from the product spec.
+ */
+import { SLOT_INTENT_REGISTRY, type SlotIntentSpec } from './lookbookSlotIntent';
+import type { NarrativeContext } from './types';
+import type { NarrativeEvidence } from './narrativeEvidence';
+
+// ── Requirement Types ────────────────────────────────────────────────────────
+
+export type RequirementPass = 'character' | 'world' | 'key_moments' | 'atmosphere' | 'poster';
+
+export type SatisfactionStatus = 'satisfied' | 'partial' | 'blocked';
+
+export interface LookBookRequirement {
+  /** Unique ID: slideType:slotIndex */
+  id: string;
+  /** Human-readable label */
+  label: string;
+  /** Which slide type this serves */
+  slideType: string;
+  /** Which generation pass handles this */
+  pass: RequirementPass;
+  /** Subject type for generation */
+  subjectType: string;
+  /** Shot type directive */
+  shotType: string;
+  /** Orientation preference */
+  orientation: 'landscape' | 'portrait' | 'any';
+  /** Minimum images required to satisfy */
+  minRequired: number;
+  /** Preferred image count */
+  preferred: number;
+  /** Asset group for edge function */
+  assetGroup: string;
+  /** Edge function section */
+  section: string;
+  /** Generation prompt context overrides */
+  promptContext: Record<string, string>;
+  /** Hard negative directives */
+  hardNegatives: string[];
+  /** Whether this is a critical requirement (blocks deck) */
+  critical: boolean;
+}
+
+export interface RequirementSet {
+  requirements: LookBookRequirement[];
+  byPass: Record<RequirementPass, LookBookRequirement[]>;
+  totalMinImages: number;
+  totalPreferred: number;
+}
+
+export interface RequirementResult {
+  requirement: LookBookRequirement;
+  status: SatisfactionStatus;
+  generatedCount: number;
+  selectedCount: number;
+  blockingReason?: string;
+}
+
+// ── Pass / Subject Mapping ───────────────────────────────────────────────────
+
+const SLIDE_TO_PASS: Record<string, RequirementPass> = {
+  cover: 'poster',
+  creative_statement: 'atmosphere',
+  world: 'world',
+  key_moments: 'key_moments',
+  characters: 'character',
+  visual_language: 'atmosphere',
+  themes: 'atmosphere',
+  story_engine: 'key_moments',
+  comparables: 'atmosphere',
+  hero_frames: 'poster',
+  poster_directions: 'poster',
+  closing: 'poster',
+};
+
+const SLIDE_TO_SUBJECT: Record<string, string> = {
+  cover: 'hero_frame',
+  creative_statement: 'atmosphere',
+  world: 'world',
+  key_moments: 'moment',
+  characters: 'character',
+  visual_language: 'texture',
+  themes: 'atmosphere',
+  story_engine: 'moment',
+  comparables: 'atmosphere',
+  hero_frames: 'hero_frame',
+  poster_directions: 'hero_frame',
+  closing: 'hero_frame',
+};
+
+const SUBJECT_TO_ASSET_GROUP: Record<string, string> = {
+  character: 'character',
+  world: 'world',
+  atmosphere: 'visual_language',
+  moment: 'key_moment',
+  texture: 'visual_language',
+  hero_frame: 'hero_frame',
+  poster: 'poster',
+};
+
+const SUBJECT_TO_SECTION: Record<string, string> = {
+  character: 'character',
+  world: 'world',
+  atmosphere: 'visual_language',
+  moment: 'key_moment',
+  texture: 'visual_language',
+  poster: 'key_moment',
+};
+
+// ── Builder ──────────────────────────────────────────────────────────────────
+
+/**
+ * Build the complete requirement set for a LookBook deck.
+ * This does NOT look at existing images. It defines what the deck NEEDS.
+ */
+export function buildRequirementSet(
+  narrative: NarrativeContext,
+  narrativeEvidence?: NarrativeEvidence,
+): RequirementSet {
+  const requirements: LookBookRequirement[] = [];
+
+  // Canonical slide order — these are ALL the slides a LookBook should have
+  const slideTypes = [
+    'cover',
+    'creative_statement',
+    'world',
+    'key_moments',
+    'characters',
+    'visual_language',
+    'themes',
+    'story_engine',
+    'comparables',
+    'closing',
+  ];
+
+  for (const slideType of slideTypes) {
+    const intent = SLOT_INTENT_REGISTRY[slideType] || null;
+    if (!intent) continue;
+
+    const pass = SLIDE_TO_PASS[slideType] || 'atmosphere';
+    const subjectType = SLIDE_TO_SUBJECT[slideType] || 'atmosphere';
+    const assetGroup = SUBJECT_TO_ASSET_GROUP[subjectType] || 'visual_language';
+    const section = SUBJECT_TO_SECTION[subjectType] || 'visual_language';
+
+    // Skip character requirements here — handled by character pass below
+    if (slideType === 'characters') continue;
+
+    // Skip comparables — text-only slide, images optional
+    if (slideType === 'comparables' && !narrative.comparables) continue;
+
+    const minRequired = Math.max(1, intent.minImages);
+    const preferred = Math.max(minRequired, intent.maxImages);
+
+    // Determine shot types and orientation based on slide purpose
+    const shotType = resolveDefaultShotType(slideType, intent);
+    const orientation = resolveOrientation(slideType);
+
+    // Build prompt context from narrative
+    const promptCtx = buildPromptContextForSlide(slideType, narrative, narrativeEvidence);
+
+    // Hard negatives based on slot purpose
+    const hardNegatives = resolveHardNegatives(slideType, intent);
+
+    // Critical = deck looks bad without it
+    const critical = ['cover', 'world', 'key_moments', 'closing'].includes(slideType);
+
+    requirements.push({
+      id: `${slideType}:main`,
+      label: formatLabel(slideType, intent),
+      slideType,
+      pass,
+      subjectType,
+      shotType,
+      orientation,
+      minRequired,
+      preferred,
+      assetGroup,
+      section,
+      promptContext: promptCtx,
+      hardNegatives,
+      critical,
+    });
+  }
+
+  // ── CHARACTER PASS: multiple shot types per principal character ──
+  const characters = narrativeEvidence?.characters || [];
+  const principals = characters.filter(c => c.importance === 'principal');
+  const recurring = characters.filter(c => c.importance === 'recurring');
+
+  const charTargets = principals.length > 0 ? principals : (recurring.length > 0 ? recurring.slice(0, 3) : []);
+
+  // Shot variety per principal: portrait close-up, medium context, expressive variation
+  const PRINCIPAL_SHOTS: Array<{ suffix: string; shotType: string; orientation: 'portrait' | 'any'; label: string }> = [
+    { suffix: 'portrait', shotType: 'close_up', orientation: 'portrait', label: 'Portrait' },
+    { suffix: 'medium', shotType: 'medium', orientation: 'any', label: 'Medium' },
+    { suffix: 'variation', shotType: 'profile', orientation: 'portrait', label: 'Variation' },
+  ];
+
+  if (charTargets.length > 0) {
+    for (const char of charTargets) {
+      const nameSlug = char.name.toLowerCase().replace(/\s+/g, '_');
+      const isPrincipal = char.importance === 'principal';
+      const shots = isPrincipal ? PRINCIPAL_SHOTS : PRINCIPAL_SHOTS.slice(0, 1); // recurring get portrait only
+
+      for (const shot of shots) {
+        requirements.push({
+          id: `characters:${nameSlug}:${shot.suffix}`,
+          label: `Character — ${char.name} (${shot.label})`,
+          slideType: 'characters',
+          pass: 'character',
+          subjectType: 'character',
+          shotType: shot.shotType,
+          orientation: shot.orientation,
+          minRequired: 1,
+          preferred: 1,
+          assetGroup: 'character',
+          section: 'character',
+          promptContext: {
+            characterName: char.name,
+            characterRole: char.role || '',
+            characterTraits: char.traits || '',
+            shotVariant: shot.suffix,
+          },
+          hardNegatives: ['multiple people in frame', 'group shot'],
+          critical: isPrincipal,
+        });
+      }
+    }
+  } else if (Array.isArray(narrative.characters) && (narrative.characters as any[]).length > 0) {
+    const rawChars = (narrative.characters as any[]).slice(0, 4);
+    for (const raw of rawChars) {
+      const name = raw?.name || 'Character';
+      const nameSlug = name.toLowerCase().replace(/\s+/g, '_');
+      // Raw fallback: generate portrait + medium
+      for (const shot of PRINCIPAL_SHOTS.slice(0, 2)) {
+        requirements.push({
+          id: `characters:${nameSlug}:${shot.suffix}`,
+          label: `Character — ${name} (${shot.label})`,
+          slideType: 'characters',
+          pass: 'character',
+          subjectType: 'character',
+          shotType: shot.shotType,
+          orientation: shot.orientation,
+          minRequired: 1,
+          preferred: 1,
+          assetGroup: 'character',
+          section: 'character',
+          promptContext: {
+            characterName: name,
+            characterRole: raw?.role || raw?.archetype || '',
+            shotVariant: shot.suffix,
+          },
+          hardNegatives: ['multiple people in frame'],
+          critical: false,
+        });
+      }
+    }
+  }
+
+  // Group by pass
+  const byPass: Record<RequirementPass, LookBookRequirement[]> = {
+    character: [],
+    world: [],
+    key_moments: [],
+    atmosphere: [],
+    poster: [],
+  };
+  for (const req of requirements) {
+    byPass[req.pass].push(req);
+  }
+
+  const totalMinImages = requirements.reduce((sum, r) => sum + r.minRequired, 0);
+  const totalPreferred = requirements.reduce((sum, r) => sum + r.preferred, 0);
+
+  console.log(`[RequirementBuilder] ${requirements.length} requirements: min=${totalMinImages} preferred=${totalPreferred}`);
+  for (const [pass, reqs] of Object.entries(byPass)) {
+    if (reqs.length > 0) console.log(`  ${pass}: ${reqs.length} requirements`);
+  }
+
+  return { requirements, byPass, totalMinImages, totalPreferred };
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function resolveDefaultShotType(slideType: string, intent: SlotIntentSpec): string {
+  switch (slideType) {
+    case 'cover': return 'wide';
+    case 'closing': return 'wide';
+    case 'world': return 'wide';
+    case 'key_moments': return 'tableau';
+    case 'creative_statement': return 'atmospheric';
+    case 'visual_language': return 'texture_ref';
+    case 'themes': return 'atmospheric';
+    case 'story_engine': return 'medium';
+    case 'poster_directions': return 'close_up';
+    default: return 'wide';
+  }
+}
+
+function resolveOrientation(slideType: string): 'landscape' | 'portrait' | 'any' {
+  switch (slideType) {
+    case 'cover': return 'landscape';
+    case 'closing': return 'landscape';
+    case 'world': return 'landscape';
+    case 'key_moments': return 'any';
+    case 'visual_language': return 'any';
+    case 'themes': return 'landscape';
+    case 'poster_directions': return 'landscape';
+    case 'hero_frames': return 'landscape';
+    default: return 'landscape';
+  }
+}
+
+function resolveHardNegatives(slideType: string, intent: SlotIntentSpec): string[] {
+  const negatives: string[] = [];
+  if (intent.requiresEnvironmentDominance) {
+    negatives.push('protagonist centered', 'character portrait', 'craft activity', 'trade performance');
+  }
+  if (!intent.allowsBackgroundPopulation) {
+    negatives.push('crowd', 'group', 'background people');
+  }
+  return negatives;
+}
+
+function buildPromptContextForSlide(
+  slideType: string,
+  narrative: NarrativeContext,
+  evidence?: NarrativeEvidence,
+): Record<string, string> {
+  const ctx: Record<string, string> = {
+    projectTitle: narrative.projectTitle,
+    genre: narrative.genre,
+    tone: narrative.tone || narrative.toneStyle,
+  };
+
+  if (slideType === 'world' && narrative.locations) {
+    ctx.locationName = narrative.locations.split('\n')[0]?.trim() || 'the world';
+    ctx.worldRules = narrative.worldRules || '';
+  }
+  if (slideType === 'key_moments' || slideType === 'story_engine') {
+    ctx.momentDescription = narrative.synopsis?.slice(0, 200) || narrative.logline || '';
+    // Pass principal character names so identity can be resolved at generation time
+    const principals = (evidence?.characters || []).filter(c => c.importance === 'principal');
+    if (principals.length > 0) {
+      ctx.characters = principals.map(c => c.name).join(', ');
+      ctx.characterName = principals[0].name; // Primary protagonist
+      ctx.characterTraits = principals.map(c => `${c.name}: ${c.traits || c.role || ''}`).join('; ');
+    }
+  }
+  if (slideType === 'cover' || slideType === 'poster_directions') {
+    // Cover/poster typically features the protagonist
+    const principals = (evidence?.characters || []).filter(c => c.importance === 'principal');
+    if (principals.length > 0) {
+      ctx.characterName = principals[0].name;
+      ctx.characters = principals.map(c => c.name).join(', ');
+      ctx.characterTraits = principals.map(c => `${c.name}: ${c.traits || c.role || ''}`).join('; ');
+    }
+  }
+  if (slideType === 'themes') {
+    ctx.theme = narrative.toneStyle || '';
+  }
+
+  return ctx;
+}
+
+function formatLabel(slideType: string, intent: SlotIntentSpec): string {
+  const labels: Record<string, string> = {
+    cover: 'Cover — Hero Frame',
+    creative_statement: 'Creative Vision — Atmosphere',
+    world: 'World — Environment',
+    key_moments: 'Key Moments — Scenes',
+    visual_language: 'Visual Language — Texture',
+    themes: 'Themes & Tone — Atmosphere',
+    story_engine: 'Story Engine — Moments',
+    comparables: 'Comparables — Atmosphere',
+    hero_frames: 'Hero Frames — Visual Anchor',
+    poster_directions: 'Hero Frames — Visual Anchor',
+    closing: 'Closing — Bookend',
+  };
+  return labels[slideType] || `${slideType} — Visual Reference`;
+}

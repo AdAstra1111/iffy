@@ -1,0 +1,1074 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { buildGuardrailBlock } from "../_shared/guardrails.ts";
+import { buildConvergenceProfile, buildConvergenceBlock } from "../_shared/convergence-profile.ts";
+import type { EdgeTrendSignal, EdgeCastTrend } from "../_shared/convergence-profile.ts";
+import { buildModalityPromptBlock } from "../_shared/productionModality.ts";
+import { getAnimationMeta, buildAnimationMetaPromptBlock } from "../_shared/animationMeta.ts";
+import { fetchTrendSignalsLadder, fetchCastTrends, modalityToTrendsProductionTypeFilter } from "../_shared/trendsContext.ts";
+import { buildPitchScoringRubric, normalizePitchScores, checkScoreDrift } from "../_shared/pitchScoring.ts";
+import { computeLearningPoolEligibility } from "../_shared/learningPool.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+// modalityToTrendsFilter moved to _shared/trendsContext.ts as modalityToTrendsProductionTypeFilter
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const body = await req.json();
+    const {
+      productionType, genre, subgenre, budgetBand, region, platformTarget,
+      audienceDemo, riskLevel, count, coverageContext, feedbackContext,
+      briefNotes, projectId, skipSignals, hardCriteria,
+      // New contract fields
+      manual_criteria, auto_fields, meta,
+      // DNA / Engine constraint fields
+      source_dna_profile_id, source_engine_key, dna_constraint_mode,
+    } = body;
+
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    const typeLabel = productionType || "film";
+    const batchSize = Math.min(count || 10, 15);
+
+    const coverageSection = coverageContext
+      ? `\n\nEXISTING COVERAGE CONTEXT (generate pivot pitches based on this):\n${coverageContext}`
+      : "";
+
+    const feedbackSection = feedbackContext
+      ? `\n\nPREVIOUS USER FEEDBACK (use to improve ranking and style):\n${JSON.stringify(feedbackContext)}`
+      : "";
+
+    const notesSection = briefNotes ? `\n\nADDITIONAL BRIEF NOTES FROM PRODUCER:\n${briefNotes}` : "";
+
+    // ── Hard Criteria block (expanded) ──
+    let hardCriteriaBlock = "";
+    if (hardCriteria) {
+      const parts: string[] = [];
+      if (hardCriteria.culturalTag) parts.push(`Cultural/Style Anchor: ${hardCriteria.culturalTag} — ALL concepts MUST reflect this aesthetic, cultural sensibility, and storytelling tradition.`);
+      if (hardCriteria.toneAnchor) parts.push(`Tone Anchor: "${hardCriteria.toneAnchor}" — every concept must match this tonal quality.`);
+      if (hardCriteria.lane) parts.push(`Monetisation Lane: ${hardCriteria.lane} — concepts MUST be viable in this lane.`);
+      if (hardCriteria.rating) parts.push(`Rating: ${hardCriteria.rating} — content MUST be appropriate for this rating.`);
+      if (hardCriteria.audience) parts.push(`Target Audience: ${hardCriteria.audience}.`);
+      if (hardCriteria.languageTerritory) parts.push(`Language/Territory: ${hardCriteria.languageTerritory}.`);
+      if (hardCriteria.epLength) parts.push(`Episode Length: ${hardCriteria.epLength} minutes per episode.`);
+      if (hardCriteria.epCount) parts.push(`Episode Count: ${hardCriteria.epCount} episodes.`);
+      if (hardCriteria.runtimeMin) parts.push(`Minimum Runtime: ${hardCriteria.runtimeMin} minutes.`);
+      if (hardCriteria.runtimeMax) parts.push(`Maximum Runtime: ${hardCriteria.runtimeMax} minutes.`);
+      if (hardCriteria.settingType) parts.push(`Setting Type: ${hardCriteria.settingType}.`);
+      if (hardCriteria.locationVibe) parts.push(`Location Vibe: "${hardCriteria.locationVibe}" — stories should evoke this atmosphere.`);
+      if (hardCriteria.arenaProfession) parts.push(`Arena/Profession: "${hardCriteria.arenaProfession}" — this world/industry must be central.`);
+      if (hardCriteria.romanceTropes?.length > 0) parts.push(`Romance Tropes (MUST use at least one): ${hardCriteria.romanceTropes.join(', ')}.`);
+      if (hardCriteria.heatLevel) parts.push(`Heat Level: ${hardCriteria.heatLevel}.`);
+      if (hardCriteria.obstacleType) parts.push(`Relationship Obstacle Type: ${hardCriteria.obstacleType}.`);
+      if (hardCriteria.mustHaveTropes?.length > 0) parts.push(`MUST INCLUDE these tropes/themes: ${hardCriteria.mustHaveTropes.join(', ')}. Every concept MUST incorporate at least one.`);
+      if (hardCriteria.avoidTropes?.length > 0) parts.push(`MUST AVOID these tropes/themes: ${hardCriteria.avoidTropes.join(', ')}. NO concept may use any of these.`);
+      if (hardCriteria.prohibitedComps?.length > 0) parts.push(`PROHIBITED COMPS — do NOT resemble these titles: ${hardCriteria.prohibitedComps.join(', ')}.`);
+      if (hardCriteria.locationsMax) parts.push(`Max Locations: ${hardCriteria.locationsMax}.`);
+      if (hardCriteria.castSizeMax) parts.push(`Max Cast Size: ${hardCriteria.castSizeMax} core characters.`);
+      if (hardCriteria.starRole && hardCriteria.starRole !== '__none__') parts.push(`Star Role Required: ${hardCriteria.starRole}.`);
+      if (hardCriteria.noveltyLevel) parts.push(`Novelty Level: ${hardCriteria.noveltyLevel} — ${hardCriteria.noveltyLevel === 'safe' ? 'use proven formulas' : hardCriteria.noveltyLevel === 'bold' ? 'push boundaries, subvert expectations' : 'fresh but grounded'}.`);
+      if (hardCriteria.differentiateBy) parts.push(`Differentiate By: ${hardCriteria.differentiateBy} — this should be each concept's key distinctive element.`);
+      if (parts.length > 0) {
+        hardCriteriaBlock = `\n\n=== HARD CRITERIA (NON-NEGOTIABLE — reject any concept that violates these) ===\n${parts.join('\n')}\n=== END HARD CRITERIA ===\n`;
+      }
+    }
+
+    // ── Placeholder defense: reject manual_criteria that look like placeholders ──
+    const warnings: string[] = [];
+    const placeholderPattern = /^e\.g\.\s|^eg\s|^example:|^placeholder/i;
+    if (manual_criteria && typeof manual_criteria === "object") {
+      const mc = manual_criteria as Record<string, unknown>;
+      const effectiveAutoFields = new Set<string>(Array.isArray(auto_fields) ? auto_fields : []);
+      for (const [key, val] of Object.entries(mc)) {
+        if (typeof val === "string" && placeholderPattern.test(val.trim())) {
+          delete mc[key];
+          effectiveAutoFields.add(key);
+          warnings.push(`manual_criteria_rejected_placeholder:${key}`);
+        }
+      }
+      // Rebuild auto_fields with any newly-added placeholder rejections
+      if (warnings.length > 0) {
+        (body as any).auto_fields = [...effectiveAutoFields].sort();
+      }
+    }
+    const resolvedAutoFields: string[] = Array.isArray((body as any).auto_fields || auto_fields)
+      ? [...((body as any).auto_fields || auto_fields)].sort()
+      : [];
+
+    // ── Lane defaults (deterministic, no LLM) ──
+    const LANE_DEFAULTS: Record<string, Record<string, string>> = {
+      "independent-film": { budgetBand: "low", region: "Global", audience: "Adult (25–54)", rating: "R" },
+      "studio-streamer": { budgetBand: "high", region: "North America", audience: "Young Adult (18–34)", platformTarget: "Netflix" },
+      "genre-market": { budgetBand: "micro", region: "Global", audience: "Young Adult (18–34)" },
+      "prestige-awards": { budgetBand: "mid", region: "Europe", audience: "Adult (25–54)", rating: "R" },
+      "fast-turnaround": { budgetBand: "ultra-low", region: "Global", audience: "Young Adult (18–34)" },
+      "low-budget": { budgetBand: "micro", region: "Global" },
+      "international-copro": { budgetBand: "mid", region: "Europe" },
+    };
+
+    // ── Field-to-category mapping for trend lookups ──
+    const FIELD_CATEGORIES: Record<string, string[]> = {
+      genre: ["genre"],
+      subgenre: ["genre", "subgenre"],
+      audience: ["audience"],
+      settingType: ["setting", "world"],
+      locationVibe: ["setting", "world", "location"],
+      arenaProfession: ["setting", "world", "profession", "arena"],
+      toneAnchor: ["tone"],
+      platformTarget: ["platform", "distribution"],
+      culturalTag: ["cultural", "culture", "style"],
+      region: ["region", "territory", "market"],
+      lane: ["lane", "monetisation"],
+      budgetBand: ["budget"],
+      differentiateBy: ["differentiation", "novelty"],
+      rating: ["rating", "audience"],
+      languageTerritory: ["language", "territory", "market"],
+    };
+
+    // ── Confidence thresholds: narrow fields need high confidence ──
+    const HIGH_CONFIDENCE_FIELDS = new Set(["subgenre", "toneAnchor", "culturalTag", "locationVibe", "arenaProfession"]);
+    const getMinStrength = (field: string) => HIGH_CONFIDENCE_FIELDS.has(field) ? 6 : 4;
+
+    // ── Auth (always required for server-side persistence) ──
+    const { createClient: createSvcClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+    const svcClient = createSvcClient(supabaseUrl, supabaseKey);
+    const authHeader = req.headers.get("Authorization") || "";
+    let requestUserId: string | null = null;
+    if (authHeader.startsWith("Bearer ")) {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const sbUser = createSvcClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: userData, error: authErr } = await sbUser.auth.getUser();
+      if (!authErr && userData?.user) {
+        requestUserId = userData.user.id;
+      }
+    }
+    if (!requestUserId) {
+      console.warn(`[generate-pitch] auth_failed: could not derive user from token`);
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── Auth + Access + Project fetch (MUST happen before auto-fields uses dbModality) ──
+    // Enforced order: auth.getUser() → has_project_access → project fetch → modality derivation
+    let dbModality: string | null = null;
+    let dbAnimMeta: { primary: string | null; tags: string[]; style: string | null } = { primary: null, tags: [], style: null };
+    let projRow: any = null;
+    let projSupa: any = svcClient; // service-role client reused in later projectId block
+    if (projectId) {
+
+      // b) Verify access via has_project_access (admin client) — BEFORE any project reads
+      const { data: hasAccess, error: accessErr } = await projSupa.rpc("has_project_access", {
+        _user_id: requestUserId,
+        _project_id: projectId,
+      });
+      if (accessErr || !hasAccess) {
+        console.warn(`[generate-pitch] access_denied user=${requestUserId} project=${projectId} err=${accessErr?.message || "no access"}`);
+        return new Response(JSON.stringify({ error: "Forbidden: no project access" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // c) After access granted: fetch project row and derive modality
+      const { data: fetchedProj, error: projErr } = await projSupa.from("projects")
+        .select("assigned_lane, signals_influence, signals_apply, production_format, project_features, user_id")
+        .eq("id", projectId).single();
+
+      if (projErr || !fetchedProj) {
+        console.error(`[generate-pitch] project fetch failed: ${projErr?.message || "not found"}`);
+        return new Response(JSON.stringify({ error: "Project not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      projRow = fetchedProj;
+
+      // d) Derive modality from DB (trust model: ignore body override)
+      const { getProjectModality: gpm } = await import("../_shared/productionModality.ts");
+      dbModality = gpm(projRow.project_features as Record<string, any> | null);
+      console.log(`[generate-pitch] modality_source=project_features modality=${dbModality}`);
+      // e) Derive animation meta from DB project_features
+      dbAnimMeta = getAnimationMeta(projRow.project_features as Record<string, any> | null);
+      console.log(`[generate-pitch] anim_meta primary=${dbAnimMeta.primary || "none"} tags_count=${dbAnimMeta.tags.length} style=${dbAnimMeta.style || "none"}`);
+    } else {
+      // Global mode: consume body.animationMeta (validated against canonical lists)
+      if (body.animationMeta && typeof body.animationMeta === "object") {
+        dbAnimMeta = getAnimationMeta(body.animationMeta);
+        console.log(`[generate-pitch] anim_meta_source=request_body primary=${dbAnimMeta.primary || "none"} tags_count=${dbAnimMeta.tags.length} style=${dbAnimMeta.style || "none"}`);
+      }
+    }
+    // ── Auto-fields: resolve via fallback ladder (deterministic, no LLM) ──
+    let autoFieldsBlock = "";
+    let convergenceBlock = "";
+    let convergenceSummary: any = null;
+    const resolutionMeta: Record<string, { status: string; scope: string; note?: string }> = {};
+
+    if (resolvedAutoFields.length > 0) {
+      try {
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+        const autoSupa = createClient(supabaseUrl, supabaseKey);
+
+        // Determine lane from manual_criteria or hardCriteria
+        const effectiveLane = (manual_criteria as any)?.lane || hardCriteria?.lane || "";
+
+        // ── Fetch trend signals via shared helper (modality-aware) ──
+        const { laneSignals, productionSignals, globalSignals, appliedProductionTypeFilter: trendFilter } =
+          await fetchTrendSignalsLadder({
+            supabase: autoSupa,
+            typeLabel,
+            lane: effectiveLane,
+            modality: dbModality,
+          });
+        console.log(`[generate-pitch] trends_filter=${trendFilter} modality=${dbModality} typeLabel=${typeLabel} lane=${effectiveLane} lane_signals=${laneSignals.length} prod_signals=${productionSignals.length} global_signals=${globalSignals.length}`);
+
+        // ── Convergence Context: fetch cast_trends + build profile ──
+        convergenceBlock = "";
+        try {
+          // Use the best available signal set (same ladder semantics)
+          const convergenceSignals: EdgeTrendSignal[] =
+            laneSignals.length > 0 ? laneSignals :
+            productionSignals.length > 0 ? productionSignals :
+            globalSignals;
+
+          // ── Fetch cast trends via shared helper (modality-aware) ──
+          const effectiveRegion = (manual_criteria as any)?.region || hardCriteria?.region || region || "";
+          const { castTrends: fetchedCast, appliedProductionTypeFilter: castFilter } = await fetchCastTrends({
+            supabase: autoSupa,
+            typeLabel,
+            modality: dbModality,
+            region: effectiveRegion,
+          });
+          const castTrends: EdgeCastTrend[] = fetchedCast as EdgeCastTrend[];
+          console.log(`[generate-pitch] cast_trends_filter=${castFilter} cast_count=${castTrends.length}`);
+
+          if (convergenceSignals.length > 0) {
+            const profile = buildConvergenceProfile(convergenceSignals, castTrends);
+            convergenceBlock = buildConvergenceBlock(profile);
+            // Compact summary for downstream persistence (no full text block)
+            convergenceSummary = {
+              genre_heat: profile.genre_heat.slice(0, 5).map(g => ({ genre: g.genre, score: g.score })),
+              tone_style: { tone_band: profile.tone_style.tone_band, pacing: profile.tone_style.pacing },
+              comparable_titles: profile.comparable_candidates.slice(0, 5).map(c => c.title),
+              risks: profile.risks.slice(0, 5).map(r => ({ label: r.label, severity: r.severity })),
+              constraints_notes: profile.constraints_notes.slice(0, 3),
+            };
+            console.log(`[generate-pitch] convergence: signals=${convergenceSignals.length}, cast=${castTrends.length}, comps=${profile.comparable_candidates.length}, genres=${profile.genre_heat.length}`);
+            warnings.push(`convergence_applied:signals=${convergenceSignals.length}`);
+          }
+        } catch (e) {
+          console.warn("[generate-pitch] Convergence profile build failed (non-fatal):", e);
+        }
+
+        // Get lane defaults
+        const currentLaneDefaults = LANE_DEFAULTS[effectiveLane] || {};
+
+        const trendParts: string[] = [];
+        trendParts.push("The following guidance is derived from current market Trends for unspecified criteria fields:");
+
+        // Tag-based fields resolve from structured tag arrays instead of category
+        const TAG_FIELD_MAP: Record<string, string> = {
+          genre: "genre_tags", subgenre: "genre_tags", toneAnchor: "tone_tags",
+          culturalTag: "tone_tags", settingType: "genre_tags",
+        };
+
+        const tryResolve = (field: string, signals: any[], scope: string): string | null => {
+          const minStr = getMinStrength(field);
+          const eligible = signals.filter((s: any) => (s.strength || 0) >= minStr);
+
+          // Strategy 1: Use structured tags if available for this field
+          const tagCol = TAG_FIELD_MAP[field];
+          if (tagCol) {
+            const tagValues: Map<string, number> = new Map();
+            for (const s of eligible) {
+              const tags: string[] = s[tagCol] || [];
+              for (const t of tags) {
+                const existing = tagValues.get(t) || 0;
+                tagValues.set(t, existing + (s.strength || 0));
+              }
+            }
+            if (tagValues.size > 0) {
+              const sorted = [...tagValues.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+              resolutionMeta[field] = { status: scope === "lane_trends" ? "resolved" : "fallback", scope };
+              return sorted.slice(0, 3).map(([tag, score]) => `${tag} (${Math.round(score)}/10)`).join(", ");
+            }
+          }
+
+          // Strategy 2: Category-based matching (fuzzy keyword contains)
+          const cats = FIELD_CATEGORIES[field];
+          if (!cats) return null;
+          const catNorm = (c: string) => (c || "").toLowerCase().trim();
+          const matches = eligible
+            .filter((s: any) => {
+              const sc = catNorm(s.category);
+              return cats.some(c => sc.includes(c) || c.includes(sc));
+            })
+            .sort((a: any, b: any) => (b.strength || 0) - (a.strength || 0) || (a.name || "").localeCompare(b.name || ""));
+          if (matches.length === 0) return null;
+          resolutionMeta[field] = { status: scope === "lane_trends" ? "resolved" : "fallback", scope };
+          return matches.slice(0, 3).map((s: any) => `${s.name} (${s.strength}/10)`).join(", ");
+        };
+
+        // ── Broad fallback: aggregate tags from best available signal set ──
+        const baseSignals = laneSignals.length > 0 ? laneSignals : productionSignals.length > 0 ? productionSignals : globalSignals;
+        const BROAD_TAG_MAP: Record<string, string> = {
+          genre: "genre_tags", subgenre: "genre_tags", settingType: "genre_tags",
+          toneAnchor: "tone_tags", culturalTag: "tone_tags",
+          platformTarget: "format_tags",
+        };
+        const BROAD_SCALAR_MAP: Record<string, string> = {
+          budgetBand: "budget_tier", region: "region", languageTerritory: "region",
+        };
+        const broadMinScore = (field: string) => HIGH_CONFIDENCE_FIELDS.has(field) ? 18 : 10;
+        const broadMinCount = (field: string) => HIGH_CONFIDENCE_FIELDS.has(field) ? 3 : 2;
+
+        const tryBroadResolve = (field: string): string | null => {
+          // Tag-based broad aggregate
+          const tagCol = BROAD_TAG_MAP[field];
+          if (tagCol) {
+            const agg: Map<string, { score: number; count: number }> = new Map();
+            for (const s of baseSignals) {
+              const tags: string[] = s[tagCol] || [];
+              for (const t of tags) {
+                const key = t.trim();
+                if (!key) continue;
+                const cur = agg.get(key) || { score: 0, count: 0 };
+                agg.set(key, { score: cur.score + (s.strength || 0), count: cur.count + 1 });
+              }
+            }
+            const sorted = [...agg.entries()]
+              .sort((a, b) => b[1].score - a[1].score || a[0].toLowerCase().localeCompare(b[0].toLowerCase()));
+            const top = sorted.filter(([, v]) => v.score >= broadMinScore(field) || v.count >= broadMinCount(field));
+            if (top.length > 0) {
+              return top.slice(0, 3).map(([tag, v]) => `${tag} (weight=${Math.round(v.score)})`).join(", ");
+            }
+            return null;
+          }
+          // Scalar-based broad aggregate (mode)
+          const scalarCol = BROAD_SCALAR_MAP[field];
+          if (scalarCol) {
+            const freq: Map<string, number> = new Map();
+            for (const s of baseSignals) {
+              const val = (s[scalarCol] || "").trim();
+              if (!val) continue;
+              freq.set(val, (freq.get(val) || 0) + 1);
+            }
+            const sorted = [...freq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+            if (sorted.length > 0 && sorted[0][1] >= broadMinCount(field)) {
+              return sorted.slice(0, 2).map(([v, c]) => `${v} (n=${c})`).join(", ");
+            }
+            return null;
+          }
+          return null;
+        };
+
+        for (const field of resolvedAutoFields) {
+          // Fallback ladder: lane → production → global → lane_default → broad_trends → unresolved
+          let resolved = tryResolve(field, laneSignals, "lane_trends");
+          if (!resolved) resolved = tryResolve(field, productionSignals, "production_trends");
+          if (!resolved) resolved = tryResolve(field, globalSignals, "global_trends");
+
+          if (resolved) {
+            const fieldLabel = field.replace(/([A-Z])/g, " $1").trim();
+            trendParts.push(`${fieldLabel}: ${resolved}. Use as guidance.`);
+            warnings.push(`auto_field_${resolutionMeta[field].status}:${field}:${resolutionMeta[field].scope}`);
+          } else if (currentLaneDefaults[field]) {
+            resolutionMeta[field] = { status: "fallback", scope: "lane_default", note: `default=${currentLaneDefaults[field]}` };
+            const fieldLabel = field.replace(/([A-Z])/g, " $1").trim();
+            trendParts.push(`${fieldLabel}: ${currentLaneDefaults[field]} (lane default).`);
+            warnings.push(`auto_field_fallback:${field}:lane_default`);
+          } else {
+            // Broad trends fallback
+            const broadResult = tryBroadResolve(field);
+            if (broadResult) {
+              resolutionMeta[field] = { status: "fallback", scope: "broad_trends", note: "derived_from_aggregates" };
+              const fieldLabel = field.replace(/([A-Z])/g, " $1").trim();
+              trendParts.push(`${fieldLabel}: ${broadResult}. Derived from aggregate trend signals.`);
+              warnings.push(`auto_field_fallback:${field}:broad_trends`);
+            } else {
+              resolutionMeta[field] = { status: "unresolved", scope: "unresolved" };
+              warnings.push(`auto_field_unresolved:${field}`);
+            }
+          }
+        }
+
+        if (trendParts.length > 1) {
+          autoFieldsBlock = `\n\n=== TRENDS-DERIVED GUIDANCE (soft constraints for unspecified fields) ===\n${trendParts.join("\n")}\n=== END TRENDS GUIDANCE ===\n`;
+        }
+        console.log(`[generate-pitch] auto_fields=${resolvedAutoFields.length}, resolved=${Object.values(resolutionMeta).filter(r => r.status === "resolved").length}, fallback=${Object.values(resolutionMeta).filter(r => r.scope !== "unresolved" && r.status === "fallback").length}, unresolved=${Object.values(resolutionMeta).filter(r => r.scope === "unresolved").length}`);
+      } catch (e) {
+        console.warn("[generate-pitch] Trends auto-fields fetch failed (non-fatal):", e);
+        // Mark all as unresolved
+        for (const field of resolvedAutoFields) {
+          resolutionMeta[field] = { status: "unresolved", scope: "unresolved", note: "fetch_error" };
+          warnings.push(`auto_field_unresolved:${field}`);
+        }
+      }
+    }
+
+
+    // ── Signal context injection ──
+    let signalBlock = "";
+    let signalsUsedIds: string[] = [];
+    let signalInfluence: number | null = null;
+    let signalsApplied = false;
+    let signalsRationale = "no projectId";
+
+    // ── Nuance / Drift context ──
+    let nuanceBlock = "";
+    let driftBlock = "";
+
+    if (projectId) {
+      // Auth + access + project fetch already done above (before auto-fields).
+      // Reuse projSupa (admin client) and projRow (project data).
+      const supa = projSupa;
+      const proj = projRow;
+
+      const lane = proj?.assigned_lane || "independent-film";
+
+      // Fetch project_lane_prefs for nuance context
+      try {
+        const { data: prefsRow } = await supa.from("project_lane_prefs")
+          .select("prefs")
+          .eq("project_id", projectId)
+          .eq("lane", lane)
+          .maybeSingle();
+
+        if (prefsRow?.prefs) {
+          const prefs = prefsRow.prefs as any;
+          const parts: string[] = [];
+          if (prefs.style_benchmark) parts.push(`Style Benchmark: ${prefs.style_benchmark}`);
+          if (prefs.pacing_feel) parts.push(`Pacing Feel: ${prefs.pacing_feel}`);
+          if (prefs.last_ui?.restraint !== undefined) parts.push(`Restraint Level: ${prefs.last_ui.restraint}/10`);
+          if (prefs.last_ui?.conflict_mode) parts.push(`Conflict Mode: ${prefs.last_ui.conflict_mode}`);
+          if (prefs.last_ui?.story_engine) parts.push(`Story Engine: ${prefs.last_ui.story_engine}`);
+
+          // Style fingerprint injection
+          if (prefs.style_fingerprint?.targets) {
+            const fp = prefs.style_fingerprint;
+            const t = fp.targets;
+            parts.push(`\n--- STYLE BAND (match these ranges, do NOT copy source scripts) ---`);
+            if (t.dialogue_ratio) parts.push(`Dialogue Ratio Band: ${(t.dialogue_ratio.min * 100).toFixed(0)}–${(t.dialogue_ratio.max * 100).toFixed(0)}%`);
+            if (t.sentence_len_avg) parts.push(`Sentence Length Band (avg words): ${t.sentence_len_avg.min}–${t.sentence_len_avg.max}`);
+            if (t.avg_dialogue_line_len) parts.push(`Dialogue Line Length Band (avg words): ${t.avg_dialogue_line_len.min}–${t.avg_dialogue_line_len.max}`);
+            if (t.slugline_density) parts.push(`Slugline Density Band (per 100 lines): ${t.slugline_density.min}–${t.slugline_density.max}`);
+            if (fp.rules?.do?.length) parts.push(`Style DO: ${fp.rules.do.join('; ')}`);
+            if (fp.rules?.dont?.length) parts.push(`Style DON'T: ${fp.rules.dont.join('; ')}`);
+            parts.push(`--- END STYLE BAND ---`);
+          }
+
+          // Writing Voice injection
+          if (prefs.writing_voice?.id) {
+            const wv = prefs.writing_voice;
+            parts.push(`\n=== VOICE LOCK ===`);
+            parts.push(`Preset: ${wv.label} — ${wv.summary}`);
+            if (wv.knobs) {
+              const knobStr = Object.entries(wv.knobs).map(([k, v]) => `${k}=${v}`).join(', ');
+              parts.push(`Knobs: ${knobStr}`);
+            }
+            if (wv.constraints) {
+              const c = wv.constraints as any;
+              if (c.sentence_len_band) parts.push(`Sentence Length: ${c.sentence_len_band[0]}–${c.sentence_len_band[1]} words`);
+              if (c.dialogue_ratio_band) parts.push(`Dialogue Ratio: ${(c.dialogue_ratio_band[0]*100).toFixed(0)}–${(c.dialogue_ratio_band[1]*100).toFixed(0)}%`);
+              if (c.hook_frequency) parts.push(`Hook Frequency: ${c.hook_frequency}`);
+            }
+            if (wv.do?.length) parts.push(`DO: ${wv.do.join('; ')}`);
+            if (wv.dont?.length) parts.push(`DON'T: ${wv.dont.join('; ')}`);
+            parts.push(`=== END VOICE LOCK ===`);
+          }
+
+          // Team Voice injection (higher priority than Writing Voice)
+          if (prefs.team_voice?.id) {
+            try {
+              const { data: tv } = await supa.from("team_voices")
+                .select("label, profile_json")
+                .eq("id", prefs.team_voice.id)
+                .single();
+              if (tv?.profile_json) {
+                const p = tv.profile_json as any;
+                const tvParts: string[] = [];
+                tvParts.push(`\n=== TEAM VOICE (Paradox House) ===`);
+                tvParts.push(`Label: ${tv.label}`);
+                if (p.summary) tvParts.push(`Summary: ${p.summary}`);
+                if (p.knobs) {
+                  const knobStr = Object.entries(p.knobs)
+                    .filter(([_, v]) => v != null)
+                    .map(([k, v]) => `${k}=${Array.isArray(v) ? v.join('-') : v}`)
+                    .join(', ');
+                  tvParts.push(`Knobs: ${knobStr}`);
+                }
+                if (p.do?.length) tvParts.push(`DO: ${p.do.join('; ')}`);
+                if (p.dont?.length) tvParts.push(`DON'T: ${p.dont.join('; ')}`);
+                if (p.signature_moves?.length) tvParts.push(`Signature Moves: ${p.signature_moves.join('; ')}`);
+                if (p.banned_moves?.length) tvParts.push(`Banned Moves: ${p.banned_moves.join('; ')}`);
+                tvParts.push(`=== END TEAM VOICE ===`);
+                if (prefs.writing_voice?.id) {
+                  tvParts.push(`Note: Team Voice has priority over generic Writing Voice preset if conflict.`);
+                }
+                parts.push(...tvParts);
+              }
+            } catch (e) {
+              console.warn("[generate-pitch] Team voice fetch failed (non-fatal):", e);
+            }
+          }
+
+          if (parts.length > 0) {
+            nuanceBlock = `\n\n=== NUANCE PREFS (from project ruleset — weight these in tone/style) ===\n${parts.join('\n')}\n=== END NUANCE PREFS ===\n`;
+          }
+        }
+      } catch (e) {
+        console.warn("[generate-pitch] Nuance prefs fetch failed (non-fatal):", e);
+      }
+
+      // Fetch latest drift metrics
+      try {
+        const { data: driftRuns } = await supa.from("cinematic_quality_runs")
+          .select("metrics_json, final_score, final_pass, created_at")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        if (driftRuns?.[0]) {
+          const d = driftRuns[0];
+          driftBlock = `\n\n=== CREATIVE DRIFT (latest quality metrics — use to avoid drift patterns) ===\nLast Score: ${d.final_score}/100 (${d.final_pass ? 'PASS' : 'FAIL'})\nMetrics: ${JSON.stringify(d.metrics_json)}\n=== END DRIFT ===\n`;
+        }
+      } catch (e) {
+        console.warn("[generate-pitch] Drift fetch failed (non-fatal):", e);
+      }
+
+      // Signal context
+      if (skipSignals) {
+        signalsRationale = "skipSignals";
+      } else {
+        try {
+          signalInfluence = proj?.signals_influence ?? 0.5;
+          const applyConfig = proj?.signals_apply ?? { pitch: true };
+          if (!applyConfig.pitch) {
+            signalsRationale = "signals_apply.pitch=false";
+          } else {
+            const { data: matches } = await supa
+              .from("project_signal_matches")
+              .select("cluster_id, relevance_score, impact_score, rationale, cluster:cluster_id(name, category, strength, velocity, saturation_risk, explanation, cluster_scoring)")
+              .eq("project_id", projectId)
+              .order("impact_score", { ascending: false })
+              .limit(3);
+            if (matches && matches.length > 0) {
+              signalsUsedIds = matches.map((m: any) => m.cluster_id);
+              signalsApplied = true;
+              signalsRationale = "applied";
+              const inf = signalInfluence ?? 0.5;
+              const influenceLabel = inf >= 0.65 ? "HIGH" : inf >= 0.35 ? "MODERATE" : "LOW";
+              let influenceRule = "";
+              if (inf >= 0.65) influenceRule = "Signals may shape logline framing, comps, buyer angle, AND format mechanics.";
+              else if (inf >= 0.35) influenceRule = "Signals should shape comps and buyer positioning ONLY.";
+              else influenceRule = "Signals add risk flags and optional comps ONLY.";
+              const lines = matches.map((m: any, i: number) => {
+                const c = m.cluster;
+                return `${i+1}. ${c?.name || "Signal"} [${c?.category || ""}] — strength ${c?.strength || 0}/10, ${c?.velocity || "Stable"}, saturation ${c?.saturation_risk || "Low"}\n   ${c?.explanation || ""}`;
+              }).join("\n");
+              signalBlock = `\n=== MARKET & FORMAT SIGNALS (influence: ${influenceLabel}) ===\n${influenceRule}\n\n${lines}\n=== END SIGNALS ===\n`;
+            } else {
+              signalsRationale = "no matches";
+            }
+          }
+        } catch (e) {
+          console.warn("[generate-pitch] Signal fetch failed (non-fatal):", e);
+          signalsRationale = "fetch error";
+        }
+      }
+    }
+
+    // ── DNA / Engine constraint block ──
+    let dnaConstraintBlock = "";
+    let resolvedDnaProfileId: string | null = null;
+    let resolvedEngineKey: string | null = null;
+
+    if (dna_constraint_mode === "dna_profile" && source_dna_profile_id) {
+      try {
+        const { data: dnaRow, error: dnaErr } = await svcClient
+          .from("narrative_dna_profiles")
+          .select("*")
+          .eq("id", source_dna_profile_id)
+          .eq("status", "locked")
+          .single();
+
+        if (!dnaErr && dnaRow) {
+          resolvedDnaProfileId = dnaRow.id;
+          resolvedEngineKey = dnaRow.primary_engine_key || null;
+
+          const spine = dnaRow.spine_json || {};
+          const parts: string[] = [];
+          parts.push(`\n=== NARRATIVE DNA CONSTRAINTS (from locked profile: "${dnaRow.source_title}") ===`);
+          parts.push(`Source Type: ${dnaRow.source_type}`);
+
+          // Structural spine axes
+          const spineEntries = Object.entries(spine).filter(([, v]) => v);
+          if (spineEntries.length > 0) {
+            parts.push(`\nSTRUCTURAL SPINE (invariant axes — new concepts MUST preserve these patterns):`);
+            for (const [axis, val] of spineEntries) {
+              parts.push(`  ${axis}: ${val}`);
+            }
+          }
+
+          if (dnaRow.thematic_spine) parts.push(`\nThematic Spine: ${dnaRow.thematic_spine}`);
+          if (dnaRow.escalation_architecture) parts.push(`Escalation Architecture: ${dnaRow.escalation_architecture}`);
+          if (dnaRow.antagonist_pattern) parts.push(`Antagonist Pattern: ${dnaRow.antagonist_pattern}`);
+          if (dnaRow.power_dynamic) parts.push(`Power Dynamic: ${dnaRow.power_dynamic}`);
+          if (dnaRow.ending_logic) parts.push(`Ending Logic: ${dnaRow.ending_logic}`);
+
+          if (dnaRow.world_logic_rules?.length > 0) {
+            parts.push(`\nWorld Logic Rules:`);
+            for (const r of dnaRow.world_logic_rules) parts.push(`  - ${r}`);
+          }
+
+          if (dnaRow.emotional_cadence?.length > 0) {
+            parts.push(`Emotional Cadence: ${dnaRow.emotional_cadence.join(" → ")}`);
+          }
+
+          // Mutation constraints
+          if (dnaRow.forbidden_carryovers?.length > 0) {
+            parts.push(`\nFORBIDDEN CARRYOVERS (do NOT reproduce from source):`);
+            for (const f of dnaRow.forbidden_carryovers) parts.push(`  ✗ ${f}`);
+          }
+          if (dnaRow.mutable_variables?.length > 0) {
+            parts.push(`\nMUTABLE VARIABLES (free to change):`);
+            for (const m of dnaRow.mutable_variables) parts.push(`  ○ ${m}`);
+          }
+
+          // Engine classification
+          if (dnaRow.primary_engine_key) {
+            const { data: engRow } = await svcClient
+              .from("narrative_engines")
+              .select("engine_name, description")
+              .eq("engine_key", dnaRow.primary_engine_key)
+              .single();
+            if (engRow) {
+              parts.push(`\nNarrative Engine: ${engRow.engine_name} — ${engRow.description}`);
+            }
+          }
+
+          parts.push(`\nIMPORTANT: Generate ORIGINAL concepts that follow these structural patterns. Do NOT retell the source story.`);
+          parts.push(`=== END NARRATIVE DNA CONSTRAINTS ===`);
+
+          dnaConstraintBlock = parts.join("\n");
+          console.log(`[generate-pitch] dna_constraint_mode=dna_profile profile=${dnaRow.id} engine=${dnaRow.primary_engine_key || "none"}`);
+        } else {
+          console.warn(`[generate-pitch] DNA profile not found or not locked: ${source_dna_profile_id}`);
+        }
+      } catch (e: any) {
+        console.warn(`[generate-pitch] DNA profile fetch failed (non-fatal): ${e.message}`);
+      }
+    } else if (dna_constraint_mode === "engine_only" && source_engine_key) {
+      try {
+        const { data: engRow, error: engErr } = await svcClient
+          .from("narrative_engines")
+          .select("engine_key, engine_name, description")
+          .eq("engine_key", source_engine_key)
+          .single();
+
+        if (!engErr && engRow) {
+          resolvedEngineKey = engRow.engine_key;
+          dnaConstraintBlock = `
+=== NARRATIVE ENGINE CONSTRAINT (structural pattern only) ===
+Engine: ${engRow.engine_name}
+Pattern: ${engRow.description}
+
+Generate concepts that follow this structural engine pattern.
+No specific source constraints apply — use the engine as a structural template only.
+=== END ENGINE CONSTRAINT ===`;
+          console.log(`[generate-pitch] dna_constraint_mode=engine_only engine=${engRow.engine_key}`);
+        }
+      } catch (e: any) {
+        console.warn(`[generate-pitch] Engine fetch failed (non-fatal): ${e.message}`);
+      }
+    }
+
+    // Inject guardrails
+    const guardrails = buildGuardrailBlock({ productionType: typeLabel, engineName: "generate-pitch" });
+    console.log(`[generate-pitch] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}, batch=${batchSize}`);
+
+    // ── Production Modality block (DB-sourced when projectId present; validated fallback otherwise) ──
+    let pitchModality: string;
+    if (dbModality) {
+      pitchModality = dbModality;
+      // Already logged above with modality_source=project_features
+    } else {
+      const { PRODUCTION_MODALITIES: PM } = await import("../_shared/productionModality.ts");
+      const requested = body.productionModality || "live_action";
+      pitchModality = PM.includes(requested) ? requested : "live_action";
+      console.log(`[generate-pitch] modality_source=request_preview_default modality=${pitchModality}`);
+    }
+    const modalityBlock = buildModalityPromptBlock(pitchModality as any);
+    const animMetaBlock = buildAnimationMetaPromptBlock(pitchModality, dbAnimMeta);
+
+    const isEpisodicPitch = ["vertical-drama", "vertical_drama", "tv-series", "series", "limited-series", "digital-series", "anim-series", "reality"].includes(
+      (typeLabel || "").toLowerCase().replace(/_/g, "-")
+    );
+    const isVDPitch = ["vertical-drama", "vertical_drama"].includes((typeLabel || "").toLowerCase().replace(/_/g, "-"));
+
+    let pitchPropulsionBlock = `
+STRUCTURAL PROPULSION REQUIREMENTS (MANDATORY):
+Every concept MUST have at least one DURABLE PROPULSION SOURCE. Ideas lacking propulsion will be rejected upstream.
+
+Accepted propulsion types (at least one required):
+1. Active protagonist objective — concrete, actionable goal
+2. External pressure / antagonist engine — person, system, or structural threat creating ongoing pressure
+3. Relationship escalation engine — durable interpersonal tension with escalation potential (forbidden love + scandal/system pressure counts)
+4. Investigation / mystery engine — truth-seeking, conspiracy, revelation
+5. Survival / threat engine — ongoing danger, pursuit, siege
+6. Competition / career / system-pressure engine — institutional, political, or career-driven conflict
+
+IMPORTANT: Reactive protagonists are ALLOWED if supported by durable external propulsion. Do NOT reject concepts because the protagonist is reactive.
+
+Each concept's one_page_pitch MUST clearly convey:
+- The protagonist's situation and what drives the narrative
+- The primary source of ongoing pressure/conflict
+- Why this engine sustains across the format length
+`;
+
+    if (isVDPitch) {
+      pitchPropulsionBlock += `
+VERTICAL DRAMA PROPULSION (MANDATORY):
+- Every VD concept MUST have a REPEATABLE EXTERNAL PRESSURE ENGINE supporting 30+ episodes.
+- Pure romance, mood, vibe, or internal journey without external escalation is STRUCTURALLY INVALID for vertical drama.
+- The format_summary MUST include episode count and the propulsion source type.
+`;
+    } else if (isEpisodicPitch) {
+      pitchPropulsionBlock += `
+EPISODIC PROPULSION:
+- Every episodic concept MUST have a renewable conflict engine beyond a single protagonist goal.
+`;
+    }
+
+    const systemPrompt = `You are IFFY's Development Pitch Engine — an expert development executive who generates production-ready concept pitches for the entertainment industry.
+
+${guardrails.textBlock}
+
+PRODUCTION TYPE: ${typeLabel}
+ALL outputs MUST be strictly constrained to this production type.${hardCriteriaBlock}${pitchPropulsionBlock}${dnaConstraintBlock}${autoFieldsBlock}${nuanceBlock}${driftBlock}${convergenceBlock}${modalityBlock}${animMetaBlock}
+
+Generate exactly ${batchSize} ranked development concepts.${coverageSection}${feedbackSection}${notesSection}${signalBlock}
+
+${buildPitchScoringRubric()}
+
+RANK by score_total descending.
+
+CRITICAL: Every character must have a DISTINCT name fitting the story's cultural setting. Never reuse generic names across pitches.
+
+You MUST call submit_pitches with ALL ${batchSize} ideas.`;
+
+    const userPrompt = `Generate ${batchSize} ranked pitch ideas:
+- Production Type: ${typeLabel}
+- Genre: ${genre || "any"}${subgenre ? `\n- Subgenre: ${subgenre}` : ""}
+- Budget Band: ${budgetBand || "any"}
+- Region: ${region || "global"}
+- Platform Target: ${platformTarget || "any"}${audienceDemo ? `\n- Audience Demo: ${audienceDemo}` : ""}
+- Risk Level: ${riskLevel || "medium"}
+${coverageContext ? "\nMode: Coverage Transformer" : "Mode: Greenlight Radar — fresh original concepts."}`;
+
+    const toolsDef = [
+          {
+            type: "function",
+            function: {
+              name: "submit_pitches",
+              description: "Submit generated pitch ideas with scoring and extended metadata",
+              parameters: {
+                type: "object",
+                properties: {
+                  ideas: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        title: { type: "string" },
+                        logline: { type: "string", description: "1-2 sentence hook" },
+                        premise: { type: "string", description: "2-3 sentence premise expanding on the hook" },
+                        one_page_pitch: { type: "string", description: "Full 1-page pitch (3-5 paragraphs)" },
+                        comps: { type: "array", items: { type: "string" }, description: "3-5 comparable titles" },
+                        recommended_lane: { type: "string" },
+                        lane_confidence: { type: "number" },
+                        budget_band: { type: "string" },
+                        genre: { type: "string" },
+                        tone_tag: { type: "string", description: "Short tone descriptor e.g. 'sweet but sharp'" },
+                        format_summary: { type: "string", description: "Brief format note e.g. '30 x 2min vertical' or '90min feature'" },
+                        trend_fit_bullets: { type: "array", items: { type: "string" }, description: "1-3 short bullets explaining which market signals this concept leverages" },
+                        differentiation_move: { type: "string", description: "One sentence explaining what makes this concept stand out from similar titles" },
+                        packaging_suggestions: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: { role: { type: "string" }, archetype: { type: "string" }, names: { type: "array", items: { type: "string" } }, rationale: { type: "string" } },
+                            required: ["role", "archetype", "rationale"], additionalProperties: false,
+                          },
+                        },
+                        development_sprint: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: { week: { type: "string" }, milestone: { type: "string" }, deliverable: { type: "string" } },
+                            required: ["week", "milestone", "deliverable"], additionalProperties: false,
+                          },
+                        },
+                        risks_mitigations: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: { risk: { type: "string" }, severity: { type: "string", enum: ["low", "medium", "high"] }, mitigation: { type: "string" } },
+                            required: ["risk", "severity", "mitigation"], additionalProperties: false,
+                          },
+                        },
+                        why_us: { type: "string" },
+                        risk_level: { type: "string", enum: ["low", "medium", "high"] },
+                        score_market_heat: { type: "number" },
+                        score_feasibility: { type: "number" },
+                        score_lane_fit: { type: "number" },
+                        score_saturation_risk: { type: "number" },
+                        score_company_fit: { type: "number" },
+                        score_total: { type: "number" },
+                      },
+                      required: ["title", "logline", "premise", "one_page_pitch", "comps", "recommended_lane", "lane_confidence", "budget_band", "genre", "tone_tag", "format_summary", "trend_fit_bullets", "differentiation_move", "packaging_suggestions", "development_sprint", "risks_mitigations", "why_us", "risk_level", "score_market_heat", "score_feasibility", "score_lane_fit", "score_saturation_risk", "score_company_fit", "score_total"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["ideas"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ];
+
+    // Retry helper: attempts the AI call, retries once on 524 timeout with reduced batch
+    async function callAI(currentBatchSize: number, attempt: number): Promise<any> {
+      const currentSystemPrompt = attempt > 0
+        ? systemPrompt.replace(`Generate exactly ${batchSize}`, `Generate exactly ${currentBatchSize}`).replace(`ALL ${batchSize} ideas`, `ALL ${currentBatchSize} ideas`)
+        : systemPrompt;
+      const currentUserPrompt = attempt > 0
+        ? userPrompt.replace(`Generate ${batchSize}`, `Generate ${currentBatchSize}`)
+        : userPrompt;
+
+      console.log(`[generate-pitch] AI call attempt ${attempt + 1}, batch=${currentBatchSize}`);
+
+      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: currentSystemPrompt },
+            { role: "user", content: currentUserPrompt },
+          ],
+          tools: toolsDef,
+          tool_choice: { type: "function", function: { name: "submit_pitches" } },
+        }),
+      });
+
+      console.log(`[generate-pitch] AI response status: ${resp.status}`);
+
+      if (!resp.ok) {
+        if (resp.status === 429) {
+          return { _httpError: true, status: 429, error: "Rate limit exceeded. Please try again shortly." };
+        }
+        if (resp.status === 402) {
+          return { _httpError: true, status: 402, error: "Usage limit reached. Please add credits." };
+        }
+        const t = await resp.text();
+        console.error("AI error:", resp.status, t);
+        throw new Error("AI generation failed");
+      }
+
+      const result = await resp.json();
+
+      // Handle gateway 200-with-error-body (e.g. provider timeout 524)
+      if (result.error) {
+        const errCode = result.error?.code || 0;
+        console.error(`AI gateway error (200 body, attempt ${attempt + 1}):`, JSON.stringify(result.error));
+
+        if (errCode === 524 && attempt === 0) {
+          // Retry with smaller batch
+          const reducedBatch = Math.max(3, Math.ceil(currentBatchSize / 2));
+          console.log(`[generate-pitch] 524 timeout — retrying with reduced batch ${reducedBatch}`);
+          return callAI(reducedBatch, attempt + 1);
+        }
+
+        const normalized =
+          errCode === 524 ? "AI provider timed out. Please retry with fewer ideas." :
+          errCode === 429 ? "Rate limited — please try again later." :
+          errCode === 402 ? "Payment required — please add credits." :
+          "AI generation failed.";
+        return { _httpError: true, status: 500, error: normalized };
+      }
+
+      return result;
+    }
+
+    const result = await callAI(batchSize, 0);
+
+    // Handle error responses from callAI
+    if (result._httpError) {
+      return new Response(JSON.stringify({ error: result.error }), {
+        status: result.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const msg = result.choices?.[0]?.message;
+    const toolCall = msg?.tool_calls?.[0];
+
+    let ideas: any;
+    if (toolCall?.function?.arguments) {
+      console.log(`[generate-pitch] Parsing tool_call arguments (${toolCall.function.arguments.length} chars)`);
+      ideas = JSON.parse(toolCall.function.arguments);
+    } else if (msg?.content) {
+      console.log(`[generate-pitch] Parsing from content fallback`);
+      const raw = msg.content;
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        ideas = JSON.parse(jsonMatch[0]);
+      } else {
+        console.error("No parseable JSON in content:", raw.substring(0, 500));
+        throw new Error("No structured output returned");
+      }
+    } else {
+      console.error("Unexpected response shape:", JSON.stringify(result).substring(0, 500));
+      throw new Error("No structured output returned");
+    }
+
+    if (Array.isArray(ideas)) ideas = { ideas };
+    if (!ideas.ideas || !Array.isArray(ideas.ideas)) {
+      console.error("[generate-pitch] Malformed ideas object:", JSON.stringify(ideas).substring(0, 300));
+      return new Response(JSON.stringify({ error: "AI returned malformed response. Please retry." }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    console.log(`[generate-pitch] Successfully parsed ${ideas.ideas.length} ideas`);
+
+    if (ideas.ideas.length === 0) {
+      return new Response(JSON.stringify({ error: "AI returned no usable ideas. Please retry." }), {
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (ideas.ideas.length < 5) {
+      console.warn(`[generate-pitch] AI returned only ${ideas.ideas.length} ideas (expected ~10), proceeding with partial batch`);
+    }
+
+    ideas.signals_metadata = {
+      signals_used: signalsUsedIds,
+      influence_value: signalInfluence,
+      applied: signalsApplied,
+      rationale: signalsRationale,
+      convergence_applied: convergenceBlock.length > 0,
+      convergence_summary: convergenceSummary,
+      // ── Modality + animation meta traceability (additive) ──
+      modality: dbModality || pitchModality || null,
+      trends_production_type_filter: modalityToTrendsProductionTypeFilter(dbModality || pitchModality, typeLabel),
+      animation_meta: dbAnimMeta.primary || dbAnimMeta.style || dbAnimMeta.tags.length > 0
+        ? {
+            primary: dbAnimMeta.primary,
+            style: dbAnimMeta.style,
+            tags_count: dbAnimMeta.tags.length,
+            tags_sample: dbAnimMeta.tags.slice(0, 5),
+          }
+        : undefined,
+      context_version: "v1",
+    };
+
+    // Attach resolution meta for auto-fields transparency
+    ideas.resolution_meta = {
+      auto_field_status: resolutionMeta,
+      warnings,
+    };
+
+    // ── Server-side persistence: save ideas to pitch_ideas table ──
+    // This ensures ideas survive client-side fetch timeouts on long AI calls.
+    let savedCount = 0;
+    const savedIds: string[] = [];
+    for (const idea of ideas.ideas) {
+      try {
+        const row = {
+          user_id: requestUserId,
+          mode: 'greenlight',
+          status: 'draft',
+          production_type: typeLabel,
+          title: idea.title || 'Untitled',
+          logline: idea.logline || '',
+          one_page_pitch: idea.one_page_pitch || '',
+          comps: idea.comps || [],
+          recommended_lane: idea.recommended_lane || '',
+          lane_confidence: idea.lane_confidence || 0,
+          budget_band: idea.budget_band || budgetBand || '',
+          packaging_suggestions: idea.packaging_suggestions || [],
+          development_sprint: idea.development_sprint || [],
+          risks_mitigations: idea.risks_mitigations || [],
+          why_us: idea.why_us || '',
+          genre: idea.genre || genre || '',
+          region: region || '',
+          platform_target: platformTarget || '',
+          risk_level: idea.risk_level || riskLevel || 'medium',
+          project_id: projectId || null,
+          source_dna_profile_id: resolvedDnaProfileId || null,
+          source_engine_key: resolvedEngineKey || null,
+          raw_response: {
+            ...idea,
+            premise: idea.premise || '',
+            trend_fit_bullets: idea.trend_fit_bullets || [],
+            differentiation_move: idea.differentiation_move || '',
+            tone_tag: idea.tone_tag || '',
+            format_summary: idea.format_summary || '',
+            signals_metadata: ideas.signals_metadata || null,
+            dna_constraint_mode: dna_constraint_mode || 'none',
+          },
+          ...(() => {
+            const normalized = normalizePitchScores(idea);
+            const drift = checkScoreDrift(normalized, Number(idea.score_total) || 0);
+            if (drift) console.warn(`[generate-pitch] ${drift} title="${idea.title}"`);
+            const lpFields = computeLearningPoolEligibility(normalized.score_total);
+            return { ...normalized, ...lpFields };
+          })(),
+        };
+        const { data: saved, error: saveErr } = await svcClient
+          .from('pitch_ideas')
+          .insert(row)
+          .select('id')
+          .single();
+        if (saveErr) {
+          console.warn(`[generate-pitch] Failed to save idea "${idea.title}": ${saveErr.message}`);
+        } else {
+          savedCount++;
+          savedIds.push(saved.id);
+        }
+      } catch (e: any) {
+        console.warn(`[generate-pitch] Save error for "${idea.title}": ${e.message}`);
+      }
+    }
+    console.log(`[generate-pitch] Server-side saved ${savedCount}/${ideas.ideas.length} ideas`);
+
+    // Include savedIds so client knows ideas are already persisted
+    ideas.server_saved = true;
+    ideas.saved_ids = savedIds;
+    ideas.saved_count = savedCount;
+
+    console.log(`[generate-pitch] Returning ${ideas.ideas.length} ideas successfully`);
+    return new Response(JSON.stringify(ideas), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("generate-pitch error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

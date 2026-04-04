@@ -1,0 +1,205 @@
+/**
+ * NARRATIVE UNIT EXECUTION HIERARCHY — Governing Architecture Rule
+ *
+ * IFFY must always use the smallest stable narrative unit available for the deliverable.
+ *
+ * ═══════════════════════════════════════════════════════════════════
+ * 1. EPISODE-INDEXED DOCS
+ *    Docs: episode_grid, episode_beats, vertical_episode_beats,
+ *          season_script, season_master_script
+ *    Execution unit = 1 episode
+ *    - compute affected episode indices
+ *    - rewrite only affected episodes
+ *    - preserve unaffected episodes exactly
+ *    - reassemble full deliverable from preserved + rewritten units
+ *    No multi-episode batch is the default execution unit.
+ *
+ * 2. FEATURE / SINGLE-SCRIPT DOCS
+ *    Docs: feature_script, production_draft, other scene-structured scripts
+ *    Execution unit = 1 scene
+ *    - compute affected scene indices
+ *    - rewrite only affected scenes
+ *    - preserve unaffected scenes exactly
+ *    - reassemble full script from preserved + rewritten scene units
+ *
+ * 3. EPISODIC SCRIPT DOCS WITH SCENE STRUCTURE (CANONICAL)
+ *    For ANY episodic script deliverable with scene structure,
+ *    including vertical drama, long-form series, and season scripts:
+ *      outer unit = episode
+ *      inner unit = scene
+ *    Docs: season_script, season_master_script, episode_script
+ *    - first compute affected episodes
+ *    - within each affected episode, compute affected scenes
+ *      (where scene-level targeting is available)
+ *    - rewrite only affected scenes inside affected episodes
+ *    - preserve untouched scenes within affected episodes
+ *    - preserve untouched episodes outside affected set
+ *    - reassemble episode → reassemble season/series script
+ *    This is the DEFAULT for all episodic scripts when scene graph
+ *    data is available. No lane restriction — applies to vertical
+ *    drama, long-form series, and any future episodic format.
+ *
+ * 4. UI / OPERATOR TRUTH
+ *    Progress must reflect the true unit model:
+ *    - episode-by-episode for episode-indexed docs
+ *    - scene-by-scene for scene-indexed docs
+ *    - episode → scene nested for long-form series
+ *    Never surface generic "chunk" when a narrative unit is known.
+ *
+ * 5. PRESERVATION RULE
+ *    Unaffected narrative units remain unchanged by default.
+ *    Broad whole-document regeneration only when explicitly requested.
+ *
+ * 6. COMPLETION GATE
+ *    Promotion to authoritative/latest/current only when all required
+ *    narrative units are present and validated for the deliverable contract.
+ * ═══════════════════════════════════════════════════════════════════
+ */
+
+export type NarrativeUnitType = 'episode' | 'scene' | 'section';
+
+export interface NarrativeUnitModel {
+  outerUnit: NarrativeUnitType;
+  innerUnit?: NarrativeUnitType;
+  nested: boolean;
+}
+
+// ── Episode-indexed doc types: execution unit = 1 episode ──
+// These use episode as outer unit. When scene graph data is available,
+// EPISODIC_SCRIPT_DOC_TYPES automatically nest scene as inner unit.
+
+const EPISODE_ONLY_DOC_TYPES = new Set([
+  'episode_grid',
+  'episode_beats',
+  'vertical_episode_beats',
+  'season_scripts_bundle',
+]);
+
+// ── Episodic script doc types: episode → scene nested when scene graph exists ──
+// This applies to ALL episodic script deliverables regardless of lane
+// (vertical drama, long-form series, any future episodic format).
+
+const EPISODIC_SCRIPT_DOC_TYPES = new Set([
+  'season_script',
+  'season_master_script',
+  'episode_script',
+]);
+
+// ── Combined set for any episode-indexed doc ──
+const ALL_EPISODE_DOC_TYPES = new Set([
+  ...EPISODE_ONLY_DOC_TYPES,
+  ...EPISODIC_SCRIPT_DOC_TYPES,
+]);
+
+// ── Scene-indexed doc types: execution unit = 1 scene ──
+
+const SCENE_UNIT_DOC_TYPES = new Set([
+  'feature_script',
+  'production_draft',
+]);
+
+/**
+ * Returns the canonical narrative unit model for a doc type.
+ * This is the AUTHORITATIVE source for execution granularity decisions.
+ *
+ * For episodic script docs (season_script, season_master_script, episode_script):
+ *   - Default: episode-only (nested: false)
+ *   - With scene graph: episode → scene nested (nested: true)
+ *   Use unitModelFor(docType, { hasSceneGraph: true }) to activate nesting.
+ *
+ * For episode_grid / episode_beats: always episode-only, no scene nesting.
+ */
+export function unitModelFor(
+  docType: string,
+  opts?: { hasSceneGraph?: boolean },
+): NarrativeUnitModel {
+  if (EPISODIC_SCRIPT_DOC_TYPES.has(docType)) {
+    if (opts?.hasSceneGraph) {
+      return { outerUnit: 'episode', innerUnit: 'scene', nested: true };
+    }
+    return { outerUnit: 'episode', nested: false };
+  }
+  if (EPISODE_ONLY_DOC_TYPES.has(docType)) {
+    return { outerUnit: 'episode', nested: false };
+  }
+  if (SCENE_UNIT_DOC_TYPES.has(docType)) {
+    return { outerUnit: 'scene', nested: false };
+  }
+  // Default: section-based (acts, thematic sections)
+  return { outerUnit: 'section', nested: false };
+}
+
+/**
+ * Returns true if the doc type supports nested episode → scene execution
+ * when scene graph data is available. This is the canonical gate for
+ * activating scene-within-episode nesting for any episodic format
+ * (vertical drama, long-form series, etc.).
+ */
+export function supportsSceneNesting(docType: string): boolean {
+  return EPISODIC_SCRIPT_DOC_TYPES.has(docType);
+}
+
+/**
+ * @deprecated Use unitModelFor(docType, { hasSceneGraph: true }) instead.
+ * Kept for backward compatibility during migration.
+ */
+export function nestedEpisodeSceneModel(): NarrativeUnitModel {
+  return { outerUnit: 'episode', innerUnit: 'scene', nested: true };
+}
+
+/**
+ * Returns the human-readable unit label for progress display.
+ * Never returns "chunk" — always a narrative term.
+ */
+export function unitLabel(unit: NarrativeUnitType, plural = false): string {
+  const labels: Record<NarrativeUnitType, [string, string]> = {
+    episode: ['Episode', 'Episodes'],
+    scene: ['Scene', 'Scenes'],
+    section: ['Section', 'Sections'],
+  };
+  return labels[unit]?.[plural ? 1 : 0] ?? (plural ? 'Units' : 'Unit');
+}
+
+/**
+ * Build a progress string that reflects true narrative units.
+ */
+export function narrativeProgressLabel(
+  docType: string,
+  current: number,
+  total: number,
+  affected: number,
+  mode: 'generating' | 'rewriting' = 'generating',
+): string {
+  const model = unitModelFor(docType);
+  const uLabel = unitLabel(model.outerUnit);
+  const verb = mode === 'rewriting' ? 'Rewriting' : 'Generating';
+
+  if (mode === 'rewriting') {
+    return `${verb} ${uLabel} ${current} — ${uLabel} ${current} of ${affected} affected`;
+  }
+  return `${verb} ${uLabel} ${current} of ${total}`;
+}
+
+/**
+ * Returns true if the doc type must enforce per-unit preservation
+ * (unaffected units unchanged) during selective rewrites.
+ */
+export function requiresUnitPreservation(docType: string): boolean {
+  return ALL_EPISODE_DOC_TYPES.has(docType) || SCENE_UNIT_DOC_TYPES.has(docType);
+}
+
+/**
+ * Returns true if this doc type should NEVER use generic "chunk" terminology
+ * in operator-facing UI or logs.
+ */
+export function hasKnownNarrativeUnit(docType: string): boolean {
+  return ALL_EPISODE_DOC_TYPES.has(docType) || SCENE_UNIT_DOC_TYPES.has(docType);
+}
+
+/**
+ * Returns true if this doc type is an episodic script (not grid/beats)
+ * that should use the episode navigator with scene nesting capability.
+ */
+export function isEpisodicScript(docType: string): boolean {
+  return EPISODIC_SCRIPT_DOC_TYPES.has(docType);
+}

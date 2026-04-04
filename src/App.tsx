@@ -1,0 +1,286 @@
+import { lazy, Suspense } from "react";
+import { Toaster } from "@/components/ui/toaster";
+import { Toaster as Sonner } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { CommandPalette } from "@/components/CommandPalette";
+import { ScrollToTop } from "@/components/ScrollToTop";
+import { AuthProvider } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/hooks/useTheme";
+import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner";
+import { UIModeProvider } from "@/hooks/useUIMode";
+import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
+
+// Eagerly load landing + auth (first paint)
+import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+
+// Lazy-load everything else
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const NewProject = lazy(() => import("./pages/NewProject"));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
+const Trends = lazy(() => import("./pages/Trends"));
+const StoryTrends = lazy(() => import("./pages/StoryTrends"));
+const CastTrends = lazy(() => import("./pages/CastTrends"));
+const IncentiveFinder = lazy(() => import("./pages/IncentiveFinder"));
+const CoproPlanner = lazy(() => import("./pages/CoproPlanner"));
+const StackCashflow = lazy(() => import("./pages/StackCashflow"));
+const CompareProjects = lazy(() => import("./pages/CompareProjects"));
+const Pipeline = lazy(() => import("./pages/Pipeline"));
+const FestivalCalendar = lazy(() => import("./pages/FestivalCalendar"));
+const ProductionCalendar = lazy(() => import("./pages/ProductionCalendar"));
+const BuyerCRM = lazy(() => import("./pages/BuyerCRM"));
+const About = lazy(() => import("./pages/About"));
+const HowItWorks = lazy(() => import("./pages/HowItWorks"));
+const FAQ = lazy(() => import("./pages/FAQ"));
+const HowIFFYThinks = lazy(() => import("./pages/HowIFFYThinks"));
+const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const MarketIntelligence = lazy(() => import("./pages/MarketIntelligence"));
+const Settings = lazy(() => import("./pages/Settings"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Companies = lazy(() => import("./pages/Companies"));
+const CompanyDetail = lazy(() => import("./pages/CompanyDetail"));
+const CompanyProjects = lazy(() => import("./pages/CompanyProjects"));
+const PresentationMode = lazy(() => import("./pages/PresentationMode"));
+const TrendGovernance = lazy(() => import("./pages/TrendGovernance"));
+const TrendsExplorer = lazy(() => import("./pages/TrendsExplorer"));
+const TrendsCoverage = lazy(() => import("./pages/TrendsCoverage"));
+const CinematicDemo = lazy(() => import("./pages/CinematicDemo"));
+const GuidedDemo = lazy(() => import("./demo/GuidedDemo"));
+const InteractiveDemo = lazy(() => import("./pages/InteractiveDemo"));
+const ExecutiveDemo = lazy(() => import("./pages/ExecutiveDemo"));
+const Pricing = lazy(() => import("./pages/Pricing"));
+const CoverageLab = lazy(() => import("./pages/CoverageLab"));
+const PitchIdeas = lazy(() => import("./pages/PitchIdeas"));
+const CalibrationLab = lazy(() => import("./pages/CalibrationLab"));
+const PitchDeckViewer = lazy(() => import("./pages/PitchDeckViewer"));
+const InvestorPresentation = lazy(() => import("./pages/InvestorPresentation"));
+const DevelopmentEngine = lazy(() => import("./pages/DevelopmentEngine"));
+const ProjectDevelopmentEngine = lazy(() => import("./pages/ProjectDevelopmentEngine"));
+const SeriesWriterPage = lazy(() => import("./pages/SeriesWriter"));
+const FeatureScript = lazy(() => import("./pages/FeatureScript"));
+const ProducerCockpit = lazy(() => import("./pages/ProducerCockpit"));
+const SharePackView = lazy(() => import("./pages/SharePackView"));
+const ShotListPage = lazy(() => import("./pages/ShotListPage"));
+const StoryboardsPage = lazy(() => import("./pages/StoryboardsPage"));
+const VisualReferencesPage = lazy(() => import("./pages/VisualReferencesPage"));
+const ScriptIntakePage = lazy(() => import("./pages/ScriptIntakePage"));
+const Processing = lazy(() => import("./pages/Processing"));
+// QuickReview / DeepReview kept as thin redirects to canonical workspace analysis
+const NotFound = lazy(() => import("./pages/NotFound"));
+const Pitch = lazy(() => import("./pages/Pitch"));
+const NotesInbox = lazy(() => import("./pages/NotesInbox"));
+// AiTrailerBuilder removed — canonical Trailer Intelligence pipeline only
+const VisualUnits = lazy(() => import("./pages/VisualUnits"));
+const StoryboardPipeline = lazy(() => import("./pages/StoryboardPipeline"));
+const TrailerPipeline = lazy(() => import("./pages/TrailerPipeline"));
+const ClipCandidatesStudio = lazy(() => import("./pages/ClipCandidatesStudio"));
+const TrailerTimelineStudio = lazy(() => import("./pages/TrailerTimelineStudio"));
+const VisualDevHub = lazy(() => import("./pages/VisualDevHub"));
+const TrailerHub = lazy(() => import("./pages/TrailerHub"));
+const Showcase = lazy(() => import("./pages/Showcase"));
+const CanonPlaceholder = lazy(() => import("./pages/CanonPlaceholder"));
+const AIContentPage = lazy(() => import("./pages/AIContentPage"));
+const AICastLibrary = lazy(() => import("./pages/AICastLibrary"));
+const ActorMarketplace = lazy(() => import("./pages/ActorMarketplace"));
+const ProjectCasting = lazy(() => import("./pages/ProjectCasting"));
+const CastingStudio = lazy(() => import("./pages/CastingStudio"));
+const CastingPipeline = lazy(() => import("./pages/CastingPipeline"));
+const ProductionDesign = lazy(() => import("./pages/ProductionDesign"));
+const VisualProductionPipeline = lazy(() => import("./pages/VisualProductionPipeline"));
+const NarrativeDna = lazy(() => import("./pages/NarrativeDna"));
+const NarrativeEngines = lazy(() => import("./pages/NarrativeEngines"));
+const DemoDashboard = lazy(() => import("./pages/DemoDashboard"));
+const IntelDashboard = lazy(() => import("./pages/IntelDashboard"));
+const IntelPolicies = lazy(() => import("./pages/IntelPolicies"));
+const IntelEvents = lazy(() => import("./pages/IntelEvents"));
+const IntelAlignment = lazy(() => import("./pages/IntelAlignment"));
+const ExemplarBrowser = lazy(() => import("./pages/ExemplarBrowser"));
+const CIBlueprintEngine = lazy(() => import("./pages/CIBlueprintEngine"));
+const PosterEngine = lazy(() => import("./components/poster/PosterEnginePanel"));
+const LookBookPage = lazy(() => import("./pages/LookBookPage"));
+const ProjectImageLibrary = lazy(() => import("./pages/ProjectImageLibrary"));
+const ActorLibrary = lazy(() => import("./pages/ActorLibrary"));
+
+
+// ProjectShell — new unified workspace frame (Week 1 refactor)
+import { ProjectShell } from "@/components/project/ProjectShell";
+
+// Trailer redirect helper — maps old trailer routes to canonical /projects/:id/trailer?tab=
+function TrailerRedirect({ tab }: { tab?: string }) {
+  const { id, '*': splat } = useParams<{ id: string; '*': string }>();
+  // Derive tab from explicit prop, splat path segment, or default empty
+  const resolvedTab = tab || splat?.split('/').filter(Boolean)[0] || '';
+  const to = `/projects/${id}/trailer${resolvedTab ? `?tab=${resolvedTab}` : ''}`;
+  return <Navigate to={to} replace />;
+}
+
+/**
+ * ReviewRedirect — deterministic redirect for legacy /quick-review and /deep-review routes.
+ * If projectId is present, redirects to canonical workspace analysis.
+ * Otherwise redirects to /dashboard.
+ */
+function ReviewRedirect() {
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get('projectId');
+  if (projectId) {
+    return <Navigate to={`/projects/${projectId}/script?drawer=open&drawerTab=analysis`} replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
+}
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 2, // 2 min – avoid redundant refetches
+      gcTime: 1000 * 60 * 10, // 10 min garbage collection
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
+
+const PageFallback = () => (
+  <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className="h-8 w-8 rounded-md bg-primary animate-pulse" />
+  </div>
+);
+
+const AnimatedRoutes = () => {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="popLayout">
+      <Suspense fallback={<PageFallback />}>
+        <Routes location={location} key={location.pathname}>
+          <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
+          <Route path="/how-it-works" element={<ProtectedRoute><HowItWorks /></ProtectedRoute>} />
+          <Route path="/faq" element={<ProtectedRoute><FAQ /></ProtectedRoute>} />
+          <Route path="/how-iffy-thinks" element={<ProtectedRoute><HowIFFYThinks /></ProtectedRoute>} />
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/projects/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
+          <Route path="/projects/:id" element={<ProtectedRoute><ProjectShell><ProjectDetail /></ProjectShell></ProtectedRoute>} />
+          <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
+          <Route path="/trends/story" element={<ProtectedRoute><StoryTrends /></ProtectedRoute>} />
+          <Route path="/trends/cast" element={<ProtectedRoute><CastTrends /></ProtectedRoute>} />
+          <Route path="/trends/governance" element={<ProtectedRoute><TrendGovernance /></ProtectedRoute>} />
+          <Route path="/trends/explorer" element={<ProtectedRoute><TrendsExplorer /></ProtectedRoute>} />
+          <Route path="/trends/coverage" element={<ProtectedRoute><TrendsCoverage /></ProtectedRoute>} />
+          <Route path="/incentives" element={<ProtectedRoute><IncentiveFinder /></ProtectedRoute>} />
+          <Route path="/incentives/copro" element={<ProtectedRoute><CoproPlanner /></ProtectedRoute>} />
+          <Route path="/incentives/stack" element={<ProtectedRoute><StackCashflow /></ProtectedRoute>} />
+          <Route path="/compare" element={<ProtectedRoute><CompareProjects /></ProtectedRoute>} />
+          <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
+          <Route path="/festivals" element={<ProtectedRoute><FestivalCalendar /></ProtectedRoute>} />
+          <Route path="/calendar" element={<ProtectedRoute><ProductionCalendar /></ProtectedRoute>} />
+          <Route path="/buyer-crm" element={<ProtectedRoute><BuyerCRM /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+          <Route path="/market-intelligence" element={<ProtectedRoute><MarketIntelligence /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/intel" element={<ProtectedRoute><IntelDashboard /></ProtectedRoute>} />
+          <Route path="/intel/policies" element={<ProtectedRoute><IntelPolicies /></ProtectedRoute>} />
+          <Route path="/intel/events" element={<ProtectedRoute><IntelEvents /></ProtectedRoute>} />
+          <Route path="/intel/alignment/:id" element={<ProtectedRoute><IntelAlignment /></ProtectedRoute>} />
+          <Route path="/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
+          <Route path="/companies/:id" element={<ProtectedRoute><CompanyDetail /></ProtectedRoute>} />
+          <Route path="/companies/:id/projects" element={<ProtectedRoute><CompanyProjects /></ProtectedRoute>} />
+          <Route path="/projects/:id/present" element={<ProtectedRoute><PresentationMode /></ProtectedRoute>} />
+          <Route path="/projects/:id/pitch-deck" element={<ProtectedRoute><PitchDeckViewer /></ProtectedRoute>} />
+          <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
+          <Route path="/coverage-lab" element={<ProtectedRoute><CoverageLab /></ProtectedRoute>} />
+          <Route path="/pitch-ideas" element={<ProtectedRoute><PitchIdeas /></ProtectedRoute>} />
+          <Route path="/exemplars" element={<ProtectedRoute><ExemplarBrowser /></ProtectedRoute>} />
+          <Route path="/ci-blueprint" element={<ProtectedRoute><CIBlueprintEngine /></ProtectedRoute>} />
+          <Route path="/ai-cast" element={<ProtectedRoute><AICastLibrary /></ProtectedRoute>} />
+          <Route path="/ai-cast/actors" element={<ProtectedRoute><ActorLibrary /></ProtectedRoute>} />
+          <Route path="/actor-marketplace" element={<ProtectedRoute><ActorMarketplace /></ProtectedRoute>} />
+          <Route path="/calibration-lab" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
+          <Route path="/demo" element={<GuidedDemo />} />
+          <Route path="/demo/cinematic" element={<CinematicDemo />} />
+          <Route path="/demo/interactive" element={<InteractiveDemo />} />
+          <Route path="/demo/executive" element={<ExecutiveDemo />} />
+          <Route path="/demo/run" element={<ProtectedRoute><DemoDashboard /></ProtectedRoute>} />
+          <Route path="/investor" element={<ProtectedRoute><InvestorPresentation /></ProtectedRoute>} />
+          <Route path="/development-engine" element={<ProtectedRoute><DevelopmentEngine /></ProtectedRoute>} />
+          <Route path="/projects/:id/development" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/notes" element={<ProtectedRoute><NotesInbox /></ProtectedRoute>} />
+          <Route path="/projects/:id/series-writer" element={<ProtectedRoute><SeriesWriterPage /></ProtectedRoute>} />
+          <Route path="/projects/:id/feature-script" element={<ProtectedRoute><FeatureScript /></ProtectedRoute>} />
+          <Route path="/projects/:id/cockpit" element={<ProtectedRoute><ProducerCockpit /></ProtectedRoute>} />
+          <Route path="/projects/:id/shot-list" element={<ProtectedRoute><ShotListPage /></ProtectedRoute>} />
+          <Route path="/projects/:id/storyboards" element={<ProtectedRoute><StoryboardsPage /></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-references" element={<ProtectedRoute><VisualReferencesPage /></ProtectedRoute>} />
+          <Route path="/projects/:id/script-intake" element={<ProtectedRoute><ScriptIntakePage /></ProtectedRoute>} />
+          {/* /ai-trailer removed — redirects to canonical trailer */}
+          <Route path="/projects/:id/ai-trailer" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-units" element={<ProtectedRoute><VisualUnits /></ProtectedRoute>} />
+          <Route path="/projects/:id/storyboard-pipeline" element={<ProtectedRoute><StoryboardPipeline /></ProtectedRoute>} />
+          <Route path="/projects/:id/trailer-pipeline" element={<ProtectedRoute><TrailerRedirect tab="blueprints" /></ProtectedRoute>} />
+          <Route path="/projects/:id/trailer-clips" element={<ProtectedRoute><TrailerRedirect tab="clips" /></ProtectedRoute>} />
+          <Route path="/projects/:id/trailer-assemble" element={<ProtectedRoute><TrailerRedirect tab="assemble" /></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-dev" element={<ProtectedRoute><VisualDevHub /></ProtectedRoute>} />
+          {/* Legacy visual-dev/trailer/* → canonical trailer route */}
+          <Route path="/projects/:id/visual-dev/trailer/*" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
+
+          {/* ── Week 1 refactor: new ProjectShell workspace routes ── */}
+          <Route path="/projects/:id/script" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/canon" element={<ProtectedRoute><ProjectShell><CanonPlaceholder /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/trailer" element={<ProtectedRoute><ProjectShell><TrailerHub /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/produce" element={<ProtectedRoute><ProjectShell><ProducerCockpit /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/ai-content" element={<ProtectedRoute><ProjectShell><AIContentPage /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/casting" element={<ProtectedRoute><ProjectShell><CastingPipeline /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/production-design" element={<ProtectedRoute><ProjectShell><ProductionDesign /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-production" element={<ProtectedRoute><ProjectShell><VisualProductionPipeline /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/casting-studio" element={<ProtectedRoute><ProjectShell><CastingStudio /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/casting-advanced" element={<ProtectedRoute><ProjectShell><ProjectCasting /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/poster" element={<ProtectedRoute><ProjectShell><PosterEngine /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/lookbook" element={<ProtectedRoute><ProjectShell><LookBookPage /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/images" element={<ProtectedRoute><ProjectShell><ProjectImageLibrary /></ProjectShell></ProtectedRoute>} />
+          <Route path="/showcase" element={<ProtectedRoute><Showcase /></ProtectedRoute>} />
+          <Route path="/narrative-dna" element={<ProtectedRoute><NarrativeDna /></ProtectedRoute>} />
+          <Route path="/narrative-engines" element={<ProtectedRoute><NarrativeEngines /></ProtectedRoute>} />
+
+          <Route path="/processing" element={<Processing />} />
+          {/* Quick/Deep review: preserve projectId context when present */}
+          <Route path="/quick-review" element={<ReviewRedirect />} />
+          <Route path="/deep-review" element={<ReviewRedirect />} />
+          <Route path="/invite" element={<AcceptInvite />} />
+          <Route path="/share/pack/:token" element={<SharePackView />} />
+          
+          <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </AnimatePresence>
+  );
+};
+
+const App = () => (
+  <QueryClientProvider client={queryClient}>
+    <AuthProvider>
+    <UIModeProvider>
+    <ProcessingProvider>
+    <ThemeProvider>
+    <TooltipProvider>
+      <Toaster />
+      <Sonner />
+      <BrowserRouter>
+        <ScrollToTop />
+        <CorpusIntegrityBanner />
+        <CommandPalette />
+        <AnimatedRoutes />
+      </BrowserRouter>
+    </TooltipProvider>
+    </ThemeProvider>
+    </ProcessingProvider>
+    </UIModeProvider>
+    </AuthProvider>
+  </QueryClientProvider>
+);
+
+export default App;

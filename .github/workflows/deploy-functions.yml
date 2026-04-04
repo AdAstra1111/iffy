@@ -1,0 +1,41 @@
+name: Deploy Supabase Edge Functions
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.75.0
+
+      - name: Deploy core pipeline functions
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          # Core pipeline functions — always keep these up to date
+          supabase functions deploy \
+            auto-run \
+            dev-engine-v2 \
+            generate-document \
+            promote-to-devseed \
+            lara-db-proxy \
+            generate-pitch \
+            idea-to-project \
+            decisions-engine \
+            nit-sync \
+            spine-rewrite-plan \
+            coverage-engine \
+            script-coverage \
+            script-intake \
+            reverse-engineer-script \
+            create-document-version \
+            --project-ref tzdxrhklarzccqamxbxw \
+            --no-verify-jwt

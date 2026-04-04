@@ -1,0 +1,75 @@
+/** Hook for canonical notes engine API calls */
+import { supabase } from '@/integrations/supabase/client';
+import type { ProjectNote, NoteFilters, TriagePayload, EnsureNoteLegacy, NoteEvent } from '@/lib/types/notes';
+
+async function callNotesEngine(action: string, payload: Record<string, unknown>) {
+  const pid = payload.projectId as string | undefined;
+  if (pid && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid)) {
+    throw new Error('Invalid projectId format');
+  }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Not authenticated');
+
+  const { data, error } = await supabase.functions.invoke('notes-engine', {
+    body: { action, ...payload },
+  });
+  if (error) throw new Error(error.message);
+  if (data?.error) {
+    // Preserve disambiguation data
+    const err: any = new Error(data.error);
+    err.needs_user_disambiguation = data.needs_user_disambiguation;
+    err.patch_errors = data.patch_errors;
+    err.hint = data.hint;
+    throw err;
+  }
+  return data;
+}
+
+export async function listNotes(projectId: string, filters?: NoteFilters): Promise<ProjectNote[]> {
+  const data = await callNotesEngine('list_notes', { projectId, filters });
+  return data.notes || [];
+}
+
+export async function getNote(projectId: string, noteId: string): Promise<{ note: ProjectNote; events: NoteEvent[] }> {
+  return callNotesEngine('get_note', { projectId, noteId });
+}
+
+export async function createNote(projectId: string, note: Partial<ProjectNote>): Promise<ProjectNote> {
+  const data = await callNotesEngine('create_note', { projectId, note });
+  return data.note;
+}
+
+export async function ensureNote(projectId: string, legacy: EnsureNoteLegacy): Promise<ProjectNote> {
+  const data = await callNotesEngine('ensure_note', { projectId, legacy });
+  return data.note;
+}
+
+export async function triageNote(projectId: string, noteId: string, triage: TriagePayload): Promise<ProjectNote> {
+  const data = await callNotesEngine('triage_note', { projectId, noteId, triage });
+  return data.note;
+}
+
+export async function proposeChangePlan(
+  projectId: string, noteId: string,
+  opts?: { fixId?: string; customInstruction?: string; scope?: string; baseVersionId?: string }
+) {
+  return callNotesEngine('propose_change_plan', { projectId, noteId, ...opts });
+}
+
+export async function applyChangePlan(projectId: string, changeEventId: string) {
+  return callNotesEngine('apply_change_plan', { projectId, changeEventId });
+}
+
+export async function verifyNote(
+  projectId: string, noteId: string, result: 'resolved' | 'reopen', comment?: string
+) {
+  return callNotesEngine('verify_note', { projectId, noteId, result, comment });
+}
+
+export async function bulkTriageNotes(projectId: string, noteIds: string[], triage: TriagePayload) {
+  return callNotesEngine('bulk_triage', { projectId, noteIds, triage });
+}
+
+export async function migrateLegacyNotes(projectId: string) {
+  return callNotesEngine('migrate_legacy', { projectId });
+}

@@ -1,0 +1,2 @@
+ALTER TABLE public.lookbook_sections DROP CONSTRAINT valid_section_key;
+ALTER TABLE public.lookbook_sections ADD CONSTRAINT valid_section_key CHECK (section_key = ANY (ARRAY['character_identity','world_locations','atmosphere_lighting','texture_detail','symbolic_motifs','key_moments','hero_frames','poster_directions']));

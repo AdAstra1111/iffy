@@ -1,0 +1,347 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGateway } from "../_shared/llm.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) throw new Error("No authorization header");
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) throw new Error("Not authenticated");
+
+    const { projectId } = await req.json();
+    if (!projectId) throw new Error("Missing projectId");
+
+    const adminClient = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    // Find the latest "current" script from project_scripts
+    const { data: scripts } = await adminClient
+      .from("project_scripts")
+      .select("file_path")
+      .eq("project_id", projectId)
+      .eq("status", "current")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    const scriptFilePath = scripts?.[0]?.file_path || null;
+
+    // Try extracted text first
+    let extractedText = "";
+
+    if (scriptFilePath) {
+      const { data: docs } = await adminClient
+        .from("project_documents")
+        .select("extracted_text")
+        .eq("project_id", projectId)
+        .eq("file_path", scriptFilePath)
+        .limit(1);
+      extractedText = docs?.[0]?.extracted_text || "";
+    }
+
+    if (!extractedText) {
+      const { data: fallbackDocs } = await adminClient
+        .from("project_documents")
+        .select("extracted_text")
+        .eq("project_id", projectId)
+        .not("extracted_text", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      extractedText = fallbackDocs?.[0]?.extracted_text || "";
+    }
+
+    // Fallback: check project_document_versions for script/script_pdf docs
+    if (!extractedText) {
+      const { data: scriptDoc } = await adminClient
+        .from("project_documents")
+        .select("id")
+        .eq("project_id", projectId)
+        .in("doc_type", ["script", "script_pdf", "screenplay"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (scriptDoc?.[0]?.id) {
+        const { data: versions } = await adminClient
+          .from("project_document_versions")
+          .select("plaintext")
+          .eq("document_id", scriptDoc[0].id)
+          .order("version_number", { ascending: false })
+          .limit(1);
+        extractedText = versions?.[0]?.plaintext || "";
+      }
+    }
+
+    // Fallback: any document version with substantial plaintext
+    if (!extractedText) {
+      const { data: allDocs } = await adminClient
+        .from("project_documents")
+        .select("id")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      for (const doc of allDocs || []) {
+        const { data: ver } = await adminClient
+          .from("project_document_versions")
+          .select("plaintext")
+          .eq("document_id", doc.id)
+          .not("plaintext", "is", null)
+          .order("version_number", { ascending: false })
+          .limit(1);
+        if (ver?.[0]?.plaintext && ver[0].plaintext.length > 500) {
+          extractedText = ver[0].plaintext;
+          break;
+        }
+      }
+    }
+
+    // Fallback: download PDF from storage — try both buckets
+    let pdfBase64: string | null = null;
+    if (!extractedText) {
+      // Find any script_pdf document with a storage_path or file_path
+      const { data: pdfDocs } = await adminClient
+        .from("project_documents")
+        .select("file_path, storage_path")
+        .eq("project_id", projectId)
+        .in("doc_type", ["script_pdf", "script", "screenplay"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      const pdfPath = pdfDocs?.[0]?.storage_path || pdfDocs?.[0]?.file_path || scriptFilePath;
+
+      if (pdfPath) {
+        // Try 'scripts' bucket first (used by script-intake upload), then 'project-documents'
+        for (const bucket of ["scripts", "project-documents"]) {
+          const { data: fileData, error: downloadError } = await adminClient.storage
+            .from(bucket)
+            .download(pdfPath);
+
+          if (!downloadError && fileData) {
+            const arrayBuffer = await fileData.arrayBuffer();
+            const bytes = new Uint8Array(arrayBuffer);
+            let binary = "";
+            for (let i = 0; i < bytes.length; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            pdfBase64 = btoa(binary);
+            console.log(`Downloaded PDF from ${bucket}/${pdfPath}`);
+            break;
+          }
+        }
+      }
+    }
+
+    if (!extractedText && !pdfBase64) {
+      console.log("No script text or PDF found for project", projectId);
+      return new Response(JSON.stringify({ scenes: [], error: "No script text found. Please upload a script PDF via Script Intake first." }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const _gw = resolveGateway();
+    const LOVABLE_API_KEY = _gw.apiKey;
+    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+
+    const systemMessage = {
+      role: "system",
+      content: `You are a professional script breakdown tool. Extract every scene from the screenplay. For each scene identify:
+- scene_number: the scene number as written, or sequential if not numbered
+- heading: the full scene heading (slug line) e.g. "INT. HOSPITAL - NIGHT"
+- int_ext: "INT", "EXT", or "INT/EXT"
+- location: the location name from the heading
+- time_of_day: DAY, NIGHT, DAWN, DUSK, CONTINUOUS, etc.
+- description: a one-sentence summary of what happens in the scene
+- cast_members: array of character names who appear or speak in this scene
+- page_count: estimated page count for the scene using the screenplay standard of 180 words per page (NOT 250 — screenplay format has centered dialogue, character cues, and wide margins that reduce words per page). Count the actual words in each scene's text and divide by 180. Round to nearest eighth (0.125). A typical feature film scene with 2 pages of dialogue and action = 2.0 pages. Do NOT underestimate — a scene with substantial dialogue between multiple characters is usually at least 1.5-3 pages. Short transitional scenes are typically 0.25-0.5 pages.
+
+IMPORTANT PAGE COUNT RULES:
+- A standard feature screenplay is 90-120 pages. If your total page count is below 70, you are severely underestimating.
+- Count ALL words in the scene text including action/description paragraphs, character names, dialogue, and parentheticals.
+- 180 words = 1 screenplay page. A scene with 360 words of text = 2 pages.
+- Be thorough — include every scene, even short ones.`,
+    };
+
+    let userMessage: any;
+    if (extractedText) {
+      const words = extractedText.split(/\s+/);
+      const truncated = words.length > 25000 ? words.slice(0, 25000).join(" ") : extractedText;
+      userMessage = {
+        role: "user",
+        content: `Extract all scenes from this script:\n\n${truncated}`,
+      };
+    } else {
+      userMessage = {
+        role: "user",
+        content: [
+          { type: "text", text: "Extract all scenes from this screenplay PDF." },
+          { type: "image_url", image_url: { url: `data:application/pdf;base64,${pdfBase64}` } },
+        ],
+      };
+    }
+
+    const aiResponse = await fetch(resolveGateway().url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [systemMessage, userMessage],
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "extract_scenes",
+              description: "Return the structured list of scenes from the screenplay.",
+              parameters: {
+                type: "object",
+                properties: {
+                  scenes: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        scene_number: { type: "string" },
+                        heading: { type: "string" },
+                        int_ext: { type: "string" },
+                        location: { type: "string" },
+                        time_of_day: { type: "string" },
+                        description: { type: "string" },
+                        cast_members: { type: "array", items: { type: "string" } },
+                        page_count: { type: "number" },
+                      },
+                      required: ["scene_number", "heading", "int_ext", "location", "time_of_day", "description", "cast_members", "page_count"],
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                required: ["scenes"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "extract_scenes" } },
+      }),
+    });
+
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      console.error("AI gateway error:", aiResponse.status, errText);
+      if (aiResponse.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limited, try again shortly.", scenes: [] }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (aiResponse.status === 402) {
+        return new Response(JSON.stringify({ error: "AI credits exhausted.", scenes: [] }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ scenes: [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const aiData = await aiResponse.json();
+    let scenes: any[] = [];
+    try {
+      const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+      if (toolCall?.function?.arguments) {
+        const parsed = JSON.parse(toolCall.function.arguments);
+        scenes = parsed.scenes || [];
+      }
+    } catch (parseErr) {
+      console.error("Failed to parse AI scene response:", parseErr);
+    }
+
+    // --- Deterministic page count override ---
+    if (extractedText && scenes.length > 0) {
+      const sluglinePattern = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)/m;
+      const lines = extractedText.split("\n");
+      const sceneChunks: string[] = [];
+      let currentChunk = "";
+
+      for (const line of lines) {
+        if (sluglinePattern.test(line.trim()) && currentChunk.length > 0) {
+          sceneChunks.push(currentChunk);
+          currentChunk = "";
+        }
+        currentChunk += line + "\n";
+      }
+      if (currentChunk.trim()) sceneChunks.push(currentChunk);
+
+      if (sceneChunks.length > 0) {
+        const totalWords = extractedText.split(/\s+/).filter(Boolean).length;
+        const totalPages = Math.ceil(totalWords / 180);
+
+        if (Math.abs(sceneChunks.length - scenes.length) <= 3) {
+          for (let i = 0; i < scenes.length; i++) {
+            const chunk = sceneChunks[Math.min(i, sceneChunks.length - 1)];
+            const wordCount = chunk.split(/\s+/).filter(Boolean).length;
+            scenes[i].page_count = Math.round((wordCount / 180) * 8) / 8;
+          }
+        } else {
+          const aiTotal = scenes.reduce((sum: number, s: any) => sum + (s.page_count || 1), 0);
+          for (const scene of scenes) {
+            const ratio = (scene.page_count || 1) / aiTotal;
+            scene.page_count = Math.round((ratio * totalPages) * 8) / 8;
+          }
+        }
+        console.log(`Page count corrected: ${totalPages} pages from ${totalWords} words across ${scenes.length} scenes`);
+      }
+    }
+
+    // Save scenes to DB
+    if (scenes.length > 0) {
+      await adminClient.from("project_scenes").delete().eq("project_id", projectId);
+
+      const rows = scenes.map((s: any) => ({
+        project_id: projectId,
+        user_id: user.id,
+        scene_number: String(s.scene_number || ""),
+        heading: s.heading || "",
+        int_ext: s.int_ext || "",
+        location: s.location || "",
+        time_of_day: s.time_of_day || "",
+        description: s.description || "",
+        cast_members: s.cast_members || [],
+        page_count: s.page_count || 0,
+      }));
+
+      const { error: insertError } = await adminClient.from("project_scenes").insert(rows);
+      if (insertError) console.error("Scene insert error:", insertError);
+    }
+
+    console.log(`Extracted ${scenes.length} scenes`);
+
+    return new Response(JSON.stringify({ scenes, count: scenes.length }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("extract-scenes error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error", scenes: [] }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

@@ -1,0 +1,294 @@
+{
+  "project": {
+    "id": "proj_sender_unknown_001",
+    "title": "SENDER UNKNOWN",
+    "status": "in_development",
+    "format": "vertical_drama",
+    "created_at": "2026-04-02T12:24:00Z",
+    "ladder_stage": "format_rules",
+    "ladder_next": "character_bible"
+  },
+
+  "project_canon": {
+    "logline": "A bride-to-be receives texts from her own number that expose buried secrets about her fiancé — and herself. Each message pulls her deeper into a mystery that forces her to choose between the life she planned and the truth she's been avoiding.",
+    "premise": "Lena Cole (28) is two weeks from her wedding to Marcus Hale (32). She receives a text from her own phone number warning her not to marry him. The messages know things only she would know. Each episode reveals another secret — escalating from Marcus's deceptions to the true identity of the sender: a version of Lena herself.",
+    "tone": {
+      "primary": "tense",
+      "secondary": ["intimate", "claustrophobic"],
+      "reference_points": ["You", "Gone Girl"],
+      "visual_language": "phone screens, mirrors, close-ups"
+    },
+    "format": {
+      "type": "vertical_drama",
+      "episodes": 60,
+      "seasons": 3,
+      "episodes_per_season": 20,
+      "runtime_min": 1.5,
+      "runtime_max": 2.5,
+      "runtime_unit": "minutes",
+      "aspect_ratio": "9:16",
+      "target_platforms": ["tiktok", "reelshort", "youtube_shorts", "instagram_reels"]
+    },
+    "genre": {
+      "primary": "psychological_thriller",
+      "secondary": "romantic_suspense",
+      "per_season": {
+        "s1": "thriller",
+        "s2": "sci_fi_psychological",
+        "s3": "drama"
+      }
+    },
+    "target_audience": {
+      "demographic": "women_18_35",
+      "behavior": "mobile_first_hook_driven",
+      "affinity": ["psychological_thrillers", "romantic_suspense", "true_crime"]
+    },
+    "world_rules": [
+      {
+        "id": "wr_001",
+        "rule": "The messages always tell the truth — but never the whole truth.",
+        "enforcement": "absolute",
+        "scope": "all_seasons"
+      },
+      {
+        "id": "wr_002",
+        "rule": "Lena can reply to the sender, but responses are delayed and cryptic.",
+        "enforcement": "absolute",
+        "scope": "all_seasons"
+      },
+      {
+        "id": "wr_003",
+        "rule": "Each season shifts genre slightly: S1 thriller, S2 sci-fi/psychological, S3 drama.",
+        "enforcement": "structural",
+        "scope": "per_season"
+      },
+      {
+        "id": "wr_004",
+        "rule": "No supernatural elements. Every twist has a grounded explanation.",
+        "enforcement": "absolute",
+        "scope": "all_seasons"
+      }
+    ],
+    "characters": [
+      {
+        "id": "char_001",
+        "name": "Lena Cole",
+        "role": "protagonist",
+        "age": 28,
+        "arc": "people_pleaser → truth_seeker → self_sovereign",
+        "arc_type": "transformation",
+        "presence": "all_seasons",
+        "solo_episode_ratio": 0.4
+      },
+      {
+        "id": "char_002",
+        "name": "Marcus Hale",
+        "role": "antagonist",
+        "age": 32,
+        "occupation": "architect",
+        "arc": "charming_facade → layers_of_deception → final_reveal",
+        "arc_type": "unmasking",
+        "presence": "all_seasons",
+        "convergence_note": "Needs sympathetic dimension. Must believe he is protecting Lena, not just deceiving her."
+      },
+      {
+        "id": "char_003",
+        "name": "The Sender",
+        "role": "mystery_entity",
+        "arc": "unknown → suspected → revealed",
+        "arc_type": "revelation",
+        "true_identity": "future_or_alternate_lena",
+        "presence": "all_seasons",
+        "manifestation": "text_messages_only_s1_s2"
+      },
+      {
+        "id": "char_004",
+        "name": "Dani Cole",
+        "role": "supporting",
+        "relationship": "sister_of_lena",
+        "arc": "skeptic → ally → has_own_secret",
+        "arc_type": "complication",
+        "presence": "recurring"
+      },
+      {
+        "id": "char_005",
+        "name": "Dr. Asha Voss",
+        "role": "supporting",
+        "relationship": "lenas_therapist",
+        "arc": "neutral → compromised → key_to_twist",
+        "arc_type": "pivot",
+        "presence": "recurring"
+      }
+    ],
+    "twist_architecture": {
+      "s1": {
+        "episodes": "1-20",
+        "focus": "the_messages",
+        "structure": "each_episode_one_new_revelation_about_marcus"
+      },
+      "s2": {
+        "episodes": "21-40",
+        "focus": "the_sender",
+        "structure": "identity_investigation_parallel_timeline_or_ai_model"
+      },
+      "s3": {
+        "episodes": "41-60",
+        "focus": "the_choice",
+        "structure": "convergence_of_truths_final_decision"
+      }
+    },
+    "convergence_scores": {
+      "gp": {
+        "score": 8.2,
+        "market_alignment": "high",
+        "commercial_viability": "strong",
+        "platform_fit": "native_vertical"
+      },
+      "ci": {
+        "score": 7.8,
+        "narrative_strength": "strong_central_mystery",
+        "character_truth": "grounded_arc_marcus_needs_depth",
+        "emotional_impact": "high_intimacy"
+      },
+      "improvement_targets": [
+        {
+          "area": "character",
+          "target": "char_002",
+          "action": "add_sympathetic_dimension",
+          "projected_ci_delta": 0.5
+        },
+        {
+          "area": "narrative",
+          "target": "s2_twist",
+          "action": "ground_in_technology_not_time_travel",
+          "projected_ci_delta": 0.3
+        },
+        {
+          "area": "format",
+          "target": "interactivity",
+          "action": "choose_your_response_spinoff",
+          "projected_gp_delta": 0.3
+        }
+      ]
+    }
+  },
+
+  "project_documents": [
+    {
+      "doc_id": "doc_001",
+      "doc_type": "concept_brief",
+      "project_id": "proj_sender_unknown_001",
+      "version": "1.0",
+      "status": "complete",
+      "created_at": "2026-04-02T12:24:00Z",
+      "ladder_stage": 2,
+      "canonical_fields_extracted": [
+        "logline",
+        "premise",
+        "tone",
+        "format",
+        "genre",
+        "target_audience",
+        "world_rules",
+        "characters",
+        "twist_architecture",
+        "convergence_scores"
+      ]
+    },
+    {
+      "doc_id": "doc_002",
+      "doc_type": "format_rules",
+      "project_id": "proj_sender_unknown_001",
+      "version": "1.0",
+      "status": "complete",
+      "created_at": "2026-04-02T12:33:00Z",
+      "ladder_stage": 3,
+      "canonical_fields_extracted": [
+        "episode_structure",
+        "vertical_grammar",
+        "text_system",
+        "hook_engine",
+        "scroll_mechanics",
+        "sound_design_rules",
+        "production_constraints"
+      ],
+      "production_rules": {
+        "runtime_bands": {
+          "micro": {"min": 1.5, "max": 1.75},
+          "standard": {"min": 1.75, "max": 2.25},
+          "extended": {"min": 2.25, "max": 2.5}
+        },
+        "hook_timing_seconds": 2,
+        "max_locations_total": 12,
+        "max_locations_per_episode": 2,
+        "max_cast_per_episode": 2,
+        "total_recurring_cast": 5,
+        "solo_protagonist_minimum": 0.4,
+        "phone_ui_ratio": {"min": 0.35, "max": 0.45},
+        "face_camera_ratio": {"min": 0.30, "max": 0.40},
+        "environmental_ratio": {"min": 0.10, "max": 0.20},
+        "mute_compatible": true,
+        "max_scenes_per_episode": 3,
+        "hook_patterns": 5,
+        "hook_max_consecutive_same": 3,
+        "cliff_types": 4
+      }
+    }
+  ],
+
+  "document_dependencies": {
+    "doc_001": {
+      "depends_on": [],
+      "required_by": ["doc_002", "doc_003", "doc_004", "doc_005", "doc_006", "doc_007"],
+      "canonical_feed": "project_canon"
+    },
+    "doc_002": {
+      "depends_on": ["doc_001"],
+      "required_by": ["doc_005", "doc_006", "doc_007"],
+      "canonical_feed": "production_rules"
+    },
+    "doc_003": {
+      "doc_type": "character_bible",
+      "status": "pending",
+      "depends_on": ["doc_001"],
+      "required_by": ["doc_005", "doc_006", "doc_007"],
+      "canonical_feed": "characters"
+    },
+    "doc_004": {
+      "doc_type": "story_outline",
+      "status": "pending",
+      "depends_on": ["doc_001", "doc_003"],
+      "required_by": ["doc_005", "doc_006"],
+      "canonical_feed": "narrative_structure"
+    },
+    "doc_005": {
+      "doc_type": "beat_sheet",
+      "status": "pending",
+      "depends_on": ["doc_001", "doc_002", "doc_003", "doc_004"],
+      "required_by": ["doc_006", "doc_007"],
+      "canonical_feed": "episode_beats"
+    },
+    "doc_006": {
+      "doc_type": "series_bible",
+      "status": "pending",
+      "depends_on": ["doc_001", "doc_002", "doc_003", "doc_004", "doc_005"],
+      "required_by": ["doc_007"],
+      "canonical_feed": "series_canon"
+    },
+    "doc_007": {
+      "doc_type": "script",
+      "status": "pending",
+      "depends_on": ["doc_001", "doc_002", "doc_003", "doc_004", "doc_005", "doc_006"],
+      "required_by": [],
+      "canonical_feed": "final_output"
+    }
+  },
+
+  "ladder_state": {
+    "current_stage": "format_rules",
+    "completed": ["idea", "concept_brief", "format_rules"],
+    "next": "character_bible",
+    "blocked_by": [],
+    "auto_advance": true
+  }
+}

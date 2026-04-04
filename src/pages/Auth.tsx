@@ -1,0 +1,246 @@
+import { useState } from 'react';
+import { useNavigate, Navigate, useSearchParams, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { ArrowLeft, Play, Shield, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import authBg from '@/assets/auth-bg.jpg';
+import iffyLogo from '@/assets/iffy-logo-v3.png';
+
+type AuthView = 'sign-in' | 'sign-up' | 'forgot-password';
+
+export default function Auth() {
+  const { user, loading, signIn, signUp } = useAuth();
+  const [searchParams] = useSearchParams();
+  const redirectTo = searchParams.get('redirect');
+  const [view, setView] = useState<AuthView>('sign-in');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <img src={iffyLogo} alt="IFFY" className="h-10 w-10 animate-pulse" />
+      </div>
+    );
+  }
+
+  if (user) {
+    return <Navigate to={redirectTo || '/dashboard'} replace />;
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setSubmitting(true);
+
+    try {
+      if (view === 'forgot-password') {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/settings`,
+        });
+        if (error) {
+          setError(error.message);
+        } else {
+          setMessage('Check your email for a password reset link.');
+        }
+      } else if (view === 'sign-up') {
+        const { error } = await signUp(email, password);
+        if (error) {
+          setError(error.message);
+        } else {
+          setMessage('Check your email for a confirmation link.');
+        }
+      } else {
+        const { error } = await signIn(email, password);
+        if (error) {
+          setError(error.message);
+        }
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const switchView = (v: AuthView) => {
+    setView(v);
+    setError('');
+    setMessage('');
+  };
+
+  const titles: Record<AuthView, string> = {
+    'sign-in': 'Welcome back',
+    'sign-up': 'Create your account',
+    'forgot-password': 'Reset your password',
+  };
+
+  const subtitles: Record<AuthView, string> = {
+    'sign-in': 'From inception to legacy.',
+    'sign-up': 'From inception to legacy.',
+    'forgot-password': 'Enter your email and we\'ll send you a reset link.',
+  };
+
+  return (
+    <div className="flex min-h-screen bg-background">
+      {/* Left: Form */}
+      <div className="flex flex-1 flex-col items-center justify-center px-6 py-12 lg:px-12">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="w-full max-w-sm"
+        >
+          <div className="flex items-center gap-3 mb-12">
+            <img src={iffyLogo} alt="IFFY logo" className="h-10 w-10 rounded-lg ring-1 ring-border/30" />
+            <div className="flex flex-col leading-none">
+              <span className="font-display font-bold text-2xl tracking-tight text-foreground">IFFY</span>
+              <span className="text-[9px] text-muted-foreground/60 tracking-[0.15em] uppercase">Film Intelligence</span>
+            </div>
+          </div>
+
+          {view === 'forgot-password' && (
+            <button
+              onClick={() => switchView('sign-in')}
+              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4 transition-colors"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to sign in
+            </button>
+          )}
+
+          {view !== 'sign-in' && (
+            <>
+              <h1 className="text-2xl font-display font-semibold text-foreground mb-1">
+                {titles[view]}
+              </h1>
+              <p className="text-sm text-muted-foreground mb-8">
+                {subtitles[view]}
+              </p>
+            </>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email" className="text-sm text-foreground">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                required
+                className="bg-muted border-border/50 focus:border-primary"
+              />
+            </div>
+            {view !== 'forgot-password' && (
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-sm text-foreground">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    minLength={6}
+                    className="bg-muted border-border/50 focus:border-primary pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+            {message && (
+              <p className="text-sm text-primary">{message}</p>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={submitting}
+            >
+              {submitting
+                ? 'Please wait…'
+                : view === 'sign-up'
+                ? 'Create Account'
+                : view === 'forgot-password'
+                ? 'Send Reset Link'
+                : 'Sign In'}
+            </Button>
+          </form>
+
+          {view === 'sign-in' && (
+            <button
+              type="button"
+              onClick={() => switchView('forgot-password')}
+              className="mt-3 block w-full text-center text-sm text-muted-foreground hover:text-primary transition-colors"
+            >
+              Forgot your password?
+            </button>
+          )}
+
+          {view !== 'forgot-password' && (
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              {view === 'sign-up' ? 'Already have an account?' : "Don't have an account?"}{' '}
+              <button
+                type="button"
+                onClick={() => switchView(view === 'sign-up' ? 'sign-in' : 'sign-up')}
+                className="text-primary hover:underline font-medium"
+              >
+                {view === 'sign-up' ? 'Sign in' : 'Create one'}
+              </button>
+            </p>
+          )}
+
+          <div className="mt-6 flex flex-col gap-2 lg:hidden">
+            <Link to="/" className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-primary transition-colors group">
+              <span className="h-8 w-8 rounded-full bg-primary/10 group-hover:bg-primary/20 flex items-center justify-center transition-colors">
+                <Shield className="h-3.5 w-3.5 text-primary" />
+              </span>
+              Back to IFFY
+            </Link>
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Right: Visual */}
+      <div className="hidden lg:flex flex-1 items-center justify-center relative overflow-hidden">
+        <img
+          src={authBg}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover scale-105"
+        />
+        <div className="absolute inset-0 bg-background/60 backdrop-blur-sm" />
+        <div className="relative z-10 max-w-md px-10 text-center">
+          <p className="text-[10px] font-display uppercase tracking-[0.25em] text-primary/80 mb-4">Intelligent Film Flow & Yield</p>
+          <h2 className="text-2xl font-display font-bold text-foreground mb-3 leading-snug">
+            From inception to legacy.
+          </h2>
+          <p className="text-muted-foreground text-base leading-relaxed">
+            IFFY guides film and TV projects from development through production to monetisation — systematically, at every stage.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

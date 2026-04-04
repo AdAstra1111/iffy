@@ -1,0 +1,11 @@
+{
+  "graph": {
+    "doc_001": {"depends_on": []},
+    "doc_002": {"depends_on": ["doc_001"]},
+    "doc_003": {"depends_on": ["doc_001"]},
+    "doc_004": {"depends_on": ["doc_001","doc_003"]},
+    "doc_005": {"depends_on": ["doc_001","doc_002","doc_003","doc_004"]},
+    "doc_006": {"depends_on": ["doc_001","doc_002","doc_003","doc_004","doc_005"]},
+    "doc_007": {"depends_on": ["doc_001","doc_002","doc_003","doc_004","doc_005","doc_006"]}
+  }
+}

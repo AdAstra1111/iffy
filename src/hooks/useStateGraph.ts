@@ -1,0 +1,797 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+// ---- Types ----
+
+export type ProjectionAssumptions = {
+  inflation_rate: number;
+  schedule_slip_risk: number;
+  platform_appetite_decay: number;
+};
+
+export interface CreativeState {
+  format: string;
+  runtime_minutes: number;
+  episode_count: number;
+  structural_density: number;
+  character_density: number;
+  hook_intensity: number;
+  tone_classification: string;
+  behaviour_mode: string;
+}
+
+export interface ExecutionState {
+  setup_count: number;
+  coverage_density: number;
+  movement_intensity: number;
+  lighting_complexity: number;
+  night_exterior_ratio: number;
+  vfx_stunt_density: number;
+  editorial_fragility: number;
+  equipment_load_multiplier: number;
+}
+
+export interface ProductionState {
+  estimated_shoot_days: number;
+  crew_intensity_band: string;
+  schedule_compression_risk: number;
+  location_clustering: number;
+  weather_exposure: number;
+  overtime_probability: number;
+}
+
+export interface FinanceState {
+  budget_band: string;
+  budget_estimate: number;
+  budget_elasticity: number;
+  drift_sensitivity: number;
+  insurance_load_proxy: number;
+  capital_stack_stress: number;
+}
+
+export interface RevenueState {
+  roi_probability_bands: { low: number; mid: number; high: number };
+  downside_exposure: number;
+  upside_potential: number;
+  platform_appetite_strength: number;
+  comparable_alignment_delta: number;
+  confidence_score: number;
+}
+
+export interface ConfidenceBands {
+  budget: { low: number; mid: number; high: number };
+  shoot_days: { low: number; mid: number; high: number };
+  confidence: number;
+}
+
+export interface ProjectStateGraph {
+  id: string;
+  project_id: string;
+  creative_state: CreativeState;
+  execution_state: ExecutionState;
+  production_state: ProductionState;
+  finance_state: FinanceState;
+  revenue_state: RevenueState;
+  confidence_bands: ConfidenceBands;
+  assumption_multipliers: any;
+  last_cascade_at: string | null;
+  active_scenario_id: string | null;
+  active_scenario_set_at: string | null;
+  active_scenario_set_by: string | null;
+}
+
+export interface ProjectScenario {
+  id: string;
+  project_id: string;
+  name: string;
+  scenario_type: string;
+  is_active: boolean;
+  is_archived: boolean;
+  pinned: boolean;
+  description: string | null;
+  state_overrides: any;
+  computed_state: any;
+  delta_vs_baseline: any;
+  coherence_flags: string[];
+  created_at: string;
+  rank_score: number | null;
+  rank_breakdown: any;
+  ranked_at: string | null;
+  is_recommended: boolean;
+  is_locked: boolean;
+  protected_paths: string[];
+  locked_at: string | null;
+  locked_by: string | null;
+  governance: any;
+  merge_policy: any;
+}
+
+export interface MergeRiskReport {
+  risk_score: number;
+  risk_level: string;
+  conflicts: { type: string; message: string; paths: string[] }[];
+  affected_domains: string[];
+  recommended_actions: string[];
+  requires_approval: boolean;
+  approval_reason?: string;
+  protected_hits: string[];
+  critical_hits: string[];
+}
+
+export interface GovernanceScanResult {
+  scenarioId: string;
+  suggested_protected_paths: string[];
+  critical_paths: string[];
+  risk_hotspots: string[];
+  updated: boolean;
+}
+
+export interface DriftAlert {
+  id: string;
+  alert_type: string;
+  severity: string;
+  layer: string;
+  metric_key: string;
+  current_value: number | null;
+  threshold: number | null;
+  message: string;
+  acknowledged: boolean;
+  scenario_id: string | null;
+  created_at: string;
+}
+
+export interface ScenarioProjection {
+  id: string;
+  project_id: string;
+  scenario_id: string;
+  months: number;
+  assumptions: any;
+  series: any[];
+  projection_risk_score: number;
+  summary: string[];
+  summary_metrics?: {
+    irr?: number | null;
+    npv?: number | null;
+    payback_months?: number | null;
+    schedule_months?: number | null;
+    budget?: number | null;
+    projection_risk_score?: number | null;
+    composite_score?: number | null;
+    start_budget?: number | null;
+    end_confidence?: number | null;
+    end_downside?: number | null;
+    end_stress?: number | null;
+  } | null;
+  created_at: string;
+}
+
+// Phase 4.1 types
+
+export interface ScenarioScoreRow {
+  id: string;
+  project_id: string;
+  scenario_id: string;
+  as_of: string;
+  metrics: any;
+  scores: any;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ScenarioRecommendation {
+  id: string;
+  project_id: string;
+  recommended_scenario_id: string;
+  confidence: number;
+  reasons: string[];
+  tradeoffs: any;
+  risk_flags: string[];
+  created_at: string;
+}
+
+// Phase 4.2 types
+
+export interface ScenarioStressTest {
+  id: string;
+  project_id: string;
+  scenario_id: string;
+  base_projection_id: string | null;
+  grid: any;
+  results: any[];
+  fragility_score: number;
+  volatility_index: number;
+  breakpoints: any;
+  created_at: string;
+}
+
+// ---- Hooks ----
+
+const MAX_PINNED = 4;
+
+export function useStateGraph(projectId: string | undefined) {
+  const queryClient = useQueryClient();
+
+  const { data: stateGraph, isLoading: graphLoading } = useQuery({
+    queryKey: ['state-graph', projectId],
+    queryFn: async () => {
+      if (!projectId) return null;
+      const { data, error } = await supabase
+        .from('project_state_graphs')
+        .select('*')
+        .eq('project_id', projectId)
+        .maybeSingle();
+      if (error) throw error;
+      return data as unknown as ProjectStateGraph | null;
+    },
+    enabled: !!projectId,
+  });
+
+  const { data: scenarios = [], isLoading: scenariosLoading } = useQuery({
+    queryKey: ['scenarios', projectId],
+    queryFn: async () => {
+      if (!projectId) return [];
+      const { data, error } = await supabase
+        .from('project_scenarios')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('is_archived', false)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []) as unknown as ProjectScenario[];
+    },
+    enabled: !!projectId,
+  });
+
+  // Drift alerts filtered to the active scenario only.
+  const activeScenarioIdForAlerts = stateGraph?.active_scenario_id ?? null;
+
+  const { data: alerts = [] } = useQuery({
+    queryKey: ['drift-alerts', projectId, activeScenarioIdForAlerts],
+    queryFn: async () => {
+      if (!projectId) return [];
+      let query = supabase
+        .from('drift_alerts')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('acknowledged', false);
+
+      if (activeScenarioIdForAlerts) {
+        query = query.eq('scenario_id', activeScenarioIdForAlerts);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (error) throw error;
+      return (data || []) as DriftAlert[];
+    },
+    enabled: !!projectId,
+  });
+
+  // Phase 4.1: latest recommendation
+  const { data: recommendation = null, isLoading: recommendationLoading } = useQuery({
+    queryKey: ['scenario-recommendation', projectId],
+    queryFn: async () => {
+      if (!projectId) return null;
+      const { data, error } = await supabase
+        .from('scenario_recommendations')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as unknown as ScenarioRecommendation | null;
+    },
+    enabled: !!projectId,
+  });
+
+  const invalidateAll = (extraSourceId?: string | null, extraTargetId?: string | null) => {
+    queryClient.invalidateQueries({ queryKey: ['state-graph', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['scenarios', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['drift-alerts', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['projection', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['scenario-recommendation', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['scenario-scores', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['scenario-stress', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['decision-events', projectId] });
+    queryClient.invalidateQueries({ queryKey: ['merge-approvals', projectId] });
+    if (extraSourceId !== undefined || extraTargetId !== undefined) {
+      queryClient.invalidateQueries({ queryKey: ['merge-approval-status', projectId] });
+    }
+  };
+
+  const initialize = useMutation({
+    mutationFn: async (creativeState?: Partial<any>) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'initialize', projectId, creativeState },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => { invalidateAll(); toast.success('State graph initialized'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const cascade = useMutation({
+    mutationFn: async (params: { overrides: any; scenarioId?: string }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'cascade', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => { invalidateAll(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const createScenario = useMutation({
+    mutationFn: async (params: { name: string; description?: string; overrides?: any; scenario_type?: string }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'create_scenario', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => { invalidateAll(); toast.success('Scenario created'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const generateSystemScenarios = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'generate_system_scenarios', projectId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => { invalidateAll(); toast.success('Strategic scenarios generated'); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const setActiveScenario = useMutation({
+    mutationFn: async (targetScenarioId: string) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'set_active_scenario', projectId, scenarioId: targetScenarioId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Active scenario updated');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const rankScenarios = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'rank_scenarios', projectId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Scenarios ranked');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const acknowledgeAlert = useMutation({
+    mutationFn: async (alertId: string) => {
+      const { error } = await supabase
+        .from('drift_alerts')
+        .update({ acknowledged: true, acknowledged_at: new Date().toISOString() })
+        .eq('id', alertId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['drift-alerts', projectId] }),
+  });
+
+  const togglePin = useMutation({
+    mutationFn: async (scenarioId: string) => {
+      const target = scenarios.find(s => s.id === scenarioId);
+      if (!target) throw new Error('Scenario not found');
+
+      if (!target.pinned) {
+        const pinnedCount = scenarios.filter(s => s.pinned).length;
+        if (pinnedCount >= MAX_PINNED) {
+          throw new Error(`Maximum ${MAX_PINNED} pinned scenarios allowed`);
+        }
+      }
+
+      const { error } = await supabase
+        .from('project_scenarios')
+        .update({ pinned: !target.pinned })
+        .eq('id', scenarioId);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scenarios', projectId] }),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const archiveScenario = useMutation({
+    mutationFn: async (scenarioId: string) => {
+      const { error } = await supabase
+        .from('project_scenarios')
+        .update({ is_archived: true, pinned: false })
+        .eq('id', scenarioId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scenarios', projectId] });
+      toast.success('Scenario archived');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 3: Optimizer
+  const optimizeScenario = useMutation({
+    mutationFn: async (params: { scenarioId?: string; objective?: string; maxIterations?: number; horizonMonths?: number; searchMode?: string; lockKeys?: string[]; seed?: string }) => {
+      const { searchMode, ...rest } = params;
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'optimize_scenario', projectId, ...rest, ...(searchMode ? { search: searchMode } : {}) },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const applyOptimizedOverrides = useMutation({
+    mutationFn: async (params: { scenarioId: string; overrides: any }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'apply_optimized_overrides', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Optimized overrides applied');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 3: Forward Projection
+  const projectForward = useMutation({
+    mutationFn: async (params: { scenarioId?: string; months?: number; assumptions?: ProjectionAssumptions }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'project_forward', projectId, scenarioId: params.scenarioId, months: params.months, assumptions: params.assumptions },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Projection complete');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 4.2: Stress Testing
+  const { data: latestStressTest = null } = useQuery({
+    queryKey: ['scenario-stress', projectId],
+    queryFn: async () => {
+      if (!projectId) return null;
+      const { data, error } = await supabase
+        .from('scenario_stress_tests')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as unknown as ScenarioStressTest | null;
+    },
+    enabled: !!projectId,
+  });
+
+  const runStressTest = useMutation({
+    mutationFn: async (params: { scenarioId: string; months?: number; sweeps?: any }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'stress_test_scenario', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      queryClient.invalidateQueries({ queryKey: ['scenario-stress', projectId] });
+      toast.success('Stress test complete');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 4.8: Branch from decision event
+  const branchFromDecisionEvent = useMutation({
+    mutationFn: async (params: { eventId: string; nameOverride?: string }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'branch_from_decision_event', projectId, eventId: params.eventId, nameOverride: params.nameOverride },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Branch scenario created');
+    },
+  });
+
+  // Phase 4.9: Diff scenarios
+  const diffScenarios = useMutation({
+    mutationFn: async (params: { aScenarioId: string; bScenarioId: string }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'diff_scenarios', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 4.9: Merge scenario overrides
+  const mergeScenarioOverrides = useMutation({
+    mutationFn: async (params: { sourceScenarioId: string; targetScenarioId: string; paths?: string[]; strategy?: string; force?: boolean }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'merge_scenario_overrides', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Scenario overrides merged');
+    },
+    onError: (e: any) => {
+      const msg = e.message ?? '';
+      if (msg.includes('requires approval')) {
+        toast.error('Approval required (or expired). Request approval again or force merge.');
+      } else {
+        toast.error(msg);
+      }
+    },
+  });
+
+  // Phase 5.0: Set scenario lock
+  const setScenarioLock = useMutation({
+    mutationFn: async (params: { scenarioId: string; isLocked: boolean; protectedPaths?: string[] }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'set_scenario_lock', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Scenario lock updated');
+    },
+  });
+
+  // Phase 4.1: recompute recommendation
+  const recomputeRecommendation = useMutation({
+    mutationFn: async (params?: { baselineScenarioId?: string; activeScenarioId?: string }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: {
+          action: 'recommend_scenario',
+          projectId,
+          ...(params?.baselineScenarioId ? { baselineScenarioId: params.baselineScenarioId } : {}),
+          ...(params?.activeScenarioId ? { activeScenarioId: params.activeScenarioId } : {}),
+        },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Recommendation updated');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 5.2: Governance scan
+  const scanGovernance = useMutation({
+    mutationFn: async (params: { scenarioId: string; apply?: boolean }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'scan_override_governance', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data as GovernanceScanResult;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Governance scan complete');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 5.2: Evaluate merge risk
+  const evaluateMergeRisk = useMutation({
+    mutationFn: async (params: { sourceScenarioId: string; targetScenarioId: string; paths?: string[]; strategy?: string; force?: boolean }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'evaluate_merge_risk', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data as MergeRiskReport;
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 5.4: Request merge approval
+  const requestMergeApproval = useMutation({
+    mutationFn: async (params: { sourceScenarioId?: string; targetScenarioId?: string; scenarioId?: string; riskReport?: any; payload?: any }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'request_merge_approval', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Approval requested');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 5.4: Decide merge approval
+  const decideMergeApproval = useMutation({
+    mutationFn: async (params: { sourceScenarioId?: string; targetScenarioId: string; approved: boolean; note?: string; intent?: string; apply?: { force?: boolean } }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'decide_merge_approval', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (_data, vars) => {
+      invalidateAll();
+      toast.success(vars.approved ? 'Merge approved' : 'Merge rejected');
+    },
+    onError: (e: any) => {
+      const msg = e.message ?? '';
+      if (msg.includes('Not authorized')) {
+        toast.error(`You're not authorized to approve this merge. ${msg}`);
+      } else {
+        toast.error(msg);
+      }
+    },
+  });
+
+  // Phase 5.11: Decide + apply in one call
+  const decideMergeApprovalAndApply = useMutation({
+    mutationFn: async (params: { sourceScenarioId?: string | null; targetScenarioId: string; note?: string; apply?: { force?: boolean } }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'decide_merge_approval_and_apply', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: (data) => {
+      invalidateAll();
+      if (data?.applied) {
+        toast.success('Merge approved and applied');
+      } else {
+        toast.success('Merge approved (apply pending)');
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Phase 5.8: Apply approved merge
+  const applyApprovedMerge = useMutation({
+    mutationFn: async (params: { sourceScenarioId?: string | null; targetScenarioId: string; force?: boolean }) => {
+      const { data, error } = await supabase.functions.invoke('simulation-engine', {
+        body: { action: 'apply_approved_merge', projectId, ...params },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        const err: any = new Error(data.error);
+        err.code = data.code;
+        err.domain = data.domain;
+        err.protected_hits = data.protected_hits;
+        err.is_locked = data.is_locked;
+        throw err;
+      }
+      return data;
+    },
+    onSuccess: () => {
+      invalidateAll();
+      toast.success('Approved merge applied');
+    },
+    onError: (e: any) => {
+      const code = e.code ?? '';
+      if (code === 'force_not_authorized') {
+        toast.error('Not authorized to force apply. Only owners/admins can force.');
+      } else if (code === 'protected_paths' || code === 'locked') {
+        // Don't toast — let UI handle force confirm
+      } else if (code === 'approval_pending') {
+        toast.error('Approval is still pending — not yet decided.');
+      } else if (code === 'approval_invalid') {
+        toast.error('Approval required or expired. Request approval again.');
+      } else {
+        toast.error(e.message ?? 'Apply failed');
+      }
+    },
+  });
+
+  // Phase 5.9: Get merge approval status
+  const getMergeApprovalStatus = async (sourceScenarioId?: string | null, targetScenarioId?: string) => {
+    if (!projectId || !targetScenarioId) return null;
+    const { data, error } = await supabase.functions.invoke('simulation-engine', {
+      body: { action: 'get_merge_approval_status', projectId, sourceScenarioId, targetScenarioId },
+    });
+    if (error) return null;
+    if (data?.error) return null;
+    return data;
+  };
+
+  const baseline = scenarios.find(s => s.scenario_type === 'baseline');
+  const activeScenario = scenarios.find(s => s.is_active);
+  const recommendedScenario = scenarios.find(s => s.is_recommended);
+  const fallbackRecommended = !recommendedScenario
+    ? scenarios
+        .filter(s => s.scenario_type !== 'baseline' && s.rank_score != null)
+        .sort((a, b) => (b.rank_score ?? 0) - (a.rank_score ?? 0))[0]
+    : undefined;
+  const validRecommended = recommendedScenario ?? fallbackRecommended ?? undefined;
+
+  return {
+    stateGraph,
+    scenarios,
+    alerts,
+    recommendation,
+    latestStressTest,
+    isLoading: graphLoading || scenariosLoading || recommendationLoading,
+    initialize,
+    cascade,
+    createScenario,
+    generateSystemScenarios,
+    setActiveScenario,
+    rankScenarios,
+    acknowledgeAlert,
+    togglePin,
+    archiveScenario,
+    optimizeScenario,
+    applyOptimizedOverrides,
+    projectForward,
+    recomputeRecommendation,
+    runStressTest,
+    branchFromDecisionEvent,
+    diffScenarios,
+    mergeScenarioOverrides,
+    setScenarioLock,
+    scanGovernance,
+    evaluateMergeRisk,
+    requestMergeApproval,
+    decideMergeApproval,
+    decideMergeApprovalAndApply,
+    applyApprovedMerge,
+    getMergeApprovalStatus,
+    baseline,
+    activeScenario,
+    recommendedScenario: validRecommended,
+  };
+}

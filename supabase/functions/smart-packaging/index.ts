@@ -1,0 +1,194 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3";
+import { buildGuardrailBlock } from "../_shared/guardrails.ts";
+import { resolveGateway } from "../_shared/llm.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    // Auth check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authError } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const { projectTitle, format, genres, budgetRange, tone, assignedLane, excludeNames, replacementFor, maxSuggestions, targetCharacter, mode, targetDepartment, customBrief } = await req.json();
+    const isCrew = mode === 'crew';
+    const _gw = resolveGateway();
+    const LOVABLE_API_KEY = _gw.apiKey;
+    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+
+    // Production type conditioning
+    const FORMAT_LABELS: Record<string, string> = {
+      film: 'Feature Film', 'tv-series': 'TV Series', documentary: 'Documentary Feature',
+      'documentary-series': 'Documentary Series', commercial: 'Commercial / Advert',
+      'branded-content': 'Branded Content', 'short-film': 'Short Film',
+      'music-video': 'Music Video', 'proof-of-concept': 'Proof of Concept',
+      'digital-series': 'Digital / Social Series', hybrid: 'Hybrid Project',
+    };
+    const formatLabel = FORMAT_LABELS[format] || 'Film';
+    const isCommercialFormat = ['commercial', 'branded-content', 'music-video'].includes(format);
+    const isDocFormat = ['documentary', 'documentary-series'].includes(format);
+
+    const count = maxSuggestions || 8;
+    const excludeClause = excludeNames?.length
+      ? `\n\nIMPORTANT: Do NOT suggest these names (already passed on): ${excludeNames.join(', ')}`
+      : '';
+    const replacementClause = replacementFor
+      ? `\n\nThis is a REPLACEMENT request. The producer passed on "${replacementFor}". Suggest someone who fills a similar role/function but is a different talent.`
+      : '';
+    const genderHint = (targetCharacter?.gender && targetCharacter.gender !== 'unknown')
+      ? ` This character is ${targetCharacter.gender}. Suggest ONLY ${targetCharacter.gender} actors.`
+      : '';
+    const characterClause = (targetCharacter && !isCrew)
+      ? `\n\nTARGET ROLE: The producer is specifically casting for the character "${targetCharacter.name}"${targetCharacter.description ? ` — ${targetCharacter.description}` : ''}${targetCharacter.scene_count ? ` (appears in ${targetCharacter.scene_count} scenes, ${targetCharacter.scene_count > 15 ? 'LEAD' : targetCharacter.scene_count > 5 ? 'SUPPORTING LEAD' : 'SUPPORTING'} role)` : ''}.${genderHint} Tailor ALL suggestions to ACTORS ONLY who could convincingly play this specific character. Do NOT suggest directors or crew — only actors. Consider age, physicality, acting range, and prior roles that demonstrate suitability.`
+      : '';
+    const departmentClause = (isCrew && targetDepartment)
+      ? `\n\nTARGET DEPARTMENT: The producer is specifically looking for a "${targetDepartment}". Suggest ONLY people who work as ${targetDepartment}s. Do NOT suggest people from other departments.`
+      : '';
+
+    // Format-specific packaging context
+    const formatPackagingContext = isCommercialFormat
+      ? `\n\nPRODUCTION TYPE CONTEXT: This is a ${formatLabel}. Focus on directors with commercial/branded reel, DoPs known for high-end commercial work, and talent with brand endorsement track records. Do NOT suggest packaging strategies meant for narrative features or TV series.`
+      : isDocFormat
+      ? `\n\nPRODUCTION TYPE CONTEXT: This is a ${formatLabel}. Focus on documentary-specialist directors, cinematographers with vérité/observational experience, and editors known for non-fiction storytelling. Do NOT suggest narrative feature talent.`
+      : `\n\nPRODUCTION TYPE CONTEXT: This is a ${formatLabel}.`;
+
+    const crewPrompt = isCrew
+      ? `You are an expert film/TV crew packaging strategist. Given a project, suggest ${count} specific ${targetDepartment ? targetDepartment + 's' : 'department heads (HODs) and key crew members'} that would maximize its production value and market credibility.`
+      : `You are an expert film/TV packaging strategist. Given a project, suggest ${count} specific cast members and/or directors that would maximize its financeability and market appeal.`;
+
+    const crewFields = isCrew
+      ? `For each suggestion provide:
+- name: Full name of the crew member
+- role: Their department/position (e.g. "Director of Photography", "Production Designer", "Composer", "Editor", "VFX Supervisor")
+- rationale: Why this person fits this project (2-3 sentences)
+- market_value: "High", "Medium-High", "Medium" based on reputation and demand
+- availability_window: Estimated availability like "2025-2026" or "Available"
+
+Focus on crew that:
+1. Has relevant genre/format experience
+2. Would add production credibility and attract talent
+3. Is realistically within the budget range
+4. Has a track record that buyers/financiers recognise`
+      : `For each suggestion provide:
+- name: Full name of the talent
+- role: "Lead Actor", "Supporting Actor", "Director", etc.
+- rationale: Why this person fits this project (2-3 sentences)
+- market_value: "High", "Medium-High", "Medium" based on current market standing
+- availability_window: Estimated availability like "2025-2026" or "Available"
+
+Focus on talent that:
+1. Matches the budget range realistically
+2. Has genre relevance
+3. Would unlock financing or pre-sales in key territories
+4. Is currently in demand or trending upward`;
+
+    const prompt = `${crewPrompt}
+
+Project: "${projectTitle}"
+Format: ${formatLabel}
+Genres: ${genres?.join(', ')}
+Budget: ${budgetRange}
+Tone: ${tone}
+Lane: ${assignedLane || 'unclassified'}${formatPackagingContext}${characterClause}${departmentClause}${excludeClause}${replacementClause}${customBrief ? `\n\nPRODUCER BRIEF: The producer has given the following specific instructions — follow them closely:\n"${String(customBrief).slice(0, 500)}"` : ''}
+
+${crewFields}`;
+
+    const guardrails = buildGuardrailBlock({ productionType: format, engineName: "smart-packaging" });
+    console.log(`[smart-packaging] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
+    const systemMsg = (isCrew ? "You are a film industry crew packaging expert." : "You are a film industry packaging expert.") + "\n" + guardrails.textBlock;
+    const response = await fetch(_gw.url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [
+          { role: "system", content: systemMsg },
+          { role: "user", content: prompt },
+        ],
+        tools: [{
+          type: "function",
+          function: {
+            name: "suggest_packaging",
+            description: "Return packaging suggestions for the project.",
+            parameters: {
+              type: "object",
+              properties: {
+                suggestions: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      name: { type: "string" },
+                      role: { type: "string" },
+                      rationale: { type: "string" },
+                      market_value: { type: "string" },
+                      availability_window: { type: "string" },
+                    },
+                    required: ["name", "role", "rationale", "market_value", "availability_window"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["suggestions"],
+              additionalProperties: false,
+            },
+          },
+        }],
+        tool_choice: { type: "function", function: { name: "suggest_packaging" } },
+      }),
+    });
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        return new Response(JSON.stringify({ error: "Rate limited, please try again later." }), {
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ error: "Credits required." }), {
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const t = await response.text();
+      console.error("AI error:", response.status, t);
+      throw new Error("AI gateway error");
+    }
+
+    const result = await response.json();
+    const toolCall = result.choices?.[0]?.message?.tool_calls?.[0];
+    if (!toolCall) throw new Error("No tool call in response");
+
+    const parsed = JSON.parse(toolCall.function.arguments);
+
+    return new Response(JSON.stringify(parsed), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("smart-packaging error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

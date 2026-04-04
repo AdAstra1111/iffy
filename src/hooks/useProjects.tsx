@@ -1,0 +1,365 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import type { Json } from '@/integrations/supabase/types';
+import { Project, ProjectInput, ProjectDocument } from '@/lib/types';
+import { setProjectModality, type ProductionModality } from '@/config/productionModality';
+import { setAnimationMeta, type AnimationMeta } from '@/config/animationMeta';
+import { classifyProject } from '@/lib/lane-classifier';
+import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
+
+async function requireAuthenticatedSession() {
+  const { data: { session } } = await supabase.auth.getSession();
+
+  if (!session?.access_token) {
+    throw new Error('Auth session not ready for projects query');
+  }
+
+  return session;
+}
+
+async function uploadDocuments(files: File[], userId: string): Promise<string[]> {
+  const paths: string[] = [];
+  for (const file of files) {
+    const timestamp = Date.now();
+    const randomToken = crypto.randomUUID().slice(0, 8);
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const path = `${userId}/${timestamp}-${randomToken}-${safeName}`;
+    const { error } = await supabase.storage.from('project-documents').upload(path, file);
+    if (error) throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+    paths.push(path);
+  }
+  return paths;
+}
+
+
+
+
+export function useProjects() {
+  const queryClient = useQueryClient();
+  const { user, session, loading: authLoading } = useAuth();
+  const hasQueryableSession = Boolean(session?.access_token);
+  const isAuthSettling = authLoading || (!!user && !hasQueryableSession);
+
+  const fetchProjects = async (allowRecovery = true): Promise<Project[]> => {
+    if (!user) return [];
+
+    const activeSession = await requireAuthenticatedSession();
+
+    const runProjectsSelect = async () => {
+      const { data, error, count } = await supabase
+        .from('projects')
+        .select('*', { count: 'exact' })
+        .order('pinned', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(500);
+
+      if (error) throw error;
+
+      return {
+        data: (data as unknown as Project[]) ?? [],
+        count: count ?? 0,
+      };
+    };
+
+    let result = await runProjectsSelect();
+
+    if (result.data.length === 0 && result.count === 0 && allowRecovery && activeSession.refresh_token) {
+      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({
+        refresh_token: activeSession.refresh_token,
+      });
+
+      if (refreshError) {
+        console.warn('[Projects] Session refresh failed during empty-list recovery', refreshError);
+      } else if (refreshed.session?.access_token) {
+        const recoveredResult = await runProjectsSelect();
+
+        if (recoveredResult.data.length > 0 || recoveredResult.count > 0) {
+          console.warn('[Projects] Recovered false-empty project list after session refresh', {
+            userId: user.id,
+            recoveredCount: recoveredResult.count,
+          });
+          result = recoveredResult;
+        }
+      }
+    }
+
+    // Warn if approaching limits
+    if (result.count > 450) {
+      console.warn(`Project count (${result.count}) approaching query limit. Consider archiving older projects.`);
+    }
+
+    return result.data;
+  };
+
+  const { data: projects = [], isPending, error, refetch } = useQuery<Project[]>({
+    queryKey: ['projects', user?.id ?? null],
+    queryFn: () => fetchProjects(true),
+    enabled: !!user && !isAuthSettling,
+    placeholderData: (previousData) => previousData,
+    retry: (failureCount, queryError) => {
+      if (queryError instanceof Error && queryError.message === 'Auth session not ready for projects query') {
+        return failureCount < 3;
+      }
+
+      return failureCount < 1;
+    },
+    retryDelay: (attemptIndex) => Math.min(250 * (attemptIndex + 1), 1000),
+  });
+
+  const isLoading = isAuthSettling || (!!user && isPending);
+
+  const togglePin = useMutation({
+    mutationFn: async ({ projectId, pinned }: { projectId: string; pinned: boolean }) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ pinned })
+        .eq('id', projectId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+
+  const createProject = useMutation({
+    mutationFn: async ({ input, files, companyId, productionModality, animationMeta }: { input: ProjectInput; files: File[]; companyId?: string; productionModality?: ProductionModality; animationMeta?: Partial<AnimationMeta> }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('Not authenticated');
+
+      // 1. Upload files to storage
+      let documentPaths: string[] = [];
+      if (files.length > 0) {
+        documentPaths = await uploadDocuments(files, user.id);
+      }
+
+      // 2. Use rules-based lane classification only (no AI analysis on upload)
+      const fallbackClassification = classifyProject(input);
+      const analysisPasses = null;
+
+      // Format↔Modality normalization: anim-* formats imply animation modality if not explicitly set
+      let effectiveModality = productionModality || 'live_action';
+      const fmt = (input.format || '').toLowerCase().replace(/_/g, '-');
+      if (/^anim-/.test(fmt) && (!productionModality || productionModality === 'live_action')) {
+        effectiveModality = 'animation';
+      }
+
+      // Build project_features with modality (merge-safe)
+      let projectFeatures = setProjectModality({}, effectiveModality);
+      // Merge animation meta if provided and modality is animation/hybrid
+      if (animationMeta && effectiveModality !== 'live_action') {
+        projectFeatures = setAnimationMeta(projectFeatures, animationMeta);
+      }
+
+      // 4. Insert project
+      const { data: project, error: insertError } = await supabase
+        .from('projects')
+        .insert({
+          user_id: user.id,
+          title: input.title,
+          format: input.format,
+          genres: input.genres,
+          budget_range: input.budget_range,
+          target_audience: input.target_audience,
+          tone: input.tone,
+          comparable_titles: input.comparable_titles,
+          assigned_lane: fallbackClassification?.lane || null,
+          confidence: fallbackClassification?.confidence ?? null,
+          reasoning: fallbackClassification?.reasoning || null,
+          recommendations: fallbackClassification
+            ? (fallbackClassification.recommendations as unknown as Json)
+            : null,
+          document_urls: documentPaths,
+          analysis_passes: analysisPasses as unknown as Json,
+          project_features: projectFeatures as unknown as Json,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw insertError;
+
+      const projectId = (project as any).id;
+
+      // 5. Document records will be created by extract-documents edge function
+      // (called separately if user triggers extraction)
+
+      // 6. Detect scripts among uploaded files and create project_scripts records
+      const scriptExtensions = ['.fdx', '.fountain'];
+      const scriptLikeExtensions = ['.pdf', '.docx', '.doc', '.txt'];
+      const scriptKeywordPattern = /script|screenplay|draft|teleplay|pilot|episode|treatment|_rev|\.rev|_d\d|\.d\d|v\d+[._]/i;
+      const nonScriptKeywords = /deck|pitch|lookbook|budget|schedule|synopsis|outline|bible|sizzle|one[- ]?sheet|press[- ]?kit|invoice|contract|deal|memo|letter|resume|cv/i;
+      const scriptFiles = files.filter(f => {
+        const ext = '.' + f.name.split('.').pop()?.toLowerCase();
+        // Always treat .fdx/.fountain as scripts
+        if (scriptExtensions.includes(ext)) return true;
+        // Exclude files with non-script keywords
+        if (nonScriptKeywords.test(f.name)) return false;
+        // If name contains script-related keywords, treat as script
+        if (scriptKeywordPattern.test(f.name)) return true;
+        // If there's only 1 file and it's a common doc format, assume it's a script
+        if (files.length === 1 && scriptLikeExtensions.includes(ext)) return true;
+        return false;
+      });
+
+      if (scriptFiles.length > 0) {
+        for (const file of scriptFiles) {
+          const matchingPath = documentPaths.find(p => p.includes(file.name.replace(/[^a-zA-Z0-9._-]/g, '_')));
+          await supabase.from('project_scripts').insert({
+            project_id: projectId,
+            user_id: user.id,
+            version_label: file.name.replace(/\.[^.]+$/, ''),
+            status: 'current',
+            file_path: matchingPath || null,
+            notes: 'Auto-detected as script on project creation',
+          });
+        }
+      }
+
+      // 7. Auto-link to production company if specified
+      if (companyId) {
+        await supabase.from('project_company_links').insert({
+          project_id: projectId,
+          company_id: companyId,
+          user_id: user.id,
+        });
+      }
+
+      return project as unknown as Project;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['company-projects'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to create project');
+    },
+  });
+
+  const renameProject = useMutation({
+    mutationFn: async ({ projectId, title }: { projectId: string; title: string }) => {
+      const { error } = await supabase
+        .from('projects')
+        .update({ title })
+        .eq('id', projectId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['project'] });
+      queryClient.invalidateQueries({ queryKey: ['dev-engine-project'] });
+      queryClient.invalidateQueries({ queryKey: ['company-projects'] });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to rename project');
+    },
+  });
+
+  const deleteProject = useMutation({
+    mutationFn: async (projectId: string) => {
+      const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      queryClient.invalidateQueries({ queryKey: ['company-projects'] });
+      queryClient.invalidateQueries({ queryKey: ['all-company-links'] });
+      queryClient.invalidateQueries({ queryKey: ['project-company-links'] });
+      toast.success('Project deleted');
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to delete project');
+    },
+  });
+
+  return { projects, isLoading, error, refetch, createProject, deleteProject, togglePin, renameProject };
+}
+
+export function useProject(id: string | undefined) {
+  const { user, session, loading: authLoading } = useAuth();
+  const hasQueryableSession = Boolean(session?.access_token);
+  const isAuthSettling = authLoading || (!!user && !hasQueryableSession);
+
+  const { data: project, isPending, error } = useQuery({
+    queryKey: ['project', id],
+    queryFn: async () => {
+      if (!id) throw new Error('No project ID');
+
+      await requireAuthenticatedSession();
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) throw new Error('Project not found');
+      return data as unknown as Project;
+    },
+    enabled: !!id && !!user && !isAuthSettling,
+    retry: (failureCount, queryError) => {
+      if (queryError instanceof Error && queryError.message === 'Auth session not ready for projects query') {
+        return failureCount < 3;
+      }
+
+      return failureCount < 1;
+    },
+    retryDelay: (attemptIndex) => Math.min(250 * (attemptIndex + 1), 1000),
+  });
+
+  const isLoading = isAuthSettling || (!!user && isPending);
+
+  return { project, isLoading, error };
+}
+
+export function useProjectDocuments(projectId: string | undefined) {
+  const { data: documents = [], isLoading, error } = useQuery({
+    queryKey: ['project-documents', projectId],
+    queryFn: async () => {
+      if (!projectId) throw new Error('No project ID');
+      const { data, error } = await supabase
+        .from('project_documents')
+        .select('id, project_id, user_id, file_name, file_path, extraction_status, extracted_text, total_pages, pages_analyzed, error_message, created_at, doc_type, ingestion_source, char_count, doc_role')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      // Filter out ghost docs: empty file_path + failed/no content + generic name
+      const filtered = (data as unknown as ProjectDocument[]).filter(d => {
+        if (!d.file_path && d.file_name === 'document' && d.extraction_status === 'failed') return false;
+        return true;
+      });
+      const docs = filtered;
+
+      // For dev-engine docs (empty file_path) AND script_pdf docs, fetch latest version plaintext
+      const docsNeedingVersionText = docs.filter(d => !d.file_path || (d.doc_type as string) === 'script_pdf');
+      if (docsNeedingVersionText.length > 0) {
+        const { data: versions } = await (supabase as any)
+          .from('project_document_versions')
+          .select('document_id, plaintext, version_number')
+          .in('document_id', docsNeedingVersionText.map(d => d.id))
+          .order('version_number', { ascending: false });
+        if (versions) {
+          // Group by document_id, take latest (first due to desc order)
+          const latestByDoc: Record<string, string> = {};
+          for (const v of versions) {
+            if (!latestByDoc[v.document_id] && v.plaintext) {
+              latestByDoc[v.document_id] = v.plaintext;
+            }
+          }
+          for (const doc of docs) {
+            if (latestByDoc[doc.id]) {
+              doc.version_plaintext = latestByDoc[doc.id];
+            }
+          }
+        }
+      }
+
+      return docs;
+    },
+    enabled: !!projectId,
+  });
+
+  return { documents, isLoading, error };
+}

@@ -1,0 +1,113 @@
+import { useState } from 'react';
+import { Loader2, Rocket, FlaskConical } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { LANE_LABELS, type MonetisationLane } from '@/lib/types';
+import type { PitchIdea } from '@/hooks/usePitchIdeas';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+interface Props {
+  idea: PitchIdea | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onPromoted: (idea: PitchIdea) => void;
+}
+
+export function PromoteToDevSeedDialog({ idea, open, onOpenChange, onPromoted }: Props) {
+  const [promoting, setPromoting] = useState(false);
+
+  if (!idea) return null;
+
+  const laneLabel = LANE_LABELS[idea.recommended_lane as MonetisationLane] || idea.recommended_lane;
+
+  const handlePromote = async () => {
+    setPromoting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('promote-to-devseed', {
+        body: { pitchIdeaId: idea.id },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        // Surface structural propulsion failures with actionable detail
+        if (data.structural_failures?.length) {
+          const hint = data.hint || 'The concept needs stronger narrative propulsion.';
+          throw new Error(`${data.error}. ${hint}`);
+        }
+        throw new Error(data.error);
+      }
+      const wasRepaired = data?.devseed?._structural_repaired;
+      toast.success(wasRepaired
+        ? 'DevSeed created (structural repair applied) — ready to apply to a project'
+        : 'DevSeed created — ready to apply to a project'
+      );
+      onPromoted(idea);
+    } catch (e: any) {
+      toast.error(e.message || 'Promotion failed');
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Rocket className="h-5 w-5 text-primary" />
+            Promote to DevSeed
+          </DialogTitle>
+          <DialogDescription>
+            Creates a DevSeed draft. You'll choose whether to apply canon/prefs in the next step.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          {(idea.source_blueprint_id || (idea.raw_response as any)?.promotion_source === 'ci_blueprint_engine') && (
+            <div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 flex items-center gap-2">
+              <FlaskConical className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+              <div className="text-xs text-emerald-300/90">
+                <span className="font-medium">Blueprint-derived idea</span>
+                {(idea.source_blueprint_id || (idea.raw_response as any)?.blueprint_id) && (
+                  <span className="text-emerald-400/50 ml-1.5">· {(idea.source_blueprint_id || (idea.raw_response as any).blueprint_id).slice(0, 8)}</span>
+                )}
+                {idea.generation_mode && idea.generation_mode !== 'ci_pattern' && (
+                  <span className="text-emerald-400/50 ml-1.5">· {idea.generation_mode}</span>
+                )}
+              </div>
+            </div>
+          )}
+          <div className="rounded-md border border-border/40 p-3 space-y-2">
+            <h4 className="font-semibold text-sm">{idea.title}</h4>
+            <p className="text-sm text-muted-foreground line-clamp-3">{idea.logline}</p>
+            <div className="flex flex-wrap gap-1.5">
+              <Badge variant="secondary" className="text-xs">{idea.genre}</Badge>
+              <Badge variant="outline" className="text-xs">{laneLabel}</Badge>
+              <Badge variant="outline" className="text-xs">{idea.budget_band}</Badge>
+              {Number(idea.score_total) > 0 && (
+                <Badge variant="default" className="text-xs">Score: {Number(idea.score_total).toFixed(0)}</Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-medium text-foreground mb-1">DevSeed will include:</p>
+            <p>• Bible Starter — character, world, and tone foundations</p>
+            <p>• Nuance Contract — restraint level, conflict mode, complexity caps</p>
+            <p>• Market Rationale — comps analysis, lane justification, buyer positioning</p>
+            <p className="mt-2 text-muted-foreground">After creation, you'll be prompted to apply it to a project.</p>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={promoting}>Cancel</Button>
+          <Button onClick={handlePromote} disabled={promoting} className="gap-1.5">
+            {promoting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
+            Create DevSeed
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}

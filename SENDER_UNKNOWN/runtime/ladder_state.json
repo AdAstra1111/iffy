@@ -1,0 +1,7 @@
+{
+  "current_stage": "character_bible",
+  "completed": ["idea","concept_brief","format_rules"],
+  "next": "character_bible",
+  "blocked_by": [],
+  "auto_advance": true
+}

@@ -1,0 +1,219 @@
+/**
+ * Pipeline types for the canonical LookBook build pipeline.
+ * Defines stage enum, state shape, and progress reporting.
+ */
+import type { LookBookData, SlideContent, LookBookVisualIdentity } from '../types';
+import type { ProjectImage } from '@/lib/images/types';
+import type { SectionImageResult, ResolutionDiagnostics, ResolvedCanonImages } from '../resolveCanonImages';
+import type { GapAnalysisResult } from '@/lib/images/lookbookGapAnalyzer';
+import type { OrchestrationResult, BuildWorkingSet } from '@/lib/images/lookbookImageOrchestrator';
+import type { PoolKey } from './lookbookSlotRegistry';
+import type { NarrativeEvidence } from './narrativeEvidence';
+import type { IdentityBindings } from './identityBindingStage';
+import type { ProvenanceReport } from './provenanceValidator';
+
+// ── Pipeline Stages ──────────────────────────────────────────────────────────
+
+export enum PipelineStage {
+  MODE_SELECTION = 'MODE_SELECTION',
+  NARRATIVE_EXTRACTION = 'NARRATIVE_EXTRACTION',
+  SLOT_PLANNING = 'SLOT_PLANNING',
+  IDENTITY_BINDING = 'IDENTITY_BINDING',
+  INVENTORY = 'INVENTORY',
+  GAP_ANALYSIS = 'GAP_ANALYSIS',
+  RESOLUTION = 'RESOLUTION',
+  GENERATION = 'GENERATION',
+  ELECTION = 'ELECTION',
+  ASSEMBLY = 'ASSEMBLY',
+  QA = 'QA',
+}
+
+export type PipelineMode = 'fresh_build' | 'reuse_recovery' | 'fresh_from_scratch';
+
+// ── Requirement Progress ─────────────────────────────────────────────────────
+
+export type RequirementStatus =
+  | 'pending'
+  | 'planning'
+  | 'generating'
+  | 'generated'
+  | 'scoring'
+  | 'selected'
+  | 'complete'
+  | 'blocked';
+
+export interface RequirementProgress {
+  /** Requirement/slot identifier (e.g. 'cover:background') */
+  id: string;
+  /** Human-readable label */
+  label: string;
+  /** Slide type */
+  slideType: string;
+  /** Current status */
+  status: RequirementStatus;
+  /** How many candidates generated for this requirement */
+  generatedCount: number;
+  /** How many selected */
+  selectedCount: number;
+  /** Blocking reason if status=blocked */
+  blockingReason?: string;
+}
+
+// ── Stage Status ─────────────────────────────────────────────────────────────
+
+export type StageStatus = 'pending' | 'running' | 'complete' | 'warning' | 'blocked' | 'skipped';
+
+export interface StageState {
+  stage: PipelineStage;
+  status: StageStatus;
+  startedAt?: number;
+  completedAt?: number;
+  message?: string;
+}
+
+// ── Pipeline State (progressive accumulation) ────────────────────────────────
+
+export interface NarrativeContext {
+  projectTitle: string;
+  genre: string;
+  format: string;
+  formatLabel: string;
+  tone: string;
+  targetAudience: string;
+  assignedLane: string;
+  comparableTitles: string;
+  logline: string;
+  premise: string;
+  worldRules: string;
+  locations: string;
+  timeline: string;
+  toneStyle: string;
+  formatConstraints: string;
+  comparables: string;
+  synopsis: string;
+  creativeStatement: string;
+  characters: unknown;
+}
+
+export interface InventoryResult {
+  canonImages: ResolvedCanonImages;
+  sectionPools: Record<PoolKey, ProjectImage[]>;
+  allUniqueImages: ProjectImage[];
+  diagnostics: ResolutionDiagnostics;
+  characterImageMap: Map<string, string>;
+  characterNameImageMap: Map<string, string>;
+}
+export interface ElectionContext {
+  /** Deck-level URL usage tracker */
+  deckImageUsage: Map<string, { count: number; usedOnSlides: string[] }>;
+  /** Semantic fingerprint tracker */
+  usedFingerprints: Map<string, number>;
+  /** URL → ProjectImage lookup */
+  urlToImage: Map<string, ProjectImage>;
+  /** Section pools by pool key */
+  sectionPools: Record<PoolKey, ProjectImage[]>;
+  /** Used background URLs for dedup */
+  usedBackgroundUrls: string[];
+}
+
+// ── Election Result (first-class stage output) ──────────────────────────────
+
+/** Per-slide elected images */
+export interface SlideElection {
+  slideType: string;
+  slideId: string;
+  backgroundUrl: string | undefined;
+  foregroundUrls: string[];
+  roledImages: Array<{ url: string; role: 'hero' | 'support' | 'background'; score: number }>;
+}
+
+/** Full election result — produced by election stage, consumed by assembly */
+export interface ElectionResult {
+  posterHero: { url: string; id: string; score: number } | null;
+  slideElections: Map<string, SlideElection>;
+  electionCtx: ElectionContext;
+}
+
+export type QualityGrade = 'strong' | 'publishable' | 'exportable' | 'incomplete';
+
+export interface QAResult {
+  totalSlides: number;
+  slidesWithImages: number;
+  slidesWithoutImages: number;
+  totalImageRefs: number;
+  unresolvedSlides: string[];
+  reuseWarnings: string[];
+  fingerprintWarnings: string[];
+  publishable: boolean;
+  /** Deterministic quality grade: strong > publishable > exportable > incomplete */
+  qualityGrade: QualityGrade;
+  /** Provenance validation report */
+  provenance?: ProvenanceReport;
+  /** Identity binding summary */
+  identityBindingSummary?: {
+    totalCharacters: number;
+    boundCount: number;
+    unboundPrincipals: number;
+  };
+  /** Narrative evidence coverage score (0–1) */
+  evidenceCoverageScore?: number;
+  /** Structured QA diagnostics */
+  diagnostics?: Array<{
+    category: 'slot_purpose' | 'identity' | 'diversity' | 'fill' | 'editorial' | 'coverage' | 'reuse';
+    severity: 'info' | 'warning' | 'error';
+    slideType: string;
+    message: string;
+  }>;
+}
+
+// ── Pipeline Progress Callback ───────────────────────────────────────────────
+
+export interface PipelineProgress {
+  currentStage: PipelineStage;
+  stageStatus: StageStatus;
+  message: string;
+  percent?: number;
+  logs: string[];
+  /** Per-requirement progress (populated during generation) */
+  requirements?: RequirementProgress[];
+}
+
+export type PipelineProgressCallback = (progress: PipelineProgress) => void;
+
+// ── Pipeline Options ─────────────────────────────────────────────────────────
+
+export interface PipelineOptions {
+  projectId: string;
+  mode: PipelineMode;
+  companyName: string | null;
+  companyLogoUrl: string | null;
+  /** Working set from previous auto-complete (reuse_recovery mode) */
+  workingSet?: BuildWorkingSet | null;
+  /** Previous slides for user decision preservation */
+  previousSlides?: SlideContent[] | null;
+  /** Progress callback for UI updates */
+  onProgress?: PipelineProgressCallback;
+}
+
+// ── Pipeline Result ──────────────────────────────────────────────────────────
+
+export interface PipelineResult {
+  data: LookBookData;
+  qa: QAResult;
+  /** Narrative evidence from extraction stage */
+  narrativeEvidence?: NarrativeEvidence;
+  /** Identity bindings from binding stage */
+  identityBindings?: IdentityBindings;
+  stages: StageState[];
+  logs: string[];
+  durationMs: number;
+  /** Final requirement progress snapshot */
+  requirements?: RequirementProgress[];
+  /** Shot list preflight result (Phase 18.2) */
+  shotListPreflight?: {
+    status: string;
+    shot_list_id: string | null;
+    reason: string | null;
+    auto_generated: boolean;
+  };
+}

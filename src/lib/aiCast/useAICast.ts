@@ -1,0 +1,128 @@
+/**
+ * AI Cast Library — React Query hooks
+ */
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { aiCastApi } from './aiCastApi';
+import { toast } from 'sonner';
+
+export function useAIActors() {
+  return useQuery({
+    queryKey: ['ai-actors'],
+    queryFn: () => aiCastApi.listActors(),
+  });
+}
+
+export function useAIActor(actorId: string | undefined) {
+  return useQuery({
+    queryKey: ['ai-actor', actorId],
+    queryFn: async () => {
+      try {
+        return await aiCastApi.getActor(actorId!);
+      } catch (e: any) {
+        if (e?.status === 404) return { actor: null };
+        throw e;
+      }
+    },
+    enabled: !!actorId,
+    retry: (failureCount, error: any) => error?.status !== 404 && failureCount < 2,
+  });
+}
+
+export function useCastContext(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['cast-context', projectId],
+    queryFn: () => aiCastApi.getCastContext(projectId!),
+    enabled: !!projectId,
+  });
+}
+
+export function useAICastMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['ai-actors'] });
+    qc.invalidateQueries({ queryKey: ['ai-actor'] });
+  };
+
+  const createActor = useMutation({
+    mutationFn: (params: { name: string; description?: string; negative_prompt?: string; tags?: string[] }) =>
+      aiCastApi.createActor(params),
+    onSuccess: (data) => {
+      toast.success(`Actor "${data.actor.name}" created`);
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const updateActor = useMutation({
+    mutationFn: (params: { actorId: string } & Partial<{ name: string; description: string; negative_prompt: string; tags: string[]; status: string }>) => {
+      const { actorId, ...rest } = params;
+      return aiCastApi.updateActor(actorId, rest);
+    },
+    onSuccess: () => { toast.success('Actor updated'); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const createVersion = useMutation({
+    mutationFn: (params: { actorId: string; recipe_json?: any }) =>
+      aiCastApi.createVersion(params.actorId, params.recipe_json),
+    onSuccess: () => { toast.success('Version created'); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const approveVersion = useMutation({
+    mutationFn: (params: { actorId: string; versionId: string }) =>
+      aiCastApi.approveVersion(params.actorId, params.versionId),
+    onSuccess: () => { toast.success('Version approved'); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const addAsset = useMutation({
+    mutationFn: (params: { versionId: string; asset_type?: string; storage_path?: string; public_url?: string; meta_json?: any }) => {
+      const { versionId, ...rest } = params;
+      return aiCastApi.addAsset(versionId, rest);
+    },
+    onSuccess: () => { toast.success('Asset added'); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteAsset = useMutation({
+    mutationFn: (assetId: string) => aiCastApi.deleteAsset(assetId),
+    onSuccess: () => { toast.success('Asset removed'); invalidate(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const generateScreenTest = useMutation({
+    mutationFn: (params: { actorId: string; versionId: string; count?: number; mode?: 'exploratory' | 'reference_locked' }) =>
+      aiCastApi.generateScreenTest(params.actorId, params.versionId, params.count, params.mode),
+    onSuccess: (data) => {
+      if (data.code === 'ANCHOR_COVERAGE_INSUFFICIENT') {
+        toast.info('Upload all 3 anchor references (headshot, full body, profile) before generating.');
+      } else if (data.generated === 0 && data.errors?.length) {
+        toast.error(`Generation failed: ${data.errors[0]?.error || 'Unknown error'}`);
+      } else {
+        const errCount = data.errors?.length || 0;
+        toast.success(`Generated ${data.generated} screen test still${data.generated !== 1 ? 's' : ''}${errCount > 0 ? ` (${errCount} failed)` : ''}`);
+      }
+      invalidate();
+    },
+    onError: (e: Error) => {
+      if (e.message?.includes('anchor') || e.message?.includes('coverage')) {
+        toast.info('Upload all 3 anchor references before generating.');
+      } else {
+        toast.error(e.message);
+      }
+    },
+  });
+
+  const deleteActor = useMutation({
+    mutationFn: (params: { actorId: string; force?: boolean }) =>
+      aiCastApi.deleteActor(params.actorId, params.force),
+    onSuccess: () => {
+      toast.success('Actor permanently deleted');
+      invalidate();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  return { createActor, updateActor, createVersion, approveVersion, addAsset, deleteAsset, generateScreenTest, deleteActor };
+}

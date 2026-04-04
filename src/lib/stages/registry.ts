@@ -1,0 +1,358 @@
+/**
+ * CANONICAL STAGE REGISTRY — Single source of truth for deliverable stage ordering.
+ *
+ * Data source: supabase/_shared/stage-ladders.json  (shared with the auto-run edge function)
+ *
+ * Used by:
+ *  - Dev Engine UI (DeliverablePipeline, usePromotionIntelligence)
+ *  - AutoRun hooks (useAutoRun, useAutoRunMissionControl)
+ *  - StagePlanPanel (verification UI)
+ *  - The edge function reads stage-ladders.json directly (Deno cannot import from src/)
+ *
+ * DRIFT-PROOF: Both frontend and backend read the SAME JSON.
+ * The JSON is the authority; this file is a typed wrapper.
+ */
+
+// ── Import the shared JSON ─────────────────────────────────────────────────────
+import LADDERS_JSON from '../../../supabase/_shared/stage-ladders.json';
+
+export type DeliverableStage =
+  | 'idea'
+  | 'concept_brief'
+  | 'market_sheet'
+  | 'vertical_market_sheet'
+  | 'treatment'
+  | 'story_outline'
+  | 'character_bible'
+  | 'beat_sheet'
+  | 'episode_beats'
+  | 'feature_script'
+  | 'episode_script'
+  | 'season_script'
+  | 'season_master_script'
+  | 'production_draft'
+  | 'deck'
+  | 'documentary_outline'
+  | 'format_rules'
+  | 'season_arc'
+  | 'episode_grid'
+  | 'vertical_episode_beats'
+  | 'series_writer';
+
+/** Maps a project format to its canonical script doc_type */
+export const FORMAT_SCRIPT_TYPES: Record<string, DeliverableStage> =
+  LADDERS_JSON.FORMAT_SCRIPT_TYPES as Record<string, DeliverableStage>;
+
+/** Get the correct script doc_type for a project format. Returns null if format unknown. */
+export function getScriptTypeForFormat(format: string): DeliverableStage | null {
+  const key = normalizeFormatKey(format);
+  if (!key) return null;
+  return FORMAT_SCRIPT_TYPES[key] ?? null;
+}
+
+// ── Per-format ordered ladders (loaded from shared JSON) ─────────────────────
+export const FORMAT_LADDERS: Record<string, DeliverableStage[]> =
+  LADDERS_JSON.FORMAT_LADDERS as Record<string, DeliverableStage[]>;
+
+// Default fallback (scripted film)
+export const STAGE_ORDER_DEFAULT: DeliverableStage[] = FORMAT_LADDERS['film'];
+
+/**
+ * Set of doc_type keys that are true ladder stages (participate in sequential progression).
+ * Output documents (market_sheet, vertical_market_sheet, deck) are valid doc_types but NOT ladder stages.
+ */
+export const LADDER_STAGE_SET: Set<string> = new Set(
+  Object.values(FORMAT_LADDERS).flat()
+);
+
+/** Normalize a format string to the registry key. Returns '' if input is empty. */
+export function normalizeFormatKey(format: string): string {
+  const raw = (format ?? '').trim();
+  if (!raw) return '';
+  return raw.toLowerCase().replace(/[_ ]+/g, '-');
+}
+
+/**
+ * Get the ordered ladder for a given project format.
+ * Returns null if format is unknown — callers MUST handle the null case.
+ */
+export function getLadderForFormat(format: string): DeliverableStage[] | null {
+  const key = normalizeFormatKey(format);
+  if (!key) return null;
+  return FORMAT_LADDERS[key] ?? null;
+}
+
+/**
+ * Get ladder or throw. Use in contexts where missing ladder is a hard error.
+ */
+export function getLadderForFormatStrict(format: string): DeliverableStage[] {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) {
+    const key = normalizeFormatKey(format);
+    throw new Error(`MISSING_FORMAT_FOR_LADDER: no ladder for format="${key}" (raw="${format}")`);
+  }
+  return ladder;
+}
+
+/** Get the 0-based index of a stage in the ladder, or -1 if not present */
+export function getStageIndex(stage: string, format: string): number {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) return -1;
+  return ladder.indexOf(stage as DeliverableStage);
+}
+
+/** Is this stage on the ladder for this format? */
+export function isStageApplicable(stage: string, format: string): boolean {
+  return getStageIndex(stage, format) >= 0;
+}
+
+/**
+ * Get the next stage after currentStage for the given format.
+ * Returns null if currentStage is last, not on the ladder, or format unknown.
+ */
+export function getNextStage(currentStage: string, format: string): DeliverableStage | null {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) return null;
+  const idx = ladder.indexOf(currentStage as DeliverableStage);
+  if (idx < 0 || idx >= ladder.length - 1) return null;
+  return ladder[idx + 1];
+}
+
+/**
+ * PAL: Validate that a promotion from one doc_type to another is allowed.
+ * Promotion is only valid for adjacent stages (index i → i+1) on the ladder.
+ * Returns { valid, reason } — callers MUST check before executing promotion.
+ */
+export function validatePromotion(
+  format: string,
+  fromDocType: string,
+  toDocType: string,
+): { valid: boolean; reason: string } {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) {
+    return { valid: false, reason: `Unknown format "${format}" — no ladder available` };
+  }
+
+  const fromStage = mapDocTypeToLadderStage(fromDocType);
+  const toStage = mapDocTypeToLadderStage(toDocType);
+
+  const fromIdx = ladder.indexOf(fromStage);
+  const toIdx = ladder.indexOf(toStage);
+
+  if (fromIdx < 0) {
+    return { valid: false, reason: `"${fromDocType}" (→${fromStage}) is not on the ${format} ladder` };
+  }
+  if (toIdx < 0) {
+    return { valid: false, reason: `"${toDocType}" (→${toStage}) is not on the ${format} ladder` };
+  }
+  if (toIdx !== fromIdx + 1) {
+    return {
+      valid: false,
+      reason: `Promotion must be adjacent: "${fromStage}" (idx ${fromIdx}) → "${toStage}" (idx ${toIdx}). Expected target: "${ladder[fromIdx + 1] || 'END'}"`,
+    };
+  }
+
+  console.log(`[IEL] promotion_validated { format: "${format}", from: "${fromStage}", to: "${toStage}" }`);
+  return { valid: true, reason: 'Adjacent stage promotion' };
+}
+
+/**
+ * Get the previous stage before currentStage for the given format.
+ */
+export function getPrevStage(currentStage: string, format: string): DeliverableStage | null {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) return null;
+  const idx = ladder.indexOf(currentStage as DeliverableStage);
+  if (idx <= 0) return null;
+  return ladder[idx - 1];
+}
+
+/**
+ * Given a list of existing doc types for a project, return the nearest
+ * canonical stage that exists, walking backwards from currentStage.
+ * Used as fallback when currentStage is not on the ladder.
+ */
+export function getNearestExistingStage(
+  currentStage: string,
+  format: string,
+  existingDocTypes: string[]
+): DeliverableStage | null {
+  const ladder = getLadderForFormat(format);
+  if (!ladder) return null;
+  const idx = ladder.indexOf(currentStage as DeliverableStage);
+  const start = idx >= 0 ? idx : ladder.length - 1;
+  for (let i = start; i >= 0; i--) {
+    if (existingDocTypes.includes(ladder[i])) return ladder[i];
+  }
+  return null;
+}
+
+/**
+ * Map a raw doc_type (which may be a UI label or variant name) to the
+ * canonical stage name on the ladder.  Used by AutoRun hooks before calling
+ * the edge function.
+ *
+ * IMPORTANT: "draft" → "script" and "coverage" → "production_draft".
+ * Neither "draft" nor "coverage" are real stage doc_types.
+ */
+export const DOC_TYPE_TO_LADDER_STAGE: Record<string, DeliverableStage> = {
+  // Direct matches (canonical keys)
+  idea:                    'idea',
+  concept_brief:           'concept_brief',
+  market_sheet:            'market_sheet',
+  vertical_market_sheet:   'vertical_market_sheet',
+  treatment:               'treatment',
+  story_outline:           'story_outline',
+  character_bible:         'character_bible',
+  beat_sheet:              'beat_sheet',
+  episode_beats:           'episode_beats',
+  feature_script:          'feature_script',
+  episode_script:          'episode_script',
+  season_script:           'season_script',
+  season_master_script:    'season_master_script',
+  production_draft:        'production_draft',
+  deck:                    'deck',
+  documentary_outline:     'documentary_outline',
+  format_rules:            'format_rules',
+  season_arc:              'season_arc',
+  episode_grid:            'episode_grid',
+  vertical_episode_beats:  'vertical_episode_beats',
+  series_writer:           'series_writer',
+  // Legacy aliases → canonical keys
+  blueprint:               'treatment',
+  series_bible:            'treatment',
+  architecture:            'story_outline',
+  plot_architecture:       'story_outline',
+  logline:                 'idea',
+  one_pager:               'concept_brief',
+  season_outline:          'treatment',
+  outline:                 'treatment',
+  episode_beat_sheet:      'beat_sheet',
+  pilot_script:            'episode_script',
+  episode_1_script:        'episode_script',
+  writers_room:            'series_writer',
+  notes:                   'concept_brief',
+  // Legacy aliases — backward compat
+  script:                  'feature_script',
+  script_pdf:              'feature_script',
+  draft:                   'feature_script',
+  coverage:                'production_draft',
+  complete_season_script:       'season_script',
+};
+
+export function mapDocTypeToLadderStage(docType: string): DeliverableStage {
+  const key = (docType || '').toLowerCase().replace(/[-\s]+/g, '_');
+  return DOC_TYPE_TO_LADDER_STAGE[key] ?? 'idea';
+}
+
+/**
+ * Sanitize a doc_type before storing it to the database.
+ * Maps legacy aliases to canonical stages so "draft" is never persisted.
+ */
+export function sanitizeDocType(docType: string): DeliverableStage {
+  const mapped = mapDocTypeToLadderStage(docType);
+  // Extra guard: if the mapped result is still an alias that snuck through, default to 'script'
+  if (mapped === 'idea' && docType !== 'idea' && docType !== 'logline') {
+    return 'concept_brief'; // safe fallback
+  }
+  return mapped;
+}
+
+// ── Self-test (call in dev to verify consistency) ────────────────────────────
+export function runStageRegistrySelfTest(verbose = false): { passed: boolean; failures: string[] } {
+  const failures: string[] = [];
+
+  // 1. Every ladder must start with 'idea'
+  for (const [fmt, ladder] of Object.entries(FORMAT_LADDERS)) {
+    if (ladder[0] !== 'idea') {
+      failures.push(`Format "${fmt}": ladder does not start with 'idea' (got "${ladder[0]}")`);
+    }
+  }
+
+  // 2. No duplicates within a ladder
+  for (const [fmt, ladder] of Object.entries(FORMAT_LADDERS)) {
+    const seen = new Set<string>();
+    for (const stage of ladder) {
+      if (seen.has(stage)) failures.push(`Format "${fmt}": duplicate stage "${stage}"`);
+      seen.add(stage);
+    }
+  }
+
+  // 3. 'draft', 'blueprint', 'architecture' must NOT appear in any ladder (legacy aliases)
+  for (const [fmt, ladder] of Object.entries(FORMAT_LADDERS)) {
+    if ((ladder as string[]).includes('draft')) {
+      failures.push(`Format "${fmt}": ladder contains legacy "draft" — replace with "feature_script" or "episode_script"`);
+    }
+    if ((ladder as string[]).includes('coverage')) {
+      failures.push(`Format "${fmt}": ladder contains legacy "coverage" — replace with "production_draft"`);
+    }
+    if ((ladder as string[]).includes('blueprint')) {
+      failures.push(`Format "${fmt}": ladder contains legacy "blueprint" — replace with "treatment"`);
+    }
+    if ((ladder as string[]).includes('architecture')) {
+      failures.push(`Format "${fmt}": ladder contains legacy "architecture" — replace with "story_outline"`);
+    }
+  }
+
+  // 4. getNextStage consistency for film
+  const filmLadder = FORMAT_LADDERS['film'];
+  for (let i = 0; i < filmLadder.length - 1; i++) {
+    const got = getNextStage(filmLadder[i], 'film');
+    const expected = filmLadder[i + 1];
+    if (got !== expected) {
+      failures.push(`getNextStage("${filmLadder[i]}", "film"): expected "${expected}", got "${got}"`);
+    }
+  }
+
+  // 5. getNextStage consistency for vertical-drama
+  const vdLadder = FORMAT_LADDERS['vertical-drama'];
+  for (let i = 0; i < vdLadder.length - 1; i++) {
+    const got = getNextStage(vdLadder[i], 'vertical-drama');
+    const expected = vdLadder[i + 1];
+    if (got !== expected) {
+      failures.push(`getNextStage("${vdLadder[i]}", "vertical-drama"): expected "${expected}", got "${got}"`);
+    }
+  }
+
+  // 6. mapDocTypeToLadderStage('draft') must return 'feature_script', never 'draft'
+  const draftMapped = mapDocTypeToLadderStage('draft');
+  if (draftMapped !== 'feature_script') {
+    failures.push(`mapDocTypeToLadderStage("draft") returned "${draftMapped}", expected "feature_script"`);
+  }
+  // 6b. mapDocTypeToLadderStage('blueprint') must return 'treatment'
+  const blueprintMapped = mapDocTypeToLadderStage('blueprint');
+  if (blueprintMapped !== 'treatment') {
+    failures.push(`mapDocTypeToLadderStage("blueprint") returned "${blueprintMapped}", expected "treatment"`);
+  }
+  // 6c. mapDocTypeToLadderStage('architecture') must return 'story_outline'
+  const archMapped = mapDocTypeToLadderStage('architecture');
+  if (archMapped !== 'story_outline') {
+    failures.push(`mapDocTypeToLadderStage("architecture") returned "${archMapped}", expected "story_outline"`);
+  }
+
+  // 7. FORMAT_LADDERS matches the JSON source
+  const jsonLadders = LADDERS_JSON.FORMAT_LADDERS as Record<string, string[]>;
+  for (const [fmt, ladder] of Object.entries(jsonLadders)) {
+    const registered = FORMAT_LADDERS[fmt];
+    if (!registered) {
+      failures.push(`JSON has format "${fmt}" but FORMAT_LADDERS does not`);
+      continue;
+    }
+    if (JSON.stringify(registered) !== JSON.stringify(ladder)) {
+      failures.push(`FORMAT_LADDERS["${fmt}"] diverged from JSON source`);
+    }
+  }
+
+  if (verbose) {
+    if (failures.length === 0) {
+      console.log('[StageRegistry] ✅ All self-tests passed');
+      console.log('[StageRegistry] Ladder counts:', Object.fromEntries(
+        Object.entries(FORMAT_LADDERS).map(([k, v]) => [k, v.length])
+      ));
+    } else {
+      console.error('[StageRegistry] ❌ Failures:', failures);
+    }
+  }
+
+  return { passed: failures.length === 0, failures };
+}

@@ -1,0 +1,560 @@
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
+import { initEditedFields, normalizePitchCriteria, type EditedFieldsMap } from '@/lib/pitch/normalizePitchCriteria';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Lightbulb, Loader2, Download, RefreshCw, Globe } from 'lucide-react';
+import { Header } from '@/components/Header';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
+import { HardCriteriaForm, EMPTY_CRITERIA, type HardCriteria } from '@/components/pitch/HardCriteriaForm';
+import { SlateCard } from '@/components/pitch/SlateCard';
+import { PromoteToDevSeedDialog } from '@/components/pitch/PromoteToDevSeedDialog';
+import { ApplyDevSeedDialog } from '@/components/pitch/ApplyDevSeedDialog';
+import { OperationProgress, GENERATE_PITCH_STAGES } from '@/components/OperationProgress';
+import { usePitchIdeas, type PitchIdea } from '@/hooks/usePitchIdeas';
+import { useProjects } from '@/hooks/useProjects';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import jsPDF from 'jspdf';
+import { type AnimationMeta, ANIMATION_PRIMARY_LIST, ANIMATION_STYLE_LIST, ANIMATION_TAG_LIST } from '@/config/animationMeta';
+import { type ProductionModality, isAnimationModality } from '@/config/productionModality';
+import { TrendsSnapshot } from '@/components/pitch/TrendsSnapshot';
+import { DnaEngineSelector, type DnaEngineSelection } from '@/components/pitch/DnaEngineSelector';
+
+const EMPTY_DNA_SELECTION: DnaEngineSelection = { mode: 'none', dnaProfileId: null, engineKey: null };
+
+export default function PitchIdeas() {
+  const { user } = useAuth();
+  const { ideas, isLoading, save, update, remove } = usePitchIdeas();
+  const { projects } = useProjects();
+  const qc = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightId = searchParams.get('highlight');
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+  const didScrollRef = useRef(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateFailed, setGenerateFailed] = useState(false);
+  const [genProgress, setGenProgress] = useState({ current: 0, total: 5 });
+  const preGenCountRef = useRef(0);
+  const [criteria, setCriteria] = useState<HardCriteria>({ ...EMPTY_CRITERIA });
+  const [editedFields, setEditedFields] = useState<EditedFieldsMap>(() => initEditedFields());
+  const [dnaSelection, setDnaSelection] = useState<DnaEngineSelection>({ ...EMPTY_DNA_SELECTION });
+  const [selectedProject, setSelectedProject] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [resolutionMeta, setResolutionMeta] = useState<Record<string, { status: string; scope: string; note?: string }>>({});
+  const signalsStorageKey = `iffy:pitch:lastSignalsMetadata:${user?.id || 'anon'}`;
+  const [lastSignalsMetadata, setLastSignalsMetadata] = useState<any>(() => {
+    try {
+      const stored = localStorage.getItem(signalsStorageKey);
+      return stored ? JSON.parse(stored) : null;
+    } catch { return null; }
+  });
+  const [promoteIdea, setPromoteIdea] = useState<PitchIdea | null>(null);
+  const [applyIdea, setApplyIdea] = useState<PitchIdea | null>(null);
+  // Global-mode state (not persisted to DB; generation-only)
+  const [globalAnimMeta, setGlobalAnimMeta] = useState<AnimationMeta>({ primary: null, tags: [], style: null });
+  const [globalModality, setGlobalModality] = useState<ProductionModality>('live_action');
+
+  const isProjectMode = !!selectedProject && selectedProject !== '__none__';
+
+  // Auto-set modality to animation when Genre = "Animation" in global mode
+  useEffect(() => {
+    if (isProjectMode) return;
+    const g = (criteria.genre || '').trim().toLowerCase();
+    if (g === 'animation' && globalModality === 'live_action') {
+      setGlobalModality('animation');
+    }
+  }, [isProjectMode, criteria.genre, globalModality]);
+
+  // Clear stale animation meta when modality returns to live_action in global mode
+  useEffect(() => {
+    if (isProjectMode) return;
+    if (globalModality === 'live_action') {
+      setGlobalAnimMeta({ primary: null, tags: [], style: null });
+    }
+  }, [isProjectMode, globalModality]);
+  const linkedProject = isProjectMode ? projects.find(p => p.id === selectedProject) : null;
+  const projectFeatures = (linkedProject as any)?.project_features as Record<string, any> | null | undefined;
+
+  // Poll for new ideas during generation to show incremental progress
+  const generatingRef = useRef(false);
+  generatingRef.current = generating;
+
+  useEffect(() => {
+    if (!generating) {
+      setGenProgress({ current: 0, total: 5 });
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      while (!cancelled && generatingRef.current) {
+        await new Promise(r => setTimeout(r, 3000));
+        if (cancelled || !generatingRef.current) break;
+        await qc.invalidateQueries({ queryKey: ['pitch-ideas'] });
+      }
+    };
+    poll();
+    return () => { cancelled = true; };
+  }, [generating, qc]);
+
+  // Update progress counter when ideas array grows during generation
+  const ideasLen = ideas.length;
+  useEffect(() => {
+    if (!generatingRef.current) return;
+    const newCount = Math.max(0, ideasLen - preGenCountRef.current);
+    setGenProgress(prev => {
+      const clamped = Math.min(newCount, prev.total);
+      if (clamped === prev.current) return prev;
+      return { ...prev, current: clamped };
+    });
+  }, [ideasLen]);
+
+  // Scroll to highlighted idea (from Blueprint Engine promotion)
+  useEffect(() => {
+    if (!highlightId || didScrollRef.current || isLoading) return;
+    const el = document.getElementById(`pitch-idea-${highlightId}`);
+    if (el) {
+      didScrollRef.current = true;
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+      // Clear the highlight param after 5s
+      setTimeout(() => {
+        setSearchParams(prev => {
+          const next = new URLSearchParams(prev);
+          next.delete('highlight');
+          return next;
+        }, { replace: true });
+      }, 5000);
+    }
+  }, [highlightId, isLoading, ideas, setSearchParams]);
+
+  const filteredIdeas = useMemo(() => {
+    return ideas
+      .filter(i => {
+        if (statusFilter && i.status !== statusFilter) return false;
+        return true;
+      })
+      .sort((a, b) => (Number(b.score_total) || 0) - (Number(a.score_total) || 0));
+  }, [ideas, statusFilter]);
+
+  const generate = useCallback(async () => {
+    if (!criteria.productionType) {
+      toast.error('Select a format/type first');
+      return;
+    }
+    setGenerating(true);
+    setGenerateFailed(false);
+    setGenProgress({ current: 0, total: 5 });
+    preGenCountRef.current = ideas.length;
+
+    try {
+      const normalized = normalizePitchCriteria(criteria as unknown as Record<string, unknown>, editedFields);
+
+      // Build animation meta + modality for global mode only (project-tuned reads from DB)
+      let globalAnimPayload: Record<string, any> | undefined;
+      let globalModalityPayload: string | undefined;
+      if (!isProjectMode) {
+        // Only send modality + anim meta when animation/hybrid
+        if (isAnimationModality(globalModality)) {
+          globalModalityPayload = globalModality;
+          const validPrimary = globalAnimMeta.primary && ANIMATION_PRIMARY_LIST.includes(globalAnimMeta.primary) ? globalAnimMeta.primary : null;
+          const validStyle = globalAnimMeta.style && ANIMATION_STYLE_LIST.includes(globalAnimMeta.style) ? globalAnimMeta.style : null;
+          const validTags = globalAnimMeta.tags.filter(t => ANIMATION_TAG_LIST.includes(t));
+          const hasAny = validPrimary || validStyle || validTags.length > 0;
+          if (hasAny) {
+            globalAnimPayload = {
+              animation_genre_primary: validPrimary,
+              animation_style: validStyle,
+              animation_genre_tags: validTags,
+            };
+          }
+        } else {
+          // live_action: still send modality for explicitness but no anim meta
+          globalModalityPayload = globalModality;
+        }
+      }
+
+      const { data, error } = await supabase.functions.invoke('generate-pitch', {
+        body: {
+          productionType: criteria.productionType,
+          count: 5,
+          projectId: isProjectMode ? selectedProject : undefined,
+          // DNA / Engine constraints
+          ...(dnaSelection.mode === 'dna_profile' && dnaSelection.dnaProfileId ? { source_dna_profile_id: dnaSelection.dnaProfileId } : {}),
+          ...(dnaSelection.mode === 'engine_only' && dnaSelection.engineKey ? { source_engine_key: dnaSelection.engineKey } : {}),
+          dna_constraint_mode: dnaSelection.mode,
+          // New contract: manual_criteria + auto_fields
+          manual_criteria: normalized.manual_criteria,
+          auto_fields: normalized.auto_fields,
+          meta: normalized.meta,
+          // Global-mode overrides (ignored by BE when projectId present)
+          ...(globalModalityPayload ? { productionModality: globalModalityPayload } : {}),
+          ...(globalAnimPayload ? { animationMeta: globalAnimPayload } : {}),
+          // Legacy top-level fields for backward compat
+          genre: normalized.manual_criteria.genre || '',
+          subgenre: normalized.manual_criteria.subgenre || '',
+          budgetBand: normalized.manual_criteria.budgetBand || '',
+          region: normalized.manual_criteria.region || '',
+          platformTarget: normalized.manual_criteria.platformTarget || '',
+          riskLevel: (normalized.manual_criteria.riskLevel as string) || 'medium',
+          hardCriteria: normalized.manual_criteria,
+          briefNotes: (normalized.manual_criteria.notes as string) || undefined,
+        },
+      });
+
+      console.log('[PitchIdeas] invoke result — error:', error, 'data keys:', data ? Object.keys(data) : 'null', 'ideas count:', data?.ideas?.length);
+
+      if (error) {
+        // Check if this is a fetch/timeout error — ideas may already be saved server-side
+        const isFetchTimeout = error.name === 'FunctionsFetchError' || error.message?.includes('Failed to fetch');
+        if (isFetchTimeout) {
+          console.warn('[PitchIdeas] Fetch timeout detected — checking if ideas were saved server-side...');
+          // Wait briefly for any in-flight DB writes to complete, then refetch
+          await new Promise(r => setTimeout(r, 3000));
+          await qc.invalidateQueries({ queryKey: ['pitch-ideas'] });
+          toast.info('Generation took longer than expected — refreshing ideas from server...');
+          setGenerating(false);
+          return;
+        }
+
+        let errMsg = 'Generation failed';
+        try {
+          console.error('[PitchIdeas] FunctionsError details:', JSON.stringify(error, null, 2));
+          if (error.context) {
+            const response = error.context;
+            if (response instanceof Response) {
+              const body = await response.json().catch(() => null);
+              console.error('[PitchIdeas] Error response body:', body);
+              if (body?.error) errMsg = body.error;
+            } else if (typeof response === 'object' && response.body) {
+              const body = typeof response.body === 'string' ? JSON.parse(response.body) : response.body;
+              if (body?.error) errMsg = body.error;
+            }
+          }
+          if (errMsg === 'Generation failed' && error.message) {
+            errMsg = error.message;
+          }
+        } catch { /* use default */ }
+        throw new Error(errMsg);
+      }
+      if (data?.error) throw new Error(data.error);
+
+      const pitchIdeas = data?.ideas;
+      if (data?.resolution_meta?.auto_field_status) {
+        setResolutionMeta(data.resolution_meta.auto_field_status);
+      }
+      if (data?.signals_metadata) {
+        setLastSignalsMetadata(data.signals_metadata);
+        try { localStorage.setItem(signalsStorageKey, JSON.stringify(data.signals_metadata)); } catch {}
+      }
+
+      // Ideas are now saved server-side — just invalidate the query to refetch
+      if (data?.server_saved && data?.saved_count > 0) {
+        console.log(`[PitchIdeas] Server saved ${data.saved_count} ideas, refetching...`);
+        await qc.invalidateQueries({ queryKey: ['pitch-ideas'] });
+        toast.success(`${data.saved_count} concepts generated`);
+      } else {
+        // Fallback: save client-side (shouldn't happen with updated edge function)
+        console.log('[PitchIdeas] Ideas to save:', pitchIdeas?.length, 'first title:', pitchIdeas?.[0]?.title);
+        if (!Array.isArray(pitchIdeas) || pitchIdeas.length === 0) {
+          throw new Error('No ideas returned. Please retry.');
+        }
+
+        let savedCount = 0;
+        const saveErrors: string[] = [];
+
+        for (const idea of pitchIdeas) {
+          try {
+            await save({
+              mode: 'greenlight',
+              status: 'draft',
+              production_type: criteria.productionType,
+              title: idea.title,
+              logline: idea.logline,
+              one_page_pitch: idea.one_page_pitch,
+              comps: idea.comps || [],
+              recommended_lane: idea.recommended_lane || '',
+              lane_confidence: idea.lane_confidence || 0,
+              budget_band: idea.budget_band || criteria.budgetBand || '',
+              packaging_suggestions: idea.packaging_suggestions || [],
+              development_sprint: idea.development_sprint || [],
+              risks_mitigations: idea.risks_mitigations || [],
+              why_us: idea.why_us || '',
+              genre: idea.genre || criteria.genre || '',
+              region: criteria.region || '',
+              platform_target: criteria.platformTarget || '',
+              risk_level: idea.risk_level || criteria.riskLevel || 'medium',
+              project_id: isProjectMode ? selectedProject : null,
+              raw_response: {
+                ...idea,
+                premise: idea.premise || '',
+                trend_fit_bullets: idea.trend_fit_bullets || [],
+                differentiation_move: idea.differentiation_move || '',
+                tone_tag: idea.tone_tag || '',
+                format_summary: idea.format_summary || '',
+                signals_metadata: data?.signals_metadata || null,
+              },
+              score_market_heat: idea.score_market_heat || 0,
+              score_feasibility: idea.score_feasibility || 0,
+              score_lane_fit: idea.score_lane_fit || 0,
+              score_saturation_risk: idea.score_saturation_risk || 0,
+              score_company_fit: idea.score_company_fit || 0,
+              score_total: idea.score_total || 0,
+            });
+            savedCount++;
+          } catch (saveErr: any) {
+            console.error(`[PitchIdeas] Failed to save idea "${idea.title}":`, saveErr);
+            saveErrors.push(idea.title || 'Untitled');
+          }
+        }
+
+        if (savedCount === 0) {
+          throw new Error('All ideas failed to save. Please retry.');
+        } else if (saveErrors.length > 0) {
+          toast.warning(`${savedCount} saved, ${saveErrors.length} failed: ${saveErrors.join(', ')}`);
+        } else {
+          toast.success(`${savedCount} concepts generated`);
+        }
+      }
+    } catch (e: any) {
+      setGenerateFailed(true);
+      toast.error(e.message || 'Generation failed');
+    } finally {
+      setGenerating(false);
+    }
+  }, [criteria, selectedProject, isProjectMode, globalAnimMeta, globalModality, dnaSelection, save]);
+
+  const handleShortlist = useCallback(async (id: string, shortlisted: boolean) => {
+    await update({ id, status: shortlisted ? 'shortlisted' : 'draft' });
+    toast.success(shortlisted ? 'Added to shortlist' : 'Removed from shortlist');
+  }, [update]);
+
+  const handlePromoted = useCallback((idea: PitchIdea) => {
+    setPromoteIdea(null);
+    setApplyIdea(idea);
+  }, []);
+
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    let y = 20;
+    doc.setFontSize(18);
+    doc.text('IFFY — Pitch Slate', 14, y);
+    y += 12;
+    for (const idea of filteredIdeas) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFontSize(14);
+      doc.text(idea.title, 14, y); y += 7;
+      doc.setFontSize(10);
+      const logLines = doc.splitTextToSize(idea.logline, 180);
+      doc.text(logLines, 14, y); y += logLines.length * 5 + 3;
+      doc.text(`Score: ${Number(idea.score_total).toFixed(0)} | Lane: ${idea.recommended_lane} | Budget: ${idea.budget_band}`, 14, y);
+      y += 10;
+    }
+    doc.save('iffy-pitch-slate.pdf');
+    toast.success('PDF exported');
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <motion.main
+        className="container py-8 space-y-6"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        {/* Title */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-display font-bold tracking-tight flex items-center gap-2">
+              <Lightbulb className="h-7 w-7 text-primary" />
+              Pitch Slate
+            </h1>
+            <p className="text-muted-foreground mt-1">Generate batches of 5 concepts with hard criteria, then promote the best to DevSeed</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {filteredIdeas.length > 0 && (
+              <Button variant="outline" size="sm" onClick={exportPDF}>
+                <Download className="h-4 w-4 mr-1" />
+                Export PDF
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Optional project context */}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm text-muted-foreground">Project context:</span>
+          <Select value={selectedProject} onValueChange={setSelectedProject}>
+            <SelectTrigger className="w-64">
+              <SelectValue placeholder="None (Global Ideas)" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">
+                <span className="flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" /> None (Global Ideas)</span>
+              </SelectItem>
+              {projects.map(p => (
+                <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {!isProjectMode ? (
+            <Badge variant="outline" className="text-xs">Global Mode</Badge>
+          ) : (
+            <Badge variant="default" className="text-xs">Project-tuned</Badge>
+          )}
+        </div>
+
+        {/* Narrative DNA / Engine Selector */}
+        <DnaEngineSelector value={dnaSelection} onChange={setDnaSelection} />
+
+        {/* Hard Criteria Form */}
+        <HardCriteriaForm
+          criteria={criteria}
+          onChange={setCriteria}
+          onGenerate={generate}
+          generating={generating}
+          hasProject={isProjectMode}
+          editedFields={editedFields}
+          onEditedFieldsChange={setEditedFields}
+          resolutionMeta={resolutionMeta}
+          projectFeatures={projectFeatures}
+          animationMeta={globalAnimMeta}
+          onAnimationMetaChange={setGlobalAnimMeta}
+          globalModality={globalModality}
+          onGlobalModalityChange={setGlobalModality}
+        />
+
+        <OperationProgress isActive={generating} stages={GENERATE_PITCH_STAGES} />
+
+        {/* Generation progress bar */}
+        <AnimatePresence>
+          {generating && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-2"
+            >
+              <Card className="border-primary/20 bg-primary/5">
+                <CardContent className="py-4 space-y-3">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-foreground font-medium flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      Generating concepts…
+                    </span>
+                    <span className="text-muted-foreground tabular-nums">
+                      {genProgress.current} / {genProgress.total}
+                    </span>
+                  </div>
+                  <Progress value={(genProgress.current / genProgress.total) * 100} className="h-2" />
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Trends Snapshot — persisted across refresh, visible when data exists */}
+        {lastSignalsMetadata && (
+          <TrendsSnapshot
+            signalsMetadata={lastSignalsMetadata}
+            updating={generating}
+            onClear={() => {
+              setLastSignalsMetadata(null);
+              try { localStorage.removeItem(signalsStorageKey); } catch {}
+            }}
+          />
+        )}
+        {generateFailed && !generating && (
+          <Card className="border-destructive/50 bg-destructive/5">
+            <CardContent className="py-3 text-sm text-destructive text-center">
+              Generation failed — check the error above and retry.
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Status filter + Generate More */}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex gap-2 flex-wrap">
+            {['', 'draft', 'shortlisted', 'in-development', 'archived'].map(s => (
+              <Badge
+                key={s || 'all'}
+                variant={statusFilter === s ? 'default' : 'outline'}
+                className="cursor-pointer"
+                onClick={() => setStatusFilter(s)}
+              >
+                {s || 'All'} ({ideas.filter(i => s ? i.status === s : true).length})
+              </Badge>
+            ))}
+          </div>
+          {filteredIdeas.length > 0 && !generating && (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={generate}>
+              <RefreshCw className="h-3.5 w-3.5" />
+              Generate 5 More
+            </Button>
+          )}
+        </div>
+
+        {/* Slate grid */}
+        {isLoading ? (
+          <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : filteredIdeas.length === 0 ? (
+          <Card className="border-border/30">
+            <CardContent className="py-12 text-center text-muted-foreground">
+              <Lightbulb className="h-10 w-10 mx-auto mb-3 opacity-40" />
+              <p>No concepts yet. Set your hard criteria above and generate a slate.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <AnimatePresence>
+              {filteredIdeas.map((idea, i) => {
+                const ideaProject = idea.project_id ? projects.find(p => p.id === idea.project_id) : null;
+                return (
+                  <motion.div
+                    key={idea.id}
+                    id={`pitch-idea-${idea.id}`}
+                    initial={{ opacity: 0, y: 16, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.35, delay: i < 5 ? i * 0.08 : 0 }}
+                    className={highlightId === idea.id ? 'ring-2 ring-primary rounded-lg transition-shadow duration-700' : ''}
+                  >
+                    <SlateCard
+                      idea={idea}
+                      rank={i + 1}
+                      onPromote={setPromoteIdea}
+                      onShortlist={handleShortlist}
+                      onDelete={remove}
+                      projectFeatures={(ideaProject as any)?.project_features as Record<string, any> | null | undefined}
+                    />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        )}
+
+        {/* Promote dialog */}
+        <PromoteToDevSeedDialog
+          idea={promoteIdea}
+          open={!!promoteIdea}
+          onOpenChange={open => { if (!open) setPromoteIdea(null); }}
+          onPromoted={handlePromoted}
+        />
+
+        {/* Apply DevSeed dialog */}
+        <ApplyDevSeedDialog
+          idea={applyIdea}
+          open={!!applyIdea}
+          onOpenChange={open => { if (!open) setApplyIdea(null); }}
+        />
+      </motion.main>
+    </div>
+  );
+}

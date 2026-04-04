@@ -1,0 +1,326 @@
+/**
+ * ImageLightbox — Fullscreen image viewer with zoom, pan, and metadata overlay.
+ * Used by Review Studio and browsing surfaces for detailed image inspection.
+ * Supports keyboard shortcuts: A=approve, D=reject, ←/→=navigate, Esc=close.
+ */
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { X, ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Maximize2, ChevronLeft, ChevronRight, CheckCircle, XCircle } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { SHOT_TYPE_LABELS } from '@/lib/images/types';
+import type { ProjectImage, ShotType } from '@/lib/images/types';
+
+interface ImageLightboxProps {
+  image: ProjectImage | null;
+  open: boolean;
+  onClose: () => void;
+  /** Optional DNA traits to display */
+  dnaTraits?: Array<{ label: string; value: string; region?: string }>;
+  /** Optional score to display */
+  score?: number | null;
+  /** Optional canonical rank reason from ranking helper */
+  rankReason?: string | null;
+  /** Navigation: all images in current set for ←/→ */
+  imageSet?: ProjectImage[];
+  /** Called when navigating to a different image */
+  onNavigate?: (image: ProjectImage) => void;
+  /** Approve action (keyboard: A) */
+  onApprove?: (image: ProjectImage) => void;
+  /** Reject action (keyboard: D) */
+  onReject?: (imageId: string) => void;
+}
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 6;
+const ZOOM_STEP = 0.5;
+
+export function ImageLightbox({ image, open, onClose, dnaTraits, score, rankReason, imageSet, onNavigate, onApprove, onReject }: ImageLightboxProps) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [showOverlay, setShowOverlay] = useState(true);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const panStart = useRef({ x: 0, y: 0 });
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Navigation index
+  const currentIndex = useMemo(() => {
+    if (!imageSet || !image) return -1;
+    return imageSet.findIndex(i => i.id === image.id);
+  }, [imageSet, image]);
+
+  const canPrev = currentIndex > 0;
+  const canNext = imageSet ? currentIndex < imageSet.length - 1 : false;
+
+  const goNext = useCallback(() => {
+    if (canNext && imageSet && onNavigate) onNavigate(imageSet[currentIndex + 1]);
+  }, [canNext, imageSet, currentIndex, onNavigate]);
+
+  const goPrev = useCallback(() => {
+    if (canPrev && imageSet && onNavigate) onNavigate(imageSet[currentIndex - 1]);
+  }, [canPrev, imageSet, currentIndex, onNavigate]);
+
+  // Reset zoom/pan when image changes
+  useEffect(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, [image?.id]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!open || !image) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goPrev(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); goNext(); }
+      else if (e.key === 'a' || e.key === 'A') { e.preventDefault(); onApprove?.(image); goNext(); }
+      else if (e.key === 'd' || e.key === 'D') { e.preventDefault(); onReject?.(image.id); goNext(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, image, goPrev, goNext, onApprove, onReject]);
+
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    setZoom(prev => {
+      const next = prev + (e.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP);
+      return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    });
+  }, []);
+
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    if (zoom <= 1) return;
+    setIsDragging(true);
+    dragStart.current = { x: e.clientX, y: e.clientY };
+    panStart.current = { ...pan };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [zoom, pan]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDragging) return;
+    setPan({
+      x: panStart.current.x + (e.clientX - dragStart.current.x),
+      y: panStart.current.y + (e.clientY - dragStart.current.y),
+    });
+  }, [isDragging]);
+
+  const handlePointerUp = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  }, []);
+
+  // Null guard — all hooks are above, safe to return early
+  if (!image) {
+    return open ? (
+      <Dialog open={open} onOpenChange={() => onClose()}>
+        <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 bg-black/95 border-none overflow-hidden">
+          <DialogTitle className="sr-only">Image Viewer</DialogTitle>
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">
+            No image selected
+          </div>
+        </DialogContent>
+      </Dialog>
+    ) : null;
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] w-full h-full p-0 bg-black border-none rounded-lg overflow-hidden [&>button]:hidden">
+        <DialogTitle className="sr-only">Image inspection</DialogTitle>
+
+        {/* Top toolbar */}
+        <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-black/70 to-transparent">
+          <div className="flex items-center gap-1.5">
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/70 hover:text-white hover:bg-white/10"
+              onClick={() => setZoom(z => Math.min(MAX_ZOOM, z + ZOOM_STEP))}>
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/70 hover:text-white hover:bg-white/10"
+              onClick={() => setZoom(z => Math.max(MIN_ZOOM, z - ZOOM_STEP))}>
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/70 hover:text-white hover:bg-white/10"
+              onClick={resetView} title="Reset zoom">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-[10px] text-white/50 ml-1 tabular-nums">{Math.round(zoom * 100)}%</span>
+            {imageSet && currentIndex >= 0 && (
+              <span className="text-[10px] text-white/40 tabular-nums ml-1">
+                {currentIndex + 1}/{imageSet.length}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {/* Quick approve/reject */}
+            {onApprove && image.curation_state === 'candidate' && (
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-[10px] gap-1 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10"
+                onClick={() => { onApprove(image); goNext(); }} title="Approve (A)">
+                <CheckCircle className="h-3.5 w-3.5" /> Approve
+              </Button>
+            )}
+            {onReject && image.curation_state === 'candidate' && (
+              <Button size="sm" variant="ghost" className="h-7 px-2 text-[10px] gap-1 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                onClick={() => { onReject(image.id); goNext(); }} title="Reject (D)">
+                <XCircle className="h-3.5 w-3.5" /> Reject
+              </Button>
+            )}
+
+            <div className="w-px h-4 bg-white/10" />
+
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/70 hover:text-white hover:bg-white/10"
+              onClick={() => setShowOverlay(v => !v)} title="Toggle metadata">
+              {showOverlay ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-white/70 hover:text-white hover:bg-white/10"
+              onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Navigation arrows */}
+        {canPrev && (
+          <button
+            onClick={goPrev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+        )}
+        {canNext && (
+          <button
+            onClick={goNext}
+            className="absolute right-2 top-1/2 -translate-y-1/2 z-20 h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 flex items-center justify-center text-white/70 hover:text-white transition-colors"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Keyboard hint */}
+        {(onApprove || onReject || imageSet) && showOverlay && (
+          <div className="absolute top-12 left-1/2 -translate-x-1/2 z-10 flex items-center gap-3 text-[9px] text-white/30">
+            {imageSet && <span>← → navigate</span>}
+            {onApprove && <span>A approve</span>}
+            {onReject && <span>D reject</span>}
+            <span>Esc close</span>
+          </div>
+        )}
+
+        {/* Image viewport */}
+        <div
+          ref={containerRef}
+          className={cn('w-full h-full flex items-center justify-center overflow-hidden', zoom > 1 ? 'cursor-grab' : 'cursor-zoom-in', isDragging && 'cursor-grabbing')}
+          onWheel={handleWheel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onDoubleClick={() => zoom === 1 ? setZoom(2.5) : resetView()}
+        >
+          {image.signedUrl && (
+            <img
+              src={image.signedUrl}
+              alt=""
+              className="max-w-full max-h-full object-contain select-none pointer-events-none"
+              style={{
+                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
+                transition: isDragging ? 'none' : 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+              }}
+              draggable={false}
+            />
+          )}
+        </div>
+
+        {/* Bottom metadata overlay */}
+        {showOverlay && (
+          <div className="absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/80 to-transparent px-4 py-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              {image.shot_type && (
+                <Badge variant="secondary" className="text-[9px] bg-white/10 text-white/90 border-white/20">
+                  {SHOT_TYPE_LABELS[image.shot_type as ShotType] || image.shot_type}
+                </Badge>
+              )}
+              {image.subject && (
+                <Badge variant="outline" className="text-[9px] border-white/30 text-white/80">
+                  {image.subject}
+                </Badge>
+              )}
+              {image.asset_group && (
+                <Badge variant="outline" className="text-[9px] border-white/20 text-white/60">
+                  {image.asset_group}
+                </Badge>
+              )}
+              {score != null && (
+                <Badge variant="outline" className="text-[9px] border-white/20 text-white/60 tabular-nums">
+                  Score: {score.toFixed(2)}
+                </Badge>
+              )}
+              {image.width && image.height && (
+                <span className="text-[9px] text-white/40 tabular-nums">{image.width}×{image.height}</span>
+              )}
+              <span className="text-[8px] text-white/30 ml-auto font-mono">{image.id.slice(0, 8)}</span>
+            </div>
+
+            {/* Identity anchor provenance — from actual generation_config */}
+            {image.asset_group === 'character' && (() => {
+              const gc = (image.generation_config || {}) as Record<string, unknown>;
+              const locked = !!gc.identity_locked;
+              const anchorPaths = gc.identity_anchor_paths as Record<string, string> | undefined;
+              const usedSlots: string[] = [];
+              if (anchorPaths) {
+                if (anchorPaths.headshot) usedSlots.push('Headshot');
+                if (anchorPaths.fullBody) usedSlots.push('Full Body');
+              }
+              if (!locked && usedSlots.length === 0) return null;
+              return (
+                <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                  {locked && (
+                    <Badge variant="secondary" className="text-[8px] bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                      🔒 Identity Locked
+                    </Badge>
+                  )}
+                  {usedSlots.length > 0 && (
+                    <Badge variant="outline" className="text-[8px] border-white/20 text-white/60">
+                      Anchors: {usedSlots.join(', ')}
+                    </Badge>
+                  )}
+                  {!locked && usedSlots.length > 0 && (
+                    <Badge variant="outline" className="text-[8px] border-amber-500/30 text-amber-300/70">
+                      Partial context
+                    </Badge>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Recommendation context from canonical ranking */}
+            {rankReason && (
+              <div className="mt-1.5">
+                <Badge variant="outline" className="text-[8px] border-primary/30 text-primary/80 bg-primary/5">
+                  ★ {rankReason}
+                </Badge>
+              </div>
+            )}
+
+            {/* DNA traits */}
+            {dnaTraits && dnaTraits.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {dnaTraits.map((trait, i) => (
+                  <Badge key={i} variant="outline" className="text-[8px] border-white/15 text-white/60 bg-white/5">
+                    <span className="text-white/40 mr-0.5">{trait.label}:</span> {trait.value}
+                    {trait.region && <span className="text-white/30 ml-0.5">({trait.region})</span>}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}

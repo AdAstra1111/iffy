@@ -1,0 +1,2002 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
+import { computeEdgeQualityGate } from "../_shared/edgeQualityGate.ts";
+import type { ImageRole, ImageStyleMode } from "../_shared/imageGenerationResolver.ts";
+import { resolveVisualStyleProfile, validateStyleOrError } from "../_shared/visualStyleAuthority.ts";
+import type { VisualStyleLock } from "../_shared/visualStyleAuthority.ts";
+import { resolveFormatToLane, resolvePrestigeStyle, assemblePrestigePrompt } from "../_shared/prestigeStyleSystem.ts";
+import type { StyleComposite } from "../_shared/prestigeStyleSystem.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+// ── Style Policy ─────────────────────────────────────────────────────────────
+
+type LocalImageStyleMode = "photorealistic_cinematic" | "stylised_animation" | "stylised_graphic" | "stylised_experimental" | "stylised_period_painterly";
+
+interface ImageStylePolicy {
+  mode: LocalImageStyleMode;
+  styleDirectives: string;
+  negativeStyleConstraints: string;
+}
+
+const PHOTOREAL_DIRECTIVES =
+  "Photorealistic cinematic imagery. Live-action film still. Shot on ARRI Alexa or RED cinema camera with premium anamorphic lenses. Real-world materials, textures, surfaces. Believable natural or motivated cinematic lighting. Real lens behaviour including subtle flares, bokeh, and depth of field. Premium theatrical realism. Film grain present. Imperfect real-world skin texture with pores and natural variation. No illustration, no concept art, no digital painting, no CGI render look. Avoid overly smooth, glossy, or airbrushed skin. Avoid flat even lighting. Avoid symmetrical or posed-looking staging. Must feel captured, not rendered.";
+const PHOTOREAL_NEGATIVES =
+  "painterly, illustrative, cartoon, anime, graphic-novel style, concept art rendering, abstract, surreal, watercolor, oil painting, sketch, line art, cel-shaded, pop art, storybook illustration, digital painting, CGI render look, stock photo aesthetic, 3D render, Unreal Engine, video game screenshot, airbrushed skin, overly smooth, glossy, plastic skin, symmetrical staging, concept art, AI-generated look";
+
+const ANIMATION_FORMATS = ["animation", "anim-feature", "anim-series", "animated"];
+const GRAPHIC_GENRES = ["graphic-novel", "comic", "manga"];
+
+function resolveStylePolicy(format: string, genres: string[]): ImageStylePolicy {
+  const f = format.toLowerCase();
+  const gs = genres.map(g => g.toLowerCase());
+  if (ANIMATION_FORMATS.some(af => f.includes(af))) {
+    return { mode: "stylised_animation", styleDirectives: "Stylised animated visual language. Professional animation studio quality.", negativeStyleConstraints: "photorealistic, live-action, stock photo" };
+  }
+  if (gs.some(g => GRAPHIC_GENRES.some(gg => g.includes(gg)))) {
+    return { mode: "stylised_graphic", styleDirectives: "Graphic novel / comic book visual style. Bold ink work.", negativeStyleConstraints: "photorealistic, live-action, stock photo" };
+  }
+  return { mode: "photorealistic_cinematic", styleDirectives: PHOTOREAL_DIRECTIVES, negativeStyleConstraints: PHOTOREAL_NEGATIVES };
+}
+
+// ── Shot taxonomy prompt builders ────────────────────────────────────────────
+
+type AssetGroup = "character" | "world" | "key_moment" | "visual_language" | "poster";
+type ShotType = "close_up" | "medium" | "wide" | "full_body" | "profile" | "over_shoulder" | "detail" | "tableau" | "emotional_variant" | "atmospheric" | "time_variant" | "lighting_ref" | "texture_ref" | "composition_ref" | "color_ref" | "identity_headshot" | "identity_profile" | "identity_full_body";
+type LookbookSection = "world" | "character" | "key_moment" | "visual_language";
+
+const SHOT_PACKS: Record<AssetGroup, ShotType[]> = {
+  character: ["close_up", "medium", "full_body", "profile", "emotional_variant"],
+  world: ["wide", "atmospheric", "detail", "time_variant"],
+  key_moment: ["tableau", "medium", "close_up", "wide"],
+  visual_language: ["lighting_ref", "texture_ref", "composition_ref", "color_ref"],
+  poster: [],
+};
+
+interface SectionContext {
+  title: string;
+  format: string;
+  genres: string[];
+  tone: string;
+  worldDescription: string;
+  characters: string;
+  conflict: string;
+  themes: string;
+  logline: string;
+  stylePolicy: ImageStylePolicy;
+  characterName?: string;
+  locationName?: string;
+  locationDescription?: string;
+  worldBindingBlock?: string;
+  locationBindingBlock?: string;
+  characterBindingBlock?: string;
+  /** Bound character names from canonical binding resolution */
+  boundCharacterNames?: string[];
+  /** Narrative moments pool from scene graph */
+  narrativeMoments?: NarrativeMoment[];
+}
+
+// ── Narrative Moment (from scene graph) ─────────────────────────────────────
+
+interface NarrativeMoment {
+  slugline: string;
+  summary: string;
+  characters_present: string[];
+  location: string;
+  time_of_day: string;
+  purpose: string;
+  tension_delta: number | null;
+  content_preview: string;
+  canon_location_id: string | null;
+}
+
+/** Shot-type to narrative selection strategy */
+const SHOT_NARRATIVE_STRATEGY: Partial<Record<ShotType, {
+  prefer: 'high_tension' | 'establishing' | 'multi_character' | 'emotional' | 'atmospheric' | 'any';
+  minCharacters?: number;
+}>> = {
+  wide:              { prefer: 'establishing' },
+  atmospheric:       { prefer: 'atmospheric' },
+  close_up:          { prefer: 'emotional' },
+  emotional_variant: { prefer: 'emotional' },
+  medium:            { prefer: 'any', minCharacters: 1 },
+  tableau:           { prefer: 'multi_character', minCharacters: 2 },
+  over_shoulder:     { prefer: 'any', minCharacters: 2 },
+  detail:            { prefer: 'atmospheric' },
+  time_variant:      { prefer: 'establishing' },
+};
+
+function selectNarrativeMoment(
+  moments: NarrativeMoment[],
+  shotType: ShotType | null,
+  variantIndex: number,
+): NarrativeMoment | null {
+  if (!moments.length) return null;
+  const strategy = shotType ? SHOT_NARRATIVE_STRATEGY[shotType] : null;
+  if (!strategy) {
+    // Round-robin through available moments
+    return moments[variantIndex % moments.length];
+  }
+
+  let candidates = [...moments];
+
+  // Filter by minimum characters
+  if (strategy.minCharacters) {
+    const filtered = candidates.filter(m => m.characters_present.length >= strategy.minCharacters!);
+    if (filtered.length) candidates = filtered;
+  }
+
+  // Score by preference
+  const scored = candidates.map(m => {
+    let score = 0;
+    switch (strategy.prefer) {
+      case 'high_tension':
+        score = (m.tension_delta ?? 0) > 0 ? 10 : 0;
+        if (m.purpose?.includes('climax') || m.purpose?.includes('confrontation')) score += 5;
+        break;
+      case 'establishing':
+        if (m.location && m.location.length > 3) score += 5;
+        if (m.slugline?.match(/^(INT|EXT)\./i)) score += 3;
+        if ((m.tension_delta ?? 0) <= 0) score += 2; // Calmer scenes for establishing
+        break;
+      case 'multi_character':
+        score = Math.min(m.characters_present.length, 5) * 3;
+        if ((m.tension_delta ?? 0) > 0) score += 2;
+        break;
+      case 'emotional':
+        score = Math.abs(m.tension_delta ?? 0) * 2;
+        if (m.purpose?.includes('reveal') || m.purpose?.includes('emotional')) score += 5;
+        if (m.characters_present.length >= 1) score += 3;
+        break;
+      case 'atmospheric':
+        if (m.time_of_day) score += 4;
+        if (m.location && m.location.length > 3) score += 3;
+        if (m.characters_present.length === 0) score += 2; // Prefer empty atmosphere
+        break;
+      default:
+        score = 1;
+    }
+    return { moment: m, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+
+  // Use variant index to pick from top candidates (avoid always picking the same one)
+  const topN = Math.min(scored.length, 4);
+  return scored[variantIndex % topN].moment;
+}
+
+function buildNarrativeMomentBlock(moment: NarrativeMoment): string {
+  const lines = ['[NARRATIVE MOMENT — FROM THIS PROJECT\'S SCRIPT]', ''];
+  if (moment.slugline) lines.push(`SCENE: ${moment.slugline}`);
+  if (moment.summary) lines.push(`WHAT IS HAPPENING: ${moment.summary}`);
+  if (moment.characters_present.length > 0) {
+    lines.push(`WHO IS PRESENT: ${moment.characters_present.join(', ')}`);
+  }
+  if (moment.location) lines.push(`WHERE: ${moment.location}`);
+  if (moment.time_of_day) lines.push(`TIME OF DAY: ${moment.time_of_day}`);
+  if (moment.purpose) lines.push(`DRAMATIC PURPOSE: ${moment.purpose}`);
+  lines.push('');
+  lines.push('Generate this image as if it were a frame from THIS specific scene.');
+  lines.push('Do NOT invent a generic scenario — depict THIS moment from the story.');
+  return lines.join('\n');
+}
+
+async function loadNarrativeMoments(sb: any, projectId: string): Promise<NarrativeMoment[]> {
+  // Load active scene IDs
+  const { data: scenes } = await sb
+    .from('scene_graph_scenes')
+    .select('id')
+    .eq('project_id', projectId)
+    .is('deprecated_at', null)
+    .limit(50);
+  if (!scenes?.length) return [];
+
+  const sceneIds = scenes.map((s: any) => s.id);
+
+  // Load latest version per scene (highest version_number)
+  const { data: versions } = await sb
+    .from('scene_graph_versions')
+    .select('scene_id, slugline, summary, content, characters_present, location, time_of_day, purpose, tension_delta, canon_location_id, version_number')
+    .eq('project_id', projectId)
+    .in('scene_id', sceneIds)
+    .order('version_number', { ascending: false });
+  if (!versions?.length) return [];
+
+  // Deduplicate to latest version per scene
+  const seen = new Set<string>();
+  const moments: NarrativeMoment[] = [];
+  for (const v of versions) {
+    if (seen.has(v.scene_id)) continue;
+    seen.add(v.scene_id);
+    if (!v.summary && !v.content) continue; // Skip empty scenes
+
+    const chars = Array.isArray(v.characters_present)
+      ? v.characters_present.filter((c: any) => typeof c === 'string')
+      : [];
+    moments.push({
+      slugline: v.slugline || '',
+      summary: v.summary || '',
+      characters_present: chars,
+      location: v.location || '',
+      time_of_day: v.time_of_day || '',
+      purpose: v.purpose || '',
+      tension_delta: typeof v.tension_delta === 'number' ? v.tension_delta : null,
+      content_preview: (v.content || '').slice(0, 200),
+      canon_location_id: v.canon_location_id || null,
+    });
+  }
+  return moments;
+}
+
+// ── Canonical Visual Binding Types ──────────────────────────────────────────
+interface CharacterBinding {
+  character_name: string;
+  dna_version_id: string | null;
+  identity_signature: Record<string, unknown> | null;
+  locked_invariants: Record<string, unknown> | null;
+  traits_summary: string;
+}
+
+interface LocationBinding {
+  location_id: string;
+  canonical_name: string;
+  description: string | null;
+  location_type: string;
+  geography: string | null;
+  interior_or_exterior: string | null;
+  era_relevance: string | null;
+  story_importance: string;
+}
+
+interface WorldBinding {
+  era: string;
+  geography: string;
+  architecture: string;
+  social_structure: string;
+  costume_language: string;
+  environmental_palette: string;
+  technology_level: string;
+  cultural_markers: string;
+  world_rules: string[];
+  bound: boolean;
+}
+
+interface CanonicalBindingResult {
+  characters: CharacterBinding[];
+  locations: LocationBinding[];
+  world: WorldBinding;
+  characterPromptBlock: string;
+  locationPromptBlock: string;
+  worldPromptBlock: string;
+  binding_status: 'bound' | 'partially_bound' | 'unbound';
+  missing: string[];
+  targeting_mode: 'exact' | 'derived' | 'heuristic';
+}
+// ── Section → canonical entity mapping ──────────────────────────────────────
+const SECTION_BINDING_RELEVANCE: Record<string, { characters: boolean; locations: boolean; world: boolean }> = {
+  character: { characters: true, locations: false, world: true },
+  world: { characters: false, locations: true, world: true },
+  key_moment: { characters: true, locations: true, world: true },
+  visual_language: { characters: false, locations: true, world: true },
+};
+
+async function resolveCharacterBindings(
+  sb: any, projectId: string, sectionKey: string,
+  explicitCharacterName?: string, explicitCharacterNames?: string[],
+): Promise<CharacterBinding[]> {
+  if (!SECTION_BINDING_RELEVANCE[sectionKey]?.characters) return [];
+  const { data: dnaRows } = await sb
+    .from("character_visual_dna")
+    .select("id, character_name, locked_invariants, identity_signature, version_number")
+    .eq("project_id", projectId).eq("is_current", true)
+    .order("character_name").limit(10);
+  if (!dnaRows?.length) return [];
+
+  // Build exact target set from explicit params
+  const exactTargets = new Set<string>();
+  if (explicitCharacterName) exactTargets.add(explicitCharacterName.toLowerCase());
+  if (explicitCharacterNames?.length) {
+    for (const n of explicitCharacterNames) exactTargets.add(n.toLowerCase());
+  }
+
+  const bindings: CharacterBinding[] = [];
+  for (const dna of dnaRows) {
+    const nameLC = dna.character_name?.toLowerCase() || '';
+    // If exact targets specified, only bind those exact characters
+    if (exactTargets.size > 0 && !exactTargets.has(nameLC)) continue;
+    const sig = dna.identity_signature as Record<string, unknown> | null;
+    const locked = dna.locked_invariants as Record<string, unknown> | null;
+    const traitParts: string[] = [];
+    if (sig) {
+      for (const k of ['face', 'body', 'silhouette', 'wardrobe']) {
+        if (sig[k]) traitParts.push(`${k}: ${typeof sig[k] === 'string' ? sig[k] : JSON.stringify(sig[k])}`);
+      }
+    }
+    if (locked) {
+      const entries = Object.entries(locked).filter(([_, v]) => v);
+      if (entries.length) traitParts.push(`Locked: ${entries.map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('; ')}`);
+    }
+    bindings.push({ character_name: dna.character_name, dna_version_id: dna.id, identity_signature: sig, locked_invariants: locked, traits_summary: traitParts.join('. ') || `${dna.character_name}` });
+    // If no exact targets, cap at 3 (heuristic mode)
+    if (exactTargets.size === 0 && bindings.length >= 3) break;
+  }
+  return bindings;
+}
+
+async function resolveLocationBindings(
+  sb: any, projectId: string, sectionKey: string,
+  explicitLocationId?: string | null, explicitLocationName?: string,
+  explicitLocationIds?: string[],
+): Promise<LocationBinding[]> {
+  if (!SECTION_BINDING_RELEVANCE[sectionKey]?.locations) return [];
+
+  // If exact IDs provided, query those specifically
+  if (explicitLocationIds?.length) {
+    const { data: exactRows } = await sb.from("canon_locations")
+      .select("id, canonical_name, description, location_type, geography, interior_or_exterior, era_relevance, story_importance")
+      .eq("project_id", projectId).eq("active", true)
+      .in("id", explicitLocationIds);
+    if (exactRows?.length) {
+      return exactRows.map((loc: any) => ({
+        location_id: loc.id, canonical_name: loc.canonical_name, description: loc.description,
+        location_type: loc.location_type || 'unspecified', geography: loc.geography,
+        interior_or_exterior: loc.interior_or_exterior, era_relevance: loc.era_relevance,
+        story_importance: loc.story_importance || 'secondary',
+      }));
+    }
+  }
+
+  let q = sb.from("canon_locations")
+    .select("id, canonical_name, description, location_type, geography, interior_or_exterior, era_relevance, story_importance")
+    .eq("project_id", projectId).eq("active", true);
+  if (explicitLocationId) q = q.eq("id", explicitLocationId);
+  q = q.order("story_importance", { ascending: true }).limit(6);
+  const { data: locRows } = await q;
+  if (!locRows?.length) return [];
+  let filtered = locRows;
+  if (explicitLocationName && !explicitLocationId) {
+    const norm = explicitLocationName.toLowerCase();
+    const match = locRows.filter((l: any) => l.canonical_name?.toLowerCase().includes(norm));
+    if (match.length) filtered = match;
+  }
+  return filtered.map((loc: any) => ({
+    location_id: loc.id, canonical_name: loc.canonical_name, description: loc.description,
+    location_type: loc.location_type || 'unspecified', geography: loc.geography,
+    interior_or_exterior: loc.interior_or_exterior, era_relevance: loc.era_relevance,
+    story_importance: loc.story_importance || 'secondary',
+  }));
+}
+
+function resolveWorldBinding(canonJson: any): WorldBinding {
+  if (!canonJson) return { era: '', geography: '', architecture: '', social_structure: '', costume_language: '', environmental_palette: '', technology_level: '', cultural_markers: '', world_rules: [], bound: false };
+  const cj = canonJson;
+  const worldRules: string[] = [];
+  if (Array.isArray(cj.world_rules)) worldRules.push(...cj.world_rules.filter((r: any) => typeof r === 'string'));
+  else if (typeof cj.world_rules === 'string' && cj.world_rules.trim()) worldRules.push(cj.world_rules);
+  const worldDesc = cj.world_description || cj.setting || '';
+  return {
+    era: cj.era || cj.period || cj.time_period || '',
+    geography: cj.geography || '', architecture: cj.architecture || '',
+    social_structure: cj.social_structure || cj.class_structure || '',
+    costume_language: cj.costume_language || cj.wardrobe || '',
+    environmental_palette: cj.color_palette || cj.palette || '',
+    technology_level: cj.technology_level || cj.technology || '',
+    cultural_markers: cj.cultural_markers || cj.culture || '',
+    world_rules: worldRules,
+    bound: !!(worldDesc || cj.era || cj.period || worldRules.length > 0),
+  };
+}
+
+function buildCharacterBindingBlock(chars: CharacterBinding[], shotType?: ShotType | null): string {
+  if (!chars.length) return '';
+  const names = chars.map(c => c.character_name);
+  const nameList = names.map(n => `"${n}"`).join(', ');
+
+  const lines = [
+    '[MANDATORY CAST REQUIREMENT — DO NOT OMIT OR SUBSTITUTE]',
+    '',
+    `This image MUST include the following character${chars.length > 1 ? 's' : ''}:`,
+  ];
+  for (const c of chars) {
+    lines.push(`- ${c.character_name}`);
+    if (c.traits_summary) lines.push(`  Visual DNA: ${c.traits_summary}`);
+  }
+
+  lines.push('');
+  lines.push(`ALL listed characters (${nameList}) MUST be visible and recognizable in the frame.`);
+  lines.push('Do NOT omit any listed character.');
+  lines.push('Do NOT replace with generic, unnamed, or different individuals.');
+  lines.push('Do NOT alter identity, face, build, or silhouette.');
+  lines.push('');
+
+  // Shot-specific framing enforcement
+  if (shotType) {
+    lines.push('[SHOT-SPECIFIC FRAMING REQUIREMENT]');
+    switch (shotType) {
+      case 'wide':
+        lines.push(`WIDE SHOT: ${nameList} must be visible in full or near-full body within the environment.`);
+        lines.push('Environment is dominant but characters must be identifiable — no silhouettes that obscure identity.');
+        break;
+      case 'medium':
+        lines.push(`MEDIUM SHOT: ${nameList} framed waist-up. Facial identity must be clearly readable.`);
+        lines.push('Environment is secondary to character presence.');
+        break;
+      case 'close_up':
+        lines.push(`CLOSE-UP: ${chars.length === 1 ? `${nameList} fills the frame.` : `Tightly grouped — ${nameList} both visible.`} Face dominant, identity must match DNA exactly.`);
+        break;
+      case 'tableau':
+        lines.push(`TABLEAU: ALL characters (${nameList}) must appear simultaneously in deliberate cinematic staging.`);
+        lines.push('Multi-character composition — no character may be cropped out or reduced to background blur.');
+        lines.push('Interaction or spatial arrangement must reflect a narrative moment.');
+        break;
+      case 'over_shoulder':
+        lines.push(`OVER-SHOULDER: ${nameList} — one character in foreground (partial), other facing camera. Both must be recognizable.`);
+        break;
+      case 'full_body':
+        lines.push(`FULL BODY: ${nameList} visible head to toe. Proportions and silhouette must match character DNA.`);
+        break;
+      case 'emotional_variant':
+        lines.push(`EMOTIONAL VARIANT: ${nameList} — same character(s), different emotional state. Identity MUST remain identical.`);
+        break;
+      default:
+        lines.push(`${nameList} must be clearly present and identifiable in this composition.`);
+        break;
+    }
+    lines.push('');
+  }
+
+  // No-dropout rule for multi-character
+  if (chars.length > 1) {
+    lines.push('[NO CHARACTER DROPOUT]');
+    lines.push(`All ${chars.length} characters MUST appear in the frame simultaneously.`);
+    lines.push('Do NOT reduce to a single character.');
+    lines.push('Do NOT split into separate implied shots.');
+    lines.push('Do NOT place any required character fully off-screen or obscured.');
+    lines.push('');
+  }
+
+  // Identity enforcement
+  lines.push('[IDENTITY LOCK ENFORCEMENT]');
+  lines.push('Facial structure, skin tone, age, build, and defining features');
+  lines.push('must remain consistent with the provided character DNA.');
+  lines.push('No variation, reinterpretation, or stylization.');
+  lines.push('');
+  lines.push('[COMPOSITION GUARDRAIL]');
+  lines.push('This is a live-action cinematic frame with real actors.');
+  lines.push('Do NOT generate symbolic abstraction that removes characters from the scene.');
+  lines.push('Symbolism must come from staging, lighting, and composition — not character omission.');
+
+  return lines.join('\n');
+}
+
+function buildLocationBindingBlock(locs: LocationBinding[]): string {
+  if (!locs.length) return '';
+  const lines = ['[CANONICAL LOCATION BINDING — ARCHITECTURAL CONTINUITY REQUIRED]', ''];
+  for (const l of locs) {
+    lines.push(`LOCATION: "${l.canonical_name}" (${l.location_type}${l.interior_or_exterior ? `, ${l.interior_or_exterior}` : ''})`);
+    if (l.description) lines.push(`  ${l.description}`);
+    if (l.geography) lines.push(`  Geography: ${l.geography}`);
+    if (l.era_relevance) lines.push(`  Era: ${l.era_relevance}`);
+    lines.push(`  ENFORCE: Preserve recognizable architectural identity, geography, layout.`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+function buildWorldBindingBlock(world: WorldBinding): string {
+  if (!world.bound) return '';
+  const lines = ['[CANONICAL WORLD BINDING — PROJECT UNIVERSE COHERENCE REQUIRED]', ''];
+  if (world.era) lines.push(`ERA/PERIOD: ${world.era}`);
+  if (world.geography) lines.push(`GEOGRAPHY: ${world.geography}`);
+  if (world.architecture) lines.push(`ARCHITECTURE: ${world.architecture}`);
+  if (world.social_structure) lines.push(`SOCIAL STRUCTURE: ${world.social_structure}`);
+  if (world.costume_language) lines.push(`COSTUME/MATERIAL: ${world.costume_language}`);
+  if (world.environmental_palette) lines.push(`PALETTE: ${world.environmental_palette}`);
+  if (world.technology_level) lines.push(`TECHNOLOGY: ${world.technology_level}`);
+  if (world.cultural_markers) lines.push(`CULTURAL MARKERS: ${world.cultural_markers}`);
+  if (world.world_rules.length > 0) { lines.push(`WORLD RULES:`); for (const r of world.world_rules.slice(0, 5)) lines.push(`  - ${r}`); }
+  lines.push('', `ENFORCE: All imagery must belong to THIS project's world. No generic fantasy substitution.`);
+  return lines.join('\n');
+}
+
+async function resolveCanonicalBindings(
+  sb: any, projectId: string, sectionKey: string, canonJson: any,
+  explicitCharacterName?: string, explicitLocationId?: string | null, explicitLocationName?: string,
+  explicitCharacterNames?: string[], explicitLocationIds?: string[],
+): Promise<CanonicalBindingResult> {
+  // Determine if caller provided exact targets
+  const hasExactCharTarget = !!(explicitCharacterName || explicitCharacterNames?.length);
+  const hasExactLocTarget = !!(explicitLocationId || explicitLocationIds?.length);
+
+  const [characters, locations] = await Promise.all([
+    resolveCharacterBindings(sb, projectId, sectionKey, explicitCharacterName, explicitCharacterNames),
+    resolveLocationBindings(sb, projectId, sectionKey, explicitLocationId, explicitLocationName, explicitLocationIds),
+  ]);
+  const world = resolveWorldBinding(canonJson);
+  const characterPromptBlock = buildCharacterBindingBlock(characters, null);
+  const locationPromptBlock = buildLocationBindingBlock(locations);
+  const worldPromptBlock = buildWorldBindingBlock(world);
+  const missing: string[] = [];
+  const rel = SECTION_BINDING_RELEVANCE[sectionKey] || { characters: false, locations: false, world: true };
+  if (rel.characters && !characters.length) missing.push('missing_character_binding');
+  if (rel.locations && !locations.length) missing.push('missing_location_binding');
+  if (rel.world && !world.bound) missing.push('missing_world_binding');
+  const binding_status = missing.length === 0 ? 'bound' : missing.length < 3 ? 'partially_bound' : 'unbound';
+
+  // Compute targeting_mode: exact if caller specified targets, derived if section-rules resolved, heuristic if broad fallback
+  const targeting_mode: 'exact' | 'derived' | 'heuristic' =
+    (hasExactCharTarget || hasExactLocTarget) ? 'exact'
+    : (characters.length > 0 || locations.length > 0) ? 'derived'
+    : 'heuristic';
+
+  console.log(`[CanonicalBinding] section=${sectionKey} chars=${characters.length} locs=${locations.length} world=${world.bound} status=${binding_status} targeting=${targeting_mode}`);
+  return { characters, locations, world, characterPromptBlock, locationPromptBlock, worldPromptBlock, binding_status, missing, targeting_mode };
+}
+
+const SHOT_FRAMING: Record<ShotType, string> = {
+  close_up: "Extreme close-up or tight close-up. Face filling the frame. Intimate, emotionally raw, every imperfection visible. Shallow depth of field. Must convey strong internal emotion — tension, grief, desire, resolve. Eyes tell the story.",
+  medium: "Medium shot, waist-up. Character in environment context. Balanced composition. Clear facial expression with setting visible. Show relationship between character and space. Interaction-ready framing.",
+  wide: "Wide establishing shot. Sweeping, immersive cinematic scale. Spatial clarity is paramount — the viewer must understand the geography and atmosphere. Characters small in frame against vast environment. Epic scope with real depth and distance.",
+  full_body: "Full body shot, head to toe. Character standing in environment. Clear silhouette and posture. Fashion editorial quality.",
+  profile: "Profile view, side-on. Dramatic rim lighting. Strong silhouette against atmospheric background. Contemplative mood.",
+  over_shoulder: "Over-the-shoulder perspective. Looking past one figure toward another or toward the scene. Creates depth and narrative tension.",
+  detail: "Macro or detail shot. Close focus on a specific texture, object, or environmental detail. Shallow depth of field, rich texture.",
+  tableau: "Tableau composition. Multiple figures arranged in deliberate, cinematic blocking that reveals relationships and power dynamics through spatial positioning. Every placement is motivated — distance, height, facing direction all tell the story. Shot as a wide or mid-wide with cinema lens. Real actors, real environment, real physics. NOT a painting or illustration.",
+  emotional_variant: "Same character, different emotional state. Raw emotional expression — tension, vulnerability, determination, or joy. Character-defining moment.",
+  atmospheric: "Atmospheric mid-shot. Focus on mood, weather, light quality. Fog, rain, golden hour, or dramatic clouds. Environmental storytelling through light and atmosphere.",
+  time_variant: "Same location, different time of day. Dawn/dusk/night variant. Dramatic lighting shift. Temporal contrast.",
+  lighting_ref: "Lighting reference — real film set lighting setup. Show practical and motivated light sources. Key light direction, fill ratio, color temperature, hard vs soft shadows. As seen on a professional film set with cinema-grade lighting fixtures. Real environments, real physics of light.",
+  texture_ref: "Material and surface reference — real-world production design. Close-up on key physical materials: weathered wood, concrete, fabric weave, skin texture, metal patina, natural stone. Shot with macro lens, shallow DOF. Tactile, grounded, zero abstraction.",
+  composition_ref: "Cinematography composition reference — real camera framing. Demonstrate specific framing grammar: rule of thirds, leading lines, negative space, symmetry. Show an actual physical environment framed through a cinema lens. No abstract or symbolic composition.",
+  color_ref: "Color grading reference — real-world color palette in context. Show actual environments and surfaces demonstrating the project's chromatic identity: dominant hues, accent temperature, saturation level. Grounded in physical space, not abstract color fields.",
+  identity_headshot: "IDENTITY REFERENCE — Front-facing headshot. Head and shoulders centered in frame. Plain neutral grey or off-white backdrop. Soft, even studio lighting (key + fill, no dramatic shadows). Neutral expression. No environmental context. No narrative elements. Clean casting-photo style. Face clearly visible, eyes to camera.",
+  identity_profile: "IDENTITY REFERENCE — Three-quarter or side profile view. Head and upper body. Plain neutral backdrop. Soft studio lighting revealing facial structure from the side. Neutral expression. No environmental context. Clean reference photography style.",
+  identity_full_body: "IDENTITY REFERENCE — Full body, head to toe, centered in frame. Neutral standing pose showing full proportions. Plain neutral grey or off-white backdrop. Even studio lighting. Baseline neutral wardrobe (simple, non-costume clothing). No environmental context, no props, no narrative. Casting reference style.",
+};
+
+// ── Shot-type specific identity enforcement ──────────────────────────────────
+
+const SHOT_TYPE_IDENTITY_CONSTRAINTS: Partial<Record<ShotType, string>> = {
+  identity_full_body: "Full-body framing MUST preserve accurate human proportions consistent with identity reference. Do NOT reinterpret height, build, or body type. Head-to-body ratio must match reference exactly.",
+  full_body: "Full-body framing MUST preserve accurate human proportions consistent with identity reference. Do NOT reinterpret height, build, or body type. Head-to-body ratio must match reference exactly.",
+  close_up: "Facial structure MUST match identity reference exactly. Eye shape, nose, jawline, cheekbone structure must be identical.",
+  identity_headshot: "Facial structure MUST match identity reference exactly. Eye shape, nose, jawline, cheekbone structure must be identical.",
+  medium: "Character proportions and facial structure must match identity reference. Waist-up framing must preserve build and shoulder width.",
+  profile: "Side profile must match identity reference — nose shape, jawline angle, brow ridge, forehead slope must be consistent.",
+  identity_profile: "Side profile must match identity reference — nose shape, jawline angle, brow ridge, forehead slope must be consistent.",
+};
+
+/**
+ * Build the full identity lock mandate for prompt injection.
+ * This is the hardest constraint — placed right after canon facts.
+ */
+function buildIdentityLockMandate(characterName: string, identitySignatureBlock: string | null): string {
+  const lines = [
+    `[IDENTITY LOCK — DO NOT DEVIATE]`,
+    ``,
+    `This character MUST match the same person defined by the locked identity images.`,
+    ``,
+    `Maintain STRICT consistency in:`,
+    `- Facial structure (exact match — eye shape, eye spacing, nose shape, jawline, cheekbone structure, brow ridge)`,
+    `- Body proportions (height, build, shoulder width, head-to-body ratio)`,
+    `- Posture and silhouette`,
+    `- Skin tone, complexion, and facial proportions`,
+    `- Hair color, hair texture, hairline position`,
+    `- Wardrobe baseline (unless explicitly changed by state modifier)`,
+    ``,
+    `This is the SAME individual, not a variation or reinterpretation.`,
+    ``,
+    `REJECT:`,
+    `- Different face, different age, different build, different ethnicity`,
+    `- Different bone structure, different head-to-body ratio`,
+    `- Idealized or beautified version of the reference`,
+    `- "Similar-looking person" — must be UNMISTAKABLY identical`,
+  ];
+
+  if (identitySignatureBlock) {
+    lines.push('', identitySignatureBlock);
+  }
+
+  return lines.join('\n');
+}
+
+function buildIdentityPrompt(characterName: string, shotType: ShotType, ctx: SectionContext): string {
+  const framing = SHOT_FRAMING[shotType];
+  const characterDesc = ctx.characters || "A distinctive individual with clear, memorable features.";
+
+  return [
+    `CHARACTER IDENTITY REFERENCE for "${characterName}" from "${ctx.title}".`,
+    ``,
+    `${framing}`,
+    ``,
+    `CHARACTER: ${characterName}. ${characterDesc}`,
+    ``,
+    `IDENTITY MANDATE:`,
+    `- This is a CASTING REFERENCE photo, not a film still`,
+    `- Plain neutral grey or off-white studio backdrop`,
+    `- Soft, even studio lighting — no dramatic shadows, no colored gels`,
+    `- Neutral baseline wardrobe — simple, non-costume clothing appropriate to the character`,
+    `- NO environmental context, NO props, NO narrative elements`,
+    `- NO cinematic framing tricks — clean, direct, unambiguous reference`,
+    `- The same person must be recognizable across all identity reference images`,
+    `- Consistent facial structure, skin tone, hair, and body proportions`,
+    ``,
+    `PHOTOREALISM: ${ctx.stylePolicy.styleDirectives}`,
+    ``,
+    `ABSOLUTE PROHIBITIONS:`,
+    `- No cinematic scene context or environmental storytelling`,
+    `- No dramatic or emotional poses`,
+    `- No action, no motion blur, no dynamic composition`,
+    `- No text, titles, watermarks, or typography`,
+    `- No illustration, painting, or CGI look`,
+    `- ${ctx.stylePolicy.negativeStyleConstraints}`,
+    ``,
+    `TECHNICAL: High-resolution studio photography quality. Even lighting. Sharp focus across entire subject.`,
+  ].join("\n");
+}
+
+// ── ACTION AUTHORITY: Occupation Suppression for Environment Slots ─────────
+// Character occupation/trade must NEVER leak into world/location prompts.
+// Only slot purpose, scene context, or explicit instruction can authorize visible action.
+const OCCUPATION_SUPPRESSION_BLOCK = [
+  '[ACTION AUTHORITY — ENVIRONMENT SLOT RULES]',
+  '',
+  'This is an ENVIRONMENT / LOCATION image. The slot purpose is to show a PLACE, not a person doing their job.',
+  '',
+  'HARD SUPPRESSION — DO NOT DEPICT:',
+  '- Any character performing their trade or occupation (pottery, crafting, cooking, forging, weaving, etc.)',
+  '- Artisan workshop activity or craft processes',
+  '- Close-up hands working on materials',
+  '- Protagonist-centered labor or work scenes',
+  '- Any individual as the focal subject of the frame',
+  '',
+  'COMPOSITION MANDATE:',
+  '- Architecture, spatial layout, and environmental design must dominate the frame',
+  '- If humans appear, they must be background figures (servants, guards, passersby) — never centered',
+  '- Object storytelling: crates, textiles, weapons, scrolls, furniture, dust, light — NOT people working',
+  '- Atmosphere: light shafts, shadow, weather, architectural detail, status signals',
+  '',
+  'The PLACE is the subject. NOT any person. NOT any craft activity.',
+].join('\n');
+
+/**
+ * Filter narrative moments for world/location prompts.
+ * Prefer establishing/atmospheric moments WITHOUT character-centered activity.
+ */
+function filterWorldNarrativeMoment(moment: NarrativeMoment | null): NarrativeMoment | null {
+  if (!moment) return null;
+  const summary = (moment.summary || '').toLowerCase();
+  // Suppress moments that describe character craft/trade activity
+  const occupationPatterns = [
+    'pottery', 'ceramic', 'potter', 'crafting', 'workshop', 'forge', 'forging',
+    'cooking', 'weaving', 'blacksmith', 'artisan', 'sculpt', 'brew', 'baking',
+    'carving', 'sewing', 'knitting', 'painting canvas', 'composing music',
+    'performing', 'practicing', 'training with',
+  ];
+  if (occupationPatterns.some(p => summary.includes(p))) {
+    return null; // Suppress this moment for world prompts
+  }
+  return moment;
+}
+
+function buildPackPrompt(assetGroup: AssetGroup, shotType: ShotType, ctx: SectionContext, variantIndex: number = 0): string {
+  const framing = SHOT_FRAMING[shotType];
+
+  // ── Narrative moment selection ──
+  let narrativeMoment = (ctx.narrativeMoments?.length)
+    ? selectNarrativeMoment(ctx.narrativeMoments, shotType, variantIndex)
+    : null;
+
+  // ── ACTION AUTHORITY: Filter narrative moments for world/location/visual_language slots ──
+  const isWorldSlot = assetGroup === 'world';
+  const isEnvironmentSlot = isWorldSlot || assetGroup === 'visual_language';
+  if (isEnvironmentSlot) {
+    narrativeMoment = filterWorldNarrativeMoment(narrativeMoment);
+  }
+
+  let subjectDescription = "";
+  switch (assetGroup) {
+    case "character":
+      subjectDescription = ctx.characterName
+        ? `Character: ${ctx.characterName}. ${ctx.characters || "A compelling screen presence with emotional depth."}`
+        : ctx.characters || "The protagonist — a compelling screen presence with emotional depth.";
+      // Enrich with narrative moment if available
+      if (narrativeMoment?.summary && !ctx.characterName) {
+        subjectDescription += ` In this moment: ${narrativeMoment.summary}`;
+      }
+      break;
+    case "world":
+      if (ctx.locationName) {
+        // Use location description but strip any occupation-related text
+        const locDesc = ctx.locationDescription || ctx.worldDescription || "A cinematic environment rendered with atmospheric depth.";
+        subjectDescription = `Location: "${ctx.locationName}". ${locDesc}`;
+        // Add environment-first positive guidance
+        subjectDescription += ' Focus on architectural features, spatial layout, lighting conditions, material textures, and atmospheric mood. The environment itself tells the story.';
+      } else if (narrativeMoment?.location) {
+        subjectDescription = `Location: "${narrativeMoment.location}". A cinematic environment rendered with atmospheric depth.`;
+        if (narrativeMoment.time_of_day) subjectDescription += ` Time of day: ${narrativeMoment.time_of_day}.`;
+        subjectDescription += ' Focus on the physical space, architecture, and atmosphere — not on character activity.';
+      } else {
+        subjectDescription = ctx.worldDescription || "The story's world rendered with atmospheric depth and cinematic grandeur.";
+        subjectDescription += ' Environment-first composition: architecture, geography, light, and spatial storytelling.';
+      }
+      break;
+    case "key_moment": {
+      // KEY MOMENT: prioritize narrative moment over generic conflict
+      if (narrativeMoment?.summary) {
+        const sceneChars = narrativeMoment.characters_present;
+        const castLine = sceneChars.length
+          ? `Characters who MUST appear: ${sceneChars.join(', ')}. `
+          : (ctx.boundCharacterNames?.length
+            ? `Characters who MUST appear: ${ctx.boundCharacterNames.join(', ')}. `
+            : '');
+        const locationLine = narrativeMoment.location ? `Location: ${narrativeMoment.location}. ` : '';
+        const timeLine = narrativeMoment.time_of_day ? `Time: ${narrativeMoment.time_of_day}. ` : '';
+        subjectDescription = [
+          castLine,
+          locationLine,
+          timeLine,
+          `THE MOMENT: ${narrativeMoment.summary}`,
+          narrativeMoment.purpose ? `DRAMATIC PURPOSE: ${narrativeMoment.purpose}.` : '',
+          "Stage this as a real moment captured on a live-action film set with real actors in a real physical environment.",
+          "This must look like a production still from a theatrically released live-action film.",
+        ].filter(Boolean).join(" ");
+      } else {
+        const castLine = ctx.boundCharacterNames?.length
+          ? `Characters who MUST appear: ${ctx.boundCharacterNames.join(', ')}. `
+          : '';
+        subjectDescription = [
+          castLine,
+          ctx.conflict || ctx.logline || "A pivotal dramatic scene of tension and emotional stakes.",
+          "Stage this as a real moment captured on a live-action film set with real actors in a real physical environment.",
+          "Symbolic meaning must emerge through staging, composition, lighting, and actor placement — NOT through illustrative, painterly, or concept-art rendering.",
+          "This must look like a production still from a theatrically released live-action film.",
+        ].filter(Boolean).join(" ");
+      }
+      break;
+    }
+    case "visual_language":
+      subjectDescription = `Production design reference for "${ctx.title}". Focus on real-world cinematography: lighting setups, lens choices, color grading, practical textures, and architectural composition. No abstract or symbolic imagery.`;
+      break;
+  }
+
+  const driftExclusions = [
+    'No dragons, no fantasy creatures, no mythical beasts, no supernatural entities',
+    'No symbolic fantasy imagery, no magical effects, no sci-fi elements unless explicitly part of the project',
+    'Ground all imagery in real-world production design',
+  ].join('. ');
+
+  const promptParts = [
+    `A cinematic film still for "${ctx.title}".`,
+    ``,
+    `SHOT TYPE: ${framing}`,
+    ``,
+    `SUBJECT: ${subjectDescription}`,
+    ``,
+    `TONE: ${ctx.tone || "dramatic"}. Genre: ${ctx.genres?.join(", ") || "drama"}.`,
+  ];
+
+  // ── ACTION AUTHORITY: Inject occupation suppression for environment-first slots ──
+  if (isEnvironmentSlot) {
+    promptParts.push('', OCCUPATION_SUPPRESSION_BLOCK);
+    console.log(`[action-authority] occupation suppression APPLIED for ${assetGroup}/${shotType}`);
+  }
+
+  // Inject full narrative moment block for non-character, non-visual_language shots
+  // For world slots, only inject if the moment passed the occupation filter
+  if (narrativeMoment && assetGroup !== 'visual_language') {
+    if (isWorldSlot) {
+      // For world slots, only inject location/time context from narrative — NOT character activity
+      const worldNarrativeLines = ['[LOCATION CONTEXT — FROM SCRIPT]', ''];
+      if (narrativeMoment.location) worldNarrativeLines.push(`WHERE: ${narrativeMoment.location}`);
+      if (narrativeMoment.time_of_day) worldNarrativeLines.push(`TIME OF DAY: ${narrativeMoment.time_of_day}`);
+      if (narrativeMoment.slugline) worldNarrativeLines.push(`SCENE: ${narrativeMoment.slugline}`);
+      worldNarrativeLines.push('', 'Generate this as a LOCATION PLATE — the environment without character activity.');
+      promptParts.push('', worldNarrativeLines.join('\n'));
+    } else {
+      promptParts.push('', buildNarrativeMomentBlock(narrativeMoment));
+    }
+  }
+
+  promptParts.push(
+    ``,
+    `PHOTOREALISM MANDATE: ${ctx.stylePolicy.styleDirectives}`,
+    ``,
+    `ABSOLUTE PROHIBITIONS:`,
+    `- ${ctx.stylePolicy.negativeStyleConstraints}`,
+    `- No text, titles, watermarks, or typography of any kind`,
+    `- No illustrated or painted look`,
+    `- ${driftExclusions}`,
+    `- Must look indistinguishable from a still frame from a theatrically released film`,
+  );
+
+  // ── Environment-specific negative prompt additions ──
+  if (isEnvironmentSlot) {
+    promptParts.push(
+      `- No pottery wheels, ceramics, or craft processes`,
+      `- No artisan workshop activity`,
+      `- No protagonist performing their trade or occupation`,
+      `- No character-centered composition — the PLACE is the subject`,
+    );
+  }
+
+  promptParts.push(
+    ``,
+    `TECHNICAL: Premium cinematic quality. Anamorphic lens characteristics.`,
+  );
+
+  return promptParts.join("\n");
+}
+
+function buildSectionPrompt(section: LookbookSection, ctx: SectionContext, variantIndex: number): string {
+  const pack = SHOT_PACKS[section === "character" ? "character" : section === "world" ? "world" : section === "key_moment" ? "key_moment" : "visual_language"];
+  const shotType = pack[variantIndex % pack.length];
+  return buildPackPrompt(section as AssetGroup, shotType, ctx, variantIndex);
+}
+
+// ── Image generation ─────────────────────────────────────────────────────────
+
+interface ProviderImageResult {
+  imageDataUrl: string;
+  format: string;
+  rawBytes: Uint8Array;
+}
+
+function extractImageFromResponse(aiData: unknown): ProviderImageResult {
+  const data = aiData as Record<string, unknown>;
+  const choices = data?.choices as Array<Record<string, unknown>> | undefined;
+  if (choices?.length) {
+    const message = choices[0]?.message as Record<string, unknown> | undefined;
+    const images = message?.images as Array<Record<string, unknown>> | undefined;
+    if (images?.length) {
+      const imageUrl = (images[0]?.image_url as Record<string, unknown>)?.url as string;
+      if (imageUrl) return parseDataUrl(imageUrl);
+    }
+    const content = message?.content;
+    if (Array.isArray(content)) {
+      for (const part of content) {
+        if (part?.type === "image_url" && part?.image_url?.url) return parseDataUrl(part.image_url.url as string);
+        if (part?.inline_data?.data && part?.inline_data?.mime_type) {
+          const mimeType = part.inline_data.mime_type as string;
+          const ext = mimeType.split("/")[1] || "png";
+          const b64 = part.inline_data.data as string;
+          const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          return { imageDataUrl: `data:${mimeType};base64,${b64}`, format: ext, rawBytes: bytes };
+        }
+      }
+    }
+  }
+  throw new Error("No image found in AI response");
+}
+
+function parseDataUrl(dataUrl: string): ProviderImageResult {
+  const match = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+  if (!match) throw new Error("Invalid image data URL format");
+  const format = match[1];
+  const rawBytes = Uint8Array.from(atob(match[2]), c => c.charCodeAt(0));
+  return { imageDataUrl: dataUrl, format, rawBytes };
+}
+
+async function generateImage(
+  apiKey: string,
+  prompt: string,
+  model: string,
+  gatewayUrl: string,
+  referenceImageUrls?: string[],
+  requestedWidth?: number,
+  requestedHeight?: number,
+): Promise<ProviderImageResult> {
+  const content: Array<Record<string, unknown>> = [];
+  if (referenceImageUrls?.length) {
+    for (const url of referenceImageUrls) {
+      content.push({ type: "image_url", image_url: { url } });
+    }
+  }
+  content.push({ type: "text", text: prompt });
+
+  // Build request body — include size hints when available
+  const requestBody: Record<string, unknown> = {
+    model,
+    messages: [{ role: "user", content }],
+    modalities: ["image", "text"],
+  };
+
+  // Pass explicit image size parameters to provider when available
+  // The provider may or may not honor these, which is why we measure actual output
+  if (requestedWidth && requestedHeight) {
+    requestBody.image_size = { width: requestedWidth, height: requestedHeight };
+    console.log(`[generateImage] Requesting explicit dimensions: ${requestedWidth}x${requestedHeight}`);
+  }
+
+  const resp = await fetch(gatewayUrl, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify(requestBody),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`AI gateway error [${resp.status}]: ${errText}`);
+  }
+  return extractImageFromResponse(await resp.json());
+}
+
+/**
+ * Measure actual image dimensions from raw PNG/JPEG bytes.
+ * Returns { width, height } or null if unreadable.
+ */
+function measureImageDimensions(bytes: Uint8Array): { width: number; height: number } | null {
+  // PNG: bytes 16-19 = width, 20-23 = height (big-endian uint32)
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+    if (bytes.length < 24) return null;
+    const width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+    const height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+    if (width > 0 && height > 0 && width < 20000 && height < 20000) return { width, height };
+  }
+  // JPEG: scan for SOF0 (0xFFC0) or SOF2 (0xFFC2) marker
+  if (bytes[0] === 0xFF && bytes[1] === 0xD8) {
+    let offset = 2;
+    while (offset < bytes.length - 8) {
+      if (bytes[offset] !== 0xFF) { offset++; continue; }
+      const marker = bytes[offset + 1];
+      if (marker === 0xC0 || marker === 0xC2) {
+        const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
+        const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
+        if (width > 0 && height > 0 && width < 20000 && height < 20000) return { width, height };
+      }
+      const segLen = (bytes[offset + 2] << 8) | bytes[offset + 3];
+      offset += 2 + segLen;
+    }
+  }
+  // WebP: RIFF....WEBPVP8 header
+  if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46) {
+    // VP8 lossy: width at offset 26, height at 28 (little-endian uint16)
+    if (bytes.length >= 30 && bytes[12] === 0x56 && bytes[13] === 0x50 && bytes[14] === 0x38 && bytes[15] === 0x20) {
+      const width = (bytes[26] | (bytes[27] << 8)) & 0x3FFF;
+      const height = (bytes[28] | (bytes[29] << 8)) & 0x3FFF;
+      if (width > 0 && height > 0) return { width, height };
+    }
+  }
+  return null;
+}
+
+// ── Role mapping ─────────────────────────────────────────────────────────────
+
+const SECTION_TO_ROLE: Record<LookbookSection, string> = {
+  world: "world_establishing",
+  character: "character_primary",
+  key_moment: "visual_reference",
+  visual_language: "visual_reference",
+};
+
+const SECTION_TO_ASSET_GROUP: Record<LookbookSection, AssetGroup> = {
+  world: "world",
+  character: "character",
+  key_moment: "key_moment",
+  visual_language: "visual_language",
+};
+
+// ── Main handler ─────────────────────────────────────────────────────────────
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const authHeader = req.headers.get("Authorization");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader || "" } },
+    });
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const body = await req.json();
+    const {
+      project_id, section, count = 4, entity_id, character_name,
+      character_names: requestedCharacterNames,
+      asset_group: requestedAssetGroup, pack_mode = false,
+      base_look_mode = false,
+      location_name, location_description,
+      location_ref_mode = false,
+      location_id = null,
+      location_ids: requestedLocationIds,
+      state_key = null,
+      state_label = null,
+      state_prompt_modifier = null,
+      identity_mode = false,
+      identity_anchor_paths = null,
+      identity_notes = null,
+      identity_canon_facts = null,
+      identity_traits_block = null,
+      identity_signature_block = null,
+      forced_shot_type = null,
+      custom_prompt: clientCustomPrompt = null,
+      generation_purpose: clientGenerationPurpose = null,
+      subject: clientSubject = null,
+      // ── AUTO-COMPLETE CONTEXT: requirement-origin metadata from pipeline ──
+      auto_complete_context: autoCompleteContext = null,
+      // ── VERTICAL COMPLIANCE: explicit aspect ratio from client ──
+      width: requestedWidth = null,
+      height: requestedHeight = null,
+      aspect_ratio: requestedAspectRatio = null,
+      dataset_provenance: clientDatasetProvenance = null,
+    } = body as {
+      project_id: string;
+      section: LookbookSection;
+      count?: number;
+      entity_id?: string;
+      character_name?: string;
+      character_names?: string[];
+      asset_group?: AssetGroup;
+      pack_mode?: boolean;
+      base_look_mode?: boolean;
+      location_name?: string;
+      location_description?: string;
+      location_ref_mode?: boolean;
+      location_id?: string | null;
+      location_ids?: string[];
+      state_key?: string | null;
+      state_label?: string | null;
+      state_prompt_modifier?: string | null;
+      identity_mode?: boolean;
+      identity_anchor_paths?: { headshot?: string; fullBody?: string; arePublicUrls?: boolean } | null;
+      identity_notes?: string | null;
+      identity_canon_facts?: string | null;
+      identity_traits_block?: string | null;
+      identity_signature_block?: string | null;
+      forced_shot_type?: string | null;
+      custom_prompt?: string | null;
+      generation_purpose?: string | null;
+      subject?: string | null;
+      auto_complete_context?: {
+        target_requirement_id?: string;
+        requirement_ids?: string[];
+        slide_type?: string;
+        pass?: string;
+        requested_shot_type?: string;
+        batch_index?: number;
+        prompt_override?: string;
+        orientations?: string[];
+      } | null;
+      width?: number | null;
+      height?: number | null;
+      aspect_ratio?: string | null;
+      dataset_provenance?: Record<string, unknown> | null;
+    };
+
+    // IEL: location_binding_write_enforcement — warn if world image without canon location_id
+    if (requestedAssetGroup === "world" && location_name && !location_id) {
+      console.warn("[IEL:location_binding_write_enforcement_violation] World image generation requested without location_id — subject_ref fallback only");
+    }
+
+    if (!project_id || !section) {
+      return new Response(JSON.stringify({ error: "project_id and section required" }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const validSections: LookbookSection[] = ["world", "character", "key_moment", "visual_language"];
+    if (!validSections.includes(section)) {
+      return new Response(JSON.stringify({ error: `Invalid section: ${section}` }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ── VSAL: Resolve Visual Style Authority (soft — warns but does not block) ──
+    const styleResolution = await resolveVisualStyleProfile(supabase, project_id);
+    let visualStyleLock = styleResolution.lock;
+    let vsalPromptBlock = styleResolution.promptBlock;
+    if (!styleResolution.found || !styleResolution.complete) {
+      console.warn(`[VSAL:soft] No complete visual style profile — proceeding without style authority (${styleResolution.error})`);
+      visualStyleLock = null;
+      vsalPromptBlock = null;
+    }
+
+    // ── CINEMATIC STYLE LOCK: Resolve from project_visual_style.style_lock_json ──
+    let cinematicStyleLock: Record<string, string> | null = null;
+    let cinematicStylePromptBlock = '';
+    let cinematicStyleHash = '';
+    {
+      const { data: vsRow } = await supabase.from("project_visual_style")
+        .select("style_lock_json")
+        .eq("project_id", project_id)
+        .maybeSingle();
+      if (vsRow?.style_lock_json && typeof vsRow.style_lock_json === 'object') {
+        cinematicStyleLock = vsRow.style_lock_json as Record<string, string>;
+        // Build deterministic hash
+        const sl = cinematicStyleLock;
+        cinematicStyleHash = [sl.color_profile, sl.contrast_curve, sl.grain_level, sl.lens_profile, sl.lighting_style, sl.time_of_day_bias].filter(Boolean).join('|');
+
+        // Build prompt block inline (server-side, same logic as client styleLock.ts)
+        const COLOR_MAP: Record<string, string> = {
+          warm_filmic: 'Warm filmic color grading — amber highlights, rich shadows, Kodak warmth',
+          cool_noir: 'Cool desaturated palette — blue-steel shadows, clinical highlights, noir tones',
+          neutral_cinematic: 'Neutral cinematic color — balanced grading, natural skin tones, restrained palette',
+        };
+        const CONTRAST_MAP: Record<string, string> = {
+          soft: 'Soft contrast curve — lifted shadows, gentle highlights, dreamy quality',
+          medium: 'Medium contrast — balanced shadow/highlight ratio, cinematic dynamic range',
+          high: 'High contrast — deep blacks, bright highlights, dramatic tonal separation',
+        };
+        const GRAIN_MAP: Record<string, string> = {
+          none: 'Clean digital capture — no visible grain',
+          light: 'Light organic film grain — subtle texture without distraction',
+          film_35mm: 'Pronounced 35mm film grain — visible texture, analog character, photochemical feel',
+        };
+        const LENS_MAP: Record<string, string> = {
+          anamorphic: 'Anamorphic lens characteristics — oval bokeh, horizontal flares, wide field compression',
+          spherical: 'Spherical lens — clean bokeh circles, natural perspective, minimal distortion',
+          portrait_85mm: '85mm portrait lens — compressed background, creamy bokeh, flattering perspective',
+        };
+        const LIGHTING_MAP: Record<string, string> = {
+          naturalistic: 'Naturalistic lighting — motivated sources, available light feel, gentle fill',
+          dramatic: 'Dramatic lighting — strong key-to-fill ratio, sculpted shadows, chiaroscuro influence',
+          high_key: 'High-key lighting — even illumination, minimal shadows, bright and airy',
+          low_key: 'Low-key lighting — dominant shadows, selective illumination, mystery and tension',
+        };
+        const TOD_MAP: Record<string, string> = {
+          golden_hour: 'Golden hour bias — warm directional light, long shadows, amber atmosphere',
+          daylight: 'Daylight bias — overhead natural light, clear visibility, neutral temperature',
+          night: 'Night bias — artificial/moonlit sources, cool tones, pools of light in darkness',
+          mixed: 'Mixed time-of-day — varied lighting scenarios appropriate to each scene',
+        };
+        cinematicStylePromptBlock = [
+          '[CINEMATIC STYLE LOCK — ALL IMAGES MUST MATCH]',
+          '',
+          `COLOR: ${COLOR_MAP[sl.color_profile || ''] || sl.color_profile || ''}`,
+          `CONTRAST: ${CONTRAST_MAP[sl.contrast_curve || ''] || sl.contrast_curve || ''}`,
+          `GRAIN: ${GRAIN_MAP[sl.grain_level || ''] || sl.grain_level || ''}`,
+          `LENS: ${LENS_MAP[sl.lens_profile || ''] || sl.lens_profile || ''}`,
+          `LIGHTING: ${LIGHTING_MAP[sl.lighting_style || ''] || sl.lighting_style || ''}`,
+          `TIME OF DAY: ${TOD_MAP[sl.time_of_day_bias || ''] || sl.time_of_day_bias || ''}`,
+          '',
+          'Every image in this project MUST share these visual characteristics.',
+        ].join('\n');
+        console.log(`[CinematicStyleLock] Resolved: hash=${cinematicStyleHash}`);
+      }
+    }
+
+    // ── SHOT INTENT: Resolve for current section/slide ──
+    const slideType = autoCompleteContext?.slide_type || section;
+    const SHOT_INTENT_MAP: Record<string, Record<string, string>> = {
+      characters:  { framing: 'Close-up', subject: 'Character dominant', angle: 'Eye-level', dof: 'Shallow', motion: 'Static' },
+      world:       { framing: 'Wide', subject: 'Environment dominant', angle: 'Eye-level', dof: 'Deep', motion: 'Static' },
+      key_moments: { framing: 'Medium', subject: 'Character in context', angle: 'Eye-level', dof: 'Shallow', motion: 'Dynamic' },
+      story_engine:{ framing: 'Medium', subject: 'Character in context', angle: 'Eye-level', dof: 'Shallow', motion: 'Static' },
+      visual_language: { framing: 'Close-up', subject: 'Environment/texture dominant', angle: 'Eye-level', dof: 'Shallow', motion: 'Static' },
+      themes:      { framing: 'Wide', subject: 'Environment/atmosphere dominant', angle: 'Eye-level', dof: 'Deep', motion: 'Static' },
+      cover:       { framing: 'Medium', subject: 'Character heroic', angle: 'Low', dof: 'Shallow', motion: 'Static' },
+      closing:     { framing: 'Wide', subject: 'Environment dominant', angle: 'Eye-level', dof: 'Deep', motion: 'Static' },
+      poster_directions: { framing: 'Medium', subject: 'Character heroic', angle: 'Low', dof: 'Shallow', motion: 'Static' },
+    };
+    const resolvedShotIntent = SHOT_INTENT_MAP[slideType] || SHOT_INTENT_MAP[section] || null;
+    let shotIntentPromptBlock = '';
+    if (resolvedShotIntent) {
+      shotIntentPromptBlock = [
+        '[SHOT INTENT — SLOT-SPECIFIC CAMERA DIRECTION]',
+        `Framing: ${resolvedShotIntent.framing}`,
+        `Subject: ${resolvedShotIntent.subject}`,
+        `Camera Angle: ${resolvedShotIntent.angle}`,
+        `Depth of Field: ${resolvedShotIntent.dof}`,
+        `Motion Feel: ${resolvedShotIntent.motion}`,
+      ].join('\n');
+    }
+
+    // ── COMPOSITION RULE: Resolve for current section/slide ──
+    const COMPOSITION_RULE_MAP: Record<string, { balance: string; subject_scale: string; density: string; horizon: string; headroom: string; negative_space: string }> = {
+      characters:  { balance: 'Rule-of-thirds — subject at power points', subject_scale: 'Dominant — fills 40-70% of frame', density: 'Balanced', horizon: 'Mid', headroom: 'Tight — minimal space above subject', negative_space: 'Low' },
+      world:       { balance: 'Environment-weighted — space dominates', subject_scale: 'Small in frame — under 20%', density: 'Balanced', horizon: 'Low — sky/ceiling dominant', headroom: 'Airy — generous overhead', negative_space: 'High — significant empty space' },
+      key_moments: { balance: 'Rule-of-thirds — dynamic staging', subject_scale: 'Balanced — 20-40% of frame', density: 'Balanced', horizon: 'Mid', headroom: 'Balanced', negative_space: 'Medium' },
+      story_engine:{ balance: 'Rule-of-thirds — relational tension', subject_scale: 'Balanced', density: 'Balanced', horizon: 'Mid', headroom: 'Balanced', negative_space: 'Medium' },
+      visual_language: { balance: 'Centered — formal, anchored', subject_scale: 'Dominant — fills frame', density: 'Dense — rich detail, layered textures', horizon: 'Mid', headroom: 'Tight', negative_space: 'Low' },
+      themes:      { balance: 'Environment-weighted — atmosphere dominates', subject_scale: 'Small in frame', density: 'Minimal — clean negative space', horizon: 'Low', headroom: 'Airy', negative_space: 'High' },
+      cover:       { balance: 'Centered — iconic, intentional', subject_scale: 'Dominant', density: 'Balanced', horizon: 'Mid', headroom: 'Balanced', negative_space: 'Medium' },
+      closing:     { balance: 'Symmetrical — formal bookend', subject_scale: 'Small in frame', density: 'Minimal', horizon: 'Low', headroom: 'Airy', negative_space: 'High' },
+      poster_directions: { balance: 'Centered — key art iconic', subject_scale: 'Dominant', density: 'Balanced', horizon: 'Mid', headroom: 'Tight', negative_space: 'Medium' },
+    };
+    const resolvedCompositionRule = COMPOSITION_RULE_MAP[slideType] || COMPOSITION_RULE_MAP[section] || null;
+    let compositionRulePromptBlock = '';
+    let compositionRuleHash = '';
+    if (resolvedCompositionRule) {
+      compositionRulePromptBlock = [
+        '[COMPOSITION RULE — CINEMATIC FRAMING DIRECTIVE]',
+        `Balance: ${resolvedCompositionRule.balance}`,
+        `Subject Scale: ${resolvedCompositionRule.subject_scale}`,
+        `Visual Density: ${resolvedCompositionRule.density}`,
+        `Horizon: ${resolvedCompositionRule.horizon}`,
+        `Headroom: ${resolvedCompositionRule.headroom}`,
+        `Negative Space: ${resolvedCompositionRule.negative_space}`,
+      ].join('\n');
+      compositionRuleHash = [resolvedCompositionRule.balance, resolvedCompositionRule.subject_scale, resolvedCompositionRule.density].join('|');
+    }
+
+    // ── CAMERA LANGUAGE: Resolve for current section/slide ──
+    const CAMERA_LANGUAGE_MAP: Record<string, { style: string; movement: string; lens: string }> = {
+      characters:  { style: 'Observational — documentary intimacy', movement: 'Static — locked-off, deliberate', lens: 'Compressed — telephoto, subject isolation' },
+      world:       { style: 'Observational — present but unobtrusive', movement: 'Slow push — gradual reveal', lens: 'Stable — natural perspective' },
+      key_moments: { style: 'Dynamic — kinetic energy, urgency', movement: 'Tracking — following action', lens: 'Stable — undistorted' },
+      story_engine:{ style: 'Observational — discovering the scene', movement: 'Slow push — building intimacy', lens: 'Stable — clean perspective' },
+      visual_language: { style: 'Formal — deliberate, composed', movement: 'Static — photograph quality', lens: 'Stable — clean rendering' },
+      themes:      { style: 'Observational — atmosphere discovery', movement: 'Slow push — building mood', lens: 'Stable — natural' },
+      cover:       { style: 'Formal — every element placed with intention', movement: 'Static — composed stillness', lens: 'Compressed — flattened depth, isolation' },
+      closing:     { style: 'Observational — reflective distance', movement: 'Slow push — gentle retreat', lens: 'Stable — natural perspective' },
+      poster_directions: { style: 'Formal — iconic, deliberate', movement: 'Static — composed', lens: 'Compressed — heroic isolation' },
+    };
+    const resolvedCameraLanguage = CAMERA_LANGUAGE_MAP[slideType] || CAMERA_LANGUAGE_MAP[section] || null;
+    let cameraLanguagePromptBlock = '';
+    let cameraLanguageHash = '';
+    if (resolvedCameraLanguage) {
+      cameraLanguagePromptBlock = [
+        '[CAMERA LANGUAGE — DIRECTORIAL STYLE]',
+        `Camera: ${resolvedCameraLanguage.style}`,
+        `Movement: ${resolvedCameraLanguage.movement}`,
+        `Lens: ${resolvedCameraLanguage.lens}`,
+      ].join('\n');
+      cameraLanguageHash = [resolvedCameraLanguage.style.split(' ')[0], resolvedCameraLanguage.movement.split(' ')[0], resolvedCameraLanguage.lens.split(' ')[0]].join('|');
+    }
+
+    // ── Load canon early (needed by production design + world context) ──
+    const { data: canon } = await supabase
+      .from("project_canon")
+      .select("canon_json")
+      .eq("project_id", project_id)
+      .maybeSingle();
+
+    // ── PRODUCTION DESIGN: Resolve from canon ──
+    const canonData = canon?.canon_json as Record<string, unknown> | null;
+    const productionMaterials: string[] = [];
+    let productionArchitecture = 'naturalistic';
+    const productionEnvRules: string[] = [];
+    if (canonData) {
+      const worldDescPD = (typeof canonData.world_description === 'string' ? canonData.world_description : '') + ' ' + (typeof canonData.setting === 'string' ? canonData.setting : '');
+      const wdLower = worldDescPD.toLowerCase();
+      const MAT_KW: Record<string, string> = { wood: 'wood', stone: 'stone', marble: 'marble', concrete: 'concrete', steel: 'steel', glass: 'glass', brick: 'brick', ceramic: 'ceramic', silk: 'silk', leather: 'leather', bamboo: 'bamboo', iron: 'iron', lacquer: 'lacquer', porcelain: 'porcelain' };
+      for (const [kw, mat] of Object.entries(MAT_KW)) {
+        if (wdLower.includes(kw)) productionMaterials.push(mat);
+      }
+      const ARCH_KW: Array<[string[], string]> = [
+        [['feudal', 'castle', 'fortress'], 'feudal/medieval'], [['edo', 'shogunate', 'samurai'], 'traditional Japanese'],
+        [['victorian', 'georgian'], 'Victorian'], [['modern', 'skyscraper'], 'modern urban'],
+        [['rural', 'farm', 'village'], 'rural vernacular'], [['palace', 'court'], 'palatial'],
+        [['temple', 'shrine'], 'sacred'], [['industrial', 'factory'], 'industrial'],
+      ];
+      for (const [kws, style] of ARCH_KW) { if (kws.some(k => wdLower.includes(k))) { productionArchitecture = style; break; } }
+      if (canonData.world_rules && Array.isArray(canonData.world_rules)) {
+        productionEnvRules.push(...(canonData.world_rules as string[]).filter(r => typeof r === 'string').slice(0, 4));
+      }
+      const era = typeof canonData.era === 'string' ? canonData.era : typeof canonData.period === 'string' ? canonData.period : '';
+      if (era) productionEnvRules.push(`Period: ${era}`);
+    }
+    let productionDesignPromptBlock = '';
+    let productionDesignHash = '';
+    if (productionMaterials.length > 0 || productionEnvRules.length > 0) {
+      const lines = ['[PRODUCTION DESIGN — WORLD CONSISTENCY]'];
+      if (productionMaterials.length > 0) lines.push(`MATERIALS: ${productionMaterials.join(', ')}`);
+      lines.push(`ARCHITECTURE: ${productionArchitecture}`);
+      if (productionEnvRules.length > 0) { lines.push('ENVIRONMENT RULES:'); for (const r of productionEnvRules) lines.push(`  - ${r}`); }
+      lines.push('', 'All imagery must respect these production design constraints.');
+      productionDesignPromptBlock = lines.join('\n');
+      productionDesignHash = `${productionArchitecture}|${productionMaterials.sort().join(',')}`;
+    }
+
+    // Load project context — includes default_prestige_style for style precedence
+    const { data: project } = await supabase
+      .from("projects")
+      .select("title, format, genres, tone, default_prestige_style")
+      .eq("id", project_id)
+      .single();
+    if (!project) throw new Error("Project not found");
+
+    // ── PRESTIGE STYLE SYSTEM: Resolve lane + style ─────────────────────────
+    const resolvedLane = resolveFormatToLane(project.format || "film");
+    const { styleKey: resolvedStyleKey, source: styleSource } = resolvePrestigeStyle({
+      projectDefault: project.default_prestige_style,
+      laneKey: resolvedLane,
+    });
+    const prestigeComposite: StyleComposite = assemblePrestigePrompt(resolvedLane, resolvedStyleKey, styleSource);
+    console.log(`[prestige] lane=${resolvedLane} style=${resolvedStyleKey} source=${styleSource} aspect=${prestigeComposite.aspectRatio}`);
+
+    let worldDescription = "";
+    let characters = "";
+    let conflict = "";
+    let themes = "";
+    let logline = "";
+
+    if (canon?.canon_json) {
+      const cj = canon.canon_json as any;
+      worldDescription = cj.world_description || cj.setting || cj.locations || "";
+      logline = cj.logline || cj.premise || "";
+      conflict = cj.central_conflict || "";
+      themes = Array.isArray(cj.themes) ? cj.themes.join(", ") : (cj.themes || "");
+      if (cj.characters && Array.isArray(cj.characters)) {
+        characters = cj.characters.map((c: any) => typeof c === "string" ? c : `${c.name || "Unknown"} (${c.role || ""})`).slice(0, 4).join(", ");
+      }
+    }
+
+    // ── NARRATIVE BINDING: Load scene graph moments for story-driven generation ──
+    const narrativeMoments = await loadNarrativeMoments(supabase, project_id);
+    console.log(`[narrative-binding] project=${project_id} scenes_loaded=${narrativeMoments.length}`);
+
+    // ── PHASE 18.1: SHOT LIST CONTEXT — Load canonical shot list for lookbook grounding ──
+    interface ShotListContextItem {
+      id: string;
+      order_index: number;
+      scene_number: string | null;
+      scene_heading: string | null;
+      shot_type: string | null;
+      framing: string | null;
+      camera_movement: string | null;
+      action: string | null;
+      characters_present: string[];
+      location: string | null;
+      time_of_day: string | null;
+    }
+    let shotListContextItems: ShotListContextItem[] = [];
+    let shotListId: string | null = null;
+    {
+      const { data: lists } = await supabase
+        .from("shot_lists")
+        .select("id")
+        .eq("project_id", project_id)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (lists?.length) {
+        shotListId = lists[0].id;
+        const { data: items } = await supabase
+          .from("shot_list_items")
+          .select("id, order_index, scene_number, scene_heading, shot_type, framing, camera_movement, action, characters_present, location, time_of_day")
+          .eq("shot_list_id", shotListId)
+          .order("order_index", { ascending: true })
+          .limit(500);
+        if (items?.length) {
+          shotListContextItems = items.map((r: any) => ({
+            id: r.id,
+            order_index: r.order_index ?? 0,
+            scene_number: r.scene_number || null,
+            scene_heading: r.scene_heading || null,
+            shot_type: r.shot_type || null,
+            framing: r.framing || null,
+            camera_movement: r.camera_movement || null,
+            action: r.action || null,
+            characters_present: Array.isArray(r.characters_present) ? r.characters_present.filter((c: any) => typeof c === 'string') : [],
+            location: r.location || null,
+            time_of_day: r.time_of_day || null,
+          }));
+        }
+      }
+      console.log(`[shot-list-context] project=${project_id} shot_list_id=${shotListId || 'none'} items=${shotListContextItems.length}`);
+    }
+
+    // ── PHASE 18.1: Build shot list prompt block for the current slide type ──
+    let shotListPromptBlock = '';
+    let shotListMappedItemIds: string[] = [];
+    if (shotListContextItems.length > 0) {
+      // Simple slide-type mapping: score each item and pick top 3
+      function scoreShotForSlideServer(item: ShotListContextItem, st: string, total: number): number {
+        let sc = 0;
+        const posRatio = total > 1 ? item.order_index / (total - 1) : 0.5;
+        const fr = (item.framing || '').toUpperCase();
+        const sht = (item.shot_type || '').toUpperCase();
+        const mv = (item.camera_movement || '').toUpperCase();
+        const act = (item.action || '').toLowerCase();
+        const hasCh = item.characters_present.length > 0;
+        switch (st) {
+          case 'cover': case 'poster_directions':
+            if (['WS','MS'].includes(fr)) sc += 8; if (hasCh) sc += 5; if (posRatio < 0.4) sc += 4; break;
+          case 'world':
+            if (['WS','AERIAL'].includes(fr) || sht === 'AERIAL') sc += 10; if (item.location) sc += 6; if (!hasCh) sc += 4; break;
+          case 'characters':
+            if (['CU','ECU','MS'].includes(fr)) sc += 8; if (item.characters_present.length === 1) sc += 6; break;
+          case 'key_moments': case 'key_moment':
+            if (hasCh) sc += 4; if (act.includes('fight')||act.includes('confront')||act.includes('reveal')) sc += 8;
+            if (mv !== 'STATIC') sc += 3; if (posRatio > 0.3 && posRatio < 0.8) sc += 4; break;
+          case 'story_engine':
+            if (item.characters_present.length >= 2) sc += 8; if (['OTS','2SHOT'].includes(sht)) sc += 6; break;
+          case 'themes': case 'visual_language':
+            if (['WS','INSERT'].includes(fr)) sc += 6; if (!hasCh) sc += 4; if (item.time_of_day) sc += 3; break;
+          case 'closing':
+            if (posRatio > 0.7) sc += 8; if (act.includes('end')||act.includes('depart')) sc += 6; break;
+        }
+        return sc;
+      }
+      const total = shotListContextItems.length;
+      const scored = shotListContextItems.map(it => ({ it, sc: scoreShotForSlideServer(it, slideType, total) }));
+      scored.sort((a, b) => b.sc - a.sc || a.it.order_index - b.it.order_index);
+      const top = scored.slice(0, 3).map(s => s.it);
+      shotListMappedItemIds = top.map(t => t.id);
+
+      if (top.length > 0) {
+        const primary = top[0];
+        const lines = ['[SHOT LIST CONTEXT — CANONICAL CINEMATIC SOURCE]', ''];
+        if (primary.scene_heading) lines.push(`SCENE: ${primary.scene_heading}`);
+        if (primary.action) lines.push(`ACTION: ${primary.action}`);
+        if (primary.characters_present.length > 0) lines.push(`CHARACTERS PRESENT: ${primary.characters_present.join(', ')}`);
+        if (primary.location) lines.push(`LOCATION: ${primary.location}`);
+        if (primary.time_of_day) lines.push(`TIME OF DAY: ${primary.time_of_day}`);
+        if (primary.framing) lines.push(`FRAMING: ${primary.framing}`);
+        if (primary.camera_movement) lines.push(`CAMERA MOVEMENT: ${primary.camera_movement}`);
+        if (top.length > 1) {
+          lines.push('', `ADDITIONAL CONTEXT (${top.length - 1} more shots):`);
+          for (const t of top.slice(1)) {
+            const p: string[] = [];
+            if (t.scene_heading) p.push(t.scene_heading);
+            if (t.action) p.push(t.action.slice(0, 80));
+            if (p.length) lines.push(`  • ${p.join(' — ')}`);
+          }
+        }
+        lines.push('', 'Generate this image grounded in this specific cinematic plan.');
+        shotListPromptBlock = lines.join('\n');
+      }
+    }
+
+    // ── CANONICAL VISUAL BINDING: Auto-resolve character, location, world ──
+    const canonicalBindings = await resolveCanonicalBindings(
+      supabase, project_id, section, canon?.canon_json || null,
+      character_name, location_id, location_name,
+      requestedCharacterNames, requestedLocationIds,
+    );
+
+    const stylePolicy = resolveStylePolicy(project.format || "film", project.genres || []);
+    const imageRole = SECTION_TO_ROLE[section] as ImageRole;
+    const styleMode = stylePolicy.mode as ImageStyleMode;
+    const assetGroup = requestedAssetGroup || SECTION_TO_ASSET_GROUP[section];
+
+    const ctx: SectionContext = {
+      title: project.title || "Untitled",
+      format: project.format || "film",
+      genres: project.genres || [],
+      tone: project.tone || "dramatic",
+      worldDescription,
+      characters,
+      conflict,
+      themes,
+      logline,
+      stylePolicy,
+      characterName: character_name,
+      locationName: location_name,
+      locationDescription: location_description,
+      worldBindingBlock: canonicalBindings.worldPromptBlock,
+      locationBindingBlock: canonicalBindings.locationPromptBlock,
+      characterBindingBlock: canonicalBindings.characterPromptBlock,
+      boundCharacterNames: canonicalBindings.characters.map(c => c.character_name),
+      narrativeMoments,
+    };
+
+    // ── Resolve identity anchor signed URLs if provided ──
+    const identityReferenceUrls: string[] = [];
+    let identityLockUsed = false;
+    let headshotAnchorUsed = false;
+    let fullBodyAnchorUsed = false;
+
+    if (identity_anchor_paths && (identity_anchor_paths.headshot || identity_anchor_paths.fullBody)) {
+      const useDirectUrls = !!identity_anchor_paths.arePublicUrls;
+      console.log(`[lookbook-image] Anchor resolution mode: ${useDirectUrls ? 'PUBLIC_URL (direct)' : 'STORAGE_PATH (signed)'}`);
+
+      const resolveAnchor = async (path: string): Promise<string | null> => {
+        // If path is already a full URL, use it directly
+        if (useDirectUrls || path.startsWith('http://') || path.startsWith('https://')) {
+          return path;
+        }
+        // Otherwise, determine the correct bucket from the path
+        let bucket = 'project-images';
+        if (path.startsWith('actors/')) bucket = 'ai-media';
+        try {
+          const { data: signedData } = await supabase.storage
+            .from(bucket)
+            .createSignedUrl(path, 3600);
+          return signedData?.signedUrl || null;
+        } catch (e) {
+          console.warn(`[lookbook-image] Failed to sign anchor path from ${bucket}: ${path}`, e);
+          return null;
+        }
+      };
+
+      if (identity_anchor_paths.headshot) {
+        const url = await resolveAnchor(identity_anchor_paths.headshot);
+        if (url) {
+          identityReferenceUrls.push(url);
+          headshotAnchorUsed = true;
+        }
+      }
+      if (identity_anchor_paths.fullBody) {
+        const url = await resolveAnchor(identity_anchor_paths.fullBody);
+        if (url) {
+          identityReferenceUrls.push(url);
+          fullBodyAnchorUsed = true;
+        }
+      }
+      identityLockUsed = headshotAnchorUsed || fullBodyAnchorUsed;
+    }
+
+    console.log(`[lookbook-image] Identity lock: ${identityLockUsed ? 'ACTIVE' : 'INACTIVE'}, headshot: ${headshotAnchorUsed}, fullBody: ${fullBodyAnchorUsed}, notes: ${identity_notes ? 'YES' : 'NO'}, signature: ${identity_signature_block ? 'YES' : 'NO'}`);
+
+    // ── IEL: NEVER allow character generation without anchors when they exist ──
+    // If identity_anchor_paths were provided but failed to resolve, that's a hard error
+    if (identity_anchor_paths && assetGroup === "character" && !identityLockUsed) {
+      console.error(`[lookbook-image] IEL VIOLATION: identity anchors provided but failed to resolve — aborting character generation`);
+      return new Response(JSON.stringify({
+        error: "Identity anchors provided but could not be resolved. Generation aborted to prevent drift.",
+        identity_lock_failed: true,
+      }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Determine shots to generate
+    // ── Single-slot mode: forced_shot_type overrides all pack logic ──
+    const IDENTITY_PACK: ShotType[] = ["identity_headshot", "identity_profile", "identity_full_body"];
+    const BASE_LOOK_PACK: ShotType[] = ["close_up", "profile", "full_body", "full_body", "medium"];
+    const LOCATION_REF_PACK: ShotType[] = ["wide", "atmospheric", "detail", "time_variant"];
+
+    let shotsToGenerate: ShotType[];
+    if (forced_shot_type) {
+      // Deterministic single-slot mode — generate exactly this shot type
+      shotsToGenerate = [forced_shot_type as ShotType];
+    } else if (identity_mode && assetGroup === "character") {
+      shotsToGenerate = IDENTITY_PACK;
+    } else if (base_look_mode && assetGroup === "character") {
+      shotsToGenerate = BASE_LOOK_PACK;
+    } else if (location_ref_mode && assetGroup === "world") {
+      shotsToGenerate = LOCATION_REF_PACK;
+    } else if (pack_mode) {
+      shotsToGenerate = (SHOT_PACKS[assetGroup] || []);
+    } else {
+      shotsToGenerate = [];
+    }
+
+    // When forced or pack mode, limit to count
+    if (shotsToGenerate.length > 0 && !forced_shot_type) {
+      shotsToGenerate = shotsToGenerate.slice(0, Math.min(count, shotsToGenerate.length));
+    }
+
+    const genCount = shotsToGenerate.length > 0 ? shotsToGenerate.length : Math.min(Math.max(count, 1), 6);
+
+    const results: Array<{ image_id: string; status: string; shot_type?: string; error?: string; identity_locked?: boolean }> = [];
+
+    // ── VERTICAL COMPLIANCE: Resolve effective aspect + dimensions ──
+    // Priority: client-specified > prestige system > default
+    const isVerticalDramaProject = (project.format || "").toLowerCase().includes("vertical") || resolvedLane === "vertical_drama";
+    const effectiveAspect = requestedAspectRatio || prestigeComposite.aspectRatio || "16:9";
+    const effectiveWidth = requestedWidth || prestigeComposite.width || 1280;
+    const effectiveHeight = requestedHeight || prestigeComposite.height || 720;
+    console.log(`[vertical-compliance] isVD=${isVerticalDramaProject} effectiveAspect=${effectiveAspect} dims=${effectiveWidth}x${effectiveHeight}`);
+
+    for (let i = 0; i < genCount; i++) {
+      const shotType = shotsToGenerate[i] || null;
+      // Define PD custom prompt flag early — used in audit logging and style/binding suppression
+      const isPDCustomPrompt = clientCustomPrompt && clientGenerationPurpose === 'production_design';
+
+      // ── PROMPT ASSEMBLY — strict priority order ──
+      // 1. Base prompt (shot framing + subject)
+      // 2. Canon facts (highest data priority)
+      // 3. Identity lock mandate (hard constraint)
+      // 4. Identity signature (structured face/body/silhouette)
+      // 5. Visual traits block (source-tagged)
+      // 6. User notes (subordinate)
+      // 7. State modifier
+      // 8. Shot-type specific constraints
+
+      const isIdentityShot = shotType?.startsWith("identity_");
+      const isIdentityGeneration = identity_mode || (forced_shot_type && isIdentityShot);
+
+      // Step 1: Base prompt — custom_prompt ALWAYS wins over identity reference path
+      // This prevents costume-on-actor slot briefs from being bypassed by identity_* shot types.
+      let prompt: string;
+      let promptOverrideUsed = false;
+      if (clientCustomPrompt) {
+        // Caller-built prompt (costume brief, PD slot, etc.) — highest priority
+        prompt = clientCustomPrompt;
+        promptOverrideUsed = true;
+        console.log(`[Lookbook] Using custom_prompt (len=${prompt.length}) for section=${section} shot=${shotType || 'auto'} purpose=${clientGenerationPurpose || 'none'}`);
+        if (isPDCustomPrompt) {
+          console.log(`[PD-route-audit] family=${clientSubject || 'unknown'} slot=${shotType || 'auto'} section=${section} asset_group=${assetGroup} dataset_mode=${(body as any)?.dataset_provenance?.dataset_resolution_mode || 'none'} cinematicStyleSkipped=true locationBound=${!!(body as any)?.location_id}`);
+        }
+      } else if (isIdentityGeneration && isIdentityShot && character_name) {
+        prompt = buildIdentityPrompt(character_name, shotType as ShotType, ctx);
+      } else if (autoCompleteContext?.prompt_override) {
+        // Use the client-built prompt which includes slot-intent constraints,
+        // slide-type guardrails, and hard negatives from the requirement pipeline.
+        prompt = autoCompleteContext.prompt_override;
+        promptOverrideUsed = true;
+        console.log(`[Lookbook] Using prompt_override (len=${prompt.length}) for section=${section} shot=${shotType || 'auto'}`);
+      } else {
+        prompt = shotType
+          ? buildPackPrompt(assetGroup, shotType, ctx, i)
+          : buildSectionPrompt(section, ctx, i);
+        console.log(`[Lookbook] Fallback to buildPackPrompt (no override) for section=${section} shot=${shotType || 'auto'}`);
+      }
+
+      // ── VERTICAL COMPLIANCE: Inject strict aspect instruction into prompt ──
+      if (isVerticalDramaProject && !isIdentityShot) {
+        prompt = `[MANDATORY ASPECT RATIO: 9:16 PORTRAIT VERTICAL — NATIVE PHONE-SCREEN COMPOSITION]
+This image MUST be composed as a native 9:16 vertical/portrait image for mobile phone screens.
+
+FRAMING RULES:
+- The image height must be significantly taller than its width (ratio ≈ 1.78:1 height-to-width)
+- Frame all subjects vertically — tall compositions, NOT wide/landscape staging
+- Subject should fill the vertical frame naturally
+- Use vertical depth (foreground-to-background along a vertical axis)
+- Mobile-native portrait framing is MANDATORY
+- Do NOT compose a landscape/widescreen image
+- Do NOT use letterboxing, pillarboxing, or cinematic widescreen framing
+- Do NOT create a square image
+- Think of this as a phone wallpaper or Instagram Story frame
+
+\n${prompt}`;
+      } else if (isVerticalDramaProject && isIdentityShot) {
+        // Identity shots get their specific aspect
+        const identityAspectMap: Record<string, string> = {
+          identity_headshot: "1:1 SQUARE",
+          identity_profile: "3:4 PORTRAIT",
+          identity_full_body: "2:3 TALL PORTRAIT",
+        };
+        const aspectLabel = identityAspectMap[shotType || ""] || "PORTRAIT";
+        prompt = `[MANDATORY ASPECT RATIO: ${aspectLabel}]\nThis identity reference image must be composed in ${aspectLabel} orientation.\n\n${prompt}`;
+      }
+
+      // Step 2: Canon facts (highest priority data)
+      if (identity_canon_facts) {
+        prompt += `\n\nCANON CHARACTER FACTS: ${identity_canon_facts}`;
+      }
+
+      // Step 3: Identity lock mandate (hard constraint — applies to ALL character shots when locked)
+      if (identityLockUsed && assetGroup === "character" && character_name) {
+        prompt += `\n\n${buildIdentityLockMandate(character_name, identity_signature_block || null)}`;
+      }
+
+      // Step 4: Visual traits block (source-tagged, prioritized)
+      if (identity_traits_block) {
+        prompt += `\n\n${identity_traits_block}`;
+      }
+
+      // Step 5: User identity notes (subordinate to canon and lock)
+      if (identity_notes) {
+        prompt += `\n\nUSER IDENTITY GUIDANCE (subordinate to canon and identity lock): ${identity_notes}`;
+      }
+
+      // Step 6: State variant modifier
+      if (state_prompt_modifier) {
+        prompt += `\n\nSTATE VARIANT: ${state_prompt_modifier}\nThis is a state-specific reference showing the subject in this particular condition/state. Maintain visual continuity with the base reference while clearly showing the state change. The PERSON remains the same — only the state changes.`;
+      }
+
+      // Step 7: Shot-type specific identity constraints
+      if (identityLockUsed && shotType && SHOT_TYPE_IDENTITY_CONSTRAINTS[shotType as ShotType]) {
+        prompt += `\n\nSHOT-TYPE CONSTRAINT: ${SHOT_TYPE_IDENTITY_CONSTRAINTS[shotType as ShotType]}`;
+      }
+
+      // Step 8: VSAL — Visual Style Authority Lock (if available)
+      // Skip when prompt_override is active — override already contains creative direction
+      if (vsalPromptBlock && !promptOverrideUsed) {
+        prompt += `\n\n${vsalPromptBlock}`;
+        if (visualStyleLock && visualStyleLock.forbid.length > 0) {
+          prompt += `\n\nADDITIONAL PROHIBITIONS (VSAL): ${visualStyleLock.forbid.join(", ")}`;
+        }
+      }
+
+      // Step 8b: PRESTIGE STYLE — Inject lane grammar + prestige style composite
+      // Skip when prompt_override is active — override already contains style direction
+      // This avoids duplication and conflicting composition instructions
+      if (!isIdentityGeneration && prestigeComposite.promptBlock && !promptOverrideUsed) {
+        prompt += `\n\n${prestigeComposite.promptBlock}`;
+        if (prestigeComposite.negativeBlock) {
+          prompt += `\n\nSTYLE PROHIBITIONS: ${prestigeComposite.negativeBlock}`;
+        }
+      }
+
+      // Step 8b½: SHOT LIST CONTEXT — canonical cinematic source (Phase 18.1)
+      // Injected BEFORE style/shot/composition layers to ground the image in planned cinematics
+      if (shotListPromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
+        prompt += `\n\n${shotListPromptBlock}`;
+      }
+
+      // Step 8c: CINEMATIC STYLE LOCK — project-wide visual cohesion
+      // Skip for PD custom prompts — they already contain disciplined slot authority and
+      // style blocks. Adding cinematic style lock on top causes beauty-render / fantasy drift.
+      if (cinematicStylePromptBlock && !isIdentityGeneration && !isPDCustomPrompt) {
+        prompt += `\n\n${cinematicStylePromptBlock}`;
+      }
+
+      // Step 8d: SHOT INTENT — slot-specific camera direction
+      if (shotIntentPromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
+        prompt += `\n\n${shotIntentPromptBlock}`;
+      }
+
+      // Step 8e: COMPOSITION RULE — cinematic framing directive
+      if (compositionRulePromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
+        prompt += `\n\n${compositionRulePromptBlock}`;
+      }
+
+      // Step 8f: CAMERA LANGUAGE — directorial style consistency
+      if (cameraLanguagePromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
+        prompt += `\n\n${cameraLanguagePromptBlock}`;
+      }
+
+      // Step 8g: PRODUCTION DESIGN — world material/architecture consistency
+      if (productionDesignPromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
+        prompt += `\n\n${productionDesignPromptBlock}`;
+      }
+
+      // Step 9: CANONICAL VISUAL BINDING — character, location, world truth
+      // Injected AFTER identity lock (which is character-specific) to layer project-wide binding
+      //
+      // CRITICAL: When custom_prompt is used for production_design, the prompt already contains
+      // scoped location truth from the dataset/orchestrator. Do NOT append the broad location
+      // binding block which dumps ALL project locations and causes cross-location contamination.
+      // (isPDCustomPrompt is defined at loop top)
+      if (!isIdentityGeneration) {
+        // For non-identity shots, build shot-specific character binding with framing rules
+        if (canonicalBindings.characters.length > 0) {
+          const shotSpecificCharBlock = buildCharacterBindingBlock(canonicalBindings.characters, shotType as ShotType | null);
+          prompt += `\n\n${shotSpecificCharBlock}`;
+        }
+        // Skip broad location binding for PD custom prompts — they already contain scoped location truth
+        if (canonicalBindings.locationPromptBlock && !isPDCustomPrompt) {
+          prompt += `\n\n${canonicalBindings.locationPromptBlock}`;
+        } else if (isPDCustomPrompt) {
+          console.log(`[PD-scope] Skipping broad locationPromptBlock — custom_prompt already contains scoped location truth`);
+        }
+      }
+      // World binding always applies (even to identity shots — grounds the project universe)
+      // For PD custom prompts, world binding is still useful as it's project-level, not location-specific
+      if (canonicalBindings.worldPromptBlock) {
+        prompt += `\n\n${canonicalBindings.worldPromptBlock}`;
+      }
+
+      const resolverInput = { role: imageRole, styleMode, strategyKey: `lookbook_${section}` };
+      const genConfig = resolveImageGenerationConfig(resolverInput);
+      const repoMeta = buildImageRepositoryMeta(genConfig, resolverInput);
+
+      // Use identity references for ALL character generation when locked
+      const refsForThisShot = (identityLockUsed && assetGroup === "character") ? identityReferenceUrls : [];
+
+      try {
+        const imageResult = await generateImage(LOVABLE_API_KEY, prompt, genConfig.model, genConfig.gatewayUrl, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
+
+        const identitySegment = identity_mode ? '-identity' : '';
+        const stateSegment = state_key ? `-${state_key}` : '';
+        const storagePath = `${project_id}/lookbook/${section}/${Date.now()}-${shotType || `v${i}`}${identitySegment}${stateSegment}.${imageResult.format}`;
+        const { error: uploadErr } = await supabase.storage
+          .from("project-posters")
+          .upload(storagePath, imageResult.rawBytes, {
+            contentType: `image/${imageResult.format}`,
+            upsert: true,
+          });
+        if (uploadErr) throw new Error(`Storage upload failed: ${uploadErr.message}`);
+
+        // ── VERTICAL COMPLIANCE: Measure ACTUAL output dimensions ──
+        // STRICT POLICY: Only store measured dimensions. If measurement fails,
+        // store NULL so downstream compliance correctly marks as non-compliant.
+        const measuredDims = measureImageDimensions(imageResult.rawBytes);
+        const storedWidth = measuredDims?.width ?? null;
+        const storedHeight = measuredDims?.height ?? null;
+        const dimsSource = measuredDims ? 'measured' : 'unmeasured';
+        
+        // Check if actual output matches requested aspect ratio
+        const actualRatio = (storedWidth && storedHeight && storedWidth > 0) ? storedHeight / storedWidth : 0;
+        const requestedRatio = effectiveWidth > 0 ? effectiveHeight / effectiveWidth : 0;
+        const aspectDrift = actualRatio > 0 ? Math.abs(actualRatio - requestedRatio) : -1;
+        const aspectCompliant = actualRatio > 0 && aspectDrift < 0.15;
+        
+        if (!aspectCompliant && isVerticalDramaProject) {
+          console.warn(`[vertical-compliance] ASPECT DRIFT: requested ${effectiveWidth}x${effectiveHeight} (ratio=${requestedRatio.toFixed(2)}), got ${storedWidth}x${storedHeight} (ratio=${actualRatio.toFixed(2)}), drift=${aspectDrift.toFixed(2)}, source=${dimsSource}`);
+        }
+        console.log(`[vertical-compliance] dims_source=${dimsSource} actual=${storedWidth}x${storedHeight} requested=${effectiveWidth}x${effectiveHeight} compliant=${aspectCompliant}`);
+
+        // ── Quality Gate: compute BEFORE insert ──
+        const resolvedSubjectType = assetGroup === "character" ? "character"
+          : (assetGroup === "world" && location_name) ? "location"
+          : assetGroup === "world" ? "world"
+          : assetGroup === "key_moment" ? "moment"
+          : assetGroup === "visual_language" ? "production_design"
+          : null;
+        const gateResult = computeEdgeQualityGate({
+          width: storedWidth,
+          height: storedHeight,
+          model: genConfig.model,
+          provider: genConfig.provider,
+          prompt_used: prompt,
+          subject_type: resolvedSubjectType,
+          asset_group: assetGroup,
+          shot_type: shotType,
+          generation_config: {
+            identity_locked: identityLockUsed,
+            source_feature: isIdentityGeneration ? "character_identity_engine" : "lookbook_engine",
+            location_id: location_id || null,
+            location_name: location_name || null,
+          },
+          location_ref: location_name || null,
+        });
+        console.log(`[lookbook-image] Quality gate for ${section} variant ${i}:`, JSON.stringify(gateResult));
+
+        const { data: imgRecord, error: insertErr } = await supabase
+          .from("project_images")
+          .insert({
+            project_id,
+            ...gateResult,
+            role: imageRole,
+            entity_id: entity_id || null,
+            strategy_key: isIdentityGeneration ? "character_identity" : `lookbook_${section}`,
+            prompt_used: prompt,
+            negative_prompt: isIdentityGeneration
+              ? "cinematic scene, environmental context, narrative elements, dramatic lighting, props, costumes, action poses, text, watermarks, illustration, painting, CGI"
+              : [stylePolicy.negativeStyleConstraints, prestigeComposite.negativeBlock].filter(Boolean).join(", "),
+            canon_constraints: { source_feature: isIdentityGeneration ? "character_identity_engine" : "lookbook_engine", section },
+            storage_path: storagePath,
+            storage_bucket: "project-posters",
+            width: storedWidth,
+            height: storedHeight,
+            is_primary: false,
+            is_active: true,
+            source_poster_id: null,
+            user_id: user.id,
+            created_by: user.id,
+            provider: genConfig.provider,
+            model: genConfig.model,
+            style_mode: styleMode,
+            generation_config: {
+              ...repoMeta,
+              source_feature: isIdentityGeneration ? "character_identity_engine" : "lookbook_engine",
+              section,
+              variant_index: i,
+              shot_type: shotType,
+              state_key: state_key || null,
+              // Full audit trail
+              identity_mode: identity_mode || isIdentityGeneration || false,
+              identity_locked: identityLockUsed,
+              identity_headshot_anchor_used: headshotAnchorUsed,
+              identity_full_body_anchor_used: fullBodyAnchorUsed,
+              identity_anchors_count: identityReferenceUrls.length,
+              identity_notes_used: !!identity_notes,
+              identity_canon_facts_used: !!identity_canon_facts,
+              identity_traits_used: !!identity_traits_block,
+              identity_signature_used: !!identity_signature_block,
+              identity_lock_strength: (headshotAnchorUsed && fullBodyAnchorUsed) ? 'strong' : (headshotAnchorUsed || fullBodyAnchorUsed) ? 'partial' : 'none',
+              state_variant_used: !!state_prompt_modifier,
+              // Canonical Visual Binding provenance
+              canonical_binding_status: canonicalBindings.binding_status,
+              canonical_binding_missing: canonicalBindings.missing,
+              targeting_mode: canonicalBindings.targeting_mode,
+              requested_character_names: requestedCharacterNames || (character_name ? [character_name] : []),
+              resolved_character_names: canonicalBindings.characters.map(c => c.character_name),
+              expected_character_count: canonicalBindings.characters.length,
+              bound_dna_version_ids: canonicalBindings.characters.map(c => c.dna_version_id).filter(Boolean),
+              requested_location_ids: requestedLocationIds || (location_id ? [location_id] : []),
+              resolved_location_ids: canonicalBindings.locations.map(l => l.location_id),
+              resolved_location_names: canonicalBindings.locations.map(l => l.canonical_name),
+              world_binding_active: canonicalBindings.world.bound,
+              world_binding_era: canonicalBindings.world.era || null,
+              // ── VERTICAL COMPLIANCE: audit trail ──
+              requested_aspect_ratio: effectiveAspect,
+              requested_width: effectiveWidth,
+              requested_height: effectiveHeight,
+              actual_width: storedWidth,
+              actual_height: storedHeight,
+              dims_source: dimsSource,
+              aspect_compliant: aspectCompliant,
+              aspect_drift: aspectDrift,
+              vertical_drama_project: isVerticalDramaProject,
+              // ── CINEMATIC STYLE LOCK + SHOT INTENT: provenance ──
+              style_lock_hash: cinematicStyleHash || null,
+              style_lock_active: !!cinematicStyleLock,
+              shot_intent: resolvedShotIntent || null,
+              shot_intent_slide_type: slideType,
+              // ── COMPOSITION RULE: provenance ──
+              composition_rule: resolvedCompositionRule || null,
+              composition_rule_hash: compositionRuleHash || null,
+              // ── CAMERA LANGUAGE: provenance ──
+              camera_language_hash: cameraLanguageHash || null,
+              // ── PRODUCTION DESIGN: provenance ──
+              production_design_hash: productionDesignHash || null,
+              production_design_architecture: productionArchitecture || null,
+              // ── SHOT LIST CONTEXT: provenance (Phase 18.1) ──
+              shot_list_id: shotListId || null,
+              shot_list_item_ids: shotListMappedItemIds.length > 0 ? shotListMappedItemIds : null,
+              shot_list_context_used: shotListPromptBlock.length > 0,
+              shot_list_framing: (shotListContextItems.length > 0 && shotListMappedItemIds.length > 0)
+                ? (shotListContextItems.find(i => i.id === shotListMappedItemIds[0])?.framing || null) : null,
+              shot_list_camera_movement: (shotListContextItems.length > 0 && shotListMappedItemIds.length > 0)
+                ? (shotListContextItems.find(i => i.id === shotListMappedItemIds[0])?.camera_movement || null) : null,
+              shot_list_location: (shotListContextItems.length > 0 && shotListMappedItemIds.length > 0)
+                ? (shotListContextItems.find(i => i.id === shotListMappedItemIds[0])?.location || null) : null,
+              shot_list_time_of_day: (shotListContextItems.length > 0 && shotListMappedItemIds.length > 0)
+                ? (shotListContextItems.find(i => i.id === shotListMappedItemIds[0])?.time_of_day || null) : null,
+              narrative_source: shotListPromptBlock.length > 0 ? 'shot_list' : 'scene_graph',
+              // ── DATASET PROVENANCE: location visual dataset resolution metadata ──
+              ...(clientDatasetProvenance ? { dataset_provenance: clientDatasetProvenance } : {}),
+              // ── AUTO-COMPLETE CONTEXT: requirement-origin + actor attribution metadata ──
+              ...(autoCompleteContext ? {
+                auto_complete_context: {
+                  target_requirement_id: autoCompleteContext.target_requirement_id || null,
+                  slide_type: autoCompleteContext.slide_type || null,
+                  pass: autoCompleteContext.pass || null,
+                  requested_shot_type: autoCompleteContext.requested_shot_type || null,
+                  batch_index: autoCompleteContext.batch_index ?? null,
+                  requirement_ids: autoCompleteContext.requirement_ids || [],
+                  prompt_override_used: promptOverrideUsed,
+                  prompt_override_length: promptOverrideUsed ? (autoCompleteContext.prompt_override?.length ?? 0) : 0,
+                  // ── ACTOR ATTRIBUTION: identity provenance for matching/QA ──
+                  resolved_character_names: autoCompleteContext.resolved_character_names || null,
+                  ai_actor_ids: autoCompleteContext.ai_actor_ids || null,
+                  ai_actor_version_ids: autoCompleteContext.ai_actor_version_ids || null,
+                  identity_sources: autoCompleteContext.identity_sources || null,
+                },
+              } : {}),
+            },
+            asset_group: assetGroup,
+            subject: clientSubject || character_name || location_name || null,
+            shot_type: shotType,
+            curation_state: "candidate",
+            subject_type: assetGroup === "character" ? "character"
+              : (assetGroup === "world" && location_name) ? "location"
+              : assetGroup === "world" ? "world"
+              : assetGroup === "key_moment" ? "moment"
+              : assetGroup === "visual_language" ? "production_design"
+              : null,
+            subject_ref: character_name || location_name || null,
+            location_ref: location_name || null,
+            canon_location_id: location_id || null,
+            generation_purpose: clientGenerationPurpose
+              ? clientGenerationPurpose
+              : isIdentityGeneration ? "character_identity"
+              : state_key ? `state_variant_${state_key}`
+              : base_look_mode ? "character_reference"
+              : location_ref_mode ? "location_reference"
+              : `lookbook_${section}`,
+            state_key: state_key || null,
+            state_label: state_label || null,
+            // ── PRESTIGE STYLE SYSTEM: persist lane + style metadata ──
+            lane_key: resolvedLane,
+            prestige_style: resolvedStyleKey,
+          })
+          .select("id")
+          .single();
+
+        if (insertErr) {
+          console.error(`[lookbook-image] repo insert error for variant ${i}:`, insertErr.message);
+          results.push({ image_id: "", status: "stored_no_repo", shot_type: shotType || undefined, error: insertErr.message, identity_locked: identityLockUsed });
+        } else {
+          results.push({ image_id: imgRecord.id, status: "ready", shot_type: shotType || undefined, identity_locked: identityLockUsed });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        console.error(`[lookbook-image] generation error for ${section} ${shotType || `variant ${i}`}:`, msg);
+        results.push({ image_id: "", status: "failed", shot_type: shotType || undefined, error: msg });
+      }
+    }
+
+    return new Response(JSON.stringify({
+      section, asset_group: assetGroup, results,
+      canonical_binding: {
+        status: canonicalBindings.binding_status,
+        characters_bound: canonicalBindings.characters.length,
+        locations_bound: canonicalBindings.locations.length,
+        world_bound: canonicalBindings.world.bound,
+        missing: canonicalBindings.missing,
+      },
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    console.error("generate-lookbook-image error:", errMsg);
+    return new Response(JSON.stringify({ error: errMsg }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

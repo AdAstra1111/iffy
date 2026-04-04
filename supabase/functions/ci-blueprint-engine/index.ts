@@ -1,0 +1,961 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { buildPitchScoringRubric, normalizePitchScores, calculatePitchScoreTotal, checkScoreDrift, PITCH_SCORE_WEIGHTS } from "../_shared/pitchScoring.ts";
+import { computeLearningPoolEligibility, LEARNING_POOL_CI_THRESHOLD } from "../_shared/learningPool.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // Auth
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !user) return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    const svcClient = createClient(supabaseUrl, supabaseKey);
+    const body = await req.json();
+    const { action } = body;
+
+    // ── ACTION: build ──
+    if (action === "build") {
+      const {
+        format = "film", lane = "", genre = "", engine = "", budgetBand = "",
+        candidateCount = 5, useTrends = false, useExemplars = false, ciMin = 95,
+        sourceDnaProfileId = null,
+        useLearningPoolOnly = false,
+      } = body;
+
+      console.log(`[ci-blueprint] build start: format=${format} lane=${lane} genre=${genre} count=${candidateCount} dna=${sourceDnaProfileId || 'none'}`);
+
+      // ── DNA RETRIEVAL ──
+      let dnaProfile: any = null;
+      let dnaConstraintMode = "none";
+      let dnaEngineKey: string | null = null;
+      let dnaPromptBlock = "";
+
+      if (sourceDnaProfileId) {
+        const { data: profile, error: dnaErr } = await svcClient
+          .from("narrative_dna_profiles")
+          .select("id, source_title, source_type, status, spine_json, thematic_spine, escalation_architecture, antagonist_pattern, emotional_cadence, world_logic_rules, set_piece_grammar, ending_logic, power_dynamic, forbidden_carryovers, mutable_variables, primary_engine_key, secondary_engine_key, extraction_confidence")
+          .eq("id", sourceDnaProfileId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (dnaErr || !profile) {
+          console.warn(`[ci-blueprint] DNA profile not found or not owned: ${sourceDnaProfileId}`);
+        } else if (profile.status !== "locked") {
+          console.warn(`[ci-blueprint] DNA profile not locked: ${sourceDnaProfileId} status=${profile.status}`);
+        } else {
+          dnaProfile = profile;
+          dnaConstraintMode = "dna_profile";
+          dnaEngineKey = profile.primary_engine_key || null;
+          console.log(`[ci-blueprint] DNA loaded: "${profile.source_title}" engine=${dnaEngineKey || 'none'} confidence=${profile.extraction_confidence}`);
+
+          // Build structured DNA constraint block for prompt
+          const spineAxes = profile.spine_json || {};
+          const spineLines = Object.entries(spineAxes)
+            .filter(([_, v]) => v)
+            .map(([k, v]) => `  - ${k}: ${v}`)
+            .join("\n");
+
+          const dnaLines: string[] = [
+            `NARRATIVE DNA CONSTRAINTS (from "${profile.source_title}"):`,
+            `These constraints define the STRUCTURAL IDENTITY of the story DNA. Generated ideas must preserve these narrative patterns while creating COMPLETELY ORIGINAL stories. Do NOT reproduce the source story's plot, characters, or setting.`,
+            ``,
+            `ORIGINALITY GUARDRAIL: You are extracting structural DNA patterns only. Generated ideas must be wholly original — new characters, new world, new plot. The DNA provides narrative architecture, not content to clone.`,
+          ];
+          if (spineLines) dnaLines.push(``, `NARRATIVE SPINE:`, spineLines);
+          if (profile.thematic_spine) dnaLines.push(`THEMATIC SPINE: ${profile.thematic_spine}`);
+          if (profile.escalation_architecture) dnaLines.push(`ESCALATION ARCHITECTURE: ${profile.escalation_architecture}`);
+          if (profile.antagonist_pattern) dnaLines.push(`ANTAGONIST PATTERN: ${profile.antagonist_pattern}`);
+          if (profile.power_dynamic) dnaLines.push(`POWER DYNAMIC: ${profile.power_dynamic}`);
+          if (profile.ending_logic) dnaLines.push(`ENDING LOGIC: ${profile.ending_logic}`);
+          if (profile.set_piece_grammar) dnaLines.push(`SET PIECE GRAMMAR: ${profile.set_piece_grammar}`);
+          if (profile.emotional_cadence?.length) dnaLines.push(`EMOTIONAL CADENCE: ${profile.emotional_cadence.join(" → ")}`);
+          if (profile.world_logic_rules?.length) dnaLines.push(`WORLD LOGIC RULES:`, ...profile.world_logic_rules.map((r: string) => `  - ${r}`));
+          if (profile.forbidden_carryovers?.length) dnaLines.push(`FORBIDDEN CARRYOVERS (do NOT use these from the source):`, ...profile.forbidden_carryovers.map((f: string) => `  - ${f}`));
+          if (profile.mutable_variables?.length) dnaLines.push(`MUTABLE VARIABLES (may be adapted freely):`, ...profile.mutable_variables.map((m: string) => `  - ${m}`));
+          if (dnaEngineKey) dnaLines.push(`ENGINE PATTERN: ${dnaEngineKey}`);
+
+          dnaPromptBlock = "\n\n" + dnaLines.join("\n");
+        }
+      }
+
+      // ── BLUEPRINT FAMILY SELECTION (deterministic) ──
+      const resolvedEngineKey = engine || dnaEngineKey || null;
+      let selectedFamily: any = null;
+      let familyCandidates: any[] = [];
+      let familySelectionLog: Record<string, any> = {};
+
+      if (resolvedEngineKey) {
+        // Fetch all active families for this engine
+        const { data: families, error: famErr } = await svcClient
+          .from("narrative_engine_blueprint_families")
+          .select("*")
+          .eq("engine_key", resolvedEngineKey)
+          .eq("active", true)
+          .order("family_key", { ascending: true });
+
+        if (famErr) {
+          console.error(`[ci-blueprint][IEL] BLUEPRINT_FAMILY_SELECTION_BLOCKED { run_id: pending, engine_key: "${resolvedEngineKey}", error: "${famErr.message}" }`);
+          throw new Error(`Blueprint family retrieval failed for engine ${resolvedEngineKey}: ${famErr.message}`);
+        }
+
+        if (!families || families.length === 0) {
+          console.error(`[ci-blueprint][IEL] BLUEPRINT_FAMILY_SELECTION_BLOCKED { engine_key: "${resolvedEngineKey}", reason: "no_active_families" }`);
+          throw new Error(`No active blueprint families found for engine ${resolvedEngineKey}. Cannot proceed without structural family.`);
+        }
+
+        familyCandidates = families;
+
+        // Deterministic scoring: lane match + budget match + tie-break on family_key (alphabetical)
+        const scored = families.map((f: any) => {
+          let score = 0;
+          const laneSuit: string[] = f.lane_suitability || [];
+          const budgetSuit: string[] = f.budget_suitability || [];
+          const effectiveLane = lane || "";
+          const effectiveBudget = budgetBand || "";
+
+          // Lane match: +3 for exact, +1 for having any lane suitability
+          if (effectiveLane && laneSuit.includes(effectiveLane)) {
+            score += 3;
+          } else if (laneSuit.length > 0) {
+            score += 1;
+          }
+
+          // Budget match: +3 for exact, +1 for having any budget suitability
+          if (effectiveBudget && budgetSuit.includes(effectiveBudget)) {
+            score += 3;
+          } else if (budgetSuit.length > 0) {
+            score += 1;
+          }
+
+          // Execution pattern presence: +2 if present
+          if (f.execution_pattern && Object.keys(f.execution_pattern).length > 0) {
+            score += 2;
+          }
+
+          return { ...f, _selection_score: score };
+        });
+
+        // Sort: highest score first, then alphabetical family_key for deterministic tie-breaking
+        scored.sort((a: any, b: any) => {
+          if (b._selection_score !== a._selection_score) return b._selection_score - a._selection_score;
+          return (a.family_key as string).localeCompare(b.family_key as string);
+        });
+
+        selectedFamily = scored[0];
+        const isTie = scored.length > 1 && scored[0]._selection_score === scored[1]._selection_score;
+
+        // Compute selection confidence
+        const maxPossibleScore = 8; // 3 lane + 3 budget + 2 execution_pattern
+        const selectionConfidence = Math.round((selectedFamily._selection_score / maxPossibleScore) * 100) / 100;
+
+        // Build rationale
+        const rationale = [
+          `Selected ${selectedFamily.family_key} for engine ${resolvedEngineKey}`,
+          `score=${selectedFamily._selection_score}/${maxPossibleScore}`,
+          lane ? `lane=${lane} match=${(selectedFamily.lane_suitability || []).includes(lane)}` : "lane=unspecified",
+          budgetBand ? `budget=${budgetBand} match=${(selectedFamily.budget_suitability || []).includes(budgetBand)}` : "budget=unspecified",
+          isTie ? `tie_broken_by=alphabetical_family_key` : "no_tie",
+          `candidates_evaluated=${scored.length}`,
+        ].join(", ");
+
+        familySelectionLog = {
+          event: isTie ? "BLUEPRINT_FAMILY_AMBIGUOUS" : "BLUEPRINT_FAMILY_SELECTED",
+          engine_key: resolvedEngineKey,
+          blueprint_family_key: selectedFamily.family_key,
+          selection_confidence: selectionConfidence,
+          candidates_evaluated: scored.map((s: any) => ({ family_key: s.family_key, score: s._selection_score })),
+          tie_broken: isTie,
+          rationale,
+          source_dna_profile_id: sourceDnaProfileId || null,
+        };
+
+        console.log(`[ci-blueprint][IEL] ${familySelectionLog.event} ${JSON.stringify(familySelectionLog)}`);
+      } else {
+        // No engine key — if DNA was provided, this is an error
+        if (sourceDnaProfileId && dnaProfile) {
+          console.error(`[ci-blueprint][IEL] BLUEPRINT_FAMILY_SELECTION_BLOCKED { source_dna_profile_id: "${sourceDnaProfileId}", reason: "dna_present_but_no_engine_key" }`);
+          throw new Error(`DNA profile ${sourceDnaProfileId} is present but no engine key was resolved. Cannot select blueprint family without engine.`);
+        }
+        // No DNA, no engine — proceed without family (non-DNA mode)
+        console.log(`[ci-blueprint] no engine key — skipping blueprint family selection (mode=ad_hoc)`);
+        familySelectionLog = {
+          event: "BLUEPRINT_FAMILY_SKIPPED",
+          reason: "no_engine_key_no_dna",
+          engine_key: null,
+          blueprint_family_key: null,
+        };
+      }
+
+      const optimizerMode = dnaProfile ? "dna_informed" : "ci_pattern";
+
+      // 1. Create run record
+      const { data: run, error: runErr } = await svcClient
+        .from("idea_blueprint_runs")
+        .insert({
+          user_id: user.id,
+          status: "running",
+          config: { format, lane, genre, engine, budgetBand, candidateCount, useTrends, useExemplars, ciMin, sourceDnaProfileId, useLearningPoolOnly },
+          source_dna_profile_id: sourceDnaProfileId || null,
+          dna_inputs: dnaProfile ? [{
+            profile_id: dnaProfile.id,
+            source_title: dnaProfile.source_title,
+            engine_key: dnaEngineKey,
+            thematic_spine: dnaProfile.thematic_spine,
+            confidence: dnaProfile.extraction_confidence,
+          }] : [],
+          optimizer_mode: optimizerMode,
+          learning_pool_only: useLearningPoolOnly,
+        })
+        .select("id")
+        .single();
+      if (runErr) throw new Error(`Run creation failed: ${runErr.message}`);
+      const runId = run.id;
+
+      // 2. Progressive fallback retrieval for source ideas
+      const MIN_SOURCE_TARGET = 5;
+      const selectCols = "id, title, production_type, recommended_lane, genre, source_engine_key, source_dna_profile_id, budget_band, score_total, score_market_heat, score_feasibility, score_lane_fit, score_saturation_risk, score_company_fit, logline, comps, packaging_suggestions, risks_mitigations, learning_pool_eligible";
+
+      // Define fallback stages
+      const fallbackStages = [
+        { label: "exact",         ciFloor: ciMin, useFormat: true,  useLane: !!lane, useGenre: !!genre },
+        { label: "lower_ci_70",   ciFloor: 70,    useFormat: true,  useLane: !!lane, useGenre: !!genre },
+        { label: "lower_ci_60",   ciFloor: 60,    useFormat: true,  useLane: !!lane, useGenre: !!genre },
+        { label: "relax_genre",   ciFloor: 60,    useFormat: true,  useLane: !!lane, useGenre: false },
+        { label: "relax_lane",    ciFloor: 60,    useFormat: true,  useLane: false,  useGenre: false },
+        { label: "format_only",   ciFloor: 50,    useFormat: true,  useLane: false,  useGenre: false },
+        { label: "any",           ciFloor: 50,    useFormat: false, useLane: false,  useGenre: false },
+      ];
+
+      let sourceIdeas: any[] = [];
+      let fallbackStageReached = "exact";
+      let finalCiThreshold = ciMin;
+      let genreRelaxed = false;
+      let laneRelaxed = false;
+
+      let learningPoolMatchCount = 0;
+
+      for (const stage of fallbackStages) {
+        let q = svcClient
+          .from("pitch_ideas")
+          .select(selectCols)
+          .gte("score_total", stage.ciFloor)
+          .order("score_total", { ascending: false })
+          .limit(30);
+
+        if (stage.useFormat && format) q = q.eq("production_type", format);
+        if (stage.useLane && lane) q = q.eq("recommended_lane", lane);
+        if (stage.useGenre && genre) q = q.ilike("genre", `%${genre}%`);
+        if (useExemplars) q = q.eq("is_exemplar", true);
+
+        // Learning-pool-only mode: hard gate, never relaxed
+        if (useLearningPoolOnly) q = q.eq("learning_pool_eligible", true);
+
+        const { data, error: qErr } = await q;
+        if (qErr) {
+          console.warn(`[ci-blueprint] retrieval error at stage ${stage.label}: ${qErr.message}`);
+          continue;
+        }
+
+        const count = data?.length || 0;
+        console.log(`[ci-blueprint] retrieval stage=${stage.label} ci>=${stage.ciFloor} format=${stage.useFormat} lane=${stage.useLane} genre=${stage.useGenre} → ${count} ideas`);
+
+        if (count >= MIN_SOURCE_TARGET) {
+          sourceIdeas = data!;
+          fallbackStageReached = stage.label;
+          finalCiThreshold = stage.ciFloor;
+          genreRelaxed = (!!genre && !stage.useGenre);
+          laneRelaxed = (!!lane && !stage.useLane);
+          break;
+        }
+
+        // Accept partial results at last stage
+        if (stage === fallbackStages[fallbackStages.length - 1] && count > 0) {
+          sourceIdeas = data!;
+          fallbackStageReached = stage.label;
+          finalCiThreshold = stage.ciFloor;
+          genreRelaxed = (!!genre && !stage.useGenre);
+          laneRelaxed = (!!lane && !stage.useLane);
+        }
+      }
+
+      console.log(`[ci-blueprint] fallback result: stage=${fallbackStageReached} final_ci=${finalCiThreshold} genre_relaxed=${genreRelaxed} lane_relaxed=${laneRelaxed} ideas=${sourceIdeas.length}`);
+
+      // DNA-aware ordering on the retrieved set
+      if (dnaProfile && sourceIdeas.length > 0) {
+        const scored = sourceIdeas.map((idea: any) => {
+          let boost = 0;
+          let tier = "generic";
+          if (sourceDnaProfileId && idea.source_dna_profile_id === sourceDnaProfileId) {
+            boost += 3;
+            tier = "dna_exact";
+          } else if (dnaEngineKey && idea.source_engine_key === dnaEngineKey) {
+            boost += 2;
+            tier = "engine_match";
+          }
+          return { ...idea, _dna_boost: boost, _dna_tier: tier };
+        });
+        scored.sort((a: any, b: any) => {
+          if (b._dna_boost !== a._dna_boost) return b._dna_boost - a._dna_boost;
+          return (Number(b.score_total) || 0) - (Number(a.score_total) || 0);
+        });
+        sourceIdeas = scored;
+
+        const dnaExact = scored.filter((s: any) => s._dna_tier === "dna_exact").length;
+        const engineMatch = scored.filter((s: any) => s._dna_tier === "engine_match").length;
+        const generic = scored.filter((s: any) => s._dna_tier === "generic").length;
+        console.log(`[ci-blueprint] DNA retrieval breakdown: dna_exact=${dnaExact} engine_match=${engineMatch} generic_fallback=${generic} total=${sourceIdeas.length}`);
+
+        if (dnaExact === 0 && engineMatch === 0) {
+          console.warn(`[ci-blueprint] DNA_FALLBACK: no DNA or engine-matched source ideas found. All ${sourceIdeas.length} ideas are generic CI fallback.`);
+        }
+      } else if (dnaProfile && sourceIdeas.length === 0) {
+        console.warn(`[ci-blueprint] DNA_FALLBACK: DNA profile selected but 0 source ideas found after all fallback stages.`);
+      }
+
+      console.log(`[ci-blueprint] found ${sourceIdeas.length} source ideas`);
+
+      // 3. Fetch trend signals if requested
+      let trendContext = "";
+      let trendSignalIds: string[] = [];
+      if (useTrends) {
+        let tq = svcClient
+          .from("trend_signals")
+          .select("id, name, category, strength, velocity, explanation, genre_tags, tone_tags, cycle_phase, saturation_risk")
+          .eq("status", "active")
+          .order("strength", { ascending: false })
+          .limit(15);
+        if (format) tq = tq.eq("production_type", format);
+        const { data: signals } = await tq;
+        if (signals && signals.length > 0) {
+          trendSignalIds = signals.map((s: any) => s.id);
+          trendContext = `\n\nACTIVE MARKET TRENDS (use to inform market positioning, NOT to copy):\n${signals.map((s: any) =>
+            `- ${s.name} (strength: ${s.strength}, velocity: ${s.velocity}, cycle: ${s.cycle_phase}): ${s.explanation}`
+          ).join("\n")}`;
+        }
+        console.log(`[ci-blueprint] trend signals: ${trendSignalIds.length}`);
+      }
+
+      // 4. Derive structural patterns (metadata only, no text copying)
+      const scorePatterns = {
+        avg_total: sourceIdeas.length ? sourceIdeas.reduce((s: number, i: any) => s + (Number(i.score_total) || 0), 0) / sourceIdeas.length : 0,
+        avg_market_heat: sourceIdeas.length ? sourceIdeas.reduce((s: number, i: any) => s + (Number(i.score_market_heat) || 0), 0) / sourceIdeas.length : 0,
+        avg_feasibility: sourceIdeas.length ? sourceIdeas.reduce((s: number, i: any) => s + (Number(i.score_feasibility) || 0), 0) / sourceIdeas.length : 0,
+        avg_lane_fit: sourceIdeas.length ? sourceIdeas.reduce((s: number, i: any) => s + (Number(i.score_lane_fit) || 0), 0) / sourceIdeas.length : 0,
+        common_budget_bands: [...new Set(sourceIdeas.map((i: any) => i.budget_band).filter(Boolean))],
+        common_lanes: [...new Set(sourceIdeas.map((i: any) => i.recommended_lane).filter(Boolean))],
+        common_genres: [...new Set(sourceIdeas.map((i: any) => i.genre).filter(Boolean))],
+        idea_count: sourceIdeas.length,
+      };
+
+      // 5. Create blueprint record with family lineage
+      const familyKey = selectedFamily?.family_key || null;
+      const executionPattern = selectedFamily?.execution_pattern || null;
+      const familyConfidence = familySelectionLog.selection_confidence ?? null;
+      const familyRationale = familySelectionLog.rationale ?? null;
+
+      // IEL: If engine exists, family must have been selected
+      if (resolvedEngineKey && !familyKey) {
+        console.error(`[ci-blueprint][IEL] INVARIANT_VIOLATION: engine=${resolvedEngineKey} but no family selected. Blocking insert.`);
+        throw new Error(`Invariant violation: engine ${resolvedEngineKey} resolved but no blueprint family was selected.`);
+      }
+      // IEL: If family selected, execution_pattern must be present
+      if (familyKey && (!executionPattern || Object.keys(executionPattern).length === 0)) {
+        console.error(`[ci-blueprint][IEL] INVARIANT_VIOLATION: family=${familyKey} has no execution_pattern. Blocking insert.`);
+        throw new Error(`Invariant violation: blueprint family ${familyKey} has no execution_pattern.`);
+      }
+
+      const structuralSummary = selectedFamily
+        ? `${selectedFamily.label}: ${selectedFamily.description}. Strengths: ${(selectedFamily.structural_strengths || []).join(", ")}. Risks: ${(selectedFamily.structural_risks || []).join(", ")}.`
+        : null;
+
+      const { data: blueprint, error: bpErr } = await svcClient
+        .from("idea_blueprints")
+        .insert({
+          run_id: runId,
+          user_id: user.id,
+          format,
+          lane: lane || scorePatterns.common_lanes[0] || "",
+          genre: genre || scorePatterns.common_genres[0] || "",
+          engine: resolvedEngineKey,
+          budget_band: budgetBand || scorePatterns.common_budget_bands[0] || "",
+          source_dna_profile_id: sourceDnaProfileId || null,
+          source_engine_key: dnaEngineKey || null,
+          dna_constraint_mode: dnaConstraintMode,
+          blueprint_mode: optimizerMode,
+          // Blueprint family lineage
+          blueprint_family_key: familyKey,
+          execution_pattern: executionPattern,
+          family_selection_confidence: familyConfidence,
+          family_selection_rationale: familyRationale,
+          structural_summary: structuralSummary,
+          family_candidates_considered: familyCandidates.map((f: any) => ({
+            family_key: f.family_key,
+            label: f.label,
+            lane_suitability: f.lane_suitability,
+            budget_suitability: f.budget_suitability,
+          })),
+          structural_patterns: scorePatterns,
+          market_design: {
+            useTrends,
+            trendCount: trendSignalIds.length,
+            trend_signal_ids: trendSignalIds,
+            positioning_strategy: lane ? `${lane}-optimized` : "best-fit",
+            dna_informed: !!dnaProfile,
+          },
+          protagonist_design: {
+            instruction: "Protagonist must have a clear want, a deep need, and a defining flaw that drives conflict.",
+            archetypes_observed: sourceIdeas.length > 0 ? "derived_from_elite_patterns" : "unconstrained",
+          },
+          conflict_design: {
+            instruction: "Conflict engine must sustain a full season/feature arc. Avoid single-revelation plots.",
+            escalation_required: true,
+          },
+          hook_type: "",
+          feasibility_design: {
+            budget_band: budgetBand || scorePatterns.common_budget_bands[0] || "mid",
+            location_constraint: "minimize",
+            cast_scale: budgetBand === "micro" ? "small" : budgetBand === "tentpole" ? "large" : "medium",
+          },
+          novelty_constraints: {
+            no_clone_from_exemplars: true,
+            differentiation_required: true,
+            source_idea_count: sourceIdeas.length,
+            dna_originality_guardrail: !!dnaProfile,
+          },
+          derived_from_idea_ids: sourceIdeas.map((i: any) => i.id),
+          trend_inputs: trendSignalIds.map((id: string) => ({ signal_id: id })),
+          exemplar_inputs: sourceIdeas.map((i: any) => ({ id: i.id, title: i.title, score_total: i.score_total })),
+          score_pattern: scorePatterns,
+        })
+        .select("id")
+        .single();
+      if (bpErr) throw new Error(`Blueprint creation failed: ${bpErr.message}`);
+
+      // 6. Generate candidates via LLM (generation only, no self-scoring)
+      // Build blueprint family execution context for prompt injection
+      let familyPromptBlock = "";
+      if (selectedFamily) {
+        const ep = selectedFamily.execution_pattern || {};
+        familyPromptBlock = `\n\nBLUEPRINT FAMILY EXECUTION PATTERN (structural constraint — ideas MUST follow this architecture):
+Family: ${selectedFamily.label} (${selectedFamily.family_key})
+Engine: ${resolvedEngineKey}
+Description: ${selectedFamily.description}
+${ep.act_structure ? `Act Structure: ${JSON.stringify(ep.act_structure)}` : ""}
+${ep.spatial_mode ? `Spatial Mode: ${ep.spatial_mode}` : ""}
+${ep.confrontation_rhythm ? `Confrontation Rhythm: ${ep.confrontation_rhythm}` : ""}
+Structural Strengths: ${(selectedFamily.structural_strengths || []).join(", ")}
+Structural Risks to mitigate: ${(selectedFamily.structural_risks || []).join(", ")}
+${selectedFamily.when_to_use ? `When to use: ${selectedFamily.when_to_use}` : ""}
+${selectedFamily.when_not_to_use ? `When NOT to use: ${selectedFamily.when_not_to_use}` : ""}`;
+      }
+
+      const structuralContext = sourceIdeas.length > 0
+        ? `\nHIGH-PERFORMING IDEA STRUCTURAL PATTERNS (use as design signals, do NOT copy text or plots):
+- Average CI Score: ${scorePatterns.avg_total.toFixed(1)}
+- Average Market Heat: ${scorePatterns.avg_market_heat.toFixed(1)}
+- Average Feasibility: ${scorePatterns.avg_feasibility.toFixed(1)}
+- Common lanes: ${scorePatterns.common_lanes.join(", ")}
+- Common genres: ${scorePatterns.common_genres.join(", ")}
+- Common budget bands: ${scorePatterns.common_budget_bands.join(", ")}
+- Source count: ${sourceIdeas.length} elite ideas analyzed`
+        : "";
+
+      const systemPrompt = `You are a world-class film/TV concept architect. Your job is to design ORIGINAL pitch ideas that structurally match the success patterns of elite concepts.
+
+CRITICAL RULES:
+- Generate completely ORIGINAL concepts. Do NOT copy, paraphrase, or closely resemble any existing titles.
+- Use the structural patterns (format, lane, genre, score targets) as design constraints, NOT as content to clone.
+- Each idea must have a distinctive hook, original characters, and fresh premise.
+- Do NOT self-score. Scores will be evaluated independently by a separate system.
+- Prioritize: hook clarity, protagonist distinctiveness, conflict engine strength, market positioning, and feasibility.
+- For each idea, explicitly describe: protagonist_design, conflict_design, hook_type, market_positioning, feasibility_notes.
+${structuralContext}${trendContext}${dnaPromptBlock}${familyPromptBlock}
+
+Format: ${format}
+Lane: ${lane || "best fit"}
+Genre: ${genre || "best fit"}
+Budget band: ${budgetBand || "flexible"}
+${engine ? `Engine: ${engine}` : dnaEngineKey ? `Engine (from DNA): ${dnaEngineKey}` : ""}
+${dnaProfile ? `\nBLUEPRINT MODE: DNA-Informed — ideas must structurally align with the DNA constraints above while being completely original.` : ""}`;
+
+      const userPrompt = `Generate exactly ${Math.min(candidateCount, 10)} original pitch idea candidates. Each must be structurally strong and market-aligned. Include rich design metadata for each.`;
+
+      const toolsDef = [{
+        type: "function" as const,
+        function: {
+          name: "submit_candidates",
+          description: "Submit generated candidate ideas",
+          parameters: {
+            type: "object",
+            properties: {
+              candidates: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    title: { type: "string" },
+                    logline: { type: "string" },
+                    one_page_pitch: { type: "string" },
+                    genre: { type: "string" },
+                    format: { type: "string" },
+                    lane: { type: "string" },
+                    budget_band: { type: "string" },
+                    protagonist_design: { type: "string", description: "Who is the protagonist, their want/need/flaw" },
+                    conflict_design: { type: "string", description: "Core conflict engine and escalation path" },
+                    hook_type: { type: "string", description: "What type of hook: mystery, irony, stakes, moral dilemma, etc." },
+                    market_positioning: { type: "string", description: "Target audience, comp positioning, buyer angle" },
+                    feasibility_notes: { type: "string", description: "Budget, location, cast, VFX considerations" },
+                    novelty_claim: { type: "string", description: "What makes this genuinely fresh vs existing market" },
+                  },
+                  required: ["title", "logline", "one_page_pitch", "genre", "format", "lane", "budget_band", "protagonist_design", "conflict_design", "hook_type", "market_positioning", "feasibility_notes"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["candidates"],
+            additionalProperties: false,
+          },
+        },
+      }];
+
+      console.log(`[ci-blueprint] calling AI for ${candidateCount} candidates (mode=${optimizerMode})`);
+      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          tools: toolsDef,
+          tool_choice: { type: "function", function: { name: "submit_candidates" } },
+        }),
+      });
+
+      if (!resp.ok) {
+        const t = await resp.text();
+        console.error(`[ci-blueprint] AI error: ${resp.status} ${t}`);
+        await svcClient.from("idea_blueprint_runs").update({ status: "failed", error: `AI error: ${resp.status}` }).eq("id", runId);
+        throw new Error("AI generation failed");
+      }
+
+      const result = await resp.json();
+      if (result.error) {
+        await svcClient.from("idea_blueprint_runs").update({ status: "failed", error: result.error?.message || "AI error" }).eq("id", runId);
+        throw new Error(result.error?.message || "AI generation failed");
+      }
+
+      const msg = result.choices?.[0]?.message;
+      const toolCall = msg?.tool_calls?.[0];
+      let parsed: any;
+
+      if (toolCall?.function?.arguments) {
+        parsed = JSON.parse(toolCall.function.arguments);
+      } else if (msg?.content) {
+        const jsonMatch = msg.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+        else throw new Error("No structured output from generation");
+      } else {
+        throw new Error("No structured output from generation");
+      }
+
+      const candidates = parsed.candidates || parsed.ideas || [];
+      console.log(`[ci-blueprint] generated ${candidates.length} candidates, starting independent scoring`);
+
+      // 7. Persist candidates with zero scores (pre-evaluation)
+      const savedCandidates: any[] = [];
+      for (const c of candidates) {
+        const { data: saved, error: saveErr } = await svcClient
+          .from("idea_blueprint_candidates")
+          .insert({
+            blueprint_id: blueprint.id,
+            run_id: runId,
+            user_id: user.id,
+            title: c.title || "Untitled",
+            logline: c.logline || "",
+            one_page_pitch: c.one_page_pitch || "",
+            genre: c.genre || genre || "",
+            format: c.format || format || "",
+            lane: c.lane || lane || "",
+            engine: engine || dnaEngineKey || null,
+            budget_band: c.budget_band || budgetBand || "",
+            // Scores start at 0 — will be filled by independent evaluation
+            score_market_heat: 0,
+            score_feasibility: 0,
+            score_lane_fit: 0,
+            score_saturation_risk: 0,
+            score_company_fit: 0,
+            score_total: 0,
+            scoring_method: "pending",
+            raw_response: c,
+            provenance: {
+              blueprint_id: blueprint.id,
+              run_id: runId,
+              source_idea_count: sourceIdeas.length,
+              trend_signal_count: trendSignalIds.length,
+              promotion_source: "ci_blueprint_engine",
+              optimizer_mode: optimizerMode,
+              source_dna_profile_id: sourceDnaProfileId || null,
+              source_engine_key: dnaEngineKey || null,
+              dna_source_title: dnaProfile?.source_title || null,
+              // Blueprint family lineage
+              blueprint_family_key: familyKey || null,
+              execution_pattern_summary: structuralSummary || null,
+              family_selection_confidence: familyConfidence || null,
+              design_metadata: {
+                protagonist_design: c.protagonist_design || null,
+                conflict_design: c.conflict_design || null,
+                hook_type: c.hook_type || null,
+                market_positioning: c.market_positioning || null,
+                feasibility_notes: c.feasibility_notes || null,
+                novelty_claim: c.novelty_claim || null,
+              },
+            },
+          })
+          .select("*")
+          .single();
+        if (saveErr) {
+          console.warn(`[ci-blueprint] save error: ${saveErr.message}`);
+        } else {
+          savedCandidates.push(saved);
+        }
+      }
+
+      // 8. INDEPENDENT SCORING PASS — evaluate candidates through authoritative scoring
+      console.log(`[ci-blueprint] running independent scoring for ${savedCandidates.length} candidates`);
+
+      const scoringPrompt = `You are an authoritative pitch idea evaluator for the film/TV industry. Score each candidate idea on the following dimensions (0-100 each):
+
+SCORING RUBRIC:
+${buildPitchScoringRubric({ includeFormulaWarning: true })}
+
+Evaluate these candidates:
+${savedCandidates.map((c: any, i: number) => `
+[CANDIDATE ${i + 1}] id=${c.id}
+Title: ${c.title}
+Logline: ${c.logline}
+Format: ${c.format} | Lane: ${c.lane} | Genre: ${c.genre} | Budget: ${c.budget_band}
+One-page pitch: ${c.one_page_pitch}
+`).join("\n---\n")}`;
+
+      const scoringTools = [{
+        type: "function" as const,
+        function: {
+          name: "submit_scores",
+          description: "Submit evaluated scores for each candidate",
+          parameters: {
+            type: "object",
+            properties: {
+              scores: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    candidate_id: { type: "string" },
+                    score_market_heat: { type: "number" },
+                    score_feasibility: { type: "number" },
+                    score_lane_fit: { type: "number" },
+                    score_saturation_risk: { type: "number" },
+                    score_company_fit: { type: "number" },
+                    score_total: { type: "number" },
+                    scoring_rationale: { type: "string" },
+                  },
+                  required: ["candidate_id", "score_market_heat", "score_feasibility", "score_lane_fit", "score_saturation_risk", "score_company_fit", "score_total"],
+                  additionalProperties: false,
+                },
+              },
+            },
+            required: ["scores"],
+            additionalProperties: false,
+          },
+        },
+      }];
+
+      const scoreResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "google/gemini-2.5-flash",
+          messages: [
+            { role: "system", content: "You are a rigorous, independent pitch idea evaluator. Score honestly — do not inflate." },
+            { role: "user", content: scoringPrompt },
+          ],
+          tools: scoringTools,
+          tool_choice: { type: "function", function: { name: "submit_scores" } },
+        }),
+      });
+
+      if (scoreResp.ok) {
+        const scoreResult = await scoreResp.json();
+        const scoreMsg = scoreResult.choices?.[0]?.message;
+        const scoreToolCall = scoreMsg?.tool_calls?.[0];
+        let scoreParsed: any;
+
+        if (scoreToolCall?.function?.arguments) {
+          scoreParsed = JSON.parse(scoreToolCall.function.arguments);
+        } else if (scoreMsg?.content) {
+          const jsonMatch = scoreMsg.content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) scoreParsed = JSON.parse(jsonMatch[0]);
+        }
+
+        const evaluatedScores = scoreParsed?.scores || [];
+        console.log(`[ci-blueprint] received ${evaluatedScores.length} independent scores`);
+
+        // Update each candidate with evaluated scores
+        for (const es of evaluatedScores) {
+          const candidateId = es.candidate_id;
+          const candidate = savedCandidates.find((c: any) => c.id === candidateId);
+          if (!candidate) continue;
+
+          // Recalculate total using shared canonical scorer
+          const normalizedScores = normalizePitchScores(es);
+          const recalcTotal = normalizedScores.score_total;
+          const drift = checkScoreDrift(normalizedScores, Number(es.score_total) || 0);
+          if (drift) console.warn(`[ci-blueprint] ${drift} candidate=${candidateId}`);
+
+          await svcClient
+            .from("idea_blueprint_candidates")
+            .update({
+              score_market_heat: normalizedScores.score_market_heat,
+              score_feasibility: normalizedScores.score_feasibility,
+              score_lane_fit: normalizedScores.score_lane_fit,
+              score_saturation_risk: normalizedScores.score_saturation_risk,
+              score_company_fit: normalizedScores.score_company_fit,
+              score_total: recalcTotal,
+              scoring_method: "independent_evaluation",
+              evaluated_scores: {
+                raw_llm_scores: es,
+                recalculated_total: recalcTotal,
+                scoring_module: "pitchScoring.ts",
+                evaluator_model: "google/gemini-2.5-flash",
+                evaluated_at: new Date().toISOString(),
+                rationale: es.scoring_rationale || null,
+                drift_warning: drift || null,
+              },
+            })
+            .eq("id", candidateId);
+
+          // Update in-memory for response
+          candidate.score_market_heat = normalizedScores.score_market_heat;
+          candidate.score_feasibility = normalizedScores.score_feasibility;
+          candidate.score_lane_fit = normalizedScores.score_lane_fit;
+          candidate.score_saturation_risk = normalizedScores.score_saturation_risk;
+          candidate.score_company_fit = normalizedScores.score_company_fit;
+          candidate.score_total = recalcTotal;
+          candidate.scoring_method = "independent_evaluation";
+        }
+      } else {
+        console.error(`[ci-blueprint] scoring pass failed: ${scoreResp.status}`);
+        // Mark candidates as scoring_failed but don't block
+        for (const c of savedCandidates) {
+          await svcClient.from("idea_blueprint_candidates")
+            .update({ scoring_method: "scoring_failed" })
+            .eq("id", c.id);
+          c.scoring_method = "scoring_failed";
+        }
+      }
+
+      // Count learning-pool matches in final source set
+      learningPoolMatchCount = sourceIdeas.filter((i: any) => i.learning_pool_eligible === true).length;
+
+      // 9. Update run
+      await svcClient
+        .from("idea_blueprint_runs")
+        .update({
+          status: "completed",
+          blueprint_count: 1,
+          candidate_count: savedCandidates.length,
+          exemplar_ids: sourceIdeas.map((i: any) => i.id),
+          trend_signal_ids: trendSignalIds,
+          source_idea_ids: sourceIdeas.map((i: any) => i.id),
+          learning_pool_only: useLearningPoolOnly,
+          learning_pool_match_count: learningPoolMatchCount,
+        })
+        .eq("id", runId);
+
+      console.log(`[ci-blueprint] completed: ${savedCandidates.length} candidates saved and scored (mode=${optimizerMode})`);
+
+      // Compute retrieval breakdown for response
+      const dnaExactCount = sourceIdeas.filter((s: any) => s._dna_tier === "dna_exact").length;
+      const engineMatchCount = sourceIdeas.filter((s: any) => s._dna_tier === "engine_match").length;
+      const genericFallbackCount = sourceIdeas.filter((s: any) => s._dna_tier === "generic" || !s._dna_tier).length;
+
+      return new Response(JSON.stringify({
+        run_id: runId,
+        blueprint_id: blueprint.id,
+        candidates: savedCandidates,
+        source_idea_count: sourceIdeas.length,
+        trend_count: trendSignalIds.length,
+        optimizer_mode: optimizerMode,
+        dna_profile_title: dnaProfile?.source_title || null,
+        dna_match_count: dnaExactCount,
+        engine_match_count: engineMatchCount,
+        generic_fallback_count: genericFallbackCount,
+        fallback_stage: fallbackStageReached,
+        final_ci_threshold: finalCiThreshold,
+        genre_relaxed: genreRelaxed,
+        lane_relaxed: laneRelaxed,
+        learning_pool_only: useLearningPoolOnly,
+        learning_pool_match_count: learningPoolMatchCount,
+        // Blueprint family lineage
+        engine_key: resolvedEngineKey || null,
+        blueprint_family_key: familyKey || null,
+        blueprint_family_label: selectedFamily?.label || null,
+        family_selection_confidence: familyConfidence || null,
+        structural_summary: structuralSummary || null,
+        family_candidates_evaluated: familyCandidates.length,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ── ACTION: promote ──
+    if (action === "promote") {
+      const { candidateId } = body;
+      if (!candidateId) throw new Error("candidateId required");
+
+      const { data: candidate, error: cErr } = await svcClient
+        .from("idea_blueprint_candidates")
+        .select("*")
+        .eq("id", candidateId)
+        .single();
+      if (cErr || !candidate) throw new Error("Candidate not found");
+      if (candidate.user_id !== user.id) throw new Error("Forbidden");
+
+      // Reject if scoring was not completed
+      if (candidate.scoring_method !== "independent_evaluation") {
+        return new Response(JSON.stringify({
+          error: "Cannot promote: candidate was not independently scored",
+          scoring_method: candidate.scoring_method,
+        }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Threshold check
+      const thresholds = { score_total: 95, score_market_heat: 80, score_feasibility: 75, score_lane_fit: 80 };
+      const failures: string[] = [];
+      if (Number(candidate.score_total) < thresholds.score_total) failures.push(`score_total ${candidate.score_total} < ${thresholds.score_total}`);
+      if (Number(candidate.score_market_heat) < thresholds.score_market_heat) failures.push(`score_market_heat ${candidate.score_market_heat} < ${thresholds.score_market_heat}`);
+      if (Number(candidate.score_feasibility) < thresholds.score_feasibility) failures.push(`score_feasibility ${candidate.score_feasibility} < ${thresholds.score_feasibility}`);
+      if (Number(candidate.score_lane_fit) < thresholds.score_lane_fit) failures.push(`score_lane_fit ${candidate.score_lane_fit} < ${thresholds.score_lane_fit}`);
+
+      if (failures.length > 0) {
+        return new Response(JSON.stringify({ error: "Below promotion thresholds", failures }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Extract DNA provenance from candidate
+      const provenance = (candidate.provenance as Record<string, any>) || {};
+
+      // Derive lineage fields
+      const resolvedGenerationMode = provenance.optimizer_mode || "ci_pattern";
+
+      // Compute learning pool eligibility for promoted idea
+      const lpFields = computeLearningPoolEligibility(Number(candidate.score_total) || 0);
+
+      // Create pitch idea from candidate
+      const { data: pitchIdea, error: piErr } = await svcClient
+        .from("pitch_ideas")
+        .insert({
+          user_id: user.id,
+          mode: "greenlight",
+          status: "draft",
+          production_type: candidate.format || "",
+          title: candidate.title,
+          logline: candidate.logline,
+          one_page_pitch: candidate.one_page_pitch,
+          comps: [],
+          recommended_lane: candidate.lane || "",
+          lane_confidence: 0,
+          budget_band: candidate.budget_band || "",
+          packaging_suggestions: [],
+          development_sprint: [],
+          risks_mitigations: [],
+          why_us: "",
+          genre: candidate.genre || "",
+          region: "",
+          platform_target: "",
+          risk_level: "medium",
+          score_market_heat: candidate.score_market_heat,
+          score_feasibility: candidate.score_feasibility,
+          score_lane_fit: candidate.score_lane_fit,
+          score_saturation_risk: candidate.score_saturation_risk,
+          score_company_fit: candidate.score_company_fit,
+          score_total: candidate.score_total,
+          source_engine_key: provenance.source_engine_key || candidate.engine || null,
+          source_dna_profile_id: provenance.source_dna_profile_id || null,
+          // First-class blueprint lineage
+          source_blueprint_id: candidate.blueprint_id || null,
+          source_blueprint_run_id: candidate.run_id || null,
+          generation_mode: resolvedGenerationMode,
+          // Learning pool eligibility
+          learning_pool_eligible: lpFields.learning_pool_eligible,
+          learning_pool_eligibility_reason: lpFields.learning_pool_eligibility_reason,
+          learning_pool_qualified_at: lpFields.learning_pool_qualified_at,
+          raw_response: {
+            ...((candidate.raw_response as Record<string, unknown>) || {}),
+            promotion_source: "ci_blueprint_engine",
+            blueprint_candidate_id: candidate.id,
+            blueprint_id: candidate.blueprint_id,
+            blueprint_run_id: candidate.run_id,
+            scoring_method: candidate.scoring_method,
+            evaluated_scores: candidate.evaluated_scores,
+            optimizer_mode: provenance.optimizer_mode || "ci_pattern",
+            source_dna_profile_id: provenance.source_dna_profile_id || null,
+            source_engine_key: provenance.source_engine_key || null,
+            dna_source_title: provenance.dna_source_title || null,
+            generation_mode: resolvedGenerationMode,
+          },
+        })
+        .select("id")
+        .single();
+      if (piErr) throw new Error(`Pitch idea creation failed: ${piErr.message}`);
+
+      // Update candidate
+      await svcClient
+        .from("idea_blueprint_candidates")
+        .update({
+          promotion_status: "promoted",
+          promotion_source: "ci_blueprint_engine",
+          promoted_at: new Date().toISOString(),
+          promoted_pitch_idea_id: pitchIdea.id,
+          pitch_idea_id: pitchIdea.id,
+        })
+        .eq("id", candidateId);
+
+      console.log(`[ci-blueprint] promoted candidate ${candidateId} → pitch_idea ${pitchIdea.id}`);
+
+      return new Response(JSON.stringify({ pitch_idea_id: pitchIdea.id, candidate_id: candidateId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Unknown action" }), {
+      status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("[ci-blueprint] error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});

@@ -1,0 +1,1657 @@
+/**
+ * AI Actors Agency — Global actor registry with search, filter, identity strength, usage tracking.
+ * Includes: create from project images, actor detail, version management, anchor validation badges.
+ * Phase 3: Scoring results display, auto-trigger scoring, hard fail visibility.
+ * Phase 16: Marketplace listing controls.
+ */
+import { useState, useRef, useMemo, useEffect } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import {
+  Users, Plus, Loader2, CheckCircle2, Search, Sparkles, ChevronRight,
+  ImagePlus, ShieldCheck, Trash2, Upload, ArrowLeft, Film, Shield,
+  AlertTriangle, Eye, SlidersHorizontal, ArrowUpDown, Image, ShieldAlert,
+  FlaskConical, Clock, XCircle, TrendingUp, Zap, BarChart3, Crown, Ban,
+  RotateCcw, FileText, ShieldOff, Store
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+  DialogTrigger, DialogFooter, DialogDescription
+} from '@/components/ui/dialog';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
+} from '@/components/ui/select';
+import { cn } from '@/lib/utils';
+import { useAIActors, useAIActor, useAICastMutations } from '@/lib/aiCast/useAICast';
+import { aiCastApi } from '@/lib/aiCast/aiCastApi';
+import type { AIActor, AIActorVersion, AIActorAsset } from '@/lib/aiCast/aiCastApi';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useActorUsage, getActorUsageCounts } from '@/lib/aiCast/useActorUsage';
+import { getIdentityStrength, getActorThumbnail, type IdentityStrength } from '@/lib/aiCast/identityStrength';
+import {
+  evaluateAnchorCoverage, persistAnchorStatus,
+  type AnchorCoverageStatus, type AnchorCoherenceStatus,
+} from '@/lib/aiCast/anchorValidation';
+import {
+  useLatestValidationRun, useValidationImages, useValidationResult, useStartValidation,
+  VALIDATION_SLOTS, type ValidationRun, type ValidationImage, type ValidationResult,
+} from '@/lib/aiCast/actorValidation';
+import {
+  getScoreBandColor, getConfidenceColor,
+} from '@/lib/aiCast/validationScoring';
+import {
+  usePromotionEligibility, usePromotionDecisions, useActorPromotionState, useApplyPromotionDecision,
+} from '@/lib/aiCast/usePromotion';
+import type { PromotionDecision, FinalDecisionStatus } from '@/lib/aiCast/promotionPolicy';
+import { buildActorIntelligence, type ActorIntelligenceSummary } from '@/lib/aiCast/actorIntelligence';
+import {
+  listActorOnMarketplace, unlistActorFromMarketplace,
+  type PricingTier, type ActorVisibility,
+} from '@/lib/aiCast/marketplaceIntelligence';
+import { ActorCandidateReview } from '@/components/ai-cast/ActorCandidateReview';
+
+const ACCEPTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+type SortMode = 'recent' | 'name' | 'usage' | 'quality';
+type FilterStatus = 'all' | 'active' | 'draft' | 'roster';
+
+// ── Main Page ───────────────────────────────────────────────────────────────
+
+export default function AICastLibrary() {
+  const navigate = useNavigate();
+  const { data, isLoading } = useAIActors();
+  const actors: AIActor[] = data?.actors || [];
+  const { data: usageData } = useActorUsage();
+  const usageCounts = useMemo(() => getActorUsageCounts(usageData || []), [usageData]);
+
+  const { data: intelligenceData } = useQuery({
+    queryKey: ['actor-intelligence'],
+    queryFn: buildActorIntelligence,
+    staleTime: 60_000,
+  });
+  const intelligenceMap = useMemo(() => {
+    const m = new Map<string, (typeof intelligenceData)['actors'][number]>();
+    for (const a of intelligenceData?.actors || []) m.set(a.actor_id, a);
+    return m;
+  }, [intelligenceData]);
+
+  const [search, setSearch] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(searchParams.get('actor'));
+  const [showCreate, setShowCreate] = useState(false);
+  const [showCreateFromImages, setShowCreateFromImages] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('all');
+
+  const filtered = useMemo(() => {
+    let list = actors.filter(a =>
+      a.name.toLowerCase().includes(search.toLowerCase()) ||
+      a.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
+      a.description?.toLowerCase().includes(search.toLowerCase())
+    );
+    if (filterStatus === 'roster') list = list.filter(a => (a as any).roster_ready);
+    else if (filterStatus !== 'all') list = list.filter(a => a.status === filterStatus);
+    list.sort((a, b) => {
+      if (sortMode === 'name') return a.name.localeCompare(b.name);
+      if (sortMode === 'usage') return (usageCounts.get(b.id) || 0) - (usageCounts.get(a.id) || 0);
+      if (sortMode === 'quality') {
+        const qa = intelligenceMap.get(a.id)?.quality_score ?? -1;
+        const qb = intelligenceMap.get(b.id)?.quality_score ?? -1;
+        return qb - qa;
+      }
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+    return list;
+  }, [actors, search, filterStatus, sortMode, usageCounts, intelligenceMap]);
+
+  if (selectedActorId) {
+    return (
+      <ActorDetail
+        actorId={selectedActorId}
+        usageEntries={(usageData || []).filter(u => u.actorId === selectedActorId)}
+        onBack={() => { setSelectedActorId(null); setSearchParams({}); }}
+      />
+    );
+  }
+
+  return (
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
+      {/* Navigation */}
+      <div className="flex items-center gap-2 text-xs">
+        <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground" onClick={() => navigate('/dashboard')}>
+          <ArrowLeft className="h-3 w-3" /> Dashboard
+        </Button>
+        <span className="text-muted-foreground">/</span>
+        <span className="text-foreground font-medium">AI Actors Agency</span>
+      </div>
+
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-display font-semibold text-foreground flex items-center gap-2">
+            <Users className="h-5 w-5" /> AI Actors Agency
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Create, manage and cast reusable AI actor identities across productions
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" asChild>
+            <a href="/actor-marketplace"><Store className="h-3.5 w-3.5" /> Marketplace</a>
+          </Button>
+          <Button size="sm" variant="outline" className="h-8 text-xs gap-1.5" onClick={() => setShowCreateFromImages(true)}>
+            <Image className="h-3.5 w-3.5" /> From Images
+          </Button>
+          <Dialog open={showCreate} onOpenChange={setShowCreate}>
+            <DialogTrigger asChild>
+              <Button size="sm" className="h-8 text-xs gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> New Actor
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Create AI Actor</DialogTitle></DialogHeader>
+              <CreateActorForm onCreated={(id) => { setShowCreate(false); setSelectedActorId(id); }} />
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      {/* Search + Filters */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input placeholder="Search by name, tags, description..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9 h-9 text-xs" />
+        </div>
+        <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as FilterStatus)}>
+          <SelectTrigger className="h-9 w-[120px] text-xs">
+            <SlidersHorizontal className="h-3 w-3 mr-1" /><SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all" className="text-xs">All Status</SelectItem>
+            <SelectItem value="active" className="text-xs">Active</SelectItem>
+            <SelectItem value="draft" className="text-xs">Draft</SelectItem>
+            <SelectItem value="roster" className="text-xs">Roster Ready</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
+          <SelectTrigger className="h-9 w-[120px] text-xs">
+            <ArrowUpDown className="h-3 w-3 mr-1" /><SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="recent" className="text-xs">Recent</SelectItem>
+            <SelectItem value="name" className="text-xs">Name</SelectItem>
+            <SelectItem value="usage" className="text-xs">Most Used</SelectItem>
+            <SelectItem value="quality" className="text-xs">Quality</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Stats */}
+      <div className="flex items-center gap-4 text-[11px] text-muted-foreground flex-wrap">
+        <span>{actors.length} actor{actors.length !== 1 ? 's' : ''}</span>
+        <span>{actors.filter(a => a.status === 'active').length} active</span>
+        <span>{actors.filter(a => (a as any).roster_ready).length} roster</span>
+        {intelligenceData && (
+          <>
+            <span className="text-primary">{intelligenceData.multi_project_count} multi-project</span>
+            {intelligenceData.by_tier.signature ? (
+              <span className="flex items-center gap-0.5 text-amber-500">
+                <Crown className="h-2.5 w-2.5" /> {intelligenceData.by_tier.signature} signature
+              </span>
+            ) : null}
+          </>
+        )}
+      </div>
+
+      {/* Grid */}
+      {isLoading ? (
+        <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-12 space-y-2">
+          <Users className="h-8 w-8 mx-auto text-muted-foreground/50" />
+          <p className="text-sm text-muted-foreground">
+            {actors.length === 0 ? 'No AI actors yet. Create your first one to start building your cast.' : 'No actors match your search.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {filtered.map(actor => (
+            <ActorCard key={actor.id} actor={actor} usageCount={usageCounts.get(actor.id) || 0} intelligence={intelligenceMap.get(actor.id) || null} onClick={() => setSelectedActorId(actor.id)} />
+          ))}
+        </div>
+      )}
+
+      {/* Create from images dialog */}
+      <Dialog open={showCreateFromImages} onOpenChange={setShowCreateFromImages}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Create Actor from Project Images</DialogTitle>
+            <DialogDescription className="text-xs">
+              Select existing identity images from a project to seed a new actor.
+            </DialogDescription>
+          </DialogHeader>
+          <CreateActorFromImagesFlow onCreated={(id) => { setShowCreateFromImages(false); setSelectedActorId(id); }} />
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ── Actor Card ──────────────────────────────────────────────────────────────
+
+function ActorCard({ actor, usageCount, intelligence, onClick }: { actor: AIActor; usageCount: number; intelligence: import('@/lib/aiCast/actorIntelligence').ActorIntelligenceProfile | null; onClick: () => void }) {
+  const thumbnail = getActorThumbnail(actor.ai_actor_versions, (actor as any).approved_version_id);
+  const identity = getIdentityStrength(actor.ai_actor_versions, (actor as any).approved_version_id);
+  const coverageStatus = (actor as any).anchor_coverage_status as AnchorCoverageStatus | undefined;
+  const rosterReady = (actor as any).roster_ready as boolean | undefined;
+  const promotionStatus = (actor as any).promotion_status as string | undefined;
+
+  const tierConfig: Record<string, { label: string; className: string }> = {
+    signature: { label: 'Signature', className: 'text-amber-400 border-amber-400/30' },
+    reliable: { label: 'Reliable', className: 'text-emerald-400 border-emerald-400/30' },
+    emerging: { label: 'Emerging', className: 'text-sky-400 border-sky-400/30' },
+    unvalidated: { label: 'Unvalidated', className: 'text-muted-foreground border-border' },
+  };
+
+  return (
+    <button onClick={onClick} className="text-left rounded-lg border border-border/50 bg-card/50 hover:bg-muted/20 transition-colors overflow-hidden group">
+      <div className="aspect-[3/2] bg-muted/10 relative overflow-hidden">
+        {thumbnail ? (
+          <img src={thumbnail} alt={actor.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+        ) : (
+          <div className="flex items-center justify-center h-full"><Users className="h-8 w-8 text-muted-foreground/30" /></div>
+        )}
+        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+          {rosterReady && <RosterBadge />}
+          <IdentityBadge strength={identity.strength} size="sm" />
+          {coverageStatus && coverageStatus !== 'insufficient' && (
+            <AnchorCoverageBadge status={coverageStatus} />
+          )}
+        </div>
+        {intelligence?.quality_score != null && (
+          <div className="absolute bottom-2 left-2">
+            <span className="rounded-full text-[9px] px-2 py-0.5 font-medium bg-background/80 backdrop-blur-sm text-foreground border border-border/30">
+              Q: {intelligence.quality_score}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="p-3 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-foreground truncate">{actor.name}</span>
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+        </div>
+        <p className="text-[11px] text-muted-foreground line-clamp-2">{actor.description || 'No description'}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant={actor.status === 'active' ? 'default' : 'secondary'} className="text-[10px] h-5">{actor.status}</Badge>
+          {rosterReady && (
+            <Badge variant="outline" className="text-[10px] h-5 gap-0.5 text-amber-300 border-amber-300/30">
+              <Crown className="h-2.5 w-2.5" /> Roster
+            </Badge>
+          )}
+          {intelligence && intelligence.reusability_tier !== 'unvalidated' && (
+            <Badge variant="outline" className={cn('text-[9px] h-5', tierConfig[intelligence.reusability_tier]?.className)}>
+              {tierConfig[intelligence.reusability_tier]?.label}
+            </Badge>
+          )}
+          {!rosterReady && promotionStatus && !['none', 'rejected', 'override_rejected'].includes(promotionStatus) && (
+            <PromotionStatusChip status={promotionStatus} />
+          )}
+          <span className="text-[10px] text-muted-foreground">{actor.ai_actor_versions?.length || 0} ver.</span>
+          {usageCount > 0 && (
+            <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+              <Film className="h-2.5 w-2.5" /> {usageCount} project{usageCount > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+        {actor.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {actor.tags.slice(0, 4).map(tag => (
+              <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── Roster Badge ────────────────────────────────────────────────────────────
+
+function RosterBadge() {
+  return (
+    <span className="rounded-full text-[8px] px-1.5 py-0.5 font-medium bg-amber-500/90 text-white inline-flex items-center gap-0.5">
+      <Crown className="h-2 w-2" /> Roster
+    </span>
+  );
+}
+
+// ── Promotion Status Chip ───────────────────────────────────────────────────
+
+function PromotionStatusChip({ status }: { status: string }) {
+  const config: Record<string, { label: string; className: string }> = {
+    approved: { label: 'Approved', className: 'text-emerald-400 border-emerald-400/30' },
+    override_approved: { label: 'Override ✓', className: 'text-amber-400 border-amber-400/30' },
+    rejected: { label: 'Rejected', className: 'text-destructive border-destructive/30' },
+    override_rejected: { label: 'Override ✗', className: 'text-destructive border-destructive/30' },
+    revoked: { label: 'Revoked', className: 'text-muted-foreground border-border' },
+    pending_review: { label: 'Review', className: 'text-amber-400 border-amber-400/30' },
+  };
+  const cfg = config[status] || { label: status, className: 'text-muted-foreground border-border' };
+  return <Badge variant="outline" className={cn('text-[9px] h-5', cfg.className)}>{cfg.label}</Badge>;
+}
+
+// ── Anchor Coverage Badge ───────────────────────────────────────────────────
+
+function AnchorCoverageBadge({ status }: { status: AnchorCoverageStatus }) {
+  const config = {
+    complete: { label: 'Anchors ✓', className: 'bg-emerald-500/90 text-white' },
+    partial: { label: 'Partial', className: 'bg-amber-500/90 text-white' },
+    insufficient: { label: 'Missing', className: 'bg-destructive/90 text-white' },
+  }[status];
+  return (
+    <span className={cn('rounded-full text-[8px] px-1.5 py-0.5 font-medium', config.className)}>
+      {config.label}
+    </span>
+  );
+}
+
+// ── Validation Status Chip ──────────────────────────────────────────────────
+
+function ValidationStatusChip({ status }: { status: string }) {
+  const config: Record<string, { label: string; className: string; icon: React.ElementType }> = {
+    pending: { label: 'Queued', className: 'bg-muted text-muted-foreground', icon: Clock },
+    generating: { label: 'Generating…', className: 'bg-primary/15 text-primary border-primary/30', icon: Loader2 },
+    scoring: { label: 'Scoring…', className: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: FlaskConical },
+    pack_generated: { label: 'Pack Generated · Awaiting Scoring', className: 'bg-amber-500/15 text-amber-400 border-amber-500/30', icon: Clock },
+    scored: { label: 'Scored', className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: CheckCircle2 },
+    complete: { label: 'Validated', className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', icon: CheckCircle2 },
+    failed: { label: 'Failed', className: 'bg-destructive/15 text-destructive border-destructive/30', icon: XCircle },
+  };
+  const cfg = config[status] || config.pending;
+  const Icon = cfg.icon;
+  return (
+    <Badge variant="outline" className={cn('text-[9px] h-5 gap-0.5', cfg.className)}>
+      <Icon className={cn('h-2.5 w-2.5', status === 'generating' && 'animate-spin')} /> {cfg.label}
+    </Badge>
+  );
+}
+
+
+
+function IdentityBadge({ strength, size = 'sm' }: { strength: IdentityStrength; size?: 'sm' | 'md' }) {
+  const config = {
+    strong: { icon: Shield, label: 'Strong', className: 'bg-emerald-500/90 text-white' },
+    partial: { icon: Eye, label: 'Partial', className: 'bg-amber-500/90 text-white' },
+    weak: { icon: AlertTriangle, label: 'Weak', className: 'bg-destructive/90 text-white' },
+  }[strength];
+  const Icon = config.icon;
+  const sizeClasses = size === 'sm' ? 'text-[9px] px-1.5 py-0.5' : 'text-[10px] px-2 py-1';
+  return (
+    <span className={cn('rounded-full inline-flex items-center gap-1 font-medium', config.className, sizeClasses)}>
+      <Icon className={size === 'sm' ? 'h-2.5 w-2.5' : 'h-3 w-3'} />{config.label}
+    </span>
+  );
+}
+
+// ── Create Actor Form (manual) ──────────────────────────────────────────────
+
+function CreateActorForm({ onCreated }: { onCreated: (id: string) => void }) {
+  const { createActor } = useAICastMutations();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [negativePrompt, setNegativePrompt] = useState('');
+  const [tagsStr, setTagsStr] = useState('');
+
+  const handleSubmit = () => {
+    createActor.mutate({
+      name: name || 'Untitled Actor',
+      description,
+      negative_prompt: negativePrompt,
+      tags: tagsStr.split(',').map(t => t.trim()).filter(Boolean),
+    }, { onSuccess: (data) => onCreated(data.actor.id) });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Name</label>
+        <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Detective Mira Vasquez" className="text-xs h-9" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Description (identity prompt)</label>
+        <Textarea value={description} onChange={e => setDescription(e.target.value)} placeholder="A weathered detective in her late 40s..." className="text-xs min-h-[80px]" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Negative prompt</label>
+        <Input value={negativePrompt} onChange={e => setNegativePrompt(e.target.value)} placeholder="celebrity, real person, cartoon..." className="text-xs h-9" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Tags (comma-separated)</label>
+        <Input value={tagsStr} onChange={e => setTagsStr(e.target.value)} placeholder="lead, detective, noir" className="text-xs h-9" />
+      </div>
+      <Button onClick={handleSubmit} disabled={createActor.isPending} className="w-full h-9 text-xs">
+        {createActor.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+        Create Actor
+      </Button>
+    </div>
+  );
+}
+
+// ── Create Actor From Project Images ────────────────────────────────────────
+
+type AssetClassification = 'reference_headshot' | 'reference_full_body' | 'reference_image';
+
+interface SelectedProjectImage {
+  id: string;
+  subject: string;
+  storage_path: string;
+  public_url: string;
+  shot_type: string;
+  classification: AssetClassification;
+}
+
+function CreateActorFromImagesFlow({ onCreated }: { onCreated: (id: string) => void }) {
+  const { createActor } = useAICastMutations();
+  const qc = useQueryClient();
+  const [step, setStep] = useState<'select_project' | 'select_images' | 'confirm'>('select_project');
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedImages, setSelectedImages] = useState<SelectedProjectImage[]>([]);
+  const [actorName, setActorName] = useState('');
+  const [actorDesc, setActorDesc] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  // Fetch user's projects
+  const { data: projects } = useQuery({
+    queryKey: ['user-projects-list'],
+    queryFn: async () => {
+      const { data } = await supabase.from('projects').select('id, title').order('updated_at', { ascending: false }).limit(50);
+      return data || [];
+    },
+  });
+
+  // Fetch identity images for selected project
+  const { data: projectImages, isLoading: imagesLoading } = useQuery({
+    queryKey: ['project-identity-images', selectedProjectId],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('project_images' as any)
+        .select('id, subject, storage_path, shot_type, curation_state')
+        .eq('project_id', selectedProjectId!)
+        .in('shot_type', ['identity_headshot', 'identity_full_body', 'identity_profile', 'close_up', 'medium', 'three_quarter'])
+        .in('curation_state', ['active', 'candidate'])
+        .limit(100) as { data: any };
+      if (!data) return [];
+      // Generate public URLs
+      return data.map((img: any) => {
+        const { data: urlData } = supabase.storage.from('project-images').getPublicUrl(img.storage_path);
+        return { ...img, public_url: urlData?.publicUrl || img.storage_path };
+      });
+    },
+    enabled: !!selectedProjectId,
+  });
+
+  const toggleImage = (img: any) => {
+    const existing = selectedImages.find(s => s.id === img.id);
+    if (existing) {
+      setSelectedImages(prev => prev.filter(s => s.id !== img.id));
+    } else {
+      // Auto-classify based on shot_type
+      let classification: AssetClassification = 'reference_image';
+      if (img.shot_type === 'identity_headshot' || img.shot_type === 'close_up') classification = 'reference_headshot';
+      else if (img.shot_type === 'identity_full_body' || img.shot_type === 'medium' || img.shot_type === 'three_quarter') classification = 'reference_full_body';
+
+      setSelectedImages(prev => [...prev, {
+        id: img.id,
+        subject: img.subject || '',
+        storage_path: img.storage_path,
+        public_url: img.public_url,
+        shot_type: img.shot_type,
+        classification,
+      }]);
+
+      // Auto-fill name from first selected image's subject
+      if (selectedImages.length === 0 && img.subject) {
+        setActorName(img.subject);
+      }
+    }
+  };
+
+  const updateClassification = (imageId: string, classification: AssetClassification) => {
+    setSelectedImages(prev => prev.map(s => s.id === imageId ? { ...s, classification } : s));
+  };
+
+  const handleCreate = async () => {
+    if (selectedImages.length === 0) { toast.error('Select at least one image'); return; }
+    setCreating(true);
+    try {
+      // 1. Create actor
+      const actorResult = await aiCastApi.createActor({
+        name: actorName || 'Unnamed Actor',
+        description: actorDesc,
+        tags: [],
+      });
+      const actorId = actorResult.actor.id;
+
+      // 2. Create version
+      const versionResult = await aiCastApi.createVersion(actorId);
+      const versionId = versionResult.version.id;
+
+      // 3. Add assets — reuse existing storage paths, no file duplication
+      for (const img of selectedImages) {
+        await aiCastApi.addAsset(versionId, {
+          asset_type: img.classification,
+          storage_path: img.storage_path,
+          public_url: img.public_url,
+          meta_json: {
+            shot_type: img.classification === 'reference_headshot' ? 'headshot'
+              : img.classification === 'reference_full_body' ? 'full_body'
+              : 'reference',
+            source_project_id: selectedProjectId,
+            source_image_id: img.id,
+            original_shot_type: img.shot_type,
+            created_at: new Date().toISOString(),
+          },
+        });
+      }
+
+      toast.success(`Actor "${actorName || 'Unnamed Actor'}" created with ${selectedImages.length} reference images`);
+      qc.invalidateQueries({ queryKey: ['ai-actors'] });
+      onCreated(actorId);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to create actor');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // Step 1: Select project
+  if (step === 'select_project') {
+    return (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">Select a project to browse identity images:</p>
+        <div className="max-h-[300px] overflow-y-auto space-y-1">
+          {(projects || []).map(p => (
+            <button
+              key={p.id}
+              onClick={() => { setSelectedProjectId(p.id); setStep('select_images'); }}
+              className="w-full text-left px-3 py-2 rounded text-xs hover:bg-muted/30 transition-colors border border-transparent hover:border-border/30"
+            >
+              {p.title || 'Untitled'}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Step 2: Select images
+  if (step === 'select_images') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <button onClick={() => { setStep('select_project'); setSelectedImages([]); }} className="text-xs text-muted-foreground hover:text-foreground">
+            ← Change project
+          </button>
+          <span className="text-xs text-muted-foreground">{selectedImages.length} selected</span>
+        </div>
+
+        {imagesLoading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+        ) : !projectImages || projectImages.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-8">No identity images found in this project.</p>
+        ) : (
+          <div className="grid grid-cols-4 gap-2 max-h-[350px] overflow-y-auto">
+            {projectImages.map((img: any) => {
+              const isSelected = selectedImages.some(s => s.id === img.id);
+              return (
+                <button
+                  key={img.id}
+                  onClick={() => toggleImage(img)}
+                  className={cn(
+                    'relative aspect-square rounded-lg overflow-hidden border-2 transition-colors',
+                    isSelected ? 'border-primary' : 'border-transparent hover:border-border/50'
+                  )}
+                >
+                  <img src={img.public_url} alt={img.subject || ''} className="w-full h-full object-cover" />
+                  {isSelected && (
+                    <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+                      <CheckCircle2 className="h-5 w-5 text-primary" />
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/80 to-transparent p-1">
+                    <span className="text-[8px] text-white/80 truncate block">{img.subject || img.shot_type}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {selectedImages.length > 0 && (
+          <Button onClick={() => setStep('confirm')} className="w-full h-8 text-xs">
+            Continue with {selectedImages.length} image{selectedImages.length > 1 ? 's' : ''}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // Step 3: Classify + confirm
+  return (
+    <div className="space-y-4">
+      <button onClick={() => setStep('select_images')} className="text-xs text-muted-foreground hover:text-foreground">
+        ← Back to selection
+      </button>
+
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Actor Name</label>
+        <Input value={actorName} onChange={e => setActorName(e.target.value)} placeholder="Character name..." className="text-xs h-9" />
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-xs font-medium text-muted-foreground">Description</label>
+        <Textarea value={actorDesc} onChange={e => setActorDesc(e.target.value)} placeholder="Visual description..." className="text-xs min-h-[60px]" />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-xs font-medium text-muted-foreground">Classify Images</label>
+        {selectedImages.map(img => (
+          <div key={img.id} className="flex items-center gap-3 p-2 rounded border border-border/30 bg-card/30">
+            <div className="w-10 h-10 rounded overflow-hidden shrink-0">
+              <img src={img.public_url} alt="" className="w-full h-full object-cover" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] text-muted-foreground truncate">{img.subject || 'Unknown'} · {img.shot_type}</p>
+            </div>
+            <Select value={img.classification} onValueChange={(v) => updateClassification(img.id, v as AssetClassification)}>
+              <SelectTrigger className="h-7 w-[140px] text-[10px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="reference_headshot" className="text-xs">Headshot</SelectItem>
+                <SelectItem value="reference_full_body" className="text-xs">Full Body</SelectItem>
+                <SelectItem value="reference_image" className="text-xs">Reference</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        ))}
+      </div>
+
+      <Button onClick={handleCreate} disabled={creating} className="w-full h-9 text-xs">
+        {creating && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+        Create Actor with {selectedImages.length} Image{selectedImages.length > 1 ? 's' : ''}
+      </Button>
+    </div>
+  );
+}
+
+// ── Actor Detail ────────────────────────────────────────────────────────────
+
+function ActorDetail({ actorId, usageEntries, onBack }: {
+  actorId: string;
+  usageEntries: { projectId: string; projectTitle: string; characterKey: string }[];
+  onBack: () => void;
+}) {
+  const { data, isLoading, isError } = useAIActor(actorId);
+  const { updateActor, createVersion, deleteActor } = useAICastMutations();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const actor: AIActor | undefined = data?.actor;
+  const startValidation = useStartValidation();
+  const { data: latestRun } = useLatestValidationRun(actorId);
+  const { data: validationImages } = useValidationImages(latestRun?.id);
+  const { data: validationResult } = useValidationResult(latestRun?.id);
+  const { data: eligibility } = usePromotionEligibility(actorId);
+  const { data: promotionState } = useActorPromotionState(actorId);
+  const { data: decisions } = usePromotionDecisions(actorId);
+  const applyDecision = useApplyPromotionDecision();
+  const [overrideReason, setOverrideReason] = useState('');
+  const [decisionNote, setDecisionNote] = useState('');
+  const [showOverride, setShowOverride] = useState(false);
+
+  const [editName, setEditName] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [editNeg, setEditNeg] = useState('');
+
+  // Safe state init via useEffect — replaces render-time setState
+  useEffect(() => {
+    if (actor) {
+      setEditName(actor.name);
+      setEditDesc(actor.description);
+      setEditNeg(actor.negative_prompt);
+    }
+  }, [actor?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scoring is now server-orchestrated (run-actor-validation auto-invokes score-actor-validation).
+  // UI only reflects state — no client-side scoring trigger.
+
+  const handleSave = () => {
+    updateActor.mutate({ actorId, name: editName, description: editDesc, negative_prompt: editNeg });
+  };
+
+  // Actor was deleted or not found — return to list
+  if (isError || (!isLoading && !actor)) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-4">
+        <p className="text-sm text-muted-foreground">Actor not found — it may have been deleted.</p>
+        <Button variant="outline" size="sm" onClick={onBack}>
+          <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Back to Actors
+        </Button>
+      </div>
+    );
+  }
+
+  if (isLoading || !actor) {
+    return <div className="flex justify-center py-12"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const versions: AIActorVersion[] = actor.ai_actor_versions || [];
+  const identity = getIdentityStrength(versions, (actor as any).approved_version_id);
+  const thumbnail = getActorThumbnail(versions, (actor as any).approved_version_id);
+
+  return (
+    <div className="p-6 max-w-4xl mx-auto space-y-6">
+      <button onClick={onBack} className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+        <ArrowLeft className="h-3 w-3" /> Back to library
+      </button>
+
+      {/* Actor header */}
+      <div className="flex gap-4">
+        <div className="w-20 h-20 rounded-lg border border-border/50 overflow-hidden shrink-0 bg-muted/10">
+          {thumbnail ? (
+            <img src={thumbnail} alt={actor.name} className="w-full h-full object-cover" />
+          ) : (
+            <div className="flex items-center justify-center h-full"><Users className="h-6 w-6 text-muted-foreground/30" /></div>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-display font-semibold text-foreground truncate">{actor.name}</h2>
+            <Badge variant={actor.status === 'active' ? 'default' : 'secondary'}>{actor.status}</Badge>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <IdentityBadge strength={identity.strength} size="md" />
+            <span className="text-[11px] text-muted-foreground">{identity.label}</span>
+          </div>
+          {identity.totalAssets > 0 && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {identity.hasHeadshot ? '✓ Headshot' : '✗ No headshot'} · {identity.hasFullBody ? '✓ Full body' : '✗ No full body'} · {identity.totalAssets} asset{identity.totalAssets !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Edit fields */}
+      <div className="border border-border/50 rounded-lg p-4 space-y-3 bg-card/50">
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Name</label>
+          <Input value={editName} onChange={e => setEditName(e.target.value)} className="text-xs h-9" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Identity Description</label>
+          <Textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} className="text-xs min-h-[80px]" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Negative Prompt</label>
+          <Input value={editNeg} onChange={e => setEditNeg(e.target.value)} className="text-xs h-9" />
+        </div>
+        <Button size="sm" onClick={handleSave} disabled={updateActor.isPending} className="h-8 text-xs">Save Changes</Button>
+      </div>
+
+      {/* Project Usage */}
+      {usageEntries.length > 0 && (
+        <div className="border border-border/50 rounded-lg p-4 space-y-2 bg-card/30">
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <Film className="h-3 w-3" /> Used In
+          </h3>
+          <div className="space-y-1">
+            {usageEntries.map((u, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className="text-foreground font-medium">{u.projectTitle}</span>
+                <span className="text-muted-foreground">as</span>
+                <span className="text-primary">{u.characterKey}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Validation Section */}
+      <div className="border border-border/50 rounded-lg p-4 space-y-3 bg-card/30">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <FlaskConical className="h-3 w-3" /> Identity Validation
+          </h3>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs gap-1"
+            onClick={() => startValidation.mutate({ actorId })}
+            disabled={startValidation.isPending || (latestRun?.status === 'generating') || (latestRun?.status === 'pending') || (latestRun?.status === 'scoring')}
+          >
+            {(startValidation.isPending || latestRun?.status === 'generating' || latestRun?.status === 'pending' || latestRun?.status === 'scoring')
+              ? <Loader2 className="h-3 w-3 animate-spin" />
+              : <FlaskConical className="h-3 w-3" />
+            }
+            {latestRun?.status === 'generating' ? 'Generating…' : latestRun?.status === 'pending' ? 'Queued…' : latestRun?.status === 'scoring' ? 'Scoring…' : 'Run Validation'}
+          </Button>
+        </div>
+
+        {!latestRun ? (
+          <p className="text-[10px] text-muted-foreground">No validation runs yet. Run a quick validation to generate 22 test images across 11 controlled conditions.</p>
+        ) : (
+          <div className="space-y-3">
+            {/* Status + Coverage */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <ValidationStatusChip status={latestRun.status} />
+              {latestRun.pack_coverage && (latestRun.pack_coverage as any).coverage_percent != null && (
+                <span className="text-[10px] text-muted-foreground">
+                  Coverage: {(latestRun.pack_coverage as any).completed_images || 0}/22 images · {(latestRun.pack_coverage as any).coverage_percent}%
+                </span>
+              )}
+              {latestRun.completed_at && (
+                <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
+                  <Clock className="h-2.5 w-2.5" /> {new Date(latestRun.completed_at).toLocaleDateString()}
+                </span>
+              )}
+            </div>
+
+            {/* Scoring Results */}
+            {validationResult && validationResult.overall_score != null && (
+              <ValidationScorePanel result={validationResult} />
+            )}
+
+            {/* Validation Images Grid */}
+            {validationImages && validationImages.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-[10px] text-muted-foreground font-medium">Validation Pack</p>
+                <div className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-1.5">
+                  {VALIDATION_SLOTS.map(slot => {
+                    const slotImages = validationImages.filter((i: ValidationImage) => i.slot_key === slot.key);
+                    const hasComplete = slotImages.some((i: ValidationImage) => i.status === 'complete' && i.public_url);
+                    const primaryImage = slotImages.find((i: ValidationImage) => i.status === 'complete' && i.public_url);
+                    const isPending = slotImages.some((i: ValidationImage) => i.status === 'pending' || i.status === 'generating');
+                    const isFailed = slotImages.length > 0 && slotImages.every((i: ValidationImage) => i.status === 'failed');
+
+                    // Get per-slot stability score if available
+                    const intraDetail = (validationResult?.axis_scores as any)?.intra_slot_detail;
+                    const slotScore = intraDetail?.[slot.key];
+
+                    return (
+                      <div key={slot.key} className="space-y-0.5">
+                        <div className={cn(
+                          'aspect-square rounded-md overflow-hidden border relative',
+                          hasComplete ? 'border-border/50' : isPending ? 'border-primary/30' : isFailed ? 'border-destructive/30' : 'border-border/20'
+                        )}>
+                          {primaryImage?.public_url ? (
+                            <img src={primaryImage.public_url} alt={slot.label} className="w-full h-full object-cover" />
+                          ) : isPending ? (
+                            <div className="flex items-center justify-center h-full bg-muted/10">
+                              <Loader2 className="h-3 w-3 animate-spin text-primary/50" />
+                            </div>
+                          ) : isFailed ? (
+                            <div className="flex items-center justify-center h-full bg-destructive/5">
+                              <XCircle className="h-3 w-3 text-destructive/50" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-center h-full bg-muted/5">
+                              <Image className="h-3 w-3 text-muted-foreground/20" />
+                            </div>
+                          )}
+                          {slotScore != null && (
+                            <div className={cn(
+                              'absolute bottom-0 right-0 text-[7px] font-bold px-1 py-0.5 rounded-tl',
+                              slotScore >= 7 ? 'bg-emerald-500/80 text-white' :
+                              slotScore >= 5 ? 'bg-amber-500/80 text-white' :
+                              'bg-destructive/80 text-white'
+                            )}>
+                              {slotScore.toFixed(0)}
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-[7px] text-muted-foreground truncate text-center">{slot.label}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {latestRun.error && (
+              <p className="text-[10px] text-destructive">{latestRun.error}</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Promotion / Roster Section */}
+      <div className="border border-border/50 rounded-lg p-4 space-y-3 bg-card/30">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <Crown className="h-3 w-3" /> Promotion & Roster
+          </h3>
+          {promotionState?.roster_ready && (
+            <Badge variant="outline" className="text-[9px] h-5 gap-0.5 text-amber-300 border-amber-300/30">
+              <Crown className="h-2.5 w-2.5" /> Roster Ready
+            </Badge>
+          )}
+        </div>
+
+        {/* Current State */}
+        <div className="rounded-md bg-muted/20 p-3 text-xs space-y-1">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">Status</span>
+            <PromotionStatusChip status={promotionState?.promotion_status || 'none'} />
+          </div>
+          {promotionState?.approved_version_id && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Approved Version</span>
+              <span className="text-foreground font-mono text-[10px]">{promotionState.approved_version_id.slice(0, 8)}…</span>
+            </div>
+          )}
+        </div>
+
+        {/* Eligibility */}
+        {eligibility && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground">Policy Evaluation</p>
+            <div className="flex items-center gap-2">
+              {eligibility.eligible_for_promotion ? (
+                <Badge variant="outline" className="text-[9px] h-5 gap-0.5 text-emerald-400 border-emerald-400/30">
+                  <CheckCircle2 className="h-2.5 w-2.5" /> Eligible
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="text-[9px] h-5 gap-0.5 text-destructive border-destructive/30">
+                  <Ban className="h-2.5 w-2.5" /> Not Eligible
+                </Badge>
+              )}
+              {eligibility.review_required && (
+                <Badge variant="outline" className="text-[9px] h-5 text-amber-400 border-amber-400/30">Review Required</Badge>
+              )}
+            </div>
+            {eligibility.block_reasons.length > 0 && (
+              <div className="space-y-0.5">
+                {eligibility.block_reasons.map((r, i) => (
+                  <p key={i} className="text-[9px] text-destructive/80 flex items-start gap-1">
+                    <ShieldAlert className="h-2.5 w-2.5 mt-0.5 shrink-0" /> {r}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap gap-2">
+          {/* Approve — only if eligible */}
+          {eligibility?.eligible_for_promotion && !promotionState?.roster_ready && (
+            <Button
+              size="sm" className="h-7 text-xs gap-1"
+              onClick={() => applyDecision.mutate({ actorId, action: 'approve', decisionNote })}
+              disabled={applyDecision.isPending}
+            >
+              {applyDecision.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Crown className="h-3 w-3" />}
+              Approve for Roster
+            </Button>
+          )}
+
+          {/* Reject — available when not roster-ready (rejection is a version-level decision, not actor-level) */}
+          {!promotionState?.roster_ready && (
+            <Button
+              size="sm" variant="outline" className="h-7 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => applyDecision.mutate({ actorId, action: 'reject', decisionNote })}
+              disabled={applyDecision.isPending}
+            >
+              <Ban className="h-3 w-3" /> Reject
+            </Button>
+          )}
+
+          {/* Revoke — only if roster ready */}
+          {promotionState?.roster_ready && (
+            <Button
+              size="sm" variant="outline" className="h-7 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+              onClick={() => applyDecision.mutate({ actorId, action: 'revoke', decisionNote })}
+              disabled={applyDecision.isPending}
+            >
+              <ShieldOff className="h-3 w-3" /> Revoke Roster
+            </Button>
+          )}
+
+          {/* Override toggle */}
+          {!eligibility?.eligible_for_promotion && (
+            <Button size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={() => setShowOverride(!showOverride)}>
+              <RotateCcw className="h-3 w-3" /> Override…
+            </Button>
+          )}
+        </div>
+
+        {/* Override panel */}
+        {showOverride && (
+          <div className="border border-amber-500/30 rounded-md p-3 space-y-2 bg-amber-500/5">
+            <p className="text-[10px] font-medium text-amber-400">Override Promotion Decision</p>
+            <Input
+              value={overrideReason}
+              onChange={e => setOverrideReason(e.target.value)}
+              placeholder="Reason for override (required)…"
+              className="text-xs h-8"
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm" className="h-7 text-xs gap-1"
+                onClick={() => {
+                  applyDecision.mutate({ actorId, action: 'override_approve', overrideReason, decisionNote });
+                  setShowOverride(false);
+                }}
+                disabled={!overrideReason.trim() || applyDecision.isPending}
+              >
+                Override Approve
+              </Button>
+              <Button
+                size="sm" variant="outline" className="h-7 text-xs gap-1"
+                onClick={() => setShowOverride(false)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Decision Note */}
+        <div className="space-y-1">
+          <Input
+            value={decisionNote}
+            onChange={e => setDecisionNote(e.target.value)}
+            placeholder="Optional decision note…"
+            className="text-xs h-8"
+          />
+        </div>
+
+        {/* Decision History */}
+        {decisions && decisions.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1">
+              <FileText className="h-2.5 w-2.5" /> Decision History
+            </p>
+            <div className="space-y-1 max-h-[150px] overflow-y-auto">
+              {decisions.map((d: PromotionDecision) => (
+                <div key={d.id} className="flex items-center gap-2 text-[9px] px-2 py-1 rounded bg-muted/10 border border-border/20">
+                  <PromotionStatusChip status={d.final_decision_status} />
+                  <span className="text-muted-foreground">{d.decision_mode.replace(/_/g, ' ')}</span>
+                  {d.override_reason && <span className="text-amber-400 truncate">"{d.override_reason}"</span>}
+                  <span className="text-muted-foreground/60 ml-auto shrink-0">{new Date(d.created_at).toLocaleDateString()}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Marketplace Listing */}
+      <MarketplaceListingPanel actorId={actorId} rosterReady={promotionState?.roster_ready || false} approvedVersionId={promotionState?.approved_version_id || null} />
+
+      {/* Candidate Review — filmstrip + detail panel */}
+      <div className="space-y-3">
+        <h3 className="text-sm font-medium text-foreground">Candidate Review</h3>
+        <ActorCandidateReview
+          actorId={actorId}
+          versions={versions}
+          approvedVersionId={(actor as any).approved_version_id}
+          anchorCoverageStatus={(actor as any).anchor_coverage_status || 'insufficient'}
+        />
+      </div>
+
+      {/* Danger Zone — Delete Actor */}
+      <div className="border border-destructive/30 rounded-lg p-4 space-y-3 bg-destructive/5">
+        <h3 className="text-xs font-medium text-destructive uppercase tracking-wider flex items-center gap-1.5">
+          <Trash2 className="h-3 w-3" /> Danger Zone
+        </h3>
+        <p className="text-[10px] text-muted-foreground">
+          Permanently delete this actor profile and all associated versions, assets, validation data, and marketplace listings. This cannot be undone.
+        </p>
+        {usageEntries.length > 0 && (
+          <p className="text-[10px] text-amber-400 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            This actor is currently used in {usageEntries.length} project{usageEntries.length > 1 ? 's' : ''}. Cast bindings will be removed.
+          </p>
+        )}
+        {(actor as any).roster_ready && (
+          <p className="text-[10px] text-amber-400 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3 shrink-0" />
+            This actor is roster-ready. Deletion requires force confirmation.
+          </p>
+        )}
+        <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+          <DialogTrigger asChild>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1.5 text-destructive border-destructive/30 hover:bg-destructive/10"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete Actor Permanently
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-destructive flex items-center gap-2">
+                <Trash2 className="h-4 w-4" /> Delete Actor Permanently
+              </DialogTitle>
+              <DialogDescription className="text-xs space-y-2">
+                <span className="block">
+                  This will permanently delete <strong>{actor.name}</strong> and all associated data:
+                </span>
+                <span className="block text-muted-foreground">
+                  • All versions and generated assets<br />
+                  • Validation runs and results<br />
+                  • Promotion decisions<br />
+                  • Marketplace listings<br />
+                  • Cast bindings in projects
+                </span>
+                <span className="block font-medium text-destructive">This action cannot be undone.</span>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button variant="outline" size="sm" className="text-xs" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="text-xs gap-1.5"
+                disabled={deleteActor.isPending}
+                onClick={() => {
+                  deleteActor.mutate(
+                    { actorId, force: !!(actor as any).roster_ready },
+                    { onSuccess: () => { setShowDeleteConfirm(false); onBack(); } }
+                  );
+                }}
+              >
+                {deleteActor.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                Delete Permanently
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
+
+// ── Marketplace Listing Panel ───────────────────────────────────────────────
+
+function MarketplaceListingPanel({ actorId, rosterReady, approvedVersionId }: {
+  actorId: string;
+  rosterReady: boolean;
+  approvedVersionId: string | null;
+}) {
+  const qc = useQueryClient();
+  const [pricingTier, setPricingTier] = useState<PricingTier>('free');
+  const [listing, setListing] = useState(false);
+
+  // Check current listing state
+  const { data: currentListing } = useQuery({
+    queryKey: ['actor-listing', actorId],
+    queryFn: async () => {
+      const { data } = await (supabase as any)
+        .from('actor_marketplace_listings')
+        .select('*')
+        .eq('actor_id', actorId)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const isListed = currentListing?.is_active === true;
+
+  const handleList = async () => {
+    setListing(true);
+    const result = await listActorOnMarketplace(actorId, { pricing_tier: pricingTier, visibility: 'public' });
+    setListing(false);
+    if (result.success) {
+      toast.success('Actor listed on marketplace');
+      qc.invalidateQueries({ queryKey: ['actor-listing', actorId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-actors'] });
+    } else {
+      toast.error(result.error || 'Failed to list actor');
+    }
+  };
+
+  const handleUnlist = async () => {
+    setListing(true);
+    const result = await unlistActorFromMarketplace(actorId);
+    setListing(false);
+    if (result.success) {
+      toast.success('Actor removed from marketplace');
+      qc.invalidateQueries({ queryKey: ['actor-listing', actorId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-actors'] });
+    } else {
+      toast.error(result.error || 'Failed to unlist actor');
+    }
+  };
+
+  const canList = rosterReady && !!approvedVersionId;
+
+  return (
+    <div className="border border-border/50 rounded-lg p-4 space-y-3 bg-card/30">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <Store className="h-3 w-3" /> Marketplace
+        </h3>
+        {isListed && (
+          <Badge variant="outline" className="text-[9px] h-5 gap-0.5 text-emerald-400 border-emerald-400/30">
+            Listed
+          </Badge>
+        )}
+      </div>
+
+      {!canList ? (
+        <p className="text-[10px] text-muted-foreground">
+          Actor must be roster-ready with an approved version to list on the marketplace.
+        </p>
+      ) : isListed ? (
+        <div className="space-y-2">
+          <div className="rounded-md bg-muted/20 p-2 text-[10px] space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Pricing Tier</span>
+              <Badge variant="outline" className="text-[8px] h-4">{currentListing?.pricing_tier || 'free'}</Badge>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Visibility</span>
+              <span className="text-foreground">{currentListing?.visibility || 'public'}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Listed</span>
+              <span className="text-foreground">{currentListing?.listed_at ? new Date(currentListing.listed_at).toLocaleDateString() : '—'}</span>
+            </div>
+          </div>
+          <Button
+            size="sm" variant="outline"
+            className="h-7 text-xs gap-1 text-destructive border-destructive/30 hover:bg-destructive/10"
+            onClick={handleUnlist}
+            disabled={listing}
+          >
+            {listing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Store className="h-3 w-3" />}
+            Remove from Marketplace
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="space-y-1">
+            <label className="text-[10px] text-muted-foreground">Pricing Tier</label>
+            <Select value={pricingTier} onValueChange={v => setPricingTier(v as PricingTier)}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="free" className="text-xs">Free</SelectItem>
+                <SelectItem value="standard" className="text-xs">Standard</SelectItem>
+                <SelectItem value="premium" className="text-xs">Premium</SelectItem>
+                <SelectItem value="signature" className="text-xs">Signature</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm" className="h-7 text-xs gap-1"
+            onClick={handleList}
+            disabled={listing}
+          >
+            {listing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Store className="h-3 w-3" />}
+            List on Marketplace
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Validation Score Panel ──────────────────────────────────────────────────
+
+function ValidationScorePanel({ result }: { result: ValidationResult }) {
+  const axes = result.axis_scores as any;
+  const hardFails = result.hard_fail_codes || [];
+  const advisories = result.advisory_penalty_codes || [];
+
+  return (
+    <div className="border border-border/30 rounded-lg p-3 space-y-3 bg-card/20">
+      {/* Top row: score + band + confidence */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className={cn(
+          'rounded-lg px-3 py-1.5 border font-bold text-lg tabular-nums',
+          getScoreBandColor(result.score_band)
+        )}>
+          {result.overall_score}
+        </div>
+        <div>
+          <Badge variant="outline" className={cn('text-[9px] h-5 uppercase tracking-wider', getScoreBandColor(result.score_band))}>
+            {result.score_band}
+          </Badge>
+          <p className={cn('text-[9px] mt-0.5', getConfidenceColor(result.confidence))}>
+            {result.confidence} confidence
+          </p>
+        </div>
+
+        {hardFails.length > 0 && (
+          <div className="flex gap-1 ml-auto">
+            {hardFails.map(code => (
+              <Badge key={code} variant="destructive" className="text-[8px] h-5 gap-0.5">
+                <ShieldAlert className="h-2.5 w-2.5" /> {code}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Canonical axis scores */}
+      <div className="grid grid-cols-2 gap-2">
+        <AxisScoreRow label="Identity Consistency" value={axes?.identity_consistency_score} icon={<Zap className="h-2.5 w-2.5" />} />
+        <AxisScoreRow label="Structural Consistency" value={axes?.structural_consistency_score} icon={<TrendingUp className="h-2.5 w-2.5" />} />
+        <AxisScoreRow label="Variation Integrity" value={axes?.variation_integrity_score} icon={<BarChart3 className="h-2.5 w-2.5" />} />
+        <AxisScoreRow label="Slot Compliance" value={axes?.slot_compliance_score} icon={<Image className="h-2.5 w-2.5" />} subtitle="(eligibility)" />
+      </div>
+
+      {/* Hard fail explanations */}
+      {hardFails.length > 0 && (
+        <div className="space-y-1">
+          {hardFails.includes('HF-08') && (
+            <p className="text-[9px] text-destructive flex items-start gap-1">
+              <ShieldAlert className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+              HF-08 Regeneration Drift — identity is unstable across regenerations. Score capped at 59.
+            </p>
+          )}
+          {hardFails.includes('HF-COV') && (
+            <p className="text-[9px] text-destructive flex items-start gap-1">
+              <ShieldAlert className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+              HF-COV Insufficient Coverage — fewer than 8 of 11 validation slots completed.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Advisory penalties */}
+      {advisories.length > 0 && (
+        <div className="flex gap-1 flex-wrap">
+          {advisories.map(code => (
+            <Badge key={code} variant="outline" className="text-[8px] h-4 text-amber-400 border-amber-400/30">
+              {code}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AxisScoreRow({ label, value, icon, subtitle }: { label: string; value: number | undefined; icon: React.ReactNode; subtitle?: string }) {
+  if (value == null) return null;
+  const pct = (value / 10) * 100;
+  return (
+    <div className="space-y-0.5">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] text-muted-foreground flex items-center gap-1">{icon} {label}{subtitle && <span className="opacity-60">{subtitle}</span>}</span>
+        <span className={cn(
+          'text-[9px] font-semibold tabular-nums',
+          value >= 7 ? 'text-emerald-400' : value >= 5 ? 'text-amber-400' : 'text-destructive'
+        )}>{value.toFixed(1)}/10</span>
+      </div>
+      <div className="h-1 rounded-full bg-muted/30 overflow-hidden">
+        <div
+          className={cn(
+            'h-full rounded-full transition-all',
+            value >= 7 ? 'bg-emerald-500' : value >= 5 ? 'bg-amber-500' : 'bg-destructive'
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Version Card ────────────────────────────────────────────────────────────
+
+type AnchorSlot = 'reference_headshot' | 'reference_full_body' | 'reference_profile';
+
+const ANCHOR_SLOTS: { key: AnchorSlot; label: string; metaShotType: string }[] = [
+  { key: 'reference_headshot', label: 'Headshot', metaShotType: 'headshot' },
+  { key: 'reference_full_body', label: 'Full Body', metaShotType: 'full_body' },
+  { key: 'reference_profile', label: 'Profile', metaShotType: 'profile' },
+];
+
+function VersionCard({ ver, actorId }: { ver: AIActorVersion; actorId: string }) {
+  const { approveVersion, generateScreenTest } = useAICastMutations();
+  const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadSlot, setUploadSlot] = useState<AnchorSlot | 'reference_image'>('reference_image');
+  const [deleteTarget, setDeleteTarget] = useState<AIActorAsset | null>(null);
+
+  const assets = ver.ai_actor_assets || [];
+
+  // Determine which anchor slots are already filled
+  const filledSlots = useMemo(() => {
+    const filled = new Set<string>();
+    for (const a of assets) {
+      const at = (a.asset_type || '').toLowerCase();
+      const mt = ((a.meta_json as any)?.shot_type || '').toLowerCase();
+      if (at === 'reference_headshot' || mt === 'headshot' || mt === 'identity_headshot') filled.add('reference_headshot');
+      if (at === 'reference_full_body' || mt === 'full_body' || mt === 'identity_full_body') filled.add('reference_full_body');
+      if (at === 'reference_profile' || mt === 'profile' || mt === 'identity_profile') filled.add('reference_profile');
+    }
+    return filled;
+  }, [assets]);
+
+  const anchorsFilled = filledSlots.size;
+  const anchorsNeeded = 3;
+
+  const triggerUpload = (slot: AnchorSlot | 'reference_image') => {
+    setUploadSlot(slot);
+    setTimeout(() => fileInputRef.current?.click(), 0);
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    e.target.value = '';
+    setUploading(true);
+    let successCount = 0;
+    for (const file of Array.from(files)) {
+      if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) { toast.error(`"${file.name}" not supported.`); continue; }
+      if (file.size > MAX_IMAGE_SIZE) { toast.error(`"${file.name}" too large.`); continue; }
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const rand = Math.random().toString(36).slice(2, 8);
+      const storagePath = `actors/${actorId}/${ver.id}/reference/${Date.now()}_${rand}.${ext}`;
+      try {
+        const { error: uploadErr } = await supabase.storage.from('ai-media').upload(storagePath, file, { contentType: file.type, upsert: false });
+        if (uploadErr) { toast.error(`Upload failed: ${uploadErr.message}`); continue; }
+        const { data: urlData } = supabase.storage.from('ai-media').getPublicUrl(storagePath);
+
+        // Determine the shot_type metadata from the selected slot
+        const slotDef = ANCHOR_SLOTS.find(s => s.key === uploadSlot);
+        const metaShotType = slotDef?.metaShotType || 'reference';
+
+        await aiCastApi.addAsset(ver.id, {
+          asset_type: uploadSlot,
+          storage_path: storagePath,
+          public_url: urlData.publicUrl,
+          meta_json: {
+            filename: file.name, size: file.size, content_type: file.type,
+            shot_type: metaShotType,
+            uploaded_at: new Date().toISOString(),
+          },
+        });
+        successCount++;
+      } catch (err: any) { toast.error(`Failed: ${err.message}`); }
+    }
+    if (successCount > 0) {
+      toast.success(`Uploaded ${successCount} image${successCount > 1 ? 's' : ''}`);
+      queryClient.invalidateQueries({ queryKey: ['ai-actor', actorId] });
+
+      // Re-evaluate and persist anchor coverage
+      try {
+        const coverage = await evaluateAnchorCoverage(actorId);
+        const coherence = coverage.coverageStatus === 'insufficient'
+          ? 'unknown' as AnchorCoherenceStatus
+          : (await import('@/lib/aiCast/anchorValidation').then(m => m.evaluateAnchorCoherence(actorId, coverage))).coherenceStatus;
+        await persistAnchorStatus(actorId, coverage.coverageStatus, coherence);
+        queryClient.invalidateQueries({ queryKey: ['ai-actors'] });
+      } catch (err) {
+        console.warn('[VersionCard] Anchor re-evaluation failed:', err);
+      }
+    }
+    setUploading(false);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await aiCastApi.deleteAsset(deleteTarget.id);
+      toast.success('Asset deleted');
+      queryClient.invalidateQueries({ queryKey: ['ai-actor', actorId] });
+    } catch (err: any) { toast.error(err.message); }
+    setDeleteTarget(null);
+  };
+
+  return (
+    <div className="border border-border/50 rounded-lg p-4 space-y-3 bg-card/30">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium">Version {ver.version_number}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+            onClick={() => generateScreenTest.mutate({ actorId, versionId: ver.id, count: 4 })} disabled={generateScreenTest.isPending}>
+            {generateScreenTest.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />} Screen Test
+          </Button>
+        </div>
+      </div>
+
+      {/* Anchor coverage progress */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Anchor References ({anchorsFilled}/{anchorsNeeded})
+          </span>
+          {anchorsFilled >= anchorsNeeded && (
+            <Badge variant="outline" className="h-5 text-[10px] gap-1 border-primary/30 text-primary">
+              <CheckCircle2 className="h-2.5 w-2.5" /> Coverage met
+            </Badge>
+          )}
+        </div>
+
+        {/* Anchor slot cards */}
+        <div className="grid grid-cols-3 gap-2">
+          {ANCHOR_SLOTS.map(slot => {
+            const isFilled = filledSlots.has(slot.key);
+            const slotAsset = assets.find(a => {
+              const at = (a.asset_type || '').toLowerCase();
+              const mt = ((a.meta_json as any)?.shot_type || '').toLowerCase();
+              if (slot.key === 'reference_headshot') return at === 'reference_headshot' || mt === 'headshot' || mt === 'identity_headshot';
+              if (slot.key === 'reference_full_body') return at === 'reference_full_body' || mt === 'full_body' || mt === 'identity_full_body';
+              if (slot.key === 'reference_profile') return at === 'reference_profile' || mt === 'profile' || mt === 'identity_profile';
+              return false;
+            });
+
+            return (
+              <div
+                key={slot.key}
+                onClick={() => !isFilled && !uploading && triggerUpload(slot.key)}
+                className={cn(
+                  "relative aspect-[3/4] rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors",
+                  isFilled
+                    ? "border-primary/30 bg-primary/5 cursor-default"
+                    : "border-border/50 hover:border-primary/40 hover:bg-primary/5 cursor-pointer"
+                )}
+              >
+                {isFilled && slotAsset?.public_url ? (
+                  <>
+                    <img src={slotAsset.public_url} alt={slot.label} className="w-full h-full object-cover rounded-md" />
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/80 to-transparent p-1.5 rounded-b-md">
+                      <div className="flex items-center gap-1">
+                        <CheckCircle2 className="h-2.5 w-2.5 text-primary" />
+                        <span className="text-[9px] font-medium text-primary">{slot.label}</span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setDeleteTarget(slotAsset); }}
+                      className="absolute top-1 right-1 p-1 rounded bg-background/70 text-destructive opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {uploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                    ) : (
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="text-[10px] text-muted-foreground font-medium">{slot.label}</span>
+                    <span className="text-[9px] text-muted-foreground/60">Tap to upload</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleUpload} />
+
+      {/* Additional reference images */}
+      {assets.filter(a => {
+        const at = (a.asset_type || '').toLowerCase();
+        const mt = ((a.meta_json as any)?.shot_type || '').toLowerCase();
+        return !['reference_headshot', 'reference_full_body', 'reference_profile'].includes(at)
+          && !['headshot', 'full_body', 'profile', 'identity_headshot', 'identity_full_body', 'identity_profile'].includes(mt);
+      }).length > 0 && (
+        <div className="space-y-1.5">
+          <span className="text-[11px] text-muted-foreground">Additional References</span>
+          <div className="grid grid-cols-4 gap-2">
+            {assets.filter(a => {
+              const at = (a.asset_type || '').toLowerCase();
+              const mt = ((a.meta_json as any)?.shot_type || '').toLowerCase();
+              return !['reference_headshot', 'reference_full_body', 'reference_profile'].includes(at)
+                && !['headshot', 'full_body', 'profile', 'identity_headshot', 'identity_full_body', 'identity_profile'].includes(mt);
+            }).map((asset: AIActorAsset) => (
+              <div key={asset.id} className="relative group rounded-lg overflow-hidden border border-border/30 aspect-square bg-muted/10">
+                {asset.public_url ? (
+                  <img src={asset.public_url} alt={asset.asset_type} className="w-full h-full object-cover" />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground"><ImagePlus className="h-5 w-5" /></div>
+                )}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-background/80 to-transparent p-1">
+                  <span className="text-[9px] text-white/80">{asset.asset_type.replace(/_/g, ' ')}</span>
+                </div>
+                <button onClick={() => setDeleteTarget(asset)}
+                  className="absolute top-1 right-1 p-1 rounded bg-background/70 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:bg-background">
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upload more references button */}
+      <Button size="sm" variant="outline" className="h-7 text-xs gap-1 w-full" onClick={() => triggerUpload('reference_image')} disabled={uploading}>
+        {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />} Upload Additional Reference
+      </Button>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-sm">Delete Asset</DialogTitle>
+            <DialogDescription className="text-xs">
+              Are you sure you want to delete this {deleteTarget?.asset_type.replace(/_/g, ' ')}? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+            <Button size="sm" variant="destructive" className="h-8 text-xs" onClick={confirmDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

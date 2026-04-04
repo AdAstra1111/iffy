@@ -1,0 +1,558 @@
+/**
+ * Chunk Validator — Hard enforcement against summarization/truncation.
+ *
+ * Runs after chunk assembly AND on individual chunks.
+ * Detects: missing episodes, banned language, missing sections, incomplete schemas.
+ *
+ * Used by: generate-document, dev-engine-v2, auto-run, chunk runner.
+ */
+
+// ── Types ──
+
+export type ValidationSeverity = "blocker" | "warning" | "progress";
+
+export interface ValidationResult {
+  pass: boolean;
+  failures: ValidationFailure[];
+  missingIndices: number[];
+  missingSections: string[];
+  bannedPhraseHits: string[];
+  repairAction: "none" | "regen_missing" | "regen_all";
+}
+
+export interface ValidationFailure {
+  type: "missing_episode" | "missing_section" | "banned_phrase" | "density_low" | "wrong_content_type" | "incomplete_schema";
+  detail: string;
+  severity?: ValidationSeverity;
+  indices?: number[];
+  sections?: string[];
+}
+
+/**
+ * Progress-aware episodic validation result.
+ * Distinguishes between incomplete-but-valid (in-progress) vs structurally invalid.
+ */
+export interface EpisodicProgressResult {
+  /** Overall tier: progress (ok), warning, or blocker */
+  tier: ValidationSeverity;
+  /** Fraction of target episodes present */
+  progress: number;
+  /** Episodes found / target */
+  found: number;
+  target: number;
+  /** True structural issues (not just incompleteness) */
+  blockers: ValidationFailure[];
+  /** Quality warnings */
+  warnings: ValidationFailure[];
+  /** Human-readable status */
+  summary: string;
+}
+
+// ── Banned Phrases ──
+
+const BANNED_PHRASES = [
+  "remaining episodes follow a similar",
+  "remaining episodes",
+  "and so on",
+  "episodes follow the same",
+  "continue in a similar",
+  "topline narrative",
+  "# TOPLINE NARRATIVE",
+  "highlights only",
+  "selected highlights",
+  "key episodes",
+  "anchor episodes",
+  "summary of episodes",
+  "episodes can be summarized",
+  "for brevity",
+  "condensed version",
+  "abbreviated version",
+  "rest of the episodes",
+  "the remaining",
+  "episodes follow this pattern",
+  "similar structure continues",
+  "this pattern repeats",
+  "etc.",
+  "…and more",
+];
+
+const BANNED_PATTERNS = [
+  /episodes?\s+\d+[\s–\-—]+\d+\s*(follow|continue|are similar|share|mirror)/i,
+  /eps?\s+\d+[\s–\-—]+\d+:\s*(same|similar|as above|see above)/i,
+  /\(episodes?\s+\d+[\s–\-—]+\d+\s+(omitted|skipped|summarized)\)/i,
+];
+
+// ── Screenplay Format Detection (for non-script doc types) ──
+// Matches: INT./EXT. sluglines, character cues (NAME on own line before dialogue)
+const SCREENPLAY_SLUGLINE_RE = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s+[A-Z]/m;
+const SCREENPLAY_CHARACTER_CUE_RE = /^[A-Z][A-Z\s'()]+\n[A-Za-z"'(]/m; // ALL-CAPS name followed by dialogue line
+
+const PROSE_ONLY_DOC_TYPES = new Set([
+  "story_outline", "architecture", "treatment", "beat_sheet",
+  "concept_brief", "market_sheet", "character_bible", "deck",
+]);
+
+export function hasScreenplayFormat(content: string, docType: string): boolean {
+  if (!PROSE_ONLY_DOC_TYPES.has(docType)) return false;
+  const sluglineCount = (content.match(/^(INT\.|EXT\.)\s+/mg) || []).length;
+  // Trigger if 2+ sluglines found (one might be a quote or example)
+  return sluglineCount >= 2;
+}
+
+// ── Topline Content Detection ──
+
+const TOPLINE_MARKERS = [
+  "## LOGLINE",
+  "## SHORT SYNOPSIS",
+  "## LONG SYNOPSIS",
+  "## STORY PILLARS",
+  "# TOPLINE NARRATIVE",
+];
+
+// ── Episode Number Extraction ──
+
+function extractEpisodeNumbers(text: string): number[] {
+  const patterns = [
+    /(?:^|\n)\s*#{1,4}\s*(?:EPISODE|EP\.?)\s*(\d+)/gim,
+    /\*\*\s*(?:EPISODE|EP\.?)\s*(\d+)/gim,
+    /(?:^|\n)\s*(?:EPISODE|EP\.?)\s*(\d+)\s*[:\-–—]/gim,
+  ];
+
+  const found = new Set<number>();
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      found.add(parseInt(match[1], 10));
+    }
+  }
+  return [...found].sort((a, b) => a - b);
+}
+
+// ── Collapsed Range Detection ──
+
+function detectCollapsedRanges(text: string): string[] {
+  const hits: string[] = [];
+  const pattern = /episodes?\s+(\d+)[\s–\-—]+(\d+)/gi;
+  for (const match of text.matchAll(pattern)) {
+    const start = parseInt(match[1], 10);
+    const end = parseInt(match[2], 10);
+    if (end - start >= 3) {
+      hits.push(match[0]);
+    }
+  }
+  return hits;
+}
+
+// ── Section Heading Detection ──
+
+function findSectionHeadings(content: string): Set<string> {
+  const found = new Set<string>();
+  // Match markdown headings and normalize to lowercase/underscore
+  const headingPattern = /^#{1,4}\s+(.+)$/gm;
+  for (const match of content.matchAll(headingPattern)) {
+    const normalized = match[1].trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    found.add(normalized);
+  }
+  // Also match bold section markers
+  const boldPattern = /\*\*([A-Z][A-Z\s:]+)\*\*/g;
+  for (const match of content.matchAll(boldPattern)) {
+    const normalized = match[1].trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    found.add(normalized);
+  }
+  return found;
+}
+
+// ── Public API ──
+
+/**
+ * Validate episodic content for completeness.
+ */
+export function validateEpisodicContent(
+  content: string,
+  expectedCount: number,
+  docType: string = "episode_grid"
+): ValidationResult {
+  const failures: ValidationFailure[] = [];
+  const bannedHits: string[] = [];
+
+  // 1. Extract episode numbers present
+  const foundEpisodes = extractEpisodeNumbers(content);
+  const expectedSet = new Set(Array.from({ length: expectedCount }, (_, i) => i + 1));
+  const foundSet = new Set(foundEpisodes);
+  const missingIndices = [...expectedSet].filter(n => !foundSet.has(n));
+
+  if (missingIndices.length > 0) {
+    failures.push({
+      type: "missing_episode",
+      detail: `Missing ${missingIndices.length} of ${expectedCount} episodes: ${missingIndices.slice(0, 10).join(", ")}${missingIndices.length > 10 ? "..." : ""}`,
+      indices: missingIndices,
+    });
+  }
+
+  // 2. Banned phrase scan
+  const lowerContent = content.toLowerCase();
+  for (const phrase of BANNED_PHRASES) {
+    if (lowerContent.includes(phrase.toLowerCase())) {
+      bannedHits.push(phrase);
+    }
+  }
+  for (const pattern of BANNED_PATTERNS) {
+    const match = content.match(pattern);
+    if (match) {
+      bannedHits.push(match[0]);
+    }
+  }
+  if (bannedHits.length > 0) {
+    failures.push({
+      type: "banned_phrase",
+      detail: `Found ${bannedHits.length} banned summarization phrases: ${bannedHits.slice(0, 5).join("; ")}`,
+    });
+  }
+
+  // 3. Collapsed range detection
+  const collapsed = detectCollapsedRanges(content);
+  if (collapsed.length > 0) {
+    failures.push({
+      type: "incomplete_schema",
+      detail: `Detected ${collapsed.length} collapsed episode range(s): ${collapsed.slice(0, 3).join(", ")}`,
+    });
+  }
+
+  // 4. Wrong content type
+  if (docType !== "topline_narrative") {
+    const toplineHits = TOPLINE_MARKERS.filter(m => content.includes(m));
+    if (toplineHits.length >= 2) {
+      failures.push({
+        type: "wrong_content_type",
+        detail: `Content resembles a Topline Narrative (found ${toplineHits.length} markers). Wrong content for ${docType}.`,
+      });
+    }
+  }
+
+  // 5. Density check
+  if (foundEpisodes.length > 0 && expectedCount > 0) {
+    const avgCharsPerEp = content.length / foundEpisodes.length;
+    const minCharsPerEp = docType.includes("script") ? 800 : 100;
+    if (avgCharsPerEp < minCharsPerEp) {
+      failures.push({
+        type: "density_low",
+        detail: `Average ${Math.round(avgCharsPerEp)} chars/episode — below minimum ${minCharsPerEp} for ${docType}`,
+      });
+    }
+  }
+
+  const repairAction = missingIndices.length > 0
+    ? "regen_missing"
+    : failures.length > 0
+    ? "regen_all"
+    : "none";
+
+  return {
+    pass: failures.length === 0,
+    failures,
+    missingIndices,
+    missingSections: [],
+    bannedPhraseHits: bannedHits,
+    repairAction,
+  };
+}
+
+/**
+ * Validate a single chunk of episodic content.
+ */
+export function validateEpisodicChunk(
+  chunkContent: string,
+  expectedEpisodes: number[],
+  docType: string = "episode_grid"
+): ValidationResult {
+  const failures: ValidationFailure[] = [];
+  const bannedHits: string[] = [];
+
+  const foundEpisodes = extractEpisodeNumbers(chunkContent);
+  const foundSet = new Set(foundEpisodes);
+  const missingIndices = expectedEpisodes.filter(n => !foundSet.has(n));
+
+  if (missingIndices.length > 0) {
+    failures.push({
+      type: "missing_episode",
+      detail: `Chunk missing episodes: ${missingIndices.join(", ")}`,
+      indices: missingIndices,
+    });
+  }
+
+  const lowerContent = chunkContent.toLowerCase();
+  for (const phrase of BANNED_PHRASES) {
+    if (lowerContent.includes(phrase.toLowerCase())) {
+      bannedHits.push(phrase);
+    }
+  }
+  if (bannedHits.length > 0) {
+    failures.push({
+      type: "banned_phrase",
+      detail: `Chunk contains banned phrases: ${bannedHits.slice(0, 3).join("; ")}`,
+    });
+  }
+
+  return {
+    pass: failures.length === 0,
+    failures,
+    missingIndices,
+    missingSections: [],
+    bannedPhraseHits: bannedHits,
+    repairAction: missingIndices.length > 0 ? "regen_missing" : failures.length > 0 ? "regen_all" : "none",
+  };
+}
+
+/**
+ * Validate sectioned content (scripts, treatments, bibles).
+ * NOW checks actual section completeness against expected sections.
+ */
+export function validateSectionedContent(
+  content: string,
+  expectedSections: string[],
+  docType: string
+): ValidationResult {
+  const failures: ValidationFailure[] = [];
+  const bannedHits: string[] = [];
+  const missingSections: string[] = [];
+
+  // 1. Check for banned phrases
+  const lowerContent = content.toLowerCase();
+  for (const phrase of BANNED_PHRASES) {
+    if (lowerContent.includes(phrase.toLowerCase())) {
+      bannedHits.push(phrase);
+    }
+  }
+  if (bannedHits.length > 0) {
+    failures.push({
+      type: "banned_phrase",
+      detail: `Found banned summarization phrases: ${bannedHits.slice(0, 5).join("; ")}`,
+    });
+  }
+
+  // 2. Wrong content type check
+  if (docType !== "topline_narrative") {
+    const toplineHits = TOPLINE_MARKERS.filter(m => content.includes(m));
+    if (toplineHits.length >= 2) {
+      failures.push({
+        type: "wrong_content_type",
+        detail: `Content resembles a Topline Narrative, wrong for ${docType}.`,
+      });
+    }
+  }
+
+  // 3. TRUE SECTION COMPLETENESS CHECK
+  const foundHeadings = findSectionHeadings(content);
+  for (const expectedSection of expectedSections) {
+    const normalized = expectedSection.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
+    // Check if any found heading contains or matches the expected section key
+    const found = [...foundHeadings].some(h => 
+      h.includes(normalized) || normalized.includes(h) || h === normalized
+    );
+    // Also do a simple content search for the section name
+    const altFound = lowerContent.includes(normalized.replace(/_/g, " "));
+    if (!found && !altFound) {
+      missingSections.push(expectedSection);
+    }
+  }
+
+  if (missingSections.length > 0) {
+    failures.push({
+      type: "missing_section",
+      detail: `Missing ${missingSections.length} section(s): ${missingSections.join(", ")}`,
+      sections: missingSections,
+    });
+  }
+
+  // 4. Script structure checks
+  if (docType.includes("script") || docType === "screenplay_draft" || docType === "production_draft") {
+    const sluglineCount = (content.match(/^(INT\.|EXT\.|INT\/EXT\.)\s/gm) || []).length;
+    if (sluglineCount < 3) {
+      failures.push({
+        type: "incomplete_schema",
+        detail: `Script has only ${sluglineCount} scene headings — expected at least 3`,
+      });
+    }
+    const dialogueBlocks = (content.match(/^[A-Z][A-Z\s]+$/gm) || []).length;
+    if (dialogueBlocks < 5) {
+      failures.push({
+        type: "density_low",
+        detail: `Script has only ${dialogueBlocks} dialogue character names — expected at least 5`,
+      });
+    }
+  }
+
+  const repairAction = missingSections.length > 0
+    ? "regen_missing"
+    : failures.length > 0
+    ? "regen_all"
+    : "none";
+
+  return {
+    pass: failures.length === 0,
+    failures,
+    missingIndices: [],
+    missingSections,
+    bannedPhraseHits: bannedHits,
+    repairAction,
+  };
+}
+
+/**
+ * Quick check: does content contain banned summarization language?
+ */
+export function hasBannedSummarizationLanguage(content: string): boolean {
+  const lower = content.toLowerCase();
+  for (const phrase of BANNED_PHRASES) {
+    if (lower.includes(phrase.toLowerCase())) return true;
+  }
+  for (const pattern of BANNED_PATTERNS) {
+    if (pattern.test(content)) return true;
+  }
+  return false;
+}
+
+/**
+ * Progress-aware episodic validation.
+ * 
+ * Returns PROGRESS (incomplete but valid), WARNING (quality issues),
+ * or BLOCKER (structurally invalid / inconsistent with canon).
+ * 
+ * Key distinction: missing episodes during mid-generation = PROGRESS, not BLOCKER.
+ * Only true structural problems (banned phrases, collapsed ranges, wrong content type) = BLOCKER.
+ */
+export function validateEpisodicProgress(
+  content: string,
+  expectedCount: number,
+  docType: string = "episode_grid",
+  options: { isFinalStage?: boolean; isRewriteAssembly?: boolean } = {},
+): EpisodicProgressResult {
+  const blockers: ValidationFailure[] = [];
+  const warnings: ValidationFailure[] = [];
+
+  // 1. Extract episode numbers present
+  const foundEpisodes = extractEpisodeNumbers(content);
+  const expectedSet = new Set(Array.from({ length: expectedCount }, (_, i) => i + 1));
+  const foundSet = new Set(foundEpisodes);
+  const missingIndices = [...expectedSet].filter(n => !foundSet.has(n));
+  const found = foundSet.size;
+  const progress = expectedCount > 0 ? found / expectedCount : 0;
+
+  // 2. Banned phrase scan — always a BLOCKER (indicates AI summarization)
+  const lowerContent = content.toLowerCase();
+  const bannedHits: string[] = [];
+  for (const phrase of BANNED_PHRASES) {
+    if (lowerContent.includes(phrase.toLowerCase())) {
+      bannedHits.push(phrase);
+    }
+  }
+  for (const pattern of BANNED_PATTERNS) {
+    const match = content.match(pattern);
+    if (match) bannedHits.push(match[0]);
+  }
+  if (bannedHits.length > 0) {
+    blockers.push({
+      type: "banned_phrase",
+      severity: "blocker",
+      detail: `Found ${bannedHits.length} banned summarization phrases: ${bannedHits.slice(0, 5).join("; ")}`,
+    });
+  }
+
+  // 3. Collapsed range detection — BLOCKER (indicates structural corruption)
+  const collapsed = detectCollapsedRanges(content);
+  if (collapsed.length > 0) {
+    blockers.push({
+      type: "incomplete_schema",
+      severity: "blocker",
+      detail: `Detected ${collapsed.length} collapsed episode range(s): ${collapsed.slice(0, 3).join(", ")}`,
+    });
+  }
+
+  // 4. Wrong content type — BLOCKER
+  if (docType !== "topline_narrative") {
+    const toplineHits = TOPLINE_MARKERS.filter(m => content.includes(m));
+    if (toplineHits.length >= 2) {
+      blockers.push({
+        type: "wrong_content_type",
+        severity: "blocker",
+        detail: `Content resembles a Topline Narrative (found ${toplineHits.length} markers). Wrong content for ${docType}.`,
+      });
+    }
+  }
+
+  // 5. Density check — WARNING (quality issue, not structural)
+  if (foundEpisodes.length > 0 && expectedCount > 0) {
+    const avgCharsPerEp = content.length / foundEpisodes.length;
+    const minCharsPerEp = docType.includes("script") ? 800 : 100;
+    if (avgCharsPerEp < minCharsPerEp) {
+      warnings.push({
+        type: "density_low",
+        severity: "warning",
+        detail: `Average ${Math.round(avgCharsPerEp)} chars/episode — below minimum ${minCharsPerEp} for ${docType}`,
+      });
+    }
+  }
+
+  // 6. Missing episodes — context-dependent
+  if (missingIndices.length > 0) {
+    if (options.isRewriteAssembly && missingIndices.length > 0) {
+      // Rewrite assembly: only block if >50% missing (indicates real failure, not partial progress)
+      if (progress < 0.5) {
+        blockers.push({
+          type: "missing_episode",
+          severity: "blocker",
+          detail: `Assembly has only ${found}/${expectedCount} episodes (${Math.round(progress * 100)}%) — below minimum viable threshold.`,
+          indices: missingIndices,
+        });
+      } else {
+        warnings.push({
+          type: "missing_episode",
+          severity: "warning",
+          detail: `Assembly has ${found}/${expectedCount} episodes (${Math.round(progress * 100)}%). ${missingIndices.length} episodes pending.`,
+          indices: missingIndices,
+        });
+      }
+    } else if (options.isFinalStage) {
+      // Final stage: missing episodes are blockers
+      blockers.push({
+        type: "missing_episode",
+        severity: "blocker",
+        detail: `Missing ${missingIndices.length} of ${expectedCount} episodes at final stage: ${missingIndices.slice(0, 10).join(", ")}`,
+        indices: missingIndices,
+      });
+    } else {
+      // Mid-generation / iterative: missing episodes are progress indicators
+      warnings.push({
+        type: "missing_episode",
+        severity: "progress" as any,
+        detail: `Season progress: ${found} / ${expectedCount} episodes (${Math.round(progress * 100)}%)`,
+        indices: missingIndices,
+      });
+    }
+  }
+
+  // Determine overall tier
+  let tier: ValidationSeverity;
+  if (blockers.length > 0) {
+    tier = "blocker";
+  } else if (warnings.length > 0) {
+    tier = missingIndices.length > 0 && !options.isFinalStage ? "progress" : "warning";
+  } else {
+    tier = "progress"; // all good
+  }
+
+  const summary = missingIndices.length === 0
+    ? `All ${expectedCount} episodes present ✓`
+    : blockers.length > 0
+      ? `${blockers[0].detail}`
+      : `Season progress: ${found} / ${expectedCount} episodes (${Math.round(progress * 100)}%)`;
+
+  return {
+    tier,
+    progress,
+    found,
+    target: expectedCount,
+    blockers,
+    warnings,
+    summary,
+  };
+}

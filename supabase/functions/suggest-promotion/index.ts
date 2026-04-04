@@ -1,0 +1,463 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { STAGE_LADDERS } from "../_shared/stage-ladders.ts";
+import { formatToLane, getLaneLadder, normalizeDocType } from "../_shared/documentLadders.ts";
+import { getCanonicalNextStage, assertValidLadder } from "../_shared/ladder-invariant.ts";
+import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+// ── Canonical ladder helpers (format-aware) ──
+const FORMAT_LADDERS: Record<string, string[]> = STAGE_LADDERS.FORMAT_LADDERS;
+
+function getLadderForFormat(format: string): string[] {
+  const key = (format || "film").toLowerCase().replace(/[_ ]+/g, "-");
+  return FORMAT_LADDERS[key] ?? FORMAT_LADDERS["film"] ?? [];
+}
+
+function nextDocForFormat(currentStage: string, format: string): string | null {
+  const ladder = getLadderForFormat(format);
+  const normalized = normalizeDocType(currentStage, null, format);
+  return getCanonicalNextStage({
+    ladder,
+    currentStage: normalized,
+    format,
+    source: "suggest-promotion",
+  });
+}
+
+function resolveCurrentStage(rawDocType: string, format: string): string | null {
+  const ladder = getLadderForFormat(format);
+  const normalized = normalizeDocType(rawDocType, null, format);
+  if (ladder.includes(normalized)) return normalized;
+  // ARCHITECTURE-STRICT: no silent fallback — unresolved stages must fail explicitly
+  console.error(
+    `[suggest-promotion] UNRESOLVED STAGE — raw: "${rawDocType}", normalized: "${normalized}", format: "${format}", ladder: [${ladder.join(", ")}]`
+  );
+  return null;
+}
+
+// ── Stage-specific weight profiles (keyed by canonical stage names) ──
+const DEFAULT_WEIGHTS = { ci: 0.30, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.15, pen: 0.05 };
+const WEIGHTS: Record<string, { ci: number; gp: number; gap: number; traj: number; hi: number; pen: number }> = {
+  idea:              { ci: 0.20, gp: 0.30, gap: 0.10, traj: 0.15, hi: 0.20, pen: 0.05 },
+  concept_brief:     { ci: 0.25, gp: 0.25, gap: 0.10, traj: 0.15, hi: 0.20, pen: 0.05 },
+  treatment:         { ci: 0.30, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.15, pen: 0.05 },
+  story_outline:     { ci: 0.30, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.15, pen: 0.05 },
+  character_bible:   { ci: 0.30, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.15, pen: 0.05 },
+  beat_sheet:        { ci: 0.35, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.10, pen: 0.05 },
+  feature_script:    { ci: 0.35, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.10, pen: 0.05 },
+  episode_script:    { ci: 0.35, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.10, pen: 0.05 },
+  season_script:     { ci: 0.35, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.10, pen: 0.05 },
+  production_draft:  { ci: 0.35, gp: 0.20, gap: 0.10, traj: 0.20, hi: 0.10, pen: 0.05 },
+};
+
+// ── Trajectory score mapping ──
+function trajectoryScore(t: string | null): number {
+  switch ((t || "").toLowerCase().replace(/[_-]/g, "")) {
+    case "converging": return 90;
+    case "strengthened": return 85;
+    case "stalled": return 55;
+    case "overoptimised": case "overoptimized": return 60;
+    case "eroding": return 25;
+    default: return 55;
+  }
+}
+
+function clamp(v: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, v)); }
+
+// ── Derive blocker / high-impact counts from raw_ai_response JSONB ──
+const SEMANTIC_BLOCKER_PHRASES = [
+  "major blocker", "narrative blocker", "fatal flaw", "core flaw",
+  "doesn't work", "does not work", "fundamental problem", "story breaks",
+  "no clear protagonist", "no stakes", "no engine",
+];
+
+function isSemanticBlocker(text: string): boolean {
+  return SEMANTIC_BLOCKER_PHRASES.some(p => text.toLowerCase().includes(p));
+}
+
+function deriveCounts(raw: any): { blockers: number; highImpact: number; blockerTexts: string[] } {
+  if (!raw) return { blockers: 0, highImpact: 0, blockerTexts: [] };
+  const blocking = raw.blocking_issues || raw.blockers || [];
+  const high = raw.high_impact_notes || raw.high_impact || [];
+  const blockerTexts = blocking.map((b: any) =>
+    typeof b === "string" ? b : b?.description || b?.note || JSON.stringify(b)
+  );
+
+  // Promote semantic blockers from high-impact into blockers
+  const hiTexts = high.map((h: any) => typeof h === "string" ? h : h?.description || h?.note || "");
+  const promoted = hiTexts.filter((t: string) => isSemanticBlocker(t) && !blockerTexts.includes(t));
+
+  return {
+    blockers: blocking.length + promoted.length,
+    highImpact: high.length - promoted.length,
+    blockerTexts: [...blockerTexts, ...promoted],
+  };
+}
+
+// ── Simple string hash for thrash detection ──
+function hashStr(s: string): string {
+  return s.toLowerCase().trim().slice(0, 80);
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
+    const token = authHeader.replace("Bearer ", "");
+    const { data: { user }, error: claimsErr } = await supabase.auth.getUser(token);
+    if (claimsErr || !user) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
+    }
+    const userId = user.id;
+
+    const body = await req.json();
+    const sessionId: string = body.sessionId;
+    const currentDocumentRaw: string = body.current_document || "concept_brief";
+    const projectFormat: string = body.format || "film";
+
+    if (!sessionId) {
+      return new Response(JSON.stringify({ error: "sessionId required" }), { status: 400, headers: corsHeaders });
+    }
+
+    const currentDocument = resolveCurrentStage(currentDocumentRaw, projectFormat);
+    if (currentDocument === null) {
+      return respond({
+        recommendation: "escalate",
+        next_document: null,
+        readiness_score: 0,
+        confidence: 0,
+        reasons: [
+          `Unresolved stage: raw="${currentDocumentRaw}", format="${projectFormat}"`,
+          "Stage does not exist in canonical ladder — promotion refused",
+        ],
+        must_fix_next: ["Correct the document type or project format"],
+        risk_flags: ["hard_gate:unresolved_stage"],
+      });
+    }
+
+    // ── STAGE IDENTITY GATE — block promotion for malformed stage artifacts ──
+    const stageIdDocTypes = new Set(["idea", "concept_brief"]);
+    if (stageIdDocTypes.has(currentDocument) && body.projectId) {
+      const serviceClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const { data: sidDoc } = await serviceClient.from("project_documents")
+        .select("id").eq("project_id", body.projectId).eq("doc_type", currentDocument)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (sidDoc) {
+        const { data: sidVer } = await serviceClient.from("project_document_versions")
+          .select("id, plaintext, meta_json").eq("document_id", sidDoc.id).eq("is_current", true).maybeSingle();
+        if (sidVer?.plaintext) {
+          const sidResult = validateStageIdentity(currentDocument, sidVer.plaintext);
+          if (sidResult && !sidResult.pass) {
+            console.error(`[suggest-promotion][IEL] STAGE_IDENTITY_BLOCKED { doc_type: "${currentDocument}", violation: "${sidResult.violation}" }`);
+            return respond({
+              recommendation: "escalate",
+              next_document: null,
+              readiness_score: 0,
+              confidence: 0,
+              reasons: [
+                `Stage identity violation: ${sidResult.violation}`,
+                sidResult.repair_hint || "Document must be regenerated with correct stage constraints",
+                "Promotion blocked until stage identity passes",
+              ],
+              must_fix_next: [sidResult.repair_hint || `Regenerate as valid ${currentDocument}`],
+              risk_flags: ["hard_gate:stage_identity_blocked", `violation:${sidResult.violation}`],
+              stage_identity_blocked: true,
+              stage_identity: {
+                passed: false,
+                violation: sidResult.violation,
+                violations: sidResult.details.violations,
+                repair_hint: sidResult.repair_hint,
+              },
+            });
+          }
+        }
+      }
+    }
+
+    // ── Fetch session ──
+    const { data: session, error: sessErr } = await supabase
+      .from("dev_engine_sessions")
+      .select("*")
+      .eq("id", sessionId)
+      .eq("user_id", userId)
+      .single();
+
+    if (sessErr || !session) {
+      return new Response(JSON.stringify({ error: "Session not found or access denied" }), { status: 404, headers: corsHeaders });
+    }
+
+    const latestCI = Number(session.latest_ci) || 0;
+    const latestGP = Number(session.latest_gp) || 0;
+    const latestGap = Number(session.latest_gap) || 0;
+    const sessionTrajectory = session.trajectory || null;
+    const currentIteration = session.current_iteration || 1;
+
+    // ── Fetch last 3 iterations ──
+    const { data: iterations } = await supabase
+      .from("dev_engine_iterations")
+      .select("iteration_number, trajectory, raw_ai_response, ci_score, gp_score, gap")
+      .eq("session_id", sessionId)
+      .order("iteration_number", { ascending: false })
+      .limit(3);
+
+    const iters = (iterations || []).reverse(); // chronological order
+
+    // Derive blocker/high-impact counts from latest iteration
+    const latestIter = iters.length > 0 ? iters[iters.length - 1] : null;
+    const latestCounts = deriveCounts(latestIter?.raw_ai_response);
+    const blockersCount = latestCounts.blockers;
+    const highImpactCount = latestCounts.highImpact;
+
+    const reasons: string[] = [];
+    const riskFlags: string[] = [];
+    const mustFixNext: string[] = [];
+
+    // Risk flag if blocker count unavailable
+    if (!latestIter?.raw_ai_response) {
+      riskFlags.push("blocker_count_unavailable");
+    }
+
+    if (currentDocumentRaw !== currentDocument) {
+      riskFlags.push("document_type_assumed");
+    }
+
+    // ══════════════════════════════════
+    // WEIGHTED READINESS SCORE (computed first, always)
+    // ══════════════════════════════════
+
+    const w = WEIGHTS[currentDocument] || DEFAULT_WEIGHTS;
+    const gapScore = 100 - clamp(latestGap * 2, 0, 100);
+    const trajScore = trajectoryScore(sessionTrajectory);
+    const hiScore = 100 - clamp(highImpactCount * 10, 0, 60);
+    const iterPenalty = clamp((currentIteration - 2) * 4, 0, 20);
+
+    let readinessScore = Math.round(
+      latestCI * w.ci +
+      latestGP * w.gp +
+      gapScore * w.gap +
+      trajScore * w.traj +
+      hiScore * w.hi -
+      iterPenalty * w.pen
+    );
+    readinessScore = clamp(readinessScore, 0, 100);
+
+    const confidence = computeConfidence(currentIteration, highImpactCount, latestGap, sessionTrajectory);
+
+    // ══════════════════════════════════
+    // HARD GATES (override recommendation, keep readinessScore)
+    // ══════════════════════════════════
+
+    // Gate A — Blockers
+    if (blockersCount > 0) {
+      riskFlags.push("hard_gate:blockers");
+      reasons.push("Promotion blocked by active blocking issues (" + blockersCount + ")");
+      reasons.push("Readiness score: " + readinessScore + "/100");
+      mustFixNext.push(...latestCounts.blockerTexts.slice(0, 3));
+      if (mustFixNext.length === 0) mustFixNext.push("Resolve blocking issues");
+
+      return respond({
+        recommendation: "stabilise",
+        next_document: null,
+        readiness_score: readinessScore,
+        confidence,
+        reasons,
+        must_fix_next: mustFixNext,
+        risk_flags: riskFlags,
+      });
+    }
+
+    // Gate B — Trajectory crash (eroding 2 consecutive)
+    if (iters.length >= 2) {
+      const lastTwo = iters.slice(-2);
+      const bothEroding = lastTwo.every(
+        (it) => (it.trajectory || "").toLowerCase() === "eroding"
+      );
+      if (bothEroding) {
+        riskFlags.push("hard_gate:eroding_trajectory");
+        reasons.push("Trajectory eroding across iterations");
+        reasons.push("Readiness score: " + readinessScore + "/100");
+        mustFixNext.push("Run Executive Strategy Loop");
+        return respond({
+          recommendation: "escalate",
+          next_document: null,
+          readiness_score: readinessScore,
+          confidence,
+          reasons,
+          must_fix_next: mustFixNext,
+          risk_flags: riskFlags,
+        });
+      }
+    }
+
+    // Gate C — Thrash detection
+    if (iters.length >= 3) {
+      const counts = iters.map((it) => deriveCounts(it.raw_ai_response).blockers);
+      const oscillation =
+        (counts[0] === 0 && counts[1] > 0 && counts[2] === 0) ||
+        (counts[0] > 0 && counts[1] === 0 && counts[2] > 0);
+
+      let repeatedIssue = false;
+      const allBlockerHashes = iters.map((it) =>
+        deriveCounts(it.raw_ai_response).blockerTexts.map(hashStr)
+      );
+      if (allBlockerHashes.length === 3) {
+        const flat0 = new Set(allBlockerHashes[0]);
+        const flat1 = new Set(allBlockerHashes[1]);
+        const flat2 = new Set(allBlockerHashes[2]);
+        for (const h of flat0) {
+          if (flat1.has(h) && flat2.has(h)) { repeatedIssue = true; break; }
+        }
+      }
+
+      if (oscillation || repeatedIssue) {
+        riskFlags.push("hard_gate:thrash");
+        reasons.push("Note thrash detected");
+        reasons.push("Readiness score: " + readinessScore + "/100");
+        mustFixNext.push("Run Executive Strategy Loop");
+        return respond({
+          recommendation: "escalate",
+          next_document: null,
+          readiness_score: readinessScore,
+          confidence,
+          reasons,
+          must_fix_next: mustFixNext,
+          risk_flags: riskFlags,
+        });
+      }
+    }
+
+    // Gate D — Early-stage high-impact
+    if ((currentDocument === "idea" || currentDocument === "concept_brief") && highImpactCount > 0) {
+      riskFlags.push("hard_gate:early_stage_high_impact");
+      reasons.push("Promotion blocked by early-stage high-impact issues (" + highImpactCount + ")");
+      reasons.push("Readiness score: " + readinessScore + "/100");
+      const hiNotes = (latestIter?.raw_ai_response?.high_impact_notes || latestIter?.raw_ai_response?.high_impact || []).slice(0, 3);
+      for (const n of hiNotes) {
+        mustFixNext.push(typeof n === "string" ? n : n?.description || n?.note || "Resolve high-impact notes");
+      }
+      if (mustFixNext.length === 0) mustFixNext.push("Resolve high-impact notes");
+      mustFixNext.push("Run another editorial pass");
+      return respond({
+        recommendation: "stabilise",
+        next_document: null,
+        readiness_score: readinessScore,
+        confidence,
+        reasons,
+        must_fix_next: mustFixNext,
+        risk_flags: riskFlags,
+      });
+    }
+
+    // ══════════════════════════════════
+    // DECISION BANDS (no hard gate fired)
+    // ══════════════════════════════════
+
+    let recommendation: "promote" | "stabilise" | "escalate";
+    const next = nextDocForFormat(currentDocument, projectFormat);
+
+    if (readinessScore >= 78) {
+      recommendation = "promote";
+    } else if (readinessScore >= 65) {
+      recommendation = "stabilise";
+    } else {
+      recommendation = "escalate";
+    }
+
+    // Over-Optimised nudge
+    if (
+      (sessionTrajectory || "").toLowerCase().replace(/[_-]/g, "") === "overoptimised" &&
+      blockersCount === 0 &&
+      latestGP >= 60 &&
+      readinessScore >= 72
+    ) {
+      recommendation = "promote";
+      reasons.push("Over-optimised: promote to avoid endless polishing");
+    }
+
+    // ── Reasons ──
+    reasons.push(`Readiness score: ${readinessScore}/100`);
+    reasons.push(`CI: ${latestCI}, GP: ${latestGP}, Gap: ${latestGap}`);
+    reasons.push(`Trajectory: ${sessionTrajectory || "unknown"}`);
+    if (highImpactCount > 0) {
+      reasons.push(`${highImpactCount} high-impact note(s) remaining`);
+    }
+    if (currentIteration > 3) {
+      reasons.push(`${currentIteration} iterations completed — diminishing returns possible`);
+    }
+
+    // ── Must-fix-next ──
+    if (recommendation === "promote" && next) {
+      mustFixNext.push(`Promote to ${next}`);
+    } else if (recommendation === "stabilise") {
+      const hiNotes = (latestIter?.raw_ai_response?.high_impact_notes || []).slice(0, 2);
+      for (const n of hiNotes) {
+        mustFixNext.push(typeof n === "string" ? n : n?.description || n?.note || "Resolve high-impact notes");
+      }
+      if (mustFixNext.length === 0) mustFixNext.push("Resolve high-impact notes");
+      mustFixNext.push("Run another editorial pass");
+    } else if (recommendation === "escalate") {
+      mustFixNext.push("Run Executive Strategy Loop");
+      mustFixNext.push("Consider repositioning format or lane");
+    }
+
+    return respond({
+      recommendation,
+      next_document: recommendation === "promote" ? next : null,
+      readiness_score: readinessScore,
+      confidence,
+      reasons,
+      must_fix_next: mustFixNext,
+      risk_flags: riskFlags,
+    });
+  } catch (e: any) {
+    return new Response(JSON.stringify({ error: e.message || "Internal error" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
+
+// ── Helpers ──
+
+function computeConfidence(
+  currentIteration: number,
+  highImpactCount: number,
+  gap: number,
+  trajectory: string | null
+): number {
+  let c = 70;
+  if (currentIteration <= 1) c -= 10;
+  if (highImpactCount >= 5) c -= 10;
+  if (gap >= 20) c -= 15;
+  const t = (trajectory || "").toLowerCase().replace(/[_-]/g, "");
+  if (t === "converging" || t === "strengthened") c += 10;
+  return clamp(c, 0, 100);
+}
+
+function respond(data: any): Response {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}

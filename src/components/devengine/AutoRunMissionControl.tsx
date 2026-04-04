@@ -1,0 +1,2277 @@
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { usePlateauDiagnosis } from '@/hooks/usePlateauDiagnosis';
+import { PlateauDiagnosisPanel } from '@/components/devengine/PlateauDiagnosisPanel';
+import { useRunSnapshot } from '@/hooks/useRunSnapshot';
+import { ChunkProgressPanel } from '@/components/documents/ChunkProgressPanel';
+import { StepBudgetControl } from './StepBudgetControl';
+import { VersionCapControl } from './VersionCapControl';
+import { AutoRunProgressInfo } from './AutoRunProgressInfo';
+import { useRegenerateInsufficient, type RegenSummary } from '@/hooks/useRegenerateInsufficient';
+import { useSeedPackStatus } from '@/hooks/useSeedPackStatus';
+import { useQueryClient } from '@tanstack/react-query';
+import { buildSeedSummary, type SeedSummary } from '@/lib/seedSummary';
+import { getLadderForFormat } from '@/lib/stages/registry';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Switch } from '@/components/ui/switch';
+import { toast } from '@/hooks/use-toast';
+import {
+  Play, Pause, Square, RotateCcw, Zap, AlertTriangle, CheckCircle2, Loader2,
+  Eye, FileText, Copy, Download, ChevronRight, Shield, Rocket, Settings2,
+  HelpCircle, ArrowUpRight, Radio, Film, Clock, BookOpen,
+} from 'lucide-react';
+import { toast as sonnerToast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import type { AutoRunJob, AutoRunStep, PendingDecision } from '@/hooks/useAutoRun';
+import type { DocumentTextResult } from '@/hooks/useAutoRunMissionControl';
+import type { DeliverableType } from '@/lib/dev-os-config';
+
+// ── Execution mode (from shared config) ──
+import { AUTO_RUN_EXECUTION_MODE, EXECUTION_MODE_LABEL } from '@/lib/autoRunConfig';
+
+// ── Constants ──
+import { ALL_DOC_TYPE_LABELS } from '@/lib/can-promote-to-script';
+import { normalizePendingDecisionsForUI } from '@/lib/decisions/normalizeDecisionUI';
+
+/** Deterministic label: canonical registry → snake_case Title Case fallback. Never returns undefined. */
+function docLabel(key: string | null | undefined): string {
+  if (!key) return 'Document';
+  return ALL_DOC_TYPE_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+// LADDER_OPTIONS and LADDER_LABELS removed — jump-to-stage select now derives from the
+// live `ladder` computed value (getLadderForFormat(projectFormat)) inside the component.
+
+// ── Provenance badge helper ──
+type InferMethod = 'extracted' | 'inferred' | 'default' | 'project';
+const METHOD_BADGE: Record<InferMethod, { label: string; color: string }> = {
+  extracted: { label: 'From docs', color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' },
+  inferred:  { label: 'Inferred',  color: 'bg-sky-500/15 text-sky-400 border-sky-500/30' },
+  project:   { label: 'Project',   color: 'bg-violet-500/15 text-violet-400 border-violet-500/30' },
+  default:   { label: 'Default',   color: 'bg-muted text-muted-foreground' },
+};
+
+async function callInferCriteria(projectId: string): Promise<{ criteria: Record<string, string>; sources: Record<string, { source_doc_type: string; method: InferMethod }> } | null> {
+  try {
+    const { supabase } = await import('@/integrations/supabase/client');
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return null;
+    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/infer-criteria`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      body: JSON.stringify({ project_id: projectId }),
+    });
+    if (!resp.ok) return null;
+    return await resp.json();
+  } catch { return null; }
+}
+
+const STATUS_STYLES: Record<string, { color: string; label: string }> = {
+  running: { color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: '● Running' },
+  paused: { color: 'bg-amber-500/15 text-amber-400 border-amber-500/30', label: '⏸ Paused' },
+  stopped: { color: 'bg-destructive/15 text-destructive border-destructive/30', label: '⏹ Stopped' },
+  completed: { color: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30', label: '✓ Completed' },
+  failed: { color: 'bg-destructive/15 text-destructive border-destructive/30', label: '✗ Failed' },
+  queued: { color: 'bg-muted text-muted-foreground', label: 'Queued' },
+};
+
+const LANE_OPTIONS = ['studio', 'indie-studio', 'independent-film', 'micro-budget', 'prestige', 'mainstream', 'genre', 'arthouse'];
+const BUDGET_OPTIONS = ['micro', 'low', 'medium', 'high', 'tentpole'];
+
+// ── Props ──
+interface ProjectDocument {
+  id: string;
+  doc_type: string;
+  title: string;
+}
+
+interface ProjectData {
+  title?: string | null;
+  format?: string | null;
+  assigned_lane?: string | null;
+  budget_range?: string | null;
+  genres?: string[] | null;
+  comparable_titles?: string | null;
+  tone?: string | null;
+  target_audience?: string | null;
+  episode_target_duration_seconds?: number | null;
+  season_episode_count?: number | null;
+  guardrails_config?: any;
+  pitchLogline?: string | null;
+  pitchPremise?: string | null;
+}
+
+// Must stay in sync with APPROVAL_REQUIRED_STAGES in src/lib/pipeline-brain.ts
+const APPROVAL_REQUIRED_STAGES = new Set(['episode_grid', 'character_bible', 'season_arc', 'format_rules']);
+
+const SEED_DOC_TYPES = ['project_overview', 'creative_brief', 'market_positioning', 'canon', 'nec'];
+const SEED_LABELS: Record<string, string> = {
+  project_overview: 'Overview', creative_brief: 'Brief', market_positioning: 'Market', canon: 'Canon', nec: 'NEC',
+};
+
+interface AutoRunMissionControlProps {
+  projectId: string;
+  currentDeliverable: DeliverableType;
+  job: AutoRunJob | null;
+  steps: AutoRunStep[];
+  isRunning: boolean;
+  error: string | null;
+  connectionState?: 'online' | 'reconnecting' | 'disconnected';
+  activated: boolean;
+  onActivate: () => void;
+  onStart: (mode: string, startDoc: string, targetDoc?: string) => void;
+  /** Map of document_id -> approved_version_id, used for pipeline progress */
+  approvedVersionMap?: Record<string, string>;
+  onPause: () => void;
+  onResume: (followLatest?: boolean) => void;
+  onSetResumeSource: (documentId: string, versionId: string) => Promise<void>;
+  onStop: () => void;
+  onRunNext: () => void;
+  onClear: () => void;
+  onGetPendingDoc: () => Promise<any>;
+  onApproveNext: (decision: 'approve' | 'revise' | 'stop') => void;
+  onApproveDecision: (decisionId: string, selectedValue: string) => void;
+  onApplyDecisionsAndContinue?: (selectedOptions: Array<{ note_id: string; option_id: string; custom_direction?: string }>, globalDirections?: string[]) => Promise<void>;
+  onApproveSeedCore: () => Promise<any>;
+  onSetStage: (stage: string) => void;
+  onForcePromote: () => void;
+  onRestartFromStage: (stage: string) => void;
+  onSaveStorySetup: (setup: Record<string, string>) => Promise<void>;
+  onSaveQualifications: (quals: any) => Promise<void>;
+  onSaveLaneBudget: (lane: string, budget: string) => Promise<void>;
+  onSaveGuardrails: (gc: any) => Promise<void>;
+  fetchDocumentText: (documentId?: string, versionId?: string) => Promise<DocumentTextResult | null>;
+  /** Step budget control */
+  onUpdateStepLimit: (newLimit: number) => Promise<void>;
+  onResumeFromStepLimit: () => Promise<void>;
+  /** Version cap control */
+  onUpdateVersionCap?: (newCap: number) => Promise<void>;
+  /** Auto-decide toggle */
+  onToggleAllowDefaults?: (val: boolean) => Promise<void>;
+  /** Update convergence target */
+  onUpdateTarget?: (ci: number, gp: number) => Promise<void>;
+  /** Repair baseline when BASELINE_MISSING */
+  onRepairBaseline?: (strategy: 'promote_best_scored' | 'promote_latest') => Promise<void>;
+  /** Analysis data for auto-filling story setup */
+  latestAnalysis?: any;
+  /** Current document text to show in viewer */
+  currentDocText?: string;
+  /** Current document metadata */
+  currentDocMeta?: { doc_type?: string; version?: number; char_count?: number };
+  /** All documents in the project for start-from picker */
+  availableDocuments?: ProjectDocument[];
+  /** Project data for pre-filling fields */
+  project?: ProjectData | null;
+}
+
+// ── Sub-components ──
+
+function DecisionCard({ decision, selectedValue, onSelect }: { 
+  decision: PendingDecision; 
+  selectedValue?: string;
+  onSelect: (id: string, val: string) => void;
+}) {
+  const missingFields: string[] = [];
+  if (!decision?.id) missingFields.push('id');
+  if (!decision?.question) missingFields.push('question');
+  if (!Array.isArray(decision?.options)) missingFields.push('options');
+
+  if (missingFields.length > 0) {
+    console.warn('[decisions][IEL] malformed_payload', {
+      source: 'auto-run-mission-control:decision-card',
+      decision_key: (decision as any)?.decision_key ?? decision?.id ?? 'unknown',
+      missing_fields: missingFields,
+    });
+    return (
+      <div className="border border-destructive/40 bg-destructive/5 rounded-md p-3">
+        <p className="text-xs font-medium text-destructive">Malformed decision payload</p>
+      </div>
+    );
+  }
+
+  const safeOptions = Array.isArray(decision.options) ? decision.options : [];
+
+  return (
+    <div className="border border-amber-500/30 bg-amber-500/5 rounded-md p-3 space-y-2">
+      <div className="flex items-start gap-2">
+        <HelpCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+        <div className="flex-1">
+          <p className="text-xs font-medium">{decision.question}</p>
+          <Badge variant="outline" className={`text-[8px] px-1 py-0 mt-1 ${decision.impact === 'blocking' ? 'bg-destructive/10 text-destructive border-destructive/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'}`}>
+            {decision.impact === 'blocking' ? 'Blocking' : 'Optional'}
+          </Badge>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {safeOptions.map((opt) => (
+          <button key={opt.value} onClick={() => onSelect(decision.id, opt.value)}
+            className={`w-full text-left text-[11px] p-2 rounded border transition-colors hover:bg-primary/10 hover:border-primary/40 ${
+              selectedValue === opt.value ? 'border-primary bg-primary/10 ring-1 ring-primary/30' :
+              decision.recommended === opt.value ? 'border-primary/40 bg-primary/5' : 'border-border/50 bg-background'
+            }`}>
+            <span className="font-medium">{opt.value}</span>
+            {decision.recommended === opt.value && (
+              <Badge variant="outline" className="text-[8px] px-1 py-0 ml-1.5 bg-primary/10 text-primary border-primary/30">recommended</Badge>
+            )}
+            {selectedValue === opt.value && (
+              <Badge variant="outline" className="text-[8px] px-1 py-0 ml-1.5 bg-emerald-500/10 text-emerald-400 border-emerald-500/30">selected</Badge>
+            )}
+            <p className="text-muted-foreground mt-0.5">{opt.why}</p>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StepTimeline({ steps, onViewOutput }: { steps: AutoRunStep[]; onViewOutput: (step: AutoRunStep) => void }) {
+  const actionColors: Record<string, string> = {
+    review: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    rewrite: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    generate: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    promotion_check: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    finalize_promote_best: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    promote_failed: 'bg-destructive/15 text-destructive border-destructive/30',
+    approval_required: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    stop: 'bg-destructive/15 text-destructive border-destructive/30',
+    start: 'bg-muted text-muted-foreground',
+    force_promote: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    set_stage: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    seed_pack_failed: 'bg-destructive/15 text-destructive border-destructive/30',
+    seed_pack_verified: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    stabilise: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    pause_for_approval: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    decision_applied: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    decisions_rewrite_failed: 'bg-destructive/15 text-destructive border-destructive/30',
+    baseline_missing: 'bg-destructive/15 text-destructive border-destructive/30',
+    baseline_missing_no_text: 'bg-destructive/15 text-destructive border-destructive/30',
+    baseline_repaired: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    baseline_seeded: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    baseline_reanchored_to_best: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    aggregate_compile_skipped: 'bg-muted text-muted-foreground',
+    aggregate_skip_advance: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    gate_decision: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    stagnation_no_blocker_progress: 'bg-destructive/15 text-destructive border-destructive/30',
+    rewrite_accepted: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    rewrite_rejected_regression: 'bg-destructive/15 text-destructive border-destructive/30',
+    frontier_set: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    stale_document_detected: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    criteria_stale_provenance: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    criteria_fail_duration_exhausted: 'bg-destructive/15 text-destructive border-destructive/30',
+    duration_repair_attempt: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    duration_scope_skipped: 'bg-muted text-muted-foreground',
+    // Plateau recovery & cleanup pass actions
+    exceptional_plateau_block: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    plateau_recovery_cleanup: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    plateau_recovery_promoted: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    plateau_recovery_exhausted: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    plateau_recovery_continue: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+    cleanup_pass_started: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    cleanup_pass_accepted: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    cleanup_pass_rejected: 'bg-destructive/15 text-destructive border-destructive/30',
+    cleanup_pass_skipped: 'bg-muted text-muted-foreground',
+    cleanup_pass_not_eligible: 'bg-muted text-muted-foreground',
+    apply_decisions: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    decisions_applied_rewrite: 'bg-violet-500/15 text-violet-400 border-violet-500/30',
+    prereq_gate_blocked: 'bg-destructive/15 text-destructive border-destructive/30',
+    ci_gate_blocked: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+  };
+
+  return (
+    <div className="space-y-1">
+      {steps.map((step) => {
+        const color = actionColors[step.action] || 'bg-muted text-muted-foreground';
+        const hasOutput = step.output_text || (step.output_ref as any)?.docId;
+        return (
+          <div key={step.id} className="flex items-start gap-2 p-2 rounded bg-muted/20 hover:bg-muted/40 transition-colors group">
+            <div className="flex flex-col items-center pt-0.5">
+              <span className="text-[9px] text-muted-foreground font-mono w-5 text-center">{step.step_index}</span>
+              <div className="w-px h-full bg-border/50 mt-1" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <Badge variant="outline" className={`text-[8px] px-1.5 py-0 ${color}`}>{
+                  step.action === 'promotion_check' ? 'evaluation' :
+                  step.action === 'finalize_promote_best' ? '✓ promoted' :
+                  step.action === 'promote_failed' ? '✗ promote failed' :
+                  step.action === 'baseline_missing' ? '⚠ baseline missing' :
+                  step.action === 'baseline_missing_no_text' ? '✗ baseline missing (no text)' :
+                  step.action === 'baseline_repaired' ? '✓ baseline repaired' :
+                  step.action === 'baseline_seeded' ? '✓ baseline seeded' :
+                  step.action === 'aggregate_compile_skipped' ? 'compile cached' :
+                  step.action === 'gate_decision' ? '⚖ gate' :
+                  step.action === 'stagnation_no_blocker_progress' ? '⚠ stagnation' :
+                  step.action === 'rewrite_accepted' ? '✓ accepted' :
+                   step.action === 'rewrite_rejected_regression' ? '✗ rejected' :
+                   step.action === 'frontier_set' ? '↗ frontier' :
+                   step.action === 'baseline_reanchored_to_best' ? '⚡ reanchored to best' :
+                   step.action === 'stale_document_detected' ? '⚠ legacy stale (pre-fix)' :
+                   step.action === 'criteria_stale_provenance' ? '⚠ stale criteria' :
+                   step.action === 'criteria_fail_duration_exhausted' ? '✗ duration fail' :
+                   step.action === 'duration_repair_attempt' ? '⏱ duration repair' :
+                   step.action === 'exceptional_plateau_block' ? '⚠ plateau detected' :
+                   step.action === 'plateau_recovery_cleanup' ? '🔧 cleanup pass' :
+                   step.action === 'plateau_recovery_promoted' ? '✓ plateau promoted' :
+                   step.action === 'plateau_recovery_exhausted' ? '⏸ recovery exhausted' :
+                   step.action === 'plateau_recovery_continue' ? '↗ plateau continue' :
+                   step.action === 'cleanup_pass_started' ? '🔧 cleanup started' :
+                   step.action === 'cleanup_pass_accepted' ? '✓ cleanup accepted' :
+                   step.action === 'cleanup_pass_rejected' ? '✗ cleanup rejected' :
+                   step.action === 'cleanup_pass_skipped' ? 'cleanup skipped' :
+                   step.action === 'cleanup_pass_not_eligible' ? 'cleanup n/a' :
+                   step.action === 'apply_decisions' ? '⚖ apply decisions' :
+                   step.action === 'decisions_applied_rewrite' ? '✓ decisions applied' :
+                   step.action === 'prereq_gate_blocked' ? '⚠ prereq blocked' :
+                   step.action === 'ci_gate_blocked' ? '⚠ CI gate' :
+                   step.action
+                }</Badge>
+                <Badge variant="outline" className="text-[8px] px-1 py-0">{docLabel(step.document)}</Badge>
+                {/* Blocker count badge from output_ref */}
+                {(() => {
+                  const ref = step.output_ref as any;
+                  const bcBefore = ref?.blocker_count_before;
+                  const bcAfter = ref?.blocker_count_after;
+                  if (bcBefore != null && bcAfter != null) {
+                    const improved = bcAfter < bcBefore;
+                    const same = bcAfter === bcBefore;
+                    return (
+                      <Badge variant="outline" className={`text-[7px] px-1 py-0 font-mono ${improved ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : same ? 'bg-amber-500/10 text-amber-400 border-amber-500/30' : 'bg-destructive/10 text-destructive border-destructive/30'}`}>
+                        B:{bcBefore}→{bcAfter}{improved ? '✓' : ''}
+                      </Badge>
+                    );
+                  }
+                  return null;
+                })()}
+                {step.readiness != null && (
+                  <span className="text-[8px] text-muted-foreground">R:{step.readiness}</span>
+                )}
+                {step.confidence != null && (
+                  <span className="text-[8px] text-muted-foreground">C:{step.confidence}</span>
+                )}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{step.summary || '—'}</p>
+              {step.risk_flags?.length > 0 && (
+                <div className="flex gap-1 mt-1 flex-wrap">
+                  {step.risk_flags.map((f, i) => (
+                    <Badge key={i} variant="outline" className="text-[7px] px-1 py-0 bg-destructive/10 text-destructive border-destructive/30">{f}</Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+            {hasOutput && (
+              <Button variant="ghost" size="sm" className="h-5 px-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => onViewOutput(step)}>
+                <Eye className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Format error strings: strip HTML tags, extract structured codes, and truncate */
+function formatErrorDisplay(err: string | null | undefined): string {
+  if (!err) return '';
+  let clean = err.replace(/<[^>]*>/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const codeMatch = clean.match(/^(.+?)\s+error\s+\((\d+)\):\s*(.*)/s);
+  if (codeMatch) {
+    const [, fn, status, body] = codeMatch;
+    const truncBody = body.length > 200 ? body.slice(0, 200) + '…' : body;
+    return `${fn} failed (HTTP ${status}): ${truncBody}`;
+  }
+  return clean.length > 300 ? clean.slice(0, 300) + '…' : clean;
+}
+
+/** Format raw stop_reason constants into user-friendly labels */
+function formatStopReason(reason: string): string {
+  const STOP_LABELS: Record<string, string> = {
+    EXCEPTIONAL_PLATEAU_ESCALATION: 'Quality plateau — recovery options being evaluated',
+    PLATEAU_RECOVERY_EXHAUSTED: 'Quality plateau — all deterministic recovery exhausted',
+    STAGNATION_NO_BLOCKER_PROGRESS: 'Blocker stagnation — no improvement across attempts',
+    SEED_CORE_NOT_OFFICIAL: 'Seed core approval required before continuing',
+    SEED_CORE_MISSING: 'Required seed documents are missing',
+    INPUT_INCOMPLETE: 'Input text is incomplete or missing',
+    VERSION_CAP_REACHED: 'Version cap reached for current document',
+    STEP_LIMIT_REACHED: 'Step budget exhausted',
+  };
+  return STOP_LABELS[reason] || reason;
+}
+
+// ── Main Component ──
+export function AutoRunMissionControl({
+  projectId, currentDeliverable, job, steps, isRunning, error, connectionState,
+  activated, onActivate,
+  onStart, onPause, onResume, onSetResumeSource, onStop, onRunNext, onClear,
+  onGetPendingDoc, onApproveNext, onApproveDecision, onApplyDecisionsAndContinue, onApproveSeedCore,
+  onSetStage, onForcePromote, onRestartFromStage,
+  onSaveStorySetup, onSaveQualifications, onSaveLaneBudget, onSaveGuardrails,
+  fetchDocumentText,
+  onUpdateStepLimit, onResumeFromStepLimit,
+  onUpdateVersionCap,
+  onToggleAllowDefaults,
+  onUpdateTarget,
+  onRepairBaseline,
+  latestAnalysis, currentDocText, currentDocMeta,
+  availableDocuments, project, approvedVersionMap = {},
+}: AutoRunMissionControlProps) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const runSnapshot = useRunSnapshot(job, steps);
+  const { data: plateauDiagnosis } = usePlateauDiagnosis(projectId, job?.id);
+  const [safeMode, setSafeMode] = useState(false);
+  const [startDocument, setStartDocument] = useState(currentDeliverable as string);
+
+  // Document viewer state
+  const [docViewerTab, setDocViewerTab] = useState('current');
+  const [viewerText, setViewerText] = useState('');
+  const [viewerMeta, setViewerMeta] = useState<{ doc_type?: string; version?: number; char_count?: number }>({});
+  const [viewerLoading, setViewerLoading] = useState(false);
+
+  // Pending doc state
+  const [pendingDoc, setPendingDoc] = useState<any>(null);
+  const [pendingLoading, setPendingLoading] = useState(false);
+
+  // Intervention state
+  const [storySetup, setStorySetup] = useState<Record<string, string>>({
+    logline: '', premise: '', tone_genre: '', protagonist: '', antagonist: '',
+    stakes: '', world_rules: '', comparables: '',
+  });
+  const [storySources, setStorySources] = useState<Record<string, { source_doc_type: string; method: InferMethod }>>({});
+  const [inferLoading, setInferLoading] = useState(false);
+  const [storyAutoFilled, setStoryAutoFilled] = useState(false);
+  const inferFiredRef = useRef(false);
+
+  // Reset infer ref when projectId changes so switching projects re-triggers inference
+  useEffect(() => {
+    inferFiredRef.current = false;
+    setStoryAutoFilled(false);
+  }, [projectId]);
+  const [quals, setQuals] = useState({ episode_target_duration_min_seconds: 0, episode_target_duration_max_seconds: 0, season_episode_count: 0, target_runtime_min_low: 0, target_runtime_min_high: 0 });
+  const [lane, setLane] = useState('');
+  const [budget, setBudget] = useState('');
+  const [jumpStage, setJumpStage] = useState('');
+  const [saving, setSaving] = useState<string | null>(null);
+  const [decisionSelections, setDecisionSelections] = useState<Record<string, string>>({});
+  const [submittingDecisions, setSubmittingDecisions] = useState(false);
+  const [showPreflight, setShowPreflight] = useState(false);
+  const [isBundling, setIsBundling] = useState(false);
+
+  const handleExportBundle = useCallback(async () => {
+    setIsBundling(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('bundle-project', {
+        body: { projectId, includeAllCurrent: true },
+      });
+      if (error || !data?.success) throw new Error(data?.error || 'Bundle failed');
+      const escaped = data.bundleText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const projTitle = project?.title || 'Project';
+      const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>${projTitle} — Project Bible</title>
+  <style>
+    body { font-family: Georgia, serif; font-size: 12pt; line-height: 1.6; margin: 2cm; color: #1a1a1a; max-width: 800px; }
+    pre { white-space: pre-wrap; font-family: inherit; }
+    @media print { body { margin: 1.5cm; } }
+  </style>
+</head>
+<body>
+  <pre>${escaped}</pre>
+  <script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+      const blob = new Blob([html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      sonnerToast.success(`Project Bible ready — ${data.docCount} documents bundled`);
+    } catch (e: any) {
+      sonnerToast.error('Could not generate bundle');
+    } finally {
+      setIsBundling(false);
+    }
+  }, [projectId, project?.title]);
+  const [preflightErrors, setPreflightErrors] = useState<string[]>([]);
+  const [approvingSeedCore, setApprovingSeedCore] = useState(false);
+  const regen = useRegenerateInsufficient(projectId);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
+  const autoApprovedGateRef = useRef<string | null>(null);
+
+  // Safe Mode OFF => auto-approve promote/convert gates instead of pausing.
+  useEffect(() => {
+    if (!job || safeMode) {
+      autoApprovedGateRef.current = null;
+      return;
+    }
+    if (!job.awaiting_approval) {
+      autoApprovedGateRef.current = null;
+      return;
+    }
+    if (job.approval_type !== 'promote' && job.approval_type !== 'convert') {
+      autoApprovedGateRef.current = null;
+      return;
+    }
+
+    const gateKey = [
+      job.id,
+      job.approval_type,
+      job.pending_version_id || job.pending_doc_id || 'none',
+      job.updated_at,
+    ].join(':');
+
+    if (autoApprovedGateRef.current === gateKey) return;
+    autoApprovedGateRef.current = gateKey;
+    onApproveNext('approve');
+  }, [
+    safeMode,
+    job?.id,
+    job?.awaiting_approval,
+    job?.approval_type,
+    job?.pending_version_id,
+    job?.pending_doc_id,
+    job?.updated_at,
+    onApproveNext,
+  ]);
+
+  // ── Seed Pack + Pipeline Progress (computed from availableDocuments + ladder) ──
+  const projectFormat = (project?.format || '').toLowerCase().replace(/_/g, '-');
+  const ladder = useMemo(() => getLadderForFormat(projectFormat) ?? [], [projectFormat]);
+  const finalStage = ladder.length > 0 ? ladder[ladder.length - 1] : null;
+
+  const existingDocTypes = useMemo(
+    () => new Set((availableDocuments || []).map(d => d.doc_type)),
+    [availableDocuments],
+  );
+
+  // Seed pack status: version-aware via dedicated hook
+  // Auto-refetch when auto-run pauses for seed core approval
+  useEffect(() => {
+    if (job?.status === 'paused' && job?.stop_reason === 'SEED_CORE_NOT_OFFICIAL') {
+      qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
+    }
+  }, [job?.status, job?.stop_reason, projectId, qc]);
+  const seedPack = useSeedPackStatus(projectId);
+  const seedStatus = useMemo(() => {
+    const present = seedPack.docs.filter(d => d.status !== 'missing').map(d => d.doc_type);
+    const missing = seedPack.docs.filter(d => d.status === 'missing').map(d => d.doc_type);
+    return { present, missing, allPresent: missing.length === 0, docs: seedPack.docs };
+  }, [seedPack.docs]);
+
+  // Seed summary (deterministic, no LLM)
+  const [seedSummary, setSeedSummary] = useState<SeedSummary | null>(null);
+  const [seedSummaryLoading, setSeedSummaryLoading] = useState(false);
+  useEffect(() => {
+    if (seedStatus.allPresent && !seedSummary && !seedSummaryLoading) {
+      setSeedSummaryLoading(true);
+      buildSeedSummary(projectId).then(s => { setSeedSummary(s); setSeedSummaryLoading(false); }).catch(() => setSeedSummaryLoading(false));
+    }
+  }, [seedStatus.allPresent, projectId, seedSummary, seedSummaryLoading]);
+
+  // approvedDocTypes: see APPROVAL_REQUIRED_STAGES at module top
+
+  // Build set of doc_types that have an approved version
+  const approvedDocTypes = useMemo(() => {
+    const set = new Set<string>();
+    if (!availableDocuments) return set;
+    for (const doc of availableDocuments) {
+      if (approvedVersionMap[doc.id]) {
+        set.add(doc.doc_type);
+      }
+    }
+    return set;
+  }, [availableDocuments, approvedVersionMap]);
+
+  const pipelineProgress = useMemo(() => {
+    const satisfied = ladder.filter(stage => {
+      if (!existingDocTypes.has(stage)) return false;
+      // For approval-required stages, must also have an approved version
+      if (APPROVAL_REQUIRED_STAGES.has(stage)) return approvedDocTypes.has(stage);
+      return true;
+    });
+    return { satisfied: satisfied.length, total: ladder.length, stages: ladder, existingDocTypes, approvedDocTypes };
+  }, [ladder, existingDocTypes, approvedDocTypes, APPROVAL_REQUIRED_STAGES]);
+
+  const [starting, setStarting] = useState(false);
+
+  const handlePerfectPackage = useCallback(async () => {
+    setStarting(true);
+    try {
+      await onSaveStorySetup(storySetup);
+      await onStart('balanced', startDocument, finalStage);
+    } catch (e: any) {
+      toast({ title: 'Auto-Run failed to start', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setStarting(false);
+    }
+  }, [storySetup, startDocument, finalStage, onSaveStorySetup, onStart]);
+
+  const [projectPreFilled, setProjectPreFilled] = useState(false);
+  useEffect(() => {
+    if (projectPreFilled || !project) return;
+    // Lane & budget
+    if (project.assigned_lane) setLane(project.assigned_lane);
+    if (project.budget_range) setBudget(project.budget_range);
+    // Qualifications
+    const gc = project.guardrails_config;
+    const gcQuals = gc?.overrides?.qualifications || {};
+    setQuals(prev => ({
+      episode_target_duration_min_seconds: gcQuals.episode_target_duration_min_seconds || (project as any).episode_target_duration_min_seconds || gcQuals.episode_target_duration_seconds || project.episode_target_duration_seconds || prev.episode_target_duration_min_seconds,
+      episode_target_duration_max_seconds: gcQuals.episode_target_duration_max_seconds || (project as any).episode_target_duration_max_seconds || gcQuals.episode_target_duration_seconds || project.episode_target_duration_seconds || prev.episode_target_duration_max_seconds,
+      season_episode_count: gcQuals.season_episode_count || project.season_episode_count || prev.season_episode_count,
+      target_runtime_min_low: gcQuals.target_runtime_min_low || prev.target_runtime_min_low,
+      target_runtime_min_high: gcQuals.target_runtime_min_high || prev.target_runtime_min_high,
+    }));
+    setProjectPreFilled(true);
+  }, [project, projectPreFilled]);
+
+  // ── Auto-infer story setup from project documents (fires once per projectId when activated) ──
+  // inferFiredRef tracks whether we've already fetched for this projectId so we don't loop
+  useEffect(() => {
+    if (!activated || inferFiredRef.current || !projectId) return;
+    inferFiredRef.current = true;
+    setInferLoading(true);
+    callInferCriteria(projectId).then(result => {
+      if (!result) return;
+      const { criteria, sources } = result;
+      // Inference wins: overwrite any field that has a real value from docs/LLM
+      // (method !== 'default'). Default-method values fill blanks only.
+      setStorySetup(prev => {
+        const merged = { ...prev };
+        for (const [key, val] of Object.entries(criteria)) {
+          if (!val?.trim()) continue;
+          const method = sources?.[key]?.method;
+          // Always overwrite if extracted or inferred; only fill blank if default
+          if (method === 'extracted' || method === 'inferred' || !merged[key]) {
+            merged[key] = val;
+          }
+        }
+        return merged;
+      });
+      setStorySources(sources || {});
+      setStoryAutoFilled(true);
+    }).finally(() => setInferLoading(false));
+  }, [activated, projectId]);
+
+  // Fallback: also fill from latestAnalysis if any field still empty after inference
+  useEffect(() => {
+    if (!latestAnalysis) return;
+    const a = latestAnalysis;
+    const extracted: Record<string, string> = {};
+    if (a.logline) extracted.logline = a.logline;
+    if (a.premise) extracted.premise = a.premise;
+    if (a.tone || a.genre) extracted.tone_genre = [a.tone, a.genre].filter(Boolean).join(' / ');
+    if (a.protagonist) extracted.protagonist = typeof a.protagonist === 'string' ? a.protagonist : a.protagonist?.name || '';
+    if (a.antagonist) extracted.antagonist = typeof a.antagonist === 'string' ? a.antagonist : a.antagonist?.name || '';
+    if (a.stakes) extracted.stakes = a.stakes;
+    if (a.world_rules) extracted.world_rules = a.world_rules;
+    if (a.comparables) extracted.comparables = Array.isArray(a.comparables) ? a.comparables.join(', ') : a.comparables;
+    if (!extracted.logline && a.concept?.logline) extracted.logline = a.concept.logline;
+    if (!extracted.premise && a.concept?.premise) extracted.premise = a.concept.premise;
+    if (!extracted.tone_genre && a.concept?.tone) extracted.tone_genre = a.concept.tone;
+    if (!extracted.comparables && a.concept?.comparables) extracted.comparables = Array.isArray(a.concept.comparables) ? a.concept.comparables.join(', ') : a.concept.comparables;
+    if (!extracted.protagonist && a.characters?.length > 0) {
+      const protag = a.characters.find((c: any) => c.role === 'protagonist' || c.is_protagonist);
+      if (protag) extracted.protagonist = protag.name || '';
+    }
+    if (!extracted.antagonist && a.characters?.length > 0) {
+      const antag = a.characters.find((c: any) => c.role === 'antagonist' || c.is_antagonist);
+      if (antag) extracted.antagonist = antag.name || '';
+    }
+    if (Object.keys(extracted).length > 0) {
+      setStorySetup(prev => {
+        const merged = { ...prev };
+        for (const [key, val] of Object.entries(extracted)) {
+          if (val && !merged[key]) merged[key] = val;
+        }
+        return merged;
+      });
+    }
+  }, [latestAnalysis]);
+
+  // Auto-load current document text into viewer
+  useEffect(() => {
+    if (currentDocText && !viewerText) {
+      setViewerText(currentDocText);
+      setViewerMeta(currentDocMeta || {});
+    }
+  }, [currentDocText, currentDocMeta]);
+
+  // Load pending doc when approval gate activates
+  useEffect(() => {
+    if (job?.awaiting_approval && !pendingDoc && !pendingLoading) {
+      setPendingLoading(true);
+      onGetPendingDoc().then(doc => { setPendingDoc(doc); setPendingLoading(false); setDocViewerTab('pending'); })
+        .catch(() => setPendingLoading(false));
+    }
+    if (!job?.awaiting_approval) { setPendingDoc(null); }
+  }, [job?.awaiting_approval, job?.id]);
+
+  // Load current doc text
+  const loadCurrentDoc = async () => {
+    if (!job) return;
+    setViewerLoading(true);
+    const result = await fetchDocumentText(undefined, undefined);
+    // Fetch from current stage
+    if (job.pending_doc_id) {
+      const r = await fetchDocumentText(job.pending_doc_id);
+      if (r) {
+        setViewerText(r.plaintext);
+        setViewerMeta({ doc_type: r.doc_type, version: r.version_number, char_count: r.char_count });
+      }
+    }
+    setViewerLoading(false);
+  };
+
+  const loadStepDoc = async (step: AutoRunStep) => {
+    const ref = step.output_ref as any;
+    setDocViewerTab('step');
+    setViewerLoading(true);
+    if (ref?.docId || ref?.versionId || ref?.newVersionId) {
+      const r = await fetchDocumentText(ref.docId, ref.versionId || ref.newVersionId);
+      if (r) {
+        setViewerText(r.plaintext);
+        setViewerMeta({ doc_type: r.doc_type, version: r.version_number, char_count: r.char_count });
+      }
+    } else if (step.output_text) {
+      setViewerText(step.output_text);
+      setViewerMeta({ char_count: step.output_text.length });
+    }
+    setViewerLoading(false);
+  };
+
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({ title: 'Copied to clipboard' });
+  };
+
+  const downloadTxt = (text: string, filename: string) => {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fallbackDecisions = useMemo<PendingDecision[]>(() => {
+    if (job?.status !== 'paused') return [];
+    // Skip step-limit pauses — handled by dedicated UI
+    if (job?.pause_reason === 'step_limit') return [];
+    const pauseStepWithChoices = [...steps]
+      .reverse()
+      .find((s) => s.action === 'pause_for_approval' && Array.isArray((s.output_ref as any)?.choices));
+
+    const choices = (pauseStepWithChoices?.output_ref as any)?.choices;
+    if (!Array.isArray(choices) || choices.length === 0) return [];
+
+    return choices
+      .filter((c: any) => c?.id && c?.question && Array.isArray(c?.options))
+      .filter((c: any) => c.id !== 'raise_step_limit_once')
+      .map((c: any) => ({
+        id: String(c.id),
+        question: String(c.question),
+        options: c.options
+          .filter((o: any) => o?.value)
+          .map((o: any) => ({
+            value: String(o.value),
+            why: String(o.why || ''),
+          })),
+        recommended: c.recommended ? String(c.recommended) : undefined,
+        impact: c.impact === 'blocking' ? 'blocking' : 'non_blocking',
+      }));
+  }, [job?.status, job?.pause_reason, steps]);
+
+  const activeDecisions = useMemo<PendingDecision[]>(() => {
+    if (job?.status !== 'paused') return [];
+    // Step-limit pauses are fully owned by dedicated UI — no decisions
+    if (job?.pause_reason === 'step_limit') return [];
+    const raw = Array.isArray(job?.pending_decisions) && job.pending_decisions.length > 0
+      ? (job.pending_decisions as any[])
+      : (fallbackDecisions as any[]);
+    const normalized = normalizePendingDecisionsForUI(raw, 'auto-run-mission-control:active_decisions') as any[];
+    // Filter out step-limit decisions — handled by StepBudgetControl
+    return normalized.filter((d) => d.id !== 'raise_step_limit_once' && !d.id?.endsWith(':raise_step_limit_once')) as PendingDecision[];
+  }, [job?.status, job?.pending_decisions, fallbackDecisions]);
+
+  const hasDecisions = activeDecisions.length > 0;
+  const blockingDecision = hasDecisions
+    ? activeDecisions.find(d => d.impact === 'blocking') || activeDecisions[0]
+    : null;
+
+  const hasExceptionalPlateau = job?.status === 'paused' && (
+    job?.stop_reason === 'EXCEPTIONAL_PLATEAU_ESCALATION' || job?.pause_reason === 'EXCEPTIONAL_PLATEAU_ESCALATION'
+    || job?.stop_reason === 'PLATEAU_RECOVERY_EXHAUSTED' || job?.pause_reason === 'PLATEAU_RECOVERY_EXHAUSTED'
+  );
+
+  const hasEscalation = !hasDecisions && job?.pause_reason !== 'step_limit' && job?.pause_reason !== 'stage_exhausted' && (job?.status === 'paused' || job?.status === 'stopped' || job?.status === 'failed') && (
+    job?.last_risk_flags?.some((f: string) => f.startsWith('hard_gate:'))
+    || job?.stop_reason?.includes('Executive Strategy')
+    || hasExceptionalPlateau
+  );
+
+  const statusStyle = STATUS_STYLES[job?.status || 'queued'] || STATUS_STYLES.queued;
+
+  // ── All story setup fields ──
+  const ALL_STORY_FIELDS = [
+    { key: 'logline',     label: 'Logline',     required: true,  multiline: false },
+    { key: 'premise',     label: 'Premise',      required: true,  multiline: true  },
+    { key: 'tone_genre',  label: 'Tone / Genre', required: true,  multiline: false },
+    { key: 'protagonist', label: 'Protagonist',  required: false, multiline: false },
+    { key: 'antagonist',  label: 'Antagonist',   required: false, multiline: false },
+    { key: 'stakes',      label: 'Stakes',       required: false, multiline: false },
+    { key: 'world_rules', label: 'World Rules',  required: false, multiline: false },
+    { key: 'comparables', label: 'Comparables',  required: false, multiline: false },
+  ];
+
+  const handleStartClick = useCallback(async () => {
+    // If a resumable job already exists, resume instead of starting a new one
+    if (job && ['paused', 'running'].includes(job.status)) {
+      console.log(`[mission-control][IEL] start_vs_resume_decision { job_id: "${job.id}", status: "${job.status}", current_document: "${job.current_document}", chosen_action: "resume", reason: "resumable_job_in_state" }`);
+      try {
+        await onResume(true);
+        return;
+      } catch (e: any) {
+        toast({ title: 'Resume failed', description: e?.message, variant: 'destructive' });
+        return;
+      }
+    }
+    setStarting(true);
+    try {
+      await onSaveStorySetup(storySetup);
+      await onStart('balanced', startDocument);
+    } catch (e: any) {
+      toast({ title: 'Auto-Run failed to start', description: e?.message || 'Unknown error', variant: 'destructive' });
+    } finally {
+      setStarting(false);
+    }
+  }, [storySetup, startDocument, onSaveStorySetup, onStart, job, onResume]);
+
+  const handleApproveSeedCore = useCallback(async () => {
+    setApprovingSeedCore(true);
+    try {
+      const result = await onApproveSeedCore();
+      if (result?.success) {
+        const resumed = result?.job?.status === 'running' && !result?.job?.awaiting_approval;
+        if (resumed) {
+          toast({ title: 'Seed Core approved', description: 'Automation resumed — downstream docs will be generated automatically.' });
+        } else {
+          toast({ title: 'Seed Core approved', description: 'Approved successfully, but auto-run is still paused (check the current pause reason).' });
+        }
+      } else if (result?.stop_reason === 'SEED_CORE_MISSING') {
+        toast({ title: 'Cannot approve', description: `Missing: ${(result.missing_docs || result.missing_current_versions || []).join(', ')}`, variant: 'destructive' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Approval failed', description: e?.message, variant: 'destructive' });
+    } finally {
+      setApprovingSeedCore(false);
+    }
+  }, [onApproveSeedCore]);
+
+  const regenDryRunItems = useMemo(
+    () => (regen.dryRunResult?.results?.length ? regen.dryRunResult.results : (regen.dryRunResult?.regenerated || [])),
+    [regen.dryRunResult],
+  );
+
+  const regenAppliedItems = useMemo(
+    () => (regen.result?.results?.length
+      ? regen.result.results.filter(r => r.regenerated)
+      : (regen.result?.regenerated || [])),
+    [regen.result],
+  );
+
+  const invalidateAfterRegen = useCallback(async () => {
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] }),
+      qc.invalidateQueries({ queryKey: ['dev-v2-versions'] }),
+      qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] }),
+    ]);
+  }, [projectId, qc]);
+
+  const handleRegenScan = useCallback(async () => {
+    const res = await regen.scan();
+    const dryItems = (res?.results?.length ? res.results : (res?.regenerated || []));
+    if (res && dryItems.length > 0) {
+      setShowRegenConfirm(true);
+    } else if (res) {
+      toast({ title: 'All docs sufficient', description: `Scanned ${res.scanned} stages — no stubs found.` });
+    }
+  }, [regen]);
+
+  const handleRegenConfirm = useCallback(async () => {
+    setShowRegenConfirm(false);
+    const res = await regen.regenerate();
+    const fixedItems = (res?.results?.length
+      ? res.results.filter(r => r.regenerated)
+      : (res?.regenerated || []));
+    await invalidateAfterRegen();
+    if (fixedItems.length > 0) {
+      toast({
+        title: `Regenerated ${fixedItems.length} doc${fixedItems.length > 1 ? 's' : ''}`,
+        description: fixedItems.map(r => r.doc_type.replace(/_/g, ' ')).join(', '),
+      });
+    } else {
+      toast({ title: 'No docs regenerated' });
+    }
+  }, [invalidateAfterRegen, regen]);
+
+  const handleReInfer = useCallback(() => {
+    setInferLoading(true);
+    setStoryAutoFilled(false);
+    callInferCriteria(projectId).then(result => {
+      if (!result) { setInferLoading(false); return; }
+      const { criteria, sources } = result;
+      // Full overwrite on manual rebuild — replace all fields from docs
+      setStorySetup(prev => {
+        const merged = { ...prev };
+        for (const [key, val] of Object.entries(criteria)) {
+          if (!val?.trim()) continue;
+          const method = sources?.[key]?.method;
+          if (method === 'extracted' || method === 'inferred' || !merged[key]) {
+            merged[key] = val;
+          }
+        }
+        return merged;
+      });
+      setStorySources(sources || {});
+      setStoryAutoFilled(true);
+    }).finally(() => setInferLoading(false));
+  }, [projectId]);
+
+  // ── Not activated → Show activate button ──
+  if (!activated) {
+    return (
+      <Card className="border-border/40">
+        <CardContent className="py-8 flex flex-col items-center gap-3 text-center">
+          <Rocket className="h-8 w-8 text-muted-foreground" />
+          <div>
+            <p className="text-sm font-medium">Auto-Run is off</p>
+            <p className="text-xs text-muted-foreground mt-1">Activate to automate the development ladder from idea to script.</p>
+          </div>
+          <Button size="sm" onClick={onActivate} className="gap-1.5">
+            <Zap className="h-3.5 w-3.5" /> Activate Auto-Run
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // ── No job or terminal state → Start form ──
+  if (!job || ['completed', 'stopped', 'failed'].includes(job.status)) {
+    return (
+      <Card className="border-primary/20">
+        <CardHeader className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Rocket className="h-4 w-4" /> Auto-Run Mission Control
+            </CardTitle>
+            {/* Re-infer button */}
+            <Button
+              variant="ghost" size="sm"
+              className="h-6 text-[10px] gap-1 text-muted-foreground"
+              onClick={handleReInfer}
+              disabled={inferLoading}
+              title="Re-pull fields from project documents"
+            >
+              {inferLoading
+                ? <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                : <RotateCcw className="h-2.5 w-2.5" />
+              }
+              {inferLoading ? 'Reading docs…' : 'Re-read docs'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3">
+          {/* Connection state banner */}
+          {connectionState === 'reconnecting' && (
+            <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/20 text-xs text-yellow-400 flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" /> Reconnecting to backend…
+            </div>
+          )}
+          {connectionState === 'disconnected' && (
+            <div className="p-2 rounded bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+              ⚠ Connection lost — backend continues independently. Retrying…
+            </div>
+          )}
+          {hasExceptionalPlateau && plateauDiagnosis ? (
+            <PlateauDiagnosisPanel
+              diagnosis={plateauDiagnosis}
+              onForceAdvance={() => onResume?.()}
+              onStop={() => onStop?.()}
+            />
+          ) : hasExceptionalPlateau ? (
+            <div className="p-2.5 rounded bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 space-y-2">
+              <div className="font-semibold flex items-center gap-1.5">⚠ Plateau — Progress Exhausted</div>
+              <div className="text-amber-300/80">
+                Quality optimization plateaued at CI {job?.last_ci ?? '?'}. All deterministic recovery options have been exhausted. Choose an action below.
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 border-primary/40 text-primary hover:bg-primary/10"
+                  onClick={() => onResume?.()}>
+                  <Play className="h-2.5 w-2.5 mr-1" /> Force Continue
+                </Button>
+                <Button variant="outline" size="sm" className="h-6 text-[10px] px-2 border-border/50 text-muted-foreground hover:bg-muted/30"
+                  onClick={() => onStop?.()}>
+                  <Square className="h-2.5 w-2.5 mr-1" /> Stop Run
+                </Button>
+              </div>
+            </div>
+          ) : null}
+          {job?.status === 'completed' && (
+            <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400">
+              ✓ {job.stop_reason || 'Target reached'} · {job.step_count} steps
+            </div>
+          )}
+          {job?.status === 'stopped' && (
+            <div className="p-2 rounded bg-destructive/10 border border-destructive/20 text-xs text-destructive">
+              ⏹ {job.stop_reason}
+            </div>
+          )}
+          {job?.status === 'failed' && (
+            <div className="p-2.5 rounded bg-destructive/10 border border-destructive/20 text-xs text-destructive space-y-1.5">
+              <div className="font-semibold">✗ Auto-Run Failed</div>
+              <div>{job.stop_reason || formatErrorDisplay(job.error) || 'Unknown failure'}</div>
+              {(job as any).missing_seed_docs && Array.isArray((job as any).missing_seed_docs) && (
+                <div className="mt-1 space-y-0.5">
+                  <div className="text-[10px] font-medium text-destructive/80">Missing seed documents:</div>
+                  <ul className="list-disc list-inside text-[10px] text-destructive/70">
+                    {(job as any).missing_seed_docs.map((d: string) => (
+                      <li key={d}>{d}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Seed Core Status ── */}
+          {(() => {
+            const allMissing = seedStatus.missing.length === SEED_DOC_TYPES.length;
+            const someMissing = seedStatus.missing.length > 0;
+            const pendingGeneration = someMissing; // auto-run will generate via ensureSeedPack
+            const containerCls = seedPack.allApproved
+              ? 'bg-emerald-500/5 border-emerald-500/20'
+              : seedStatus.allPresent
+              ? 'bg-primary/5 border-primary/20'
+              : allMissing
+              ? 'bg-muted/30 border-border/40'
+              : 'bg-amber-500/5 border-amber-500/20';
+            return (
+              <div className={`p-2.5 rounded-md border text-xs space-y-1.5 ${containerCls}`}>
+                <div className="flex items-center gap-1.5">
+                  {seedPack.allApproved
+                    ? <><Shield className="h-3.5 w-3.5 text-emerald-400" /><span className="text-emerald-400 font-medium">Seed Core Official</span></>
+                    : seedStatus.allPresent
+                    ? <><Shield className="h-3.5 w-3.5 text-primary" /><span className="text-primary font-medium">Seed Core Ready — Needs Approval</span></>
+                    : allMissing
+                    ? <><Clock className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-muted-foreground font-medium">Seed Pack Pending</span></>
+                    : <><AlertTriangle className="h-3.5 w-3.5 text-amber-400" /><span className="text-amber-400 font-medium">Seed Pack Incomplete</span></>
+                  }
+                  <span className="text-muted-foreground ml-auto text-[10px]">{seedStatus.present.length}/{SEED_DOC_TYPES.length}</span>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {seedStatus.docs.map(doc => {
+                    const isApproved = doc.approval_status === 'approved';
+                    const isPending = doc.status === 'missing' && allMissing;
+                    const icon = doc.status === 'missing' ? (isPending ? '◌' : '✗') : doc.status === 'short' ? '⚠' : isApproved ? '✓' : '○';
+                    const colorCls = doc.status === 'missing'
+                      ? isPending
+                        ? 'bg-muted/20 text-muted-foreground border-border/30'
+                        : 'bg-destructive/10 text-destructive border-destructive/30'
+                      : doc.status === 'short'
+                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      : isApproved
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-primary/10 text-primary border-primary/30';
+                    return (
+                      <Badge key={doc.doc_type} variant="outline" className={`text-[8px] px-1.5 py-0 ${colorCls}`}
+                        title={isPending ? 'Will be auto-generated on start' : doc.status === 'short' ? `Only ${doc.char_count} chars` : isApproved ? 'Approved' : 'Draft — needs approval'}>
+                        {icon} {SEED_LABELS[doc.doc_type] || doc.doc_type}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                {seedStatus.allPresent && !seedPack.allApproved && (
+                  <Button
+                    size="sm"
+                    className="w-full h-8 text-xs gap-1.5 mt-1"
+                    onClick={handleApproveSeedCore}
+                    disabled={approvingSeedCore}
+                  >
+                    {approvingSeedCore
+                      ? <><Loader2 className="h-3 w-3 animate-spin" /> Approving…</>
+                      : <><Shield className="h-3.5 w-3.5" /> Approve Seed Core</>
+                    }
+                  </Button>
+                )}
+                {pendingGeneration && (
+                  <span className="text-[9px] text-muted-foreground">
+                    {allMissing
+                      ? 'Seed docs will be auto-generated when Auto-Run starts'
+                      : 'Missing docs will be auto-generated on start'}
+                  </span>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Seed short warning ── */}
+          {seedPack.warningCount > 0 && (
+            <div className="flex items-center gap-1 px-2 py-1 rounded bg-accent/10 text-[9px] text-accent-foreground/70">
+              <AlertTriangle className="h-3 w-3 text-yellow-500 shrink-0" />
+              ⚠ {seedPack.warningCount} seed doc{seedPack.warningCount > 1 ? 's are' : ' is'} short; consider regenerating seed pack
+            </div>
+          )}
+
+          {/* ── Seed Summary (deterministic, collapsible) ── */}
+          {seedSummary && !seedSummary.isEmpty && (
+            <Accordion type="single" collapsible className="w-full">
+              <AccordionItem value="seed-summary" className="border-border/30">
+                <AccordionTrigger className="text-[10px] py-1.5 px-2 hover:no-underline">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <FileText className="h-3 w-3" />
+                    Seed Summary
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-2 pb-2 text-[10px] space-y-1.5">
+                  {seedSummary.overview && (
+                    <div><span className="font-medium text-foreground/70">Overview:</span> {seedSummary.overview}</div>
+                  )}
+                  {seedSummary.briefBullets.length > 0 && (
+                    <div>
+                      <span className="font-medium text-foreground/70">Brief:</span>
+                      <ul className="list-disc list-inside text-muted-foreground ml-1">
+                        {seedSummary.briefBullets.map((b, i) => <li key={i}>{b}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {seedSummary.compsBullets.length > 0 && (
+                    <div>
+                      <span className="font-medium text-foreground/70">Comparables:</span>
+                      <ul className="list-disc list-inside text-muted-foreground ml-1">
+                        {seedSummary.compsBullets.map((b, i) => <li key={i}>{b}</li>)}
+                      </ul>
+                    </div>
+                  )}
+                  {seedSummary.necSummary && (
+                    <div><span className="font-medium text-foreground/70">NEC:</span> <span className="text-muted-foreground">{seedSummary.necSummary}</span></div>
+                  )}
+                  {seedSummary.canonHighlights && (
+                    <div><span className="font-medium text-foreground/70">Canon:</span> <span className="text-muted-foreground">{seedSummary.canonHighlights}</span></div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          )}
+
+          <div className="p-2.5 rounded-md border border-border/40 bg-muted/10 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Pipeline Progress</span>
+              <span className="text-[10px] font-semibold">{pipelineProgress.satisfied}/{pipelineProgress.total} stages</span>
+            </div>
+            <Progress value={(pipelineProgress.satisfied / Math.max(pipelineProgress.total, 1)) * 100} className="h-1.5" />
+            <div className="flex gap-1 flex-wrap">
+              {pipelineProgress.stages.map(stage => (
+                <span key={stage} className={`text-[8px] px-1 py-0.5 rounded ${
+                  pipelineProgress.existingDocTypes.has(stage)
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-muted/40 text-muted-foreground'
+                }`}>
+                  {docLabel(stage)}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Regenerate Insufficient Docs ── */}
+          <Button
+            size="sm"
+            variant="ghost"
+            className="w-full h-7 text-[10px] gap-1.5 text-muted-foreground hover:text-foreground"
+            onClick={handleRegenScan}
+            disabled={regen.loading}
+          >
+            {regen.loading
+              ? <><Loader2 className="h-3 w-3 animate-spin" /> Scanning…</>
+              : <><RotateCcw className="h-3 w-3" /> Regenerate Insufficient Docs</>
+            }
+          </Button>
+
+          {/* Dry-run confirmation modal */}
+          {showRegenConfirm && regen.dryRunResult && (
+            <div className="p-2.5 rounded-md border border-amber-500/30 bg-amber-500/5 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs text-amber-400 font-medium">
+                <AlertTriangle className="h-3.5 w-3.5" />
+                {regenDryRunItems.length} doc{regenDryRunItems.length > 1 ? 's' : ''} will be regenerated
+              </div>
+              <div className="space-y-1">
+                {regenDryRunItems.map(r => (
+                  <div key={r.doc_type} className="flex items-center justify-between text-[10px]">
+                    <span className="font-medium">{docLabel(r.doc_type)}</span>
+                    <Badge variant="outline" className="text-[8px] px-1 py-0 bg-destructive/10 text-destructive border-destructive/30">
+                      {r.reason.replace(/_/g, ' ')}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-1.5">
+                <Button size="sm" className="flex-1 h-7 text-[10px]" onClick={handleRegenConfirm} disabled={regen.loading}>
+                  {regen.loading ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Confirm & Regenerate'}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-[10px]" onClick={() => { setShowRegenConfirm(false); regen.clear(); }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Regen results */}
+          {regen.result && regenAppliedItems.length > 0 && (
+            <div className="p-2.5 rounded-md border border-emerald-500/20 bg-emerald-500/5 space-y-1.5">
+              <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Regenerated {regenAppliedItems.length} doc{regenAppliedItems.length > 1 ? 's' : ''}
+              </div>
+              {regenAppliedItems.map(r => (
+                <div key={r.doc_type} className="flex items-center justify-between text-[10px]">
+                  <span>{docLabel(r.doc_type)}</span>
+                  <span className="text-muted-foreground">{r.char_after.toLocaleString()} chars</span>
+                </div>
+              ))}
+              <Button size="sm" variant="ghost" className="h-6 text-[9px] w-full" onClick={regen.clear}>Dismiss</Button>
+            </div>
+          )}
+
+          {/* ── Run to Perfect Package CTA ── */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full h-9 text-xs gap-2 border-primary/30 hover:bg-primary/10 hover:border-primary/50"
+            onClick={handlePerfectPackage}
+            disabled={inferLoading || starting}
+          >
+            <Rocket className="h-3.5 w-3.5 text-primary" />
+            Run to Perfect Package
+            <Badge variant="outline" className="text-[8px] px-1 py-0 ml-auto bg-primary/10 text-primary border-primary/30">
+              → {docLabel(finalStage)}
+            </Badge>
+          </Button>
+
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Story Setup</p>
+              {inferLoading && (
+                <span className="text-[9px] text-muted-foreground flex items-center gap-1">
+                  <Loader2 className="h-2.5 w-2.5 animate-spin" /> Reading docs…
+                </span>
+              )}
+              {storyAutoFilled && !inferLoading && (
+                <span className="text-[9px] text-emerald-400">✓ Auto-filled from docs</span>
+              )}
+            </div>
+            {ALL_STORY_FIELDS.map(field => {
+              const src = storySources[field.key];
+              const badge = src?.method ? METHOD_BADGE[src.method as InferMethod] : null;
+              return (
+                <div key={field.key}>
+                  <div className="flex items-center gap-1 mb-0.5">
+                    <Label className="text-[10px] flex items-center gap-1">
+                      {field.label}
+                      {field.required && <span className="text-destructive">*</span>}
+                    </Label>
+                    {badge && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[8px] px-1 py-0 ${badge.color}`}
+                        title={src?.source_doc_type ? `From: ${src.source_doc_type}` : ''}
+                      >
+                        {badge.label}
+                      </Badge>
+                    )}
+                  </div>
+                  {field.multiline ? (
+                    <Textarea
+                      className="text-xs min-h-[50px]"
+                      placeholder={inferLoading ? 'Reading documents…' : `Enter ${field.label.toLowerCase()}…`}
+                      value={storySetup[field.key] || ''}
+                      onChange={e => setStorySetup(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    />
+                  ) : (
+                    <Input
+                      className="h-7 text-xs"
+                      placeholder={inferLoading ? 'Reading documents…' : `Enter ${field.label.toLowerCase()}…`}
+                      value={storySetup[field.key] || ''}
+                      onChange={e => setStorySetup(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Document selector */}
+          {availableDocuments && availableDocuments.length > 0 && (
+            <div>
+              <Label className="text-[10px] text-muted-foreground">Start from document</Label>
+              <Select value={startDocument} onValueChange={setStartDocument}>
+                <SelectTrigger className="h-8 text-xs mt-0.5"><SelectValue placeholder="Select document…" /></SelectTrigger>
+                <SelectContent>
+                  {availableDocuments.map(doc => (
+                    <SelectItem key={doc.id} value={doc.doc_type}>
+                      <span className="flex items-center gap-1.5">
+                        <FileText className="h-3 w-3 shrink-0" />
+                        {doc.title || docLabel(doc.doc_type)}
+                        <Badge variant="outline" className="text-[8px] px-1 py-0 ml-1">{docLabel(doc.doc_type)}</Badge>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 flex-1"
+            onClick={handleStartClick}
+              disabled={inferLoading || starting}
+            >
+              {starting
+                ? <><Loader2 className="h-3 w-3 animate-spin" /> Starting…</>
+                : inferLoading
+                  ? <><Loader2 className="h-3 w-3 animate-spin" /> Reading docs…</>
+                  : job && ['paused', 'running'].includes(job.status)
+                    ? <><Play className="h-3.5 w-3.5" /> Resume from {docLabel(job.current_document)}</>
+                    : <><Play className="h-3.5 w-3.5" /> Confirm & Start</>
+              }
+            </Button>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <span>⚡ 2 loops/stage, 100 steps</span>
+          </div>
+
+          {error && (
+            <div className="text-[10px] text-destructive bg-destructive/5 border border-destructive/20 rounded p-2">
+              {formatErrorDisplay(error)}
+            </div>
+          )}
+          {job && (
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] w-full" onClick={onClear}>
+              <RotateCcw className="h-3 w-3" /> Clear
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+  // ── Active job → Full Mission Control ──
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 max-h-[calc(100vh-200px)]">
+        {/* ══════ LEFT COLUMN ══════ */}
+        <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-220px)] pr-1">
+
+          {/* A) Job Status Card */}
+          <Card className="border-primary/20">
+            <CardHeader className="py-2 px-4">
+              <CardTitle className="text-xs flex items-center gap-2">
+                <Rocket className="h-3.5 w-3.5" /> Mission Control
+                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ml-auto ${statusStyle.color}`}>
+                  {isRunning && <Loader2 className="h-2.5 w-2.5 animate-spin mr-1" />}
+                  {statusStyle.label}
+                </Badge>
+                <Badge variant="outline" className="text-[8px] px-1.5 py-0 bg-muted text-muted-foreground">
+                  {EXECUTION_MODE_LABEL[AUTO_RUN_EXECUTION_MODE]}
+                </Badge>
+                {['queued', 'running'].includes(job?.status || '') && (
+                  <Badge variant="outline" className="text-[8px] px-1.5 py-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                    <Radio className="h-2.5 w-2.5 mr-0.5 animate-pulse" /> Autopilot
+                  </Badge>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3 space-y-2">
+              {/* Step Budget Control */}
+              <StepBudgetControl
+                job={job}
+                onUpdateLimit={onUpdateStepLimit}
+                onContinue={onResumeFromStepLimit}
+                isRunning={isRunning}
+              />
+
+              {/* Version Cap Control */}
+              {onUpdateVersionCap && (
+                <VersionCapControl
+                  job={job}
+                  onUpdateCap={onUpdateVersionCap}
+                />
+              )}
+
+              {/* Progress Info: elapsed, rate, ETA */}
+              <AutoRunProgressInfo
+                job={job}
+                steps={steps}
+                isRunning={isRunning}
+                totalPipelineStages={pipelineProgress.total}
+                completedStages={pipelineProgress.satisfied}
+              />
+
+              {/* ── Quality Policy & Scores ── */}
+              {(() => {
+                const target = (job as any).converge_target_json || { ci: 100, gp: 100 };
+                const dq = job.last_ci ?? 0;
+                const gr = job.last_gp ?? 0;
+                const dqMet = dq >= target.ci;
+                const grMet = gr >= target.gp;
+
+                // Distance to aspiration target
+                const dqDist = Math.max(0, target.ci - dq);
+                const grDist = Math.max(0, target.gp - gr);
+                const primaryConstraint = dqDist > grDist ? 'Document Quality' : grDist > 0 ? 'Greenlight Readiness' : null;
+
+                // Pipeline Health state — derived from risk flags (not NIE-backed yet)
+                const riskFlags = job.last_risk_flags || [];
+                const hasHardGate = riskFlags.some((f: string) => f.startsWith('hard_gate:'));
+                const hasWarningFlags = riskFlags.length > 0;
+                const niState: 'Clear' | 'Warning' | 'Blocked' = hasHardGate ? 'Blocked' : hasWarningFlags ? 'Warning' : 'Clear';
+                const niColor = niState === 'Blocked'
+                  ? 'bg-destructive/15 text-destructive border-destructive/30'
+                  : niState === 'Warning'
+                    ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                    : 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30';
+
+                return (
+                  <div className="space-y-2">
+                    {/* Quality Policy — Max Quality (no band selector) */}
+                    <div className="flex items-center gap-2 text-[9px]">
+                      <span className="text-muted-foreground font-medium">Optimization</span>
+                      <Badge variant="outline" className="text-[8px] px-1.5 py-0 bg-primary/10 text-primary border-primary/30">
+                        <Zap className="h-2.5 w-2.5 mr-0.5" />
+                        Max Quality
+                      </Badge>
+                      <span className="text-[8px] text-muted-foreground/60 ml-auto">Aspiration: {Math.min(target.ci, target.gp)}+</span>
+                    </div>
+
+                    {/* Current scores — Document Quality, Greenlight Readiness, NI */}
+                    <div className="grid grid-cols-3 gap-1 text-[9px]">
+                      <div className="text-center p-1.5 rounded bg-muted/30">
+                        <div className="text-muted-foreground text-[7px] leading-tight">Doc Quality</div>
+                        <div className={`font-semibold ${dqMet ? 'text-emerald-400' : ''}`}>{dq || '—'}</div>
+                        {dqDist > 0 && <div className="text-[7px] text-muted-foreground/60">+{dqDist} to go</div>}
+                      </div>
+                      <div className="text-center p-1.5 rounded bg-muted/30">
+                        <div className="text-muted-foreground text-[7px] leading-tight">Greenlight</div>
+                        <div className={`font-semibold ${grMet ? 'text-emerald-400' : ''}`}>{gr || '—'}</div>
+                        {grDist > 0 && <div className="text-[7px] text-muted-foreground/60">+{grDist} to go</div>}
+                      </div>
+                      <div className="text-center p-1.5 rounded bg-muted/30">
+                        <div className="text-muted-foreground text-[7px] leading-tight">Pipeline</div>
+                        <Badge variant="outline" className={`text-[7px] px-1 py-0 ${niColor}`}>{niState}</Badge>
+                      </div>
+                    </div>
+
+                    {/* Primary constraint + readiness + confidence */}
+                    <div className="flex items-center gap-3 text-[8px] flex-wrap">
+                      {primaryConstraint && (
+                        <span className="text-amber-400">
+                          <AlertTriangle className="h-2.5 w-2.5 inline mr-0.5" />
+                          {primaryConstraint} +{Math.max(dqDist, grDist)} to aspiration
+                        </span>
+                      )}
+                      <span className="text-muted-foreground ml-auto flex items-center gap-2">
+                        <span>Readiness <span className="text-foreground font-medium">{job.last_readiness ?? '—'}</span>/100</span>
+                        <span>Confidence <span className="text-foreground font-medium">{job.last_confidence ?? '—'}%</span></span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Stage info + pipeline progress */}
+
+              {/* Version Provenance Panel — stage-scoped */}
+              {(() => {
+                const snapshot = runSnapshot;
+                if (!snapshot) return null;
+                const prov = snapshot.provenance;
+                const hasScopedData = prov.best.version_id || prov.frontier.version_id || prov.baseline_version_id;
+                if (!hasScopedData) return null;
+                return (
+                  <div className="p-2 rounded border border-border/30 bg-muted/10 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[8px] font-semibold text-muted-foreground uppercase tracking-wide">
+                        Provenance ({docLabel(prov.doc_type)})
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Badge variant="outline" className="text-[7px] px-1 py-0 bg-muted text-muted-foreground">
+                          {prov.scope}
+                        </Badge>
+                        {prov.baseline_source !== 'none' && (
+                          <Badge variant="outline" className="text-[7px] px-1 py-0 bg-muted/50 text-muted-foreground/70">
+                            base: {prov.baseline_source === 'first_review_step' ? '1st review' : 'resume'}
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[9px] font-mono">
+                      {prov.baseline_version_id && (
+                        <>
+                          <span className="text-muted-foreground">Baseline:</span>
+                          <span title={prov.baseline_version_id}>{prov.baseline_version_id.slice(0, 8)}…</span>
+                        </>
+                      )}
+                      {prov.best.version_id && (
+                        <>
+                          <span className="text-muted-foreground">Best:</span>
+                          <span title={`${prov.best.version_id} (via ${prov.best.version_id_source})`} className="text-emerald-400">
+                            {prov.best.version_id.slice(0, 8)}… {prov.best.ci != null && `CI:${prov.best.ci} GP:${prov.best.gp}`}
+                            {prov.best.gap != null && ` Gap:${prov.best.gap}`}
+                          </span>
+                        </>
+                      )}
+                      {prov.frontier.version_id && (
+                        <>
+                          <span className="text-muted-foreground">Frontier:</span>
+                          <span title={`${prov.frontier.version_id} (via ${prov.frontier.version_id_source})`} className="text-violet-400">
+                            {prov.frontier.version_id.slice(0, 8)}… {prov.frontier.ci != null && `CI:${prov.frontier.ci} GP:${prov.frontier.gp}`}
+                          </span>
+                        </>
+                      )}
+                      {prov.candidates_seen_count > 0 && (
+                        <>
+                          <span className="text-muted-foreground">Reviewed:</span>
+                          <span>{prov.candidates_seen_count} {prov.candidates_seen_count === 1 ? 'pass' : 'passes'}</span>
+                        </>
+                      )}
+                    </div>
+                    {/* Cross-doc global best notice */}
+                    {snapshot.global_best.version_id && snapshot.global_best.document_id &&
+                     snapshot.global_best.version_id !== prov.best.version_id && (
+                      <div className="text-[8px] text-amber-400/70 mt-1 flex items-center gap-1">
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        Global best (CI:{snapshot.global_best.ci} GP:{snapshot.global_best.gp}) on {snapshot.global_best.doc_type ? snapshot.global_best.doc_type.replace(/_/g, ' ') : 'different stage'}
+                      </div>
+                    )}
+                    {prov.versions_considered_count > 0 && prov.versions_considered_count !== prov.candidates_seen_count && (
+                      <div className="text-[7px] text-muted-foreground/50 mt-0.5">
+                        {prov.candidates_seen_count} review passes across {prov.versions_considered_count} distinct versions
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {job.last_risk_flags?.length > 0 && job.status !== 'running' && !hasDecisions && (
+                <div className="flex gap-1 flex-wrap">
+                  {job.last_risk_flags.map((f: string, i: number) => (
+                    <Badge key={i} variant="outline" className="text-[8px] px-1 py-0 bg-destructive/10 text-destructive border-destructive/30">{f}</Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Stop reason / error (when not related to approval) */}
+              {job.stop_reason && !job.awaiting_approval && !hasDecisions && (
+                <div className="text-[10px] text-amber-400 bg-amber-500/5 border border-amber-500/20 rounded p-2 space-y-1.5">
+                  <div>{formatStopReason(job.stop_reason)}</div>
+                  {job.stop_reason === 'INPUT_INCOMPLETE' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-6 text-[9px] gap-1"
+                      disabled={regen.loading}
+                      onClick={handleRegenScan}
+                    >
+                      {regen.loading
+                        ? <><Loader2 className="h-3 w-3 animate-spin" /> Scanning…</>
+                        : <><RotateCcw className="h-3 w-3" /> Fix Inputs (Regenerate Insufficient Docs)</>
+                      }
+                    </Button>
+                  )}
+                  {job.pause_reason === 'BASELINE_MISSING' && (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="text-[9px] text-muted-foreground">
+                        No current version set for <strong>{job.current_document}</strong>.
+                        {(job.approval_payload as any)?.versionCount > 0
+                          ? ` ${(job.approval_payload as any).versionCount} version(s) exist — choose a repair strategy:`
+                          : ' No versions exist — generate the document first.'}
+                      </div>
+                      {(job.approval_payload as any)?.versionCount > 0 && (
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="outline" className="h-6 text-[9px] gap-1"
+                            onClick={() => onRepairBaseline?.('promote_best_scored')}>
+                            <CheckCircle2 className="h-3 w-3" /> Use Best Scored
+                          </Button>
+                          <Button size="sm" variant="outline" className="h-6 text-[9px] gap-1"
+                            onClick={() => onRepairBaseline?.('promote_latest')}>
+                            <ArrowUpRight className="h-3 w-3" /> Use Latest
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {job.pause_reason === 'BASELINE_MISSING_NO_TEXT' && (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="text-[9px] text-muted-foreground">
+                        No baseline could be seeded for <strong>{job.current_document}</strong> because no plaintext source exists.
+                        Generate content for this stage (or upstream stage) and then resume.
+                      </div>
+                    </div>
+                  )}
+                  {job.pause_reason === 'STAGNATION_NO_BLOCKER_PROGRESS' && (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle className="h-3 w-3 text-amber-400 shrink-0" />
+                        <span className="text-[10px] font-medium text-foreground">Blocker Stagnation</span>
+                      </div>
+                      <div className="text-[9px] text-muted-foreground">
+                        Blockers for <strong>{job.current_document}</strong> have not decreased across multiple attempts.
+                        Consider editing the document manually to address structural issues, then resume.
+                      </div>
+                      {(job as any).last_blocker_count != null && (
+                        <Badge variant="outline" className="text-[8px] px-1.5 py-0 bg-destructive/10 text-destructive border-destructive/30">
+                          {(job as any).last_blocker_count} blockers remaining
+                        </Badge>
+                      )}
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="h-6 text-[9px] gap-1" onClick={() => onResume(true)}>
+                          <Play className="h-3 w-3" /> Resume (retry)
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {/* Duration criteria panels */}
+                  {job.pause_reason === 'CRITERIA_STALE_PROVENANCE' && (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle className="h-3 w-3 text-orange-400 shrink-0" />
+                        <span className="text-[10px] font-medium text-foreground">Criteria Provenance Changed</span>
+                      </div>
+                      <div className="text-[9px] text-muted-foreground">
+                        The project criteria (duration, episode count, etc.) changed since this document was last analyzed.
+                        This is a true criteria change, not a scoring issue.
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="h-6 text-[9px] gap-1" onClick={() => onResume(true)}>
+                          <Play className="h-3 w-3" /> Regenerate with new criteria
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[9px] gap-1" onClick={() => onResume(true)}>
+                          Continue anyway
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  {job.pause_reason === 'CRITERIA_FAIL_DURATION' && (
+                    <div className="space-y-1.5 mt-1">
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="h-3 w-3 text-amber-400 shrink-0" />
+                        <span className="text-[10px] font-medium text-foreground">Duration Target Not Met</span>
+                      </div>
+                      {(() => {
+                        const dt = (job.approval_payload as any)?.duration_target;
+                        if (!dt) return null;
+                        const delta = dt.measured - Math.round((dt.min + dt.max) / 2);
+                        return (
+                          <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[9px] bg-muted/30 rounded p-2 font-mono">
+                            <span className="text-muted-foreground">Target range:</span>
+                            <span>{dt.min}–{dt.max}s</span>
+                            <span className="text-muted-foreground">Measured:</span>
+                            <span className={dt.measured < dt.min || dt.measured > dt.max ? 'text-destructive' : 'text-emerald-400'}>{dt.measured}s</span>
+                            <span className="text-muted-foreground">Delta:</span>
+                            <span className={delta > 0 ? 'text-amber-400' : 'text-sky-400'}>{delta > 0 ? '+' : ''}{delta}s</span>
+                            <span className="text-muted-foreground">Repair attempts:</span>
+                            <span>{(job.approval_payload as any)?.duration_repair_attempts || 0}/2</span>
+                          </div>
+                        );
+                      })()}
+                      <div className="text-[9px] text-muted-foreground">
+                        Duration repair attempts exhausted. The document for <strong>{job.current_document}</strong> does not meet the target duration.
+                        Consider manually editing the document length, then resume.
+                      </div>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" className="h-6 text-[9px] gap-1" onClick={() => onResume(true)}>
+                          <Play className="h-3 w-3" /> Resume (retry)
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {error && (
+                <div className="text-[10px] text-destructive bg-destructive/5 border border-destructive/20 rounded p-2">
+                  {formatErrorDisplay(error)}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* B) Primary Controls */}
+          <Card>
+            <CardContent className="p-3">
+              <div className="flex gap-1.5 flex-wrap">
+                {job.status === 'running' && !job.awaiting_approval && (
+                  <>
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onPause}>
+                      <Pause className="h-3 w-3" /> Pause
+                    </Button>
+                    <Button variant="destructive" size="sm" className="h-7 text-[10px] gap-1" onClick={onStop}>
+                      <Square className="h-3 w-3" /> Stop
+                    </Button>
+                  </>
+                )}
+                {job.status === 'paused' && !hasDecisions && !job.awaiting_approval && (
+                  <>
+                    <Button size="sm" className="h-7 text-[10px] gap-1" onClick={() => onResume()}>
+                      <Play className="h-3 w-3" /> Resume
+                    </Button>
+                    <Button variant="destructive" size="sm" className="h-7 text-[10px] gap-1" onClick={onStop}>
+                      <Square className="h-3 w-3" /> Stop
+                    </Button>
+                  </>
+                )}
+                {/* Export Project Bible */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[10px] gap-1 border-amber-500/50 text-amber-500 hover:bg-amber-500/10"
+                  onClick={handleExportBundle}
+                  disabled={isBundling}
+                >
+                  {isBundling ? <Loader2 className="h-3 w-3 animate-spin" /> : <BookOpen className="h-3 w-3" />}
+                  Export Bible
+                </Button>
+              </div>
+              {/* Follow Latest toggle */}
+              <div className="flex items-center gap-2 mt-2">
+                <Switch
+                  checked={job.follow_latest === true}
+                  onCheckedChange={async (checked) => {
+                    if (checked) {
+                      onResume(true);
+                    } else {
+                      // Directly update follow_latest to false in the database
+                      const { supabase } = await import('@/integrations/supabase/client');
+                      await supabase.from('auto_run_jobs').update({ follow_latest: false }).eq('id', job.id);
+                      // Refresh status to pick up the change
+                      onRunNext();
+                    }
+                  }}
+                  className="scale-75"
+                />
+                <span className="text-[9px] text-muted-foreground">
+                  Follow Latest Version
+                  {job.follow_latest === false && job.resume_document_id && (
+                    <Badge variant="outline" className="text-[7px] px-1 py-0 ml-1 bg-amber-500/10 text-amber-500 border-amber-500/30">pinned</Badge>
+                  )}
+                </span>
+              </div>
+              {/* Safe mode toggle */}
+              <div className="flex items-center gap-2 mt-1">
+                <Switch checked={safeMode} onCheckedChange={setSafeMode} className="scale-75" />
+                <span className="text-[9px] text-muted-foreground">Safe Mode (require manual approval for promote/convert)</span>
+              </div>
+              {/* Auto-decide toggle */}
+              <div className="flex items-center gap-2 mt-1">
+                <Switch
+                  checked={job.allow_defaults !== false}
+                  onCheckedChange={(checked) => onToggleAllowDefaults?.(checked)}
+                  className="scale-75"
+                />
+                <span className="text-[9px] text-muted-foreground">
+                  Full Autonomous — auto-decide all decisions including High Impact & Blockers
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* C) Series Writer Handoff Gate — replaces generic approval when approval_type === "series_writer" */}
+          {job.awaiting_approval && job.approval_type === 'series_writer' && (
+            <Card className="border-primary/40 bg-primary/5">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Film className="h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold">Series Writer Required</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Episode scripts for series formats must be created and revised through Series Writer to maintain version continuity. AutoRun handles all pre-script stages; Series Writer owns the script stage.
+                    </p>
+                  </div>
+                </div>
+                <div className="p-2 rounded border border-amber-500/20 bg-amber-500/5 text-[10px] text-amber-400">
+                  ⚠ Creating a new script via AutoRun would break version history. Use Series Writer to generate or revise episode scripts.
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 flex-1"
+                    onClick={() => navigate(`/projects/${projectId}/series-writer`)}
+                  >
+                    <Film className="h-3.5 w-3.5" /> Open Series Writer
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-8 text-xs gap-1.5" onClick={onStop}>
+                    <Square className="h-3.5 w-3.5" /> Stop AutoRun
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* C1.5) Seed Core Official Gate */}
+          {job.status === 'paused' && job.stop_reason === 'SEED_CORE_NOT_OFFICIAL' && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold">Approve Seed Core to Continue</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      Auto-run is paused because the 5 Seed Core documents need approval before downstream docs can be generated.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {seedStatus.docs.map(doc => {
+                    const isApproved = doc.approval_status === 'approved';
+                    const icon = doc.status === 'missing' ? '✗' : isApproved ? '✓' : '○';
+                    const colorCls = doc.status === 'missing'
+                      ? 'bg-destructive/10 text-destructive border-destructive/30'
+                      : isApproved
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+                      : 'bg-primary/10 text-primary border-primary/30';
+                    return (
+                      <Badge key={doc.doc_type} variant="outline" className={`text-[8px] px-1.5 py-0 ${colorCls}`}>
+                        {icon} {SEED_LABELS[doc.doc_type] || doc.doc_type}
+                      </Badge>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="h-8 text-xs gap-1.5 flex-1"
+                    onClick={handleApproveSeedCore}
+                    disabled={approvingSeedCore || seedStatus.missing.length > 0}
+                  >
+                    {approvingSeedCore
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Approving…</>
+                      : <><Shield className="h-3.5 w-3.5" /> Approve Seed Core & Resume</>
+                    }
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-8 text-xs gap-1.5" onClick={onStop}>
+                    <Square className="h-3.5 w-3.5" /> Stop
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* C2) Standard Approval Gate — only shown when NOT a series_writer handoff */}
+          {job.awaiting_approval && job.approval_type !== 'series_writer' && job.approval_type !== 'seed_core_officialize' && (
+            <Card className="border-primary/30 bg-primary/5">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="text-sm font-semibold">Approval Required</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      {job.approval_type === 'convert'
+                        ? `Review the newly generated ${docLabel(job.pending_doc_type)} before continuing.`
+                        : job.pending_next_doc_type === 'series_writer'
+                          ? `Review ${docLabel(job.pending_doc_type)} before entering Series Writer.`
+                          : `Review ${docLabel(job.pending_doc_type)} before promoting to ${docLabel(job.pending_next_doc_type)}.`
+                      }
+                    </p>
+                  </div>
+                </div>
+
+                {pendingLoading && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Loading document…
+                  </div>
+                )}
+
+                {pendingDoc && (
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-2">
+                    <FileText className="h-3 w-3" />
+                    {pendingDoc.char_count?.toLocaleString()} chars
+                    <Badge variant="outline" className="text-[8px] px-1 py-0">{pendingDoc.approval_type}</Badge>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <Button size="sm" className="h-8 text-xs gap-1.5 flex-1" onClick={() => onApproveNext('approve')}>
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Approve & Continue
+                  </Button>
+                  <Button variant="destructive" size="sm" className="h-8 text-xs gap-1.5" onClick={() => onApproveNext('stop')}>
+                    <Square className="h-3.5 w-3.5" /> Stop
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Pending decision cards */}
+          {hasDecisions && (
+            <Card className="border-amber-500/30 bg-amber-500/5">
+              <CardContent className="p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <HelpCircle className="h-4 w-4 text-amber-500" />
+                  <div>
+                    <h3 className="text-sm font-semibold">Decisions Required</h3>
+                    <p className="text-[10px] text-muted-foreground">
+                      {activeDecisions.filter(d => d.impact === 'blocking').length} blocking, {activeDecisions.filter(d => d.impact !== 'blocking').length} optional
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+                  {activeDecisions.map((decision) => (
+                    <DecisionCard 
+                      key={decision.id} 
+                      decision={decision} 
+                      selectedValue={decisionSelections[decision.id]}
+                      onSelect={(id, val) => setDecisionSelections(prev => ({ ...prev, [id]: val }))}
+                    />
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    size="sm" 
+                    className="h-8 text-xs gap-1.5 flex-1"
+                    disabled={
+                      submittingDecisions || 
+                      activeDecisions.filter(d => d.impact === 'blocking').some(d => !decisionSelections[d.id])
+                    }
+                    onClick={async () => {
+                      setSubmittingDecisions(true);
+                      try {
+                        if (onApplyDecisionsAndContinue) {
+                          const selectedOptions = Object.entries(decisionSelections).map(([decId, optionId]) => {
+                            // Extract note_id from decision ID format: jobId:stepIndex:noteId
+                            const parts = decId.split(':');
+                            const noteId = parts.length >= 3 ? parts.slice(2).join(':') : decId;
+                            return { note_id: noteId, option_id: optionId };
+                          });
+                          await onApplyDecisionsAndContinue(selectedOptions);
+                          setDecisionSelections({});
+                        } else {
+                          // Fallback to individual approvals
+                          for (const [decId, val] of Object.entries(decisionSelections)) {
+                            await onApproveDecision(decId, val);
+                          }
+                          setDecisionSelections({});
+                        }
+                      } finally {
+                        setSubmittingDecisions(false);
+                      }
+                    }}
+                  >
+                    {submittingDecisions 
+                      ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Applying…</>
+                      : <><CheckCircle2 className="h-3.5 w-3.5" /> Apply Decisions & Continue</>
+                    }
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* D) Interventions Accordion */}
+          <Accordion type="multiple" className="space-y-1">
+            {/* D1: Story Setup */}
+            <AccordionItem value="story" className="border rounded-lg px-3">
+              <AccordionTrigger className="text-xs py-2">
+                <span className="flex items-center gap-1.5"><FileText className="h-3 w-3" /> Story Setup</span>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2 pb-3">
+                {['logline', 'premise', 'tone_genre', 'protagonist', 'antagonist', 'stakes', 'world_rules', 'comparables'].map(field => (
+                  <div key={field}>
+                    <Label className="text-[10px] capitalize">{field.replace(/_/g, ' ')}</Label>
+                    <Textarea className="text-xs min-h-[40px] mt-0.5" value={storySetup[field] || ''}
+                      onChange={e => setStorySetup(prev => ({ ...prev, [field]: e.target.value }))}
+                      placeholder={field === 'comparables' ? 'Title 1, Title 2, …' : `Enter ${field.replace(/_/g, ' ')}…`} />
+                  </div>
+                ))}
+                <Button size="sm" className="h-7 text-[10px] w-full" disabled={saving === 'story'}
+                  onClick={async () => { setSaving('story'); await onSaveStorySetup(storySetup); toast({ title: 'Story setup saved' }); setSaving(null); }}>
+                  {saving === 'story' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save to Project'}
+                </Button>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* D2: Qualifications */}
+            <AccordionItem value="quals" className="border rounded-lg px-3">
+              <AccordionTrigger className="text-xs py-2">
+                <span className="flex items-center gap-1.5"><Settings2 className="h-3 w-3" /> Format & Qualifications</span>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2 pb-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px]">Ep Duration Min (s)</Label>
+                    <Input type="number" className="h-7 text-xs mt-0.5" value={quals.episode_target_duration_min_seconds || ''}
+                      onChange={e => setQuals(p => ({ ...p, episode_target_duration_min_seconds: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Ep Duration Max (s)</Label>
+                    <Input type="number" className="h-7 text-xs mt-0.5" value={quals.episode_target_duration_max_seconds || ''}
+                      onChange={e => setQuals(p => ({ ...p, episode_target_duration_max_seconds: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Season Episodes</Label>
+                    <Input type="number" className="h-7 text-xs mt-0.5" value={quals.season_episode_count || ''}
+                      onChange={e => setQuals(p => ({ ...p, season_episode_count: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Runtime Min (low)</Label>
+                    <Input type="number" className="h-7 text-xs mt-0.5" value={quals.target_runtime_min_low || ''}
+                      onChange={e => setQuals(p => ({ ...p, target_runtime_min_low: Number(e.target.value) }))} />
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Runtime Min (high)</Label>
+                    <Input type="number" className="h-7 text-xs mt-0.5" value={quals.target_runtime_min_high || ''}
+                      onChange={e => setQuals(p => ({ ...p, target_runtime_min_high: Number(e.target.value) }))} />
+                  </div>
+                </div>
+                <Button size="sm" className="h-7 text-[10px] w-full" disabled={saving === 'quals'}
+                  onClick={async () => { setSaving('quals'); await onSaveQualifications(quals); toast({ title: 'Qualifications saved' }); setSaving(null); }}>
+                  {saving === 'quals' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save Qualifications'}
+                </Button>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* D3: Lane/Budget */}
+            <AccordionItem value="lane" className="border rounded-lg px-3">
+              <AccordionTrigger className="text-xs py-2">
+                <span className="flex items-center gap-1.5"><ArrowUpRight className="h-3 w-3" /> Lane & Budget</span>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2 pb-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[10px]">Lane</Label>
+                    <Select value={lane} onValueChange={setLane}>
+                      <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Select…" /></SelectTrigger>
+                      <SelectContent>
+                        {LANE_OPTIONS.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-[10px]">Budget</Label>
+                    <Select value={budget} onValueChange={setBudget}>
+                      <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Select…" /></SelectTrigger>
+                      <SelectContent>
+                        {BUDGET_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button size="sm" className="h-7 text-[10px] w-full" disabled={saving === 'lane' || !lane || !budget}
+                  onClick={async () => { setSaving('lane'); await onSaveLaneBudget(lane, budget); toast({ title: 'Lane & budget saved' }); setSaving(null); }}>
+                  {saving === 'lane' ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Save Lane/Budget'}
+                </Button>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* D5: Stage Control */}
+            <AccordionItem value="stage" className="border rounded-lg px-3">
+              <AccordionTrigger className="text-xs py-2">
+                <span className="flex items-center gap-1.5"><Radio className="h-3 w-3" /> Stage Control</span>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2 pb-3">
+                <div>
+                  <Label className="text-[10px]">Jump to stage</Label>
+                  <Select value={jumpStage} onValueChange={setJumpStage}>
+                    <SelectTrigger className="h-7 text-xs mt-0.5"><SelectValue placeholder="Select stage…" /></SelectTrigger>
+                    <SelectContent>
+                      {ladder.map(s => <SelectItem key={s} value={s}>{docLabel(s)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" disabled={!jumpStage}
+                    onClick={() => { onSetStage(jumpStage); toast({ title: `Stage set to ${docLabel(jumpStage)}` }); }}>
+                    Set Stage
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onForcePromote}>
+                    <ArrowUpRight className="h-3 w-3" /> Force Promote
+                  </Button>
+                  <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" disabled={!jumpStage}
+                    onClick={() => { onRestartFromStage(jumpStage); toast({ title: `Restarted from ${docLabel(jumpStage)}` }); }}>
+                    <RotateCcw className="h-3 w-3" /> Restart From Stage
+                  </Button>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* D6: Escalation */}
+            {hasEscalation && (
+              <AccordionItem value="escalation" className="border border-destructive/30 rounded-lg px-3">
+                <AccordionTrigger className="text-xs py-2">
+                  <span className="flex items-center gap-1.5 text-destructive"><AlertTriangle className="h-3 w-3" /> Escalation Required</span>
+                </AccordionTrigger>
+                <AccordionContent className="space-y-2 pb-3">
+                  <p className="text-[10px] text-muted-foreground">
+                    {hasDecisions
+                      ? 'Choose a resolution option above to clear the blocker.'
+                      : 'No resolution options are loaded yet. Generate options to continue.'}
+                  </p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {!hasDecisions && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[10px] gap-1"
+                        onClick={onRunNext}
+                        disabled={job?.status !== 'paused'}
+                      >
+                        <Zap className="h-3 w-3" /> Generate Options
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" className="h-7 text-[10px] gap-1" onClick={onForcePromote}>
+                      <ArrowUpRight className="h-3 w-3" /> Force Promote
+                    </Button>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
+        </div>
+
+        {/* ══════ RIGHT COLUMN ══════ */}
+        <div className="space-y-3 overflow-y-auto max-h-[calc(100vh-220px)] pr-1">
+          {/* Timeline */}
+          <Card>
+            <CardHeader className="py-2 px-4">
+              <CardTitle className="text-xs flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5" /> Timeline ({steps.length} steps)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3">
+              <ScrollArea className="h-[60vh]">
+                <StepTimeline steps={steps} onViewOutput={loadStepDoc} />
+              </ScrollArea>
+            </CardContent>
+          </Card>
+
+          {/* Document Viewer */}
+          <Card>
+            <CardHeader className="py-2 px-4">
+              <CardTitle className="text-xs flex items-center gap-2">
+                <Eye className="h-3.5 w-3.5" /> Document Viewer
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-3 pb-3">
+              <Tabs value={docViewerTab} onValueChange={setDocViewerTab}>
+                <TabsList className="h-7">
+                  <TabsTrigger value="current" className="text-[10px] px-2 h-6">Current Doc</TabsTrigger>
+                  {job.awaiting_approval && (
+                    <TabsTrigger value="pending" className="text-[10px] px-2 h-6">Pending Doc</TabsTrigger>
+                  )}
+                  <TabsTrigger value="step" className="text-[10px] px-2 h-6">From Step</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="pending" className="mt-2">
+                  {pendingLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>}
+                  {pendingDoc && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                        <Badge variant="outline" className="text-[8px]">{pendingDoc.doc_type}</Badge>
+                        <span>{pendingDoc.char_count?.toLocaleString()} chars</span>
+                      </div>
+                      <ScrollArea className="h-[60vh] border rounded p-2 bg-muted/20">
+                        <pre className="text-[10px] whitespace-pre-wrap font-mono leading-relaxed text-foreground">
+                          {pendingDoc.text || pendingDoc.preview || '(empty)'}
+                        </pre>
+                      </ScrollArea>
+                      <div className="flex gap-1.5">
+                        <Button variant="ghost" size="sm" className="h-6 text-[9px] gap-1" onClick={() => copyText(pendingDoc.text)}>
+                          <Copy className="h-3 w-3" /> Copy
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-6 text-[9px] gap-1" onClick={() => downloadTxt(pendingDoc.text, `${pendingDoc.doc_type}.txt`)}>
+                          <Download className="h-3 w-3" /> Download
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="current" className="mt-2">
+                  {!viewerText && !viewerLoading && (
+                    <div className="text-center py-6">
+                      <p className="text-[10px] text-muted-foreground">Click a step to view its output, or load current doc</p>
+                      <Button variant="outline" size="sm" className="h-7 text-[10px] mt-2" onClick={loadCurrentDoc}>
+                        <Eye className="h-3 w-3 mr-1" /> Load Current Document
+                      </Button>
+                    </div>
+                  )}
+                  {viewerLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>}
+                  {viewerText && docViewerTab === 'current' && (
+                    <>
+                      {job.pending_doc_id && (
+                        <ChunkProgressPanel 
+                          documentId={job.pending_doc_id} 
+                          versionId={job.pending_version_id}
+                          projectId={job.project_id}
+                        />
+                      )}
+                      <DocViewer text={viewerText} meta={viewerMeta} onCopy={copyText} onDownload={downloadTxt} />
+                    </>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="step" className="mt-2">
+                  {viewerLoading && <div className="flex items-center gap-2 text-xs text-muted-foreground py-4"><Loader2 className="h-3 w-3 animate-spin" /> Loading…</div>}
+                  {!viewerText && !viewerLoading && docViewerTab === 'step' && (
+                    <p className="text-[10px] text-muted-foreground text-center py-6">Click a step's 👁 icon to view its output</p>
+                  )}
+                  {viewerText && docViewerTab === 'step' && (
+                    <DocViewer text={viewerText} meta={viewerMeta} onCopy={copyText} onDownload={downloadTxt} />
+                  )}
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocViewer({ text, meta, onCopy, onDownload }: {
+  text: string;
+  meta: { doc_type?: string; version?: number; char_count?: number };
+  onCopy: (t: string) => void;
+  onDownload: (t: string, f: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        {meta.doc_type && <Badge variant="outline" className="text-[8px]">{meta.doc_type}</Badge>}
+        {meta.version != null && <span>v{meta.version}</span>}
+        {meta.char_count != null && <span>{meta.char_count.toLocaleString()} chars</span>}
+      </div>
+      <ScrollArea className="h-[60vh] border rounded p-2 bg-muted/20">
+        <pre className="text-[10px] whitespace-pre-wrap font-mono leading-relaxed text-foreground">
+          {text || '(empty)'}
+        </pre>
+      </ScrollArea>
+      <div className="flex gap-1.5">
+        <Button variant="ghost" size="sm" className="h-6 text-[9px] gap-1" onClick={() => onCopy(text)}>
+          <Copy className="h-3 w-3" /> Copy
+        </Button>
+        <Button variant="ghost" size="sm" className="h-6 text-[9px] gap-1" onClick={() => onDownload(text, `${meta.doc_type || 'document'}.txt`)}>
+          <Download className="h-3 w-3" /> Download
+        </Button>
+      </div>
+    </div>
+  );
+}
