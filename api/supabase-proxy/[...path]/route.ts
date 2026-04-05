@@ -15,6 +15,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Extract relevant headers
   const apikey = req.headers['x-supabase-key'] || SUPABASE_ANON_KEY;
   const authorization = req.headers['authorization'] || `Bearer ${SUPABASE_ANON_KEY}`;
+  // Forward cron secret for internal function-to-function auth
+  const cronSecret = req.headers['x-iffy-cron-secret'] as string | undefined;
 
   try {
     const response = await fetch(targetUrl, {
@@ -24,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'apikey': apikey as string,
         'Authorization': authorization as string,
         'x-supabase-client-platform': 'web',
+        ...(cronSecret ? { 'x-iffy-cron-secret': cronSecret } : {}),
       },
       body: ['POST', 'PUT', 'PATCH'].includes(req.method || '')
         ? JSON.stringify(req.body)
