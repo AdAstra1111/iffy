@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-const SUPABASE_URL = 'https://mbwreoglhudppiwaxlsp.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1id3Jlb2dsaHVkcHBpd2F4bHNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA1NjQzMTQsImV4cCI6MjA4NjE0MDMxNH0.JHrca9E7mBjWeS-Hyuky68ikEud83V8YWeAZkrIpSzk';
+const SUPABASE_URL = process.env.SUPABASE_URL || 'https://hdfderbphdobomkdjypc.supabase.co';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZmRlcmJwaGRvYm9ta2RqeXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzODg2NjEsImV4cCI6MjA5MDk2NDY2MX0.wLiw8PxIZ_ABt-y6ORhlZlHk1LOJujbOqurX8wP_N1c';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Extract the path after /api/supabase-proxy/
