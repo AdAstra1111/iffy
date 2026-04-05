@@ -4,7 +4,7 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/llm", "destination": "/api/llm" },
-    { "source": "/((?!assets|favicon|og-image|robots).*)", "destination": "/index.html" }
+    { "source": "/((?!assets|favicon|og-image|robots|api).*)", "destination": "/index.html" }
   ],
   "env": {
     "VITE_SUPABASE_URL": "https://hdfderbphdobomkdjypc.supabase.co",
