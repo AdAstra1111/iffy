@@ -2,10 +2,10 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "routes": [
-    { "src": "/api/llm", "dest": "api/llm" },
-    { "src": "/api/supabase-proxy/(.*)", "dest": "api/supabase-proxy/[...path]" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/api/llm", "destination": "api/llm" },
+    { "source": "/api/supabase-proxy/:path*", "destination": "api/supabase-proxy/[...path]" },
+    { "source": "/((?!assets|favicon|og-image|robots).*)", "destination": "/index.html" }
   ],
   "env": {
     "VITE_SUPABASE_URL": "https://hdfderbphdobomkdjypc.supabase.co",
