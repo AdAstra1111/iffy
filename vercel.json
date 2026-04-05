@@ -3,8 +3,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/llm", "destination": "api/llm" },
-    { "source": "/api/supabase-proxy/:path*", "destination": "api/supabase-proxy/[...path]", "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"] },
+    { "source": "/api/llm", "destination": "/api/llm" },
     { "source": "/((?!assets|favicon|og-image|robots).*)", "destination": "/index.html" }
   ],
   "env": {
