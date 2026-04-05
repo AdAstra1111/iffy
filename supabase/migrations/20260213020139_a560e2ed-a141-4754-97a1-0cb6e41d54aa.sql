@@ -6,7 +6,7 @@ CREATE TABLE public.pitch_decks (
   user_id UUID NOT NULL,
   slides JSONB NOT NULL DEFAULT '[]'::jsonb,
   tone TEXT NOT NULL DEFAULT 'adaptive',
-  share_token TEXT UNIQUE DEFAULT encode(gen_random_bytes(16), 'hex'),
+  share_token TEXT UNIQUE DEFAULT md5(random()::text || clock_timestamp()::text),
   status TEXT NOT NULL DEFAULT 'generating',
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()

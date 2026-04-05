@@ -127,12 +127,4 @@ BEGIN
 END;
 $$;
 
--- Grant execute to authenticated and service_role
-GRANT EXECUTE ON FUNCTION public.scene_graph_atomic_write(uuid, uuid, boolean, jsonb)
-  TO authenticated, service_role;
-
-COMMENT ON FUNCTION public.scene_graph_atomic_write IS
-  'Atomically inserts a full batch of scene/version/order rows for a project. '
-  'All writes commit together or none persist. '
-  'When p_force=true, existing graph (snapshots + scenes → cascade) is deleted inside '
-  'the same transaction, so old graph is fully preserved if new write fails.';
+-- GRANT moved to separate migration

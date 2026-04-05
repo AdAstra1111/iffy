@@ -72,7 +72,7 @@ CREATE TABLE public.corpus_chunks (
   chunk_index integer NOT NULL DEFAULT 0,
   chunk_text text NOT NULL DEFAULT '',
   search_vector tsvector,
-  embedding extensions.vector(1536),
+  embedding vector(1536),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 

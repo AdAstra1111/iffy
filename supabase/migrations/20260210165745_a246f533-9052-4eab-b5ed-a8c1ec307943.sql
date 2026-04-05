@@ -3,7 +3,7 @@
 CREATE TABLE public.project_invite_links (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-  token TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(24), 'hex'),
+  token TEXT NOT NULL UNIQUE DEFAULT md5(random()::text || clock_timestamp()::text || random()::text),
   role public.project_role NOT NULL DEFAULT 'creative',
   created_by UUID NOT NULL,
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT (now() + interval '7 days'),

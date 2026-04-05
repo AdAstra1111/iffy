@@ -5,17 +5,17 @@
 
 -- 1) Alter trend_signals.embedding from vector(1536) to vector(64)
 ALTER TABLE public.trend_signals
-  ALTER COLUMN embedding TYPE extensions.vector(64)
+  ALTER COLUMN embedding TYPE vector(64)
   USING NULL;
 
 -- 2) Alter project_vectors.embedding from vector(1536) to vector(64)
 ALTER TABLE public.project_vectors
-  ALTER COLUMN embedding TYPE extensions.vector(64)
+  ALTER COLUMN embedding TYPE vector(64)
   USING NULL;
 
 -- 3) Recreate match_trend_signals RPC with vector(64)
 CREATE OR REPLACE FUNCTION public.match_trend_signals(
-  _project_embedding extensions.vector(64),
+  _project_embedding vector(64),
   _min_strength integer DEFAULT 1,
   _limit integer DEFAULT 30
 )

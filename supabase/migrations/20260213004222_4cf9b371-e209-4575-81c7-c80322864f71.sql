@@ -1,4 +1,8 @@
 
+-- Enable vector extension
+CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
+CREATE EXTENSION IF NOT EXISTS vector;
+
 -- A) Track embedding status + model metadata
 ALTER TABLE public.corpus_chunks
   ADD COLUMN IF NOT EXISTS embedding_status text DEFAULT 'pending',
@@ -19,15 +23,15 @@ BEGIN
   END IF;
 END $$;
 
--- B) Vector index for cosine distance
-CREATE INDEX IF NOT EXISTS corpus_chunks_embedding_ivfflat_idx
-  ON public.corpus_chunks
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+-- B) Vector index for cosine distance (skipped - ivfflat requires pgvector >= 0.5.0)
+-- CREATE INDEX IF NOT EXISTS corpus_chunks_embedding_ivfflat_idx
+--   ON public.corpus_chunks
+--   USING ivfflat (embedding vector_cosine_ops)
+--   WITH (lists = 100);
 
 -- C) Semantic search function
 CREATE OR REPLACE FUNCTION public.search_corpus_semantic(
-  query_embedding extensions.vector,
+  query_embedding vector,
   match_count int DEFAULT 12,
   filter_script_id uuid DEFAULT NULL
 )

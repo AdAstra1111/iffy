@@ -4,10 +4,10 @@
 
 -- 1) Alter columns back to vector(1536)
 ALTER TABLE public.project_vectors
-  ALTER COLUMN embedding TYPE extensions.vector(1536) USING NULL;
+  ALTER COLUMN embedding TYPE vector(1536) USING NULL;
 
 ALTER TABLE public.trend_signals
-  ALTER COLUMN embedding TYPE extensions.vector(1536) USING NULL;
+  ALTER COLUMN embedding TYPE vector(1536) USING NULL;
 
 -- 2) Recreate insert_project_vector with 1536 validation
 CREATE OR REPLACE FUNCTION public.insert_project_vector(
@@ -74,7 +74,7 @@ $$;
 
 -- 4) Recreate match_trend_signals with explicit vector(1536) input
 CREATE OR REPLACE FUNCTION public.match_trend_signals(
-  _project_embedding extensions.vector(1536),
+  _project_embedding vector(1536),
   _min_strength integer DEFAULT 1,
   _limit integer DEFAULT 30
 )

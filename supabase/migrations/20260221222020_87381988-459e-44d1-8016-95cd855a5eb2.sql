@@ -29,7 +29,7 @@ CREATE INDEX idx_share_packs_project ON public.project_share_packs(project_id);
 CREATE TABLE public.project_share_pack_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   share_pack_id UUID NOT NULL REFERENCES public.project_share_packs(id) ON DELETE CASCADE,
-  token TEXT NOT NULL UNIQUE DEFAULT encode(gen_random_bytes(32), 'hex'),
+  token TEXT NOT NULL UNIQUE DEFAULT md5(random()::text || clock_timestamp()::text || random()::text || random()::text),
   password_hash TEXT,
   expires_at TIMESTAMPTZ,
   max_downloads INT,

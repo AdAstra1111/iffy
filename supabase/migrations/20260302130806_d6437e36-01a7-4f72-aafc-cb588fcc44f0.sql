@@ -7,7 +7,7 @@
 -- FIX 1: DB-side pgvector similarity (match_trend_signals RPC)
 -- =============================================
 CREATE OR REPLACE FUNCTION public.match_trend_signals(
-  _project_embedding extensions.vector(1536),
+  _project_embedding vector(1536),
   _min_strength int DEFAULT 1,
   _limit int DEFAULT 30
 )

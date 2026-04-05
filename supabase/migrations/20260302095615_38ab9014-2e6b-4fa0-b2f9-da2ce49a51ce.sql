@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS public.intel_alerts (
 );
 
 -- 5) Extend trend_signals with embedding + intel_run_id
-ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS embedding extensions.vector(1536);
+ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS embedding vector(1536);
 ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS embedding_model text;
 ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS tags text[] DEFAULT '{}';
 ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS intel_run_id uuid REFERENCES public.intel_runs(id);
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS public.project_vectors (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
   vector_type text NOT NULL,
-  embedding extensions.vector(1536),
+  embedding vector(1536),
   embedding_model text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS public.lane_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   lane_key text UNIQUE NOT NULL,
   description text NOT NULL,
-  embedding extensions.vector(1536),
+  embedding vector(1536),
   risk_tolerance numeric,
   heat_preference numeric,
   budget_min numeric,
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS public.buyer_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   buyer_key text UNIQUE NOT NULL,
   description text NOT NULL,
-  embedding extensions.vector(1536),
+  embedding vector(1536),
   risk_profile numeric,
   created_at timestamptz NOT NULL DEFAULT now()
 );
@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS public.format_archetypes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   format_key text UNIQUE NOT NULL,
   description text NOT NULL,
-  embedding extensions.vector(1536),
+  embedding vector(1536),
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
