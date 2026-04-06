@@ -27,10 +27,14 @@ function createProxiedClient(url: string, key: string) {
   (client.functions as any).invoke = async function(fn: string, options: any = {}) {
     const proxyUrl = `/api/supabase-proxy/functions/v1/${fn}`;
     const body = options.body !== undefined ? options.body : options;
+    // Use the user's session access_token so edge functions can authenticate the user.
+    // Fall back to the anon key only if no session is available.
+    const { data: sessionData } = await client.auth.getSession();
+    const authToken = sessionData?.session?.access_token || key;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-supabase-key': key,
-      'Authorization': `Bearer ${key}`,
+      'Authorization': `Bearer ${authToken}`,
     };
     // Pass through custom headers if provided
     if (options.headers) {
