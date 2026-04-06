@@ -5517,6 +5517,38 @@ Deno.serve(async (req) => {
         stop_reason: null,
         pending_decisions: null,
       });
+
+      // ── CRITICAL: Resolve decision_ledger rows so decision does NOT re-trigger ──
+      // Without this, the decision policy registry re-finds the same blocking decisions on next tick.
+      const ledgerIdsToResolve = [matchedId];
+      const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const isUuid = uuidPattern.test(matchedId);
+      if (isUuid) {
+        const { error: errUuid } = await supabase
+          .from("decision_ledger")
+          .update({ status: "active" })
+          .eq("id", matchedId)
+          .eq("status", "workflow_pending");
+        if (errUuid) {
+          console.warn(`[auto-run][IEL] decision_ledger_resolve_failed_id`, JSON.stringify({ job_id: jobId, id: matchedId, error: errUuid.message }));
+        } else {
+          console.log(`[auto-run][IEL] decision_ledger_resolved_by_id`, JSON.stringify({ job_id: jobId, id: matchedId }));
+        }
+      } else {
+        // Non-UUID key — resolve by decision_key for this project
+        const { error: errKey } = await supabase
+          .from("decision_ledger")
+          .update({ status: "active" })
+          .eq("decision_key", matchedId)
+          .eq("project_id", job.project_id)
+          .eq("status", "workflow_pending");
+        if (errKey) {
+          console.warn(`[auto-run][IEL] decision_ledger_resolve_failed_key`, JSON.stringify({ job_id: jobId, key: matchedId, error: errKey.message }));
+        } else {
+          console.log(`[auto-run][IEL] decision_ledger_resolved_by_key`, JSON.stringify({ job_id: jobId, key: matchedId }));
+        }
+      }
+
       return respondWithJob(supabase, jobId, "run-next");
     }
 
