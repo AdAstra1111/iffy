@@ -41,6 +41,7 @@ export default function PitchIdeas() {
   const [generateFailed, setGenerateFailed] = useState(false);
   const [genProgress, setGenProgress] = useState({ current: 0, total: 5 });
   const preGenCountRef = useRef(0);
+  const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [criteria, setCriteria] = useState<HardCriteria>({ ...EMPTY_CRITERIA });
   const [editedFields, setEditedFields] = useState<EditedFieldsMap>(() => initEditedFields());
   const [dnaSelection, setDnaSelection] = useState<DnaEngineSelection>({ ...EMPTY_DNA_SELECTION });
@@ -326,8 +327,18 @@ export default function PitchIdeas() {
       setGenerateFailed(true);
       toast.error(e.message || 'Generation failed');
     } finally {
+      clearTimeout(safetyTimerRef.current);
       setGenerating(false);
     }
+
+    // Safety: if generating is still true after 90s, force-reset (edge function timeout fallback)
+    safetyTimerRef.current = setTimeout(() => {
+      if (generatingRef.current) {
+        setGenerating(false);
+        setGenProgress({ current: 0, total: 5 });
+        console.warn('[PitchIdeas] Generate safety timer fired — forcing generating=false');
+      }
+    }, 90000);
   }, [criteria, selectedProject, isProjectMode, globalAnimMeta, globalModality, dnaSelection, save]);
 
   const handleShortlist = useCallback(async (id: string, shortlisted: boolean) => {
