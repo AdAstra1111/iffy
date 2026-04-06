@@ -7,6 +7,7 @@ import { getAnimationMeta, buildAnimationMetaPromptBlock } from "../_shared/anim
 import { fetchTrendSignalsLadder, fetchCastTrends, modalityToTrendsProductionTypeFilter } from "../_shared/trendsContext.ts";
 import { buildPitchScoringRubric, normalizePitchScores, checkScoreDrift } from "../_shared/pitchScoring.ts";
 import { computeLearningPoolEligibility } from "../_shared/learningPool.ts";
+import { resolveGateway } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,10 +31,7 @@ serve(async (req) => {
       source_dna_profile_id, source_engine_key, dna_constraint_mode,
     } = body;
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("No AI API key configured — set LOVABLE_API_KEY or OPENROUTER_API_KEY");
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     const typeLabel = productionType || "film";

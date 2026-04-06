@@ -6,6 +6,8 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
+import { resolveGateway } from "../_shared/llm.ts";
+const gw = resolveGateway();
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":

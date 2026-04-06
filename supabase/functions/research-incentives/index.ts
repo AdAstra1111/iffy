@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildGuardrailBlock } from "../_shared/guardrails.ts";
+import { resolveGateway } from "../_shared/llm.ts";
+const gw = resolveGateway();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,8 +15,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
     const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 
     // Auth check
@@ -205,7 +205,7 @@ For EACH incentive program, provide structured data.`;
         gw.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${gw.apiKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
