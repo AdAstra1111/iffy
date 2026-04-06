@@ -52,6 +52,8 @@ export const BASE_DOC_TYPES: Record<string, DocTypeMeta> = {
   canon:                   { label: 'Canon Snapshot',          description: 'Canonical world/character state snapshot' },
   nec:                     { label: 'NEC',                     description: 'Narrative Evaluation Card — quality assessment' },
   complete_season_script:  { label: 'Complete Season Script',  description: 'Full compiled season script for vertical drama' },
+  // Visual output documents
+  visual_project_bible:    { label: 'Visual Project Bible',    description: 'Assembled visual development document from canonical truth' },
   // Derived (non-ladder) doc types
   scene_graph:             { label: 'Scene Index',             description: 'Deterministic scene segmentation index' },
   change_report:           { label: 'Change Report',           description: 'Deterministic diff and impact analysis' },
@@ -179,7 +181,7 @@ export function getDocTypeLabel(docTypeKey: string): string {
 // ── Output document canonical set (mirrors OUTPUT_DOC_TYPES_BY_LANE in FE config) ──
 // Derived from doc-os.ts doc_category === "output". Single source of truth for BE.
 const OUTPUT_DOC_TYPE_SET: ReadonlySet<string> = new Set([
-  'market_sheet', 'vertical_market_sheet', 'deck', 'trailer_script',
+  'market_sheet', 'vertical_market_sheet', 'deck', 'trailer_script', 'visual_project_bible',
 ]);
 
 /**
