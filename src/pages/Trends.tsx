@@ -124,6 +124,15 @@ export default function Trends() {
             desc={`Talent momentum for ${typeConfig?.label || selectedType} projects`}
           />
         </Link>
+      </div>
+
+      {/* Section divider */}
+      <div className="flex items-center gap-3 py-1">
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest">Tools &amp; Governance</span>
+        <div className="flex-1 border-t border-border/30" />
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Link to="/trends/explorer">
           <NavCard
             icon={<Radio className="h-4 w-4 text-primary" />}
