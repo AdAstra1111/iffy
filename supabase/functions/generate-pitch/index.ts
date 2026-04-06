@@ -23,51 +23,6 @@ serve(async (req) => {
   try {
     const body = await req.json();
 
-    // ── Test save endpoint ───────────────────────────────────────────────
-    if (body._testSave) {
-      const { createClient: createSvcClient } = await import("https://esm.sh/@supabase/supabase-js@2");
-      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-      const svcClient = createSvcClient(supabaseUrl, supabaseKey);
-      const testRow = {
-        user_id: body.userId || "00000000-0000-0000-0000-000000000000",
-        mode: "greenlight",
-        status: "draft",
-        production_type: "film",
-        title: "TEST PITCH — can delete",
-        logline: "Test logline",
-        one_page_pitch: "",
-        comps: [],
-        recommended_lane: "",
-        lane_confidence: 0,
-        budget_band: "",
-        packaging_suggestions: [],
-        development_sprint: [],
-        risks_mitigations: [],
-        why_us: "",
-        genre: "thriller",
-        region: "",
-        platform_target: "",
-        risk_level: "medium",
-        project_id: null,
-        source_dna_profile_id: null,
-        source_engine_key: null,
-        raw_response: { test: true },
-        learning_pool_eligible: false,
-        learning_pool_eligibility_reason: "test",
-        learning_pool_qualified_at: null,
-        devseed_canon_json: {},
-        score_market_heat: 50,
-        score_feasibility: 50,
-        score_lane_fit: 50,
-        score_saturation_risk: 50,
-        score_company_fit: 50,
-        score_total: 50,
-      };
-      const { data, error } = await svcClient.from("pitch_ideas").insert(testRow).select("id").single();
-      return new Response(JSON.stringify({ testSave: true, data, error }));
-    }
-
     const {
       productionType, genre, subgenre, budgetBand, region, platformTarget,
       audienceDemo, riskLevel, count, coverageContext, feedbackContext,
