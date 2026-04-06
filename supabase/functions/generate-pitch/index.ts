@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { resolveGateway } from "../_shared/llm.ts";
 import { buildGuardrailBlock } from "../_shared/guardrails.ts";
 import { buildConvergenceProfile, buildConvergenceBlock } from "../_shared/convergence-profile.ts";
 import type { EdgeTrendSignal, EdgeCastTrend } from "../_shared/convergence-profile.ts";
@@ -21,6 +22,52 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
+
+    // ── Test save endpoint ───────────────────────────────────────────────
+    if (body._testSave) {
+      const { createClient: createSvcClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+      const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+      const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+      const svcClient = createSvcClient(supabaseUrl, supabaseKey);
+      const testRow = {
+        user_id: body.userId || "00000000-0000-0000-0000-000000000000",
+        mode: "greenlight",
+        status: "draft",
+        production_type: "film",
+        title: "TEST PITCH — can delete",
+        logline: "Test logline",
+        one_page_pitch: "",
+        comps: [],
+        recommended_lane: "",
+        lane_confidence: 0,
+        budget_band: "",
+        packaging_suggestions: [],
+        development_sprint: [],
+        risks_mitigations: [],
+        why_us: "",
+        genre: "thriller",
+        region: "",
+        platform_target: "",
+        risk_level: "medium",
+        project_id: null,
+        source_dna_profile_id: null,
+        source_engine_key: null,
+        raw_response: { test: true },
+        learning_pool_eligible: false,
+        learning_pool_eligibility_reason: "test",
+        learning_pool_qualified_at: null,
+        devseed_canon_json: {},
+        score_market_heat: 50,
+        score_feasibility: 50,
+        score_lane_fit: 50,
+        score_saturation_risk: 50,
+        score_company_fit: 50,
+        score_total: 50,
+      };
+      const { data, error } = await svcClient.from("pitch_ideas").insert(testRow).select("id").single();
+      return new Response(JSON.stringify({ testSave: true, data, error }));
+    }
+
     const {
       productionType, genre, subgenre, budgetBand, region, platformTarget,
       audienceDemo, riskLevel, count, coverageContext, feedbackContext,
@@ -1018,8 +1065,6 @@ ${coverageContext ? "\nMode: Coverage Transformer" : "Mode: Greenlight Radar —
           platform_target: platformTarget || '',
           risk_level: idea.risk_level || riskLevel || 'medium',
           project_id: projectId || null,
-          source_dna_profile_id: resolvedDnaProfileId || null,
-          source_engine_key: resolvedEngineKey || null,
           raw_response: {
             ...idea,
             premise: idea.premise || '',
@@ -1044,21 +1089,39 @@ ${coverageContext ? "\nMode: Coverage Transformer" : "Mode: Greenlight Radar —
           .select('id')
           .single();
         if (saveErr) {
-          console.warn(`[generate-pitch] Failed to save idea "${idea.title}": ${saveErr.message}`);
+          console.error(`[generate-pitch] SAVE FAILED idea="${idea.title}" code=${saveErr.code} msg=${saveErr.message} details=${JSON.stringify(saveErr.details)} hint=${saveErr.hint}`);
+          console.error(`[generate-pitch] SAVE ROW: user_id=${row.user_id} mode=${row.mode} status=${row.status} production_type=${row.production_type} title=${row.title} genre=${row.genre} score_total=${row.score_total} learning_pool_eligible=${(row as any).learning_pool_eligible} devseed_canon_json_type=${typeof (row as any).devseed_canon_json} devseed_canon_json_present=${(row as any).devseed_canon_json != null}`);
         } else {
           savedCount++;
           savedIds.push(saved.id);
         }
       } catch (e: any) {
-        console.warn(`[generate-pitch] Save error for "${idea.title}": ${e.message}`);
+        console.error(`[generate-pitch] SAVE EXCEPTION idea="${idea.title}" err=${e.message} stack=${e.stack}`);
       }
     }
+    console.log(`[generate-pitch] Server-side save: svcClient ok, user=${requestUserId}, inserting ${ideas.ideas.length} ideas`);
     console.log(`[generate-pitch] Server-side saved ${savedCount}/${ideas.ideas.length} ideas`);
 
     // Include savedIds so client knows ideas are already persisted
-    ideas.server_saved = true;
+    ideas.server_saved = savedCount > 0;
     ideas.saved_ids = savedIds;
     ideas.saved_count = savedCount;
+
+    // Surface save failures in response so client can handle them
+    if (savedCount === 0 && ideas.ideas.length > 0) {
+      ideas.save_error = `All ${ideas.ideas.length} ideas failed to persist — client-side save will be attempted`;
+    }
+
+    // Add diagnostics to response for debugging
+    (ideas as any)._diagnostics = {
+      user_id: requestUserId,
+      project_id: projectId || null,
+      svc_client_ok: !!svcClient,
+      ideas_count: ideas.ideas.length,
+      saved_count: savedCount,
+      saved_ids: savedIds,
+      first_title: ideas.ideas[0]?.title || null,
+    };
 
     console.log(`[generate-pitch] Returning ${ideas.ideas.length} ideas successfully`);
     return new Response(JSON.stringify(ideas), {

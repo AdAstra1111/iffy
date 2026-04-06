@@ -5,6 +5,7 @@
  * Enforces PG-00/PG-01 gates before proceeding.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { resolveGateway } from "../_shared/llm.ts";
 
 import { resolveGateway } from "../_shared/llm.ts";
 const gw = resolveGateway();
@@ -127,7 +128,7 @@ async function generateImage(prompt: string, apiKey: string, referenceUrls: stri
     // Add the text prompt
     content.push({ type: "text", text: prompt });
 
-    const resp = await fetch(gw.url, {
+    const resp = await fetch(resolveGateway().url, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,

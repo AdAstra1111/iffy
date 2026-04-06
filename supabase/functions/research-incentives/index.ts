@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGateway } from "../_shared/llm.ts";
 import { buildGuardrailBlock } from "../_shared/guardrails.ts";
 import { resolveGateway } from "../_shared/llm.ts";
 const gw = resolveGateway();
@@ -202,7 +203,7 @@ For EACH incentive program, provide structured data.`;
     ];
 
     const aiResponse = await fetch(
-        gw.url, {
+        resolveGateway().url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${gw.apiKey}`,

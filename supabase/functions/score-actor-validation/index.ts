@@ -11,7 +11,6 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveGateway } from "../_shared/llm.ts";
-const gw = resolveGateway();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,7 +76,7 @@ Score guide: 10=identical person, 7-9=same person with natural variation, 4-6=am
     { type: "text", text: prompt },
   ];
 
-  const resp = await fetch(gw.url, {
+  const resp = await fetch(resolveGateway().url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -141,7 +140,8 @@ Deno.serve(async (req) => {
     runId = body.runId;
     if (!runId) return jsonRes({ error: "runId required" }, 400);
 
-    if (!gw.apiKey) return jsonRes({ error: "AI gateway not configured" }, 500);
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY) return jsonRes({ error: "LOVABLE_API_KEY not configured" }, 500);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
       const result = await compareImages(
         variants[0].url,
         variants[1].url,
-        gw.apiKey,
+        LOVABLE_API_KEY,
         `Intra-slot consistency for ${slotKey}: variant A vs B under identical conditions`,
       );
 
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
         const result = await compareImages(
           referenceUrl,
           variants[0].url,
-          gw.apiKey,
+          LOVABLE_API_KEY,
           `Cross-slot persistence: ${REFERENCE_SLOT} vs ${slotKey}`,
         );
 

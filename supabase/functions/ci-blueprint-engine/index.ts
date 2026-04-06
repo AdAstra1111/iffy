@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGateway } from "../_shared/llm.ts";
 import { buildPitchScoringRubric, normalizePitchScores, calculatePitchScoreTotal, checkScoreDrift, PITCH_SCORE_WEIGHTS } from "../_shared/pitchScoring.ts";
 import { computeLearningPoolEligibility, LEARNING_POOL_CI_THRESHOLD } from "../_shared/learningPool.ts";
 import { resolveGateway } from "../_shared/llm.ts";
@@ -538,7 +539,7 @@ ${dnaProfile ? `\nBLUEPRINT MODE: DNA-Informed — ideas must structurally align
       }];
 
       console.log(`[ci-blueprint] calling AI for ${candidateCount} candidates (mode=${optimizerMode})`);
-      const resp = await fetch(gw.url, {
+      const resp = await fetch(resolveGateway().url, {
         method: "POST",
         headers: { Authorization: `Bearer ${gw.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -691,7 +692,7 @@ One-page pitch: ${c.one_page_pitch}
         },
       }];
 
-      const scoreResp = await fetch(gw.url, {
+      const scoreResp = await fetch(resolveGateway().url, {
         method: "POST",
         headers: { Authorization: `Bearer ${gw.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -5,7 +5,6 @@
  */
 import { createClient } from "npm:@supabase/supabase-js@2.49.1";
 import { resolveGateway } from "../_shared/llm.ts";
-const gw = resolveGateway();
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -594,7 +593,7 @@ async function generateImage(
 ): Promise<string | null> {
   try {
     const resp = await fetch(
-        gw.url, {
+        resolveGateway().url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${apiKey}`,
@@ -696,8 +695,9 @@ Deno.serve(async (req) => {
 
     if (!projectId) return jsonRes({ error: "projectId required" }, 400);
 
-    if (!gw.apiKey)
-      return jsonRes({ error: "AI gateway not configured" }, 500);
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+    if (!LOVABLE_API_KEY)
+      return jsonRes({ error: "LOVABLE_API_KEY not configured" }, 500);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -821,7 +821,7 @@ Deno.serve(async (req) => {
         try {
           const headshotBase64 = await generateImage(
             headshotPrompt,
-            gw.apiKey
+            LOVABLE_API_KEY
           );
           if (headshotBase64) {
             const storagePath = `casting/${projectId}/${batchId}/${character.name.toLowerCase().replace(/\s+/g, "_")}_${i}_headshot.png`;
@@ -846,7 +846,7 @@ Deno.serve(async (req) => {
           );
           const fullBodyBase64 = await generateImage(
             fullBodyPrompt,
-            gw.apiKey
+            LOVABLE_API_KEY
           );
           if (fullBodyBase64) {
             const storagePath = `casting/${projectId}/${batchId}/${character.name.toLowerCase().replace(/\s+/g, "_")}_${i}_full_body.png`;

@@ -325,6 +325,7 @@ export default function PitchIdeas() {
       }
     } catch (e: any) {
       setGenerateFailed(true);
+      console.error('[PitchIdeas] Generate catch:', e.message, e.stack);
       toast.error(e.message || 'Generation failed');
     } finally {
       clearTimeout(safetyTimerRef.current);
