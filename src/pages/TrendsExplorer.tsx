@@ -25,9 +25,9 @@ const LANES = [
   { value: 'fast-turnaround', label: 'Fast Turnaround' },
 ];
 
-function modalityToFilter(modality: string, typeLabel: string): string {
+function modalityToFilter(modality: string, selectedType: string): string {
   if (modality === 'animation') return 'animation';
-  return typeLabel;
+  return selectedType;
 }
 
 export default function TrendsExplorer() {
