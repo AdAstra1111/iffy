@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { MODELS } from "../_shared/llm.ts";
+import { resolveGateway, MODELS } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -20,10 +20,11 @@ async function callLLM(messages: any[], tools?: any[], tool_choice?: any) {
   };
   if (tools) { body.tools = tools; body.tool_choice = tool_choice; }
 
-  const resp = await fetch(AI_URL, {
+  const gw = resolveGateway();
+  const resp = await fetch(gw.url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      Authorization: `Bearer ${gw.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -126,10 +127,11 @@ async function ocrPdfWithGemini(bytes: Uint8Array, estimatedPages: number): Prom
   const base64Pdf = encodeBase64(bytes);
 
   // Use a simpler prompt that's less likely to timeout — just extract text, no tool call
-  const resp = await fetch(AI_URL, {
+  const gw2 = resolveGateway();
+  const resp = await fetch(gw2.url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      Authorization: `Bearer ${gw2.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

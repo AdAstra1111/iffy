@@ -282,17 +282,55 @@ async function handleSemanticSearch(
   });
 }
 
-// ── Generate embeddings via Lovable AI gateway ───────────────────────
+// ── Generate embeddings via OpenAI API ───────────────────────────
 
-async function generateEmbeddings(texts: string[], apiKey: string): Promise<number[][]> {
-  // Use Gemini to generate embeddings via the completions API with a structured output approach
-  // Since the gateway is OpenAI-compatible, we use the embeddings endpoint pattern
-  // But the Lovable AI gateway only supports chat completions, so we use a tool-calling approach
+async function generateEmbeddings(texts: string[], _apiKey: string): Promise<number[][]> {
+  // Use OpenAI text-embedding-3-small (1536-dim) via direct OpenAI API.
+  // Falls back to LLM tool-calling approach only if OPENAI_API_KEY is absent.
+
+  const openAiKey = Deno.env.get("OPENAI_API_KEY");
+  const openAiEndpoint = "https://api.openai.com/v1/embeddings";
+
+  if (openAiKey) {
+    // Primary: real OpenAI embeddings API
+    const resp = await fetch(openAiEndpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${openAiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: EMBEDDING_MODEL,
+        input: texts.map(t => t.slice(0, 8000)), // OpenAI limit 8192 tokens
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      if (resp.status === 429) throw new Error("OpenAI embedding rate limit (429)");
+      if (resp.status === 402) throw new Error("OpenAI payment required (402)");
+      throw new Error(`OpenAI embedding failed (${resp.status}): ${errText}`);
+    }
+
+    const data = await resp.json();
+    const embeddings: number[][] = data.data
+      .sort((a: any, b: any) => a.index - b.index)
+      .map((item: any) => item.embedding);
+
+    if (embeddings.length !== texts.length) {
+      throw new Error(`Embedding count mismatch: got ${embeddings.length}, expected ${texts.length}`);
+    }
+
+    return embeddings;
+  }
+
+  // Fallback: LLM tool-calling (original broken approach — warn but don't throw)
+  console.warn("[embed-corpus] OPENAI_API_KEY not set — using LLM fallback (unreliable embeddings)");
 
   const resp = await fetch(resolveGateway().url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${_apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -336,8 +374,6 @@ async function generateEmbeddings(texts: string[], apiKey: string): Promise<numb
 
   if (!resp.ok) {
     const errText = await resp.text();
-    if (resp.status === 429) throw new Error("Rate limit exceeded (429)");
-    if (resp.status === 402) throw new Error("Payment required (402) — add credits to workspace");
     throw new Error(`Embedding generation failed (${resp.status}): ${errText}`);
   }
 
