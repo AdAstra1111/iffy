@@ -1128,6 +1128,14 @@ Deno.serve(async (req) => {
             CREATE POLICY "nsel_select" ON public.narrative_scene_entity_links
               FOR SELECT TO authenticated USING (has_project_access(auth.uid(), project_id));
           `,
+
+          // Force PostgREST to reload schema cache for project_images
+          "refresh_project_images_schema": `
+            ALTER TABLE public.project_images ENABLE ROW LEVEL SECURITY;
+            DO $$ BEGIN
+              NOTIFY pgrst_schema_cache, 'reload';
+            END $$;
+          `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
           throw new Error(`run_migration: unknown migration_key '${migration_key}'`);
