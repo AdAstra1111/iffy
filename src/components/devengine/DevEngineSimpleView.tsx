@@ -218,7 +218,7 @@ export function DevEngineSimpleView({
                 variant="link"
                 size="sm"
                 className="text-[10px] p-0 h-auto mt-1"
-                onClick={() => { console.log('[DEV] SimpleView setMode advanced'); setMode('advanced'); }}
+                onClick={() => { console.log('[DEV] SimpleView setMode advanced'); window.setMode = setMode; setMode('advanced'); }}
               >
                 Open Mission Control →
               </Button>
