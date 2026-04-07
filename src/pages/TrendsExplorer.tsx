@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { TrendingUp, Users, Filter, AlertTriangle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
@@ -42,7 +43,9 @@ function modalityToFilter(modality: string, selectedType: string): string {
 }
 
 export default function TrendsExplorer() {
-  const [selectedType, setSelectedType] = useState('film');
+  const [searchParams] = useSearchParams();
+  const initialType = searchParams.get('type') || 'film';
+  const [selectedType, setSelectedType] = useState(initialType);
   const [modality, setModality] = useState<ProductionModality>('live_action');
   const [lane, setLane] = useState('__any__');
   const [selectedSignal, setSelectedSignal] = useState<TrendSignal | null>(null);
@@ -56,6 +59,17 @@ export default function TrendsExplorer() {
     setCastFilters(prev => ({ ...prev, [key]: value }));
   }, []);
   const resetCastFilters = useCallback(() => setCastFilters({ productionType: selectedType }), [selectedType]);
+
+  // Production type change: update both selectedType and castFilters.productionType
+  const handleTypeChange = useCallback((type: string) => {
+    setSelectedType(type);
+    setCastFilters(prev => ({ ...prev, productionType: type }));
+  }, []);
+
+  // Sync castFilters.productionType when selectedType changes via URL param
+  useEffect(() => {
+    setCastFilters(prev => ({ ...prev, productionType: selectedType }));
+  }, [selectedType]);
 
   const isNonFilm = ['commercial', 'branded-content', 'music-video', 'digital-series'].includes(selectedType);
 
@@ -134,21 +148,40 @@ export default function TrendsExplorer() {
       title="Live Trend Data"
       subtitle="Modality-aware signals and cast trends — same filter logic as Pitch Engine."
       controls={
-        <TrendsFilterBar
-          breadcrumb={
-            <>
-              <Filter className="h-3 w-3 shrink-0" />
-              <span>
-                production_type=<strong className="text-foreground">{castFilters.productionType || effectiveFilter}</strong>
-                {activeLane && <> · lane=<strong className="text-foreground">{activeLane}</strong></>}
-              </span>
-              <span className="ml-auto shrink-0">{allSignals.length} signals · {castTrends.length} cast</span>
-            </>
-          }
-        >
-          {/* Lane filter only — signals are additionally scoped by activeLane in memory */}
-          <FilterSelect label="Lane" value={lane} onChange={setLane} options={LANES} />
-        </TrendsFilterBar>
+        <div className="space-y-2">
+          {/* Production Type Selector — primary control, makes TrendsExplorer fully standalone */}
+          <div className="flex flex-wrap gap-2 items-end">
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Production Type</label>
+              <Select value={selectedType} onValueChange={handleTypeChange}>
+                <SelectTrigger className="h-8 w-48 bg-muted/50 border-border/50 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRODUCTION_TYPES.map(pt => (
+                    <SelectItem key={pt.value} value={pt.value}>{pt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <TrendsFilterBar
+            breadcrumb={
+              <>
+                <Filter className="h-3 w-3 shrink-0" />
+                <span>
+                  production_type=<strong className="text-foreground">{selectedType}</strong>
+                  {activeLane && <> · lane=<strong className="text-foreground">{activeLane}</strong></>}
+                </span>
+                <span className="ml-auto shrink-0">{allSignals.length} signals · {castTrends.length} cast</span>
+              </>
+            }
+          >
+            {/* Lane filter only — signals are additionally scoped by activeLane in memory */}
+            <FilterSelect label="Lane" value={lane} onChange={setLane} options={LANES} />
+          </TrendsFilterBar>
+        </div>
       }
     >
       {/* Cast Trends Filters — wired to useActiveCastTrends (Bug 2 fix) */}

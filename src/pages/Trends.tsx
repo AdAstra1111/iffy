@@ -133,7 +133,7 @@ export default function Trends() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Link to="/trends/explorer">
+        <Link to={`/trends/explorer?type=${selectedType}`}>
           <NavCard
             icon={<Radio className="h-4 w-4 text-primary" />}
             title="Trends Explorer"
