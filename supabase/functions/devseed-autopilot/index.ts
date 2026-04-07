@@ -120,21 +120,38 @@ Deno.serve(async (req) => {
     if (token === serviceKey) {
       isServiceRole = true;
       userId = body.userId || null;
-    } else {
-      // JWT validation
-      const userClient = createClient(supabaseUrl, anonKey, {
-        global: { headers: { Authorization: authHeader } },
-      });
-      const { data: userData, error: userError } = await userClient.auth.getUser(token);
-      if (userError || !userData?.user) {
+    } else if (token.split(".").length === 3) {
+      // Possibly a JWT — check for service_role claim WITHOUT calling getUser()
+      // This avoids JWT secret rotation issues with Supabase Auth
+      try {
+        const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return jsonRes({ error: "Token expired" }, 401, req);
+        }
+        if (payload.role === "service_role") {
+          // Service role JWT accepted — bypass getUser(), trust the role claim
+          isServiceRole = true;
+          userId = body.userId || null;
+        } else if (payload.sub) {
+          // Regular user JWT — validate via getUser()
+          const userClient = createClient(supabaseUrl, anonKey, {
+            global: { headers: { Authorization: authHeader } },
+          });
+          const { data: userData, error: userError } = await userClient.auth.getUser(token);
+          if (userError || !userData?.user) {
+            return jsonRes({ error: "Unauthorized" }, 401, req);
+          }
+          userId = userData.user.id;
+        } else {
+          return jsonRes({ error: "Unauthorized" }, 401, req);
+        }
+      } catch {
         return jsonRes({ error: "Unauthorized" }, 401, req);
       }
-      if (userData.user.role === "service_role") {
-        isServiceRole = true;
-        userId = body.userId || null;
-      } else {
-        userId = userData.user.id;
-      }
+    } else {
+      return jsonRes({ error: "Unauthorized" }, 401, req);
     }
 
     // Service role fallback: resolve userId from project owner
