@@ -1327,6 +1327,11 @@ Deno.serve(async (req) => {
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_shot_type TEXT;
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_character_names TEXT[];
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS api_responses JSONB;
+            -- Quality gate extended fields
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS premium_eligible BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_status TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_rejection_codes TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_warnings TEXT[];
           `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
