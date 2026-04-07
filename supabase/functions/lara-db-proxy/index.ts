@@ -1237,7 +1237,7 @@ Deno.serve(async (req) => {
             CREATE POLICY "pim_delete" ON public.project_images FOR DELETE TO authenticated USING (true);
           `,
 
-          // Add missing columns to existing project_images table
+          // Add missing columns to existing project_images table (comprehensive v3)
           "add_project_images_columns": `
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS asset_group TEXT;
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS subject TEXT;
@@ -1293,6 +1293,40 @@ Deno.serve(async (req) => {
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_time_of_day TEXT;
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS narrative_source TEXT;
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS dataset_provenance JSONB;
+            -- Quality gate result fields
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS image_url TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_score NUMERIC;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_reasons TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS nsfw_score NUMERIC;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS face_detected BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS style_mode TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS model TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS provider TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS generation_config JSONB;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS source_feature TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS slide_type TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS pass BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS targeting_mode TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requirement_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS target_requirement_id UUID;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS batch_index INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS variant_index INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS state_variant_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS canonical_binding_status TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS canonical_binding_missing TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_locked BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_mode TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_notes_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_traits_used INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_signature_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_headshot_anchor_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_full_body_anchor_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_canon_facts_used TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_anchors_count INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_lock_strength NUMERIC;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_shot_type TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_character_names TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS api_responses JSONB;
           `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
