@@ -244,6 +244,11 @@ async function writeVersionSafe(
     cceMeta = cceResult.metaPatch;
   }
 
+  // Guard: prevent string→object coercion from double-serialized meta_json
+  const safeMetaJson = (opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson))
+    ? opts.metaJson
+    : {};
+
   try {
     const nv = await createVersion(supabaseClient, {
       documentId: opts.documentId,
@@ -257,7 +262,7 @@ async function writeVersionSafe(
       dependsOnResolverHash: opts.dependsOnResolverHash || undefined,
       generatorId,
       deliverableType: opts.deliverableType,
-      metaJson: { ...(opts.metaJson || {}), content_hash: contentHash, ...cceMeta },
+      metaJson: { ...safeMetaJson, content_hash: contentHash, ...cceMeta },
       parentVersionId: opts.parentVersionId || undefined,
       inputsUsed: opts.inputsUsed || {
         generator_id: generatorId,
@@ -7267,6 +7272,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
         } catch (_) { /* non-fatal */ }
 
         const rwMetaJson = narrativeCtx.voice.voiceId ? { team_voice_id: narrativeCtx.voice.voiceId } : undefined;
+        const rwSafeMetaJson = (rwMetaJson && typeof rwMetaJson === 'object' && !Array.isArray(rwMetaJson)) ? rwMetaJson : {};
         const { data: nv, error: vErr } = await writeVersionSafe(supabase, {
           documentId,
           versionNumber: nextVersion,
@@ -7278,7 +7284,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
           dependsOn: depFields,
           dependsOnResolverHash: rewriteResolverHash,
           generatorId: "dev-engine-v2-rewrite",
-          metaJson: rwMetaJson,
+          metaJson: rwSafeMetaJson,
           deliverableType: effectiveDeliverable,
           format: effectiveFormat || undefined,
           projectId,

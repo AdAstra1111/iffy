@@ -482,7 +482,7 @@ export async function createVersion(
     created_by: opts.createdBy,
     approval_status: opts.approvalStatus || "draft",
     deliverable_type: opts.deliverableType || key,
-    meta_json: opts.metaJson || {},
+    meta_json: (opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson)) ? opts.metaJson : {},
     generator_id: effectiveGeneratorId,
     depends_on_resolver_hash: resolvedHash,
   };
