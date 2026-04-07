@@ -999,6 +999,7 @@ serve(async (req) => {
     // Accept both user JWTs and service role JWTs (internal machine-to-machine calls)
     const rawToken = (authHeader || "").replace("Bearer ", "").trim();
     let isServiceRole = false;
+    let actorUserId: string | null = null;
     if (rawToken.split(".").length === 3) {
       try {
         const seg = rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
@@ -1009,10 +1010,13 @@ serve(async (req) => {
         }
         if (payload.role === "service_role") {
           isServiceRole = true;
+          actorUserId = null; // Service role — no specific user
+        } else if (payload.sub) {
+          actorUserId = payload.sub; // Trust sub claim for user ID
         }
       } catch {  }
     }
-    if (!isServiceRole) {
+    if (!isServiceRole && !actorUserId) {
       const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
       const userClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader || "" } },
@@ -1023,6 +1027,7 @@ serve(async (req) => {
           status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      actorUserId = user.id;
     }
 
     const body = await req.json();
@@ -1863,8 +1868,8 @@ FRAMING RULES:
             is_primary: false,
             is_active: true,
             source_poster_id: null,
-            user_id: user.id,
-            created_by: user.id,
+            user_id: actorUserId,
+            created_by: actorUserId,
             provider: genConfig.provider,
             model: genConfig.model,
             style_mode: styleMode,
