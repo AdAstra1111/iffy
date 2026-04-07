@@ -746,7 +746,8 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
     try {
       navigate(missionControlUrl);
     } catch (e) {
-      console.error('[AutopilotPanel] navigation failed:', e);
+      console.error('[AutopilotPanel] navigation failed, using window.location:', e);
+      window.location.href = missionControlUrl;
     }
   };
 

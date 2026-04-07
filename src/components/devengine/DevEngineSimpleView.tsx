@@ -218,7 +218,7 @@ export function DevEngineSimpleView({
                 variant="link"
                 size="sm"
                 className="text-[10px] p-0 h-auto mt-1"
-                onClick={() => { console.log('[DEV] SimpleView setMode advanced'); window.setMode = setMode; setMode('advanced'); }}
+                onClick={() => { const url = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`; try { navigate(url); } catch { window.location.href = url; } }}
               >
                 Open Mission Control →
               </Button>
@@ -282,7 +282,7 @@ export function DevEngineSimpleView({
                 variant="outline"
                 size="sm"
                 className="w-full text-[10px] h-7 mt-1"
-                onClick={() => { console.log('[DEV] SimpleView setMode advanced (bottom btn)'); setMode('advanced'); }}
+                onClick={() => { const url = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`; try { navigate(url); } catch { window.location.href = url; } }}
               >
                 Open Mission Control <ArrowRight className="h-3 w-3 ml-1" />
               </Button>
