@@ -1132,9 +1132,46 @@ Deno.serve(async (req) => {
           // Force PostgREST to reload schema cache for project_images
           "refresh_project_images_schema": `
             ALTER TABLE public.project_images ENABLE ROW LEVEL SECURITY;
+          `,
+
+          // Create project_images table
+          "create_project_images": `
             DO $$ BEGIN
-              NOTIFY pgrst_schema_cache, 'reload';
+              CREATE TYPE public.project_image_role AS ENUM (
+                'poster_primary','poster_variant','character_primary','character_variant',
+                'world_establishing','world_detail','visual_reference',
+                'lookbook_cover','marketing_variant'
+              );
+            EXCEPTION WHEN duplicate_object THEN NULL;
             END $$;
+            CREATE TABLE IF NOT EXISTS public.project_images (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+              role public.project_image_role NOT NULL,
+              entity_id TEXT,
+              strategy_key TEXT,
+              prompt_used TEXT NOT NULL DEFAULT '',
+              negative_prompt TEXT NOT NULL DEFAULT '',
+              canon_constraints JSONB NOT NULL DEFAULT '{}',
+              storage_path TEXT NOT NULL,
+              storage_bucket TEXT NOT NULL DEFAULT 'project-posters',
+              width INTEGER,
+              height INTEGER,
+              is_primary BOOLEAN NOT NULL DEFAULT false,
+              is_active BOOLEAN NOT NULL DEFAULT true,
+              source_poster_id UUID,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+              user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_project_images_project ON public.project_images(project_id);
+            CREATE INDEX IF NOT EXISTS idx_project_images_role ON public.project_images(project_id, role);
+            CREATE INDEX IF NOT EXISTS idx_project_images_active ON public.project_images(project_id, is_active) WHERE is_active = true;
+            ALTER TABLE public.project_images ENABLE ROW LEVEL SECURITY;
+            CREATE POLICY "pim_select" ON public.project_images FOR SELECT TO authenticated USING (true);
+            CREATE POLICY "pim_insert" ON public.project_images FOR INSERT TO authenticated WITH CHECK (true);
+            CREATE POLICY "pim_update" ON public.project_images FOR UPDATE TO authenticated USING (true);
+            CREATE POLICY "pim_delete" ON public.project_images FOR DELETE TO authenticated USING (true);
           `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
