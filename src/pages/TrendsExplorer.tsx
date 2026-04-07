@@ -1,12 +1,23 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { TrendingUp, Users, Filter, AlertTriangle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { useActiveSignals, useActiveCastTrends, useSignalCount, useCastTrendsCount, PRODUCTION_TYPE_TREND_CATEGORIES, type TrendSignal } from '@/hooks/useTrends';
+import {
+  useActiveSignals,
+  useActiveCastTrends,
+  useSignalCount,
+  useCastTrendsCount,
+  PRODUCTION_TYPE_TREND_CATEGORIES,
+  TARGET_BUYER_OPTIONS,
+  BUDGET_TIER_OPTIONS,
+  type TrendSignal,
+  type CastFilters,
+} from '@/hooks/useTrends';
 import { PRODUCTION_MODALITIES, MODALITY_LABELS, type ProductionModality } from '@/config/productionModality';
 import { Link } from 'react-router-dom';
 import { TrendsPageShell } from '@/components/trends/TrendsPageShell';
 import { TrendsFilterBar } from '@/components/trends/TrendsFilterBar';
+import { TrendsFilters } from '@/components/market/TrendsFilters';
 import { TrendSignalModal } from '@/components/trends/TrendSignalModal';
 
 const PRODUCTION_TYPES = Object.entries(PRODUCTION_TYPE_TREND_CATEGORIES).map(([value, config]) => ({
@@ -36,11 +47,73 @@ export default function TrendsExplorer() {
   const [lane, setLane] = useState('__any__');
   const [selectedSignal, setSelectedSignal] = useState<TrendSignal | null>(null);
 
+  // ── Cast Trends Filters (Bug 2 fix) ────────────────────────────────────────
+  // TrendsFilterBar only controls signals (lane). Cast trends need full
+  // TrendsFilters wiring — region, ageBand, genreRelevance, trendType,
+  // cyclePhase, velocity, saturationRisk, budgetTier, targetBuyer, etc.
+  const [castFilters, setCastFilters] = useState<CastFilters>({ productionType: 'film' });
+  const handleCastFilter = useCallback((key: string, value: string | undefined) => {
+    setCastFilters(prev => ({ ...prev, [key]: value }));
+  }, []);
+  const resetCastFilters = useCallback(() => setCastFilters({ productionType: selectedType }), [selectedType]);
+
+  const isNonFilm = ['commercial', 'branded-content', 'music-video', 'digital-series'].includes(selectedType);
+
+  const castFilterConfigs = useMemo(() => {
+    const configs = [
+      { key: 'region', label: 'Region', options: [
+        { value: 'UK', label: 'UK' }, { value: 'US', label: 'US' },
+        { value: 'Europe', label: 'Europe' }, { value: 'Australia', label: 'Australia' },
+      ]},
+      { key: 'cyclePhase', label: 'Phase', options: [
+        { value: 'Early', label: 'Early' }, { value: 'Building', label: 'Building' },
+        { value: 'Peaking', label: 'Peaking' },
+      ]},
+      { key: 'velocity', label: 'Velocity', options: [
+        { value: 'Rising', label: 'Rising' }, { value: 'Stable', label: 'Stable' },
+        { value: 'Declining', label: 'Declining' },
+      ]},
+      { key: 'saturationRisk', label: 'Saturation', options: [
+        { value: 'Low', label: 'Low' }, { value: 'Medium', label: 'Medium' },
+        { value: 'High', label: 'High' },
+      ]},
+      { key: 'budgetTier', label: 'Budget Tier', options: BUDGET_TIER_OPTIONS },
+    ];
+
+    const buyerOpts = TARGET_BUYER_OPTIONS[selectedType] || TARGET_BUYER_OPTIONS.film;
+    configs.push({ key: 'targetBuyer', label: isNonFilm ? 'Target Client' : 'Target Buyer', options: buyerOpts });
+
+    if (!isNonFilm) {
+      configs.splice(1, 0,
+        { key: 'ageBand', label: 'Age Band', options: [
+          { value: 'Under 18', label: 'Under 18' }, { value: '18-25', label: '18–25' },
+          { value: '26-35', label: '26–35' }, { value: '36-45', label: '36–45' },
+        ]},
+        { key: 'trendType', label: 'Trend Type', options: [
+          { value: 'Emerging', label: 'Emerging' }, { value: 'Accelerating', label: 'Accelerating' },
+          { value: 'Resurgent', label: 'Resurgent' },
+        ]},
+        { key: 'genreRelevance', label: 'Genre', options: [
+          { value: 'YA', label: 'YA' }, { value: 'Comedy', label: 'Comedy' },
+          { value: 'Drama', label: 'Drama' }, { value: 'Genre Film', label: 'Genre Film' },
+          { value: 'Action', label: 'Action' },
+        ]},
+        { key: 'marketAlignment', label: 'Market', options: [
+          { value: 'Indie', label: 'Indie' }, { value: 'Studio', label: 'Studio' },
+          { value: 'Streamer', label: 'Streamer' },
+        ]},
+      );
+    }
+
+    return configs;
+  }, [selectedType, isNonFilm]);
+  // ── End Bug 2 fix ─────────────────────────────────────────────────────────
+
   const effectiveFilter = modalityToFilter(modality, selectedType);
   const activeLane = lane !== '__any__' ? lane : '';
 
   const { data: allSignals = [], isLoading: signalsLoading } = useActiveSignals({ productionType: effectiveFilter });
-  const { data: castTrends = [], isLoading: castLoading } = useActiveCastTrends({ productionType: effectiveFilter });
+  const { data: castTrends = [], isLoading: castLoading } = useActiveCastTrends(castFilters);
   const { data: signalDbCount = 0 } = useSignalCount(effectiveFilter);
   const { data: castDbCount = 0 } = useCastTrendsCount(effectiveFilter);
 
@@ -66,24 +139,26 @@ export default function TrendsExplorer() {
             <>
               <Filter className="h-3 w-3 shrink-0" />
               <span>
-                production_type=<strong className="text-foreground">{effectiveFilter}</strong> · modality=<strong className="text-foreground">{modality}</strong>
+                production_type=<strong className="text-foreground">{castFilters.productionType || effectiveFilter}</strong>
                 {activeLane && <> · lane=<strong className="text-foreground">{activeLane}</strong></>}
               </span>
               <span className="ml-auto shrink-0">{allSignals.length} signals · {castTrends.length} cast</span>
             </>
           }
         >
-          <FilterSelect label="Production Type" value={selectedType} onChange={setSelectedType} options={PRODUCTION_TYPES} />
-          <FilterSelect
-            label="Modality"
-            value={modality}
-            onChange={v => setModality(v as ProductionModality)}
-            options={PRODUCTION_MODALITIES.map(m => ({ value: m, label: MODALITY_LABELS[m] }))}
-          />
+          {/* Lane filter only — signals are additionally scoped by activeLane in memory */}
           <FilterSelect label="Lane" value={lane} onChange={setLane} options={LANES} />
         </TrendsFilterBar>
       }
     >
+      {/* Cast Trends Filters — wired to useActiveCastTrends (Bug 2 fix) */}
+      <TrendsFilters
+        filters={castFilters as Record<string, string>}
+        filterConfigs={castFilterConfigs}
+        onFilterChange={handleCastFilter}
+        onReset={resetCastFilters}
+      />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Lane-scoped signals */}
         {activeLane && (
