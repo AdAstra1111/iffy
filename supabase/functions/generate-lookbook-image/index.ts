@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { resolveGateway } from "../_shared/llm.ts";
 import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
 import { computeEdgeQualityGate } from "../_shared/edgeQualityGate.ts";
 import type { ImageRole, ImageStyleMode } from "../_shared/imageGenerationResolver.ts";
@@ -987,23 +988,41 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const _gw = resolveGateway();
+    if (!_gw.apiKey) throw new Error("No AI gateway key configured (LOVABLE_API_KEY / OPENROUTER_API_KEY)");
 
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader || "" } },
-    });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Accept both user JWTs and service role JWTs (internal machine-to-machine calls)
+    const rawToken = (authHeader || "").replace("Bearer ", "").trim();
+    let isServiceRole = false;
+    if (rawToken.split(".").length === 3) {
+      try {
+        const seg = rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (payload.role === "service_role") {
+          isServiceRole = true;
+        }
+      } catch {  }
+    }
+    if (!isServiceRole) {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader || "" } },
       });
+      const { data: { user }, error: authErr } = await userClient.auth.getUser();
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const body = await req.json();
@@ -1766,7 +1785,7 @@ FRAMING RULES:
       const refsForThisShot = (identityLockUsed && assetGroup === "character") ? identityReferenceUrls : [];
 
       try {
-        const imageResult = await generateImage(LOVABLE_API_KEY, prompt, genConfig.model, genConfig.gatewayUrl, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
+        const imageResult = await generateImage(_gw.apiKey, prompt, genConfig.model, _gw.url, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
 
         const identitySegment = identity_mode ? '-identity' : '';
         const stateSegment = state_key ? `-${state_key}` : '';

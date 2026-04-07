@@ -22,14 +22,30 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get user from auth
+    // Accept both user JWTs (via getUser) and service role JWTs (internal machine-to-machine)
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
     const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let isServiceRole = false;
+    if (token.split(".").length === 3) {
+      try {
+        const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (payload.role === "service_role") {
+          isServiceRole = true;
+        }
+      } catch {  }
+    }
+    if (!isServiceRole) {
+      const { data: { user }, error: authError } = await anonClient.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const { project_id } = await req.json();
@@ -49,7 +65,7 @@ serve(async (req) => {
     try {
       const resolverResp = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: authHeader },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseKey}` },
         body: JSON.stringify({ projectId: project_id }),
       });
       if (resolverResp.ok) {

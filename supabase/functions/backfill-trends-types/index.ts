@@ -33,29 +33,49 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 
-    // Verify user
-    const anonClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: authErr } = await anonClient.auth.getUser();
-    if (authErr || !user) return json({ error: "Unauthorized" }, 401);
+    // Accept both user JWTs (via getUser) and service role JWTs (internal machine-to-machine)
+    const rawToken = authHeader.replace("Bearer ", "").trim();
+    let isServiceRole = false;
+    let user: any = null;
+    if (rawToken.split(".").length === 3) {
+      try {
+        const seg = rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return json({ error: "Unauthorized" }, 401);
+        }
+        if (payload.role === "service_role") {
+          isServiceRole = true;
+        }
+      } catch {  }
+    }
+    if (!isServiceRole) {
+      const anonClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user: u }, error: authErr } = await anonClient.auth.getUser();
+      if (authErr || !u) return json({ error: "Unauthorized" }, 401);
+      user = u;
+    }
 
-    // Admin gate: check ADMIN_EMAILS or has_role — fallback to allowing any authenticated user
-    // since backfill only calls refresh-trends which has its own auth
+    // Admin gate: service role callers are always admin
     const adminEmails = (Deno.env.get("ADMIN_EMAILS") || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
-    const userEmail = (user.email || "").toLowerCase();
-    let isAdmin = adminEmails.length === 0 || adminEmails.includes(userEmail);
-
-    if (!isAdmin) {
-      const db = createClient(supabaseUrl, serviceKey);
-      const { data: hasAdminRole } = await db.rpc("has_role", { _user_id: user.id, _role: "admin" });
-      isAdmin = !!hasAdminRole;
+    let isAdmin = !!isServiceRole;
+    if (!isAdmin && user) {
+      const userEmail = (user.email || "").toLowerCase();
+      isAdmin = adminEmails.length === 0 || adminEmails.includes(userEmail);
+      if (!isAdmin) {
+        const db = createClient(supabaseUrl, serviceKey);
+        const { data: hasAdminRole } = await db.rpc("has_role", { _user_id: user.id, _role: "admin" });
+        isAdmin = !!hasAdminRole;
+      }
     }
 
     // If ADMIN_EMAILS is configured and user isn't in it or has_role, block
     if (!isAdmin && adminEmails.length > 0) return json({ error: "Admin access required" }, 403);
 
-    console.log(`[backfill-trends-types] user=${user.id} email=${userEmail} is_admin=${isAdmin}`);
+    console.log(`[backfill-trends-types] user=${user?.id ?? "service_role"} is_admin=${isAdmin}`);
 
     const db = createClient(supabaseUrl, serviceKey);
 
@@ -94,7 +114,7 @@ Deno.serve(async (req) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authHeader,
+            Authorization: `Bearer ${serviceKey}`,
           },
           body: JSON.stringify({
             production_type: productionType,

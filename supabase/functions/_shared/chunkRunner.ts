@@ -11,6 +11,7 @@
  * Used by: generate-document, dev-engine-v2, auto-run.
  */
 
+import { resolveGateway } from "./llm.ts";
 import { type ChunkPlan, type ChunkPlanEntry, chunkPlanFor, isEpisodicDocType } from "./largeRiskRouter.ts";
 import { validateEpisodicChunk, validateEpisodicContent, validateSectionedContent, hasBannedSummarizationLanguage, hasScreenplayFormat } from "./chunkValidator.ts";
 
@@ -19,6 +20,7 @@ import { validateEpisodicChunk, validateEpisodicContent, validateSectionedConten
 export interface ChunkRunnerOptions {
   supabase: any;
   apiKey: string;
+  gatewayUrl?: string; // If omitted, resolves from env via resolveGateway()
   projectId: string;
   documentId: string;
   versionId: string;
@@ -80,6 +82,7 @@ function maxTokensForChunk(strategy: string, docType: string): number {
 
 async function callChunkLLM(
   apiKey: string,
+  gatewayUrl: string,
   system: string,
   user: string,
   model: string = "google/gemini-2.5-flash",
@@ -88,7 +91,7 @@ async function callChunkLLM(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), CHUNK_LLM_TIMEOUT_MS);
   try {
-    const res = await fetch(GATEWAY_URL, {
+    const res = await fetch(gatewayUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
       body: JSON.stringify({
@@ -172,7 +175,7 @@ async function generateSingleChunk(
   chunk: ChunkPlanEntry,
   previousChunkEnding?: string
 ): Promise<string> {
-  const { apiKey, upstreamContent, projectTitle, docType, additionalContext, model, plan } = opts;
+  const { apiKey, gatewayUrl, upstreamContent, projectTitle, docType, additionalContext, model, plan } = opts;
   let systemPrompt = opts.systemPrompt;
   const tokenBudget = maxTokensForChunk(plan.strategy, docType);
 
@@ -412,11 +415,11 @@ UPSTREAM CONTEXT (episode beats, character bible, season arc — use these as ca
 ${upstreamContent.slice(0, 9000)}
 
 ${previousChunkEnding ? `PREVIOUS EPISODE ENDING (for continuity):\n...${previousChunkEnding}\n\n` : ""}Write Episode ${epNum} now. Start directly with "## EPISODE ${epNum}:".`;
-    const raw = await callChunkLLM(apiKey, SEASON_SCRIPT_SYSTEM, epPrompt, "google/gemini-2.5-pro", 4000);
+    const raw = await callChunkLLM(apiKey, gatewayUrl, SEASON_SCRIPT_SYSTEM, epPrompt, "google/gemini-2.5-pro", 4000);
     return raw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
   }
 
-  return await callChunkLLM(apiKey, systemPrompt, chunkPrompt, model || "google/gemini-2.5-flash", tokenBudget);
+  return await callChunkLLM(apiKey, gatewayUrl, systemPrompt, chunkPrompt, model || "google/gemini-2.5-flash", tokenBudget);
 }
 
 // ── Determine which chunks need (re)generation ──
@@ -452,6 +455,17 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     supabase, documentId, versionId, plan, docType,
     maxChunkRepairs = 2, episodeCount, requestId,
   } = opts;
+
+  // Resolve gateway URL if not explicitly provided — avoids hardcoded URL mismatch
+  const resolvedGw = opts.gatewayUrl
+    ? { url: opts.gatewayUrl }
+    : (() => {
+        try { return resolveGateway(); } catch { return { url: "https://ai.gateway.lovable.dev/v1/chat/completions" }; }
+      })();
+  const effectiveGatewayUrl = opts.gatewayUrl || resolvedGw.url;
+
+  // Attach resolved URL back so generateSingleChunk gets it too
+  const chunkOpts = { ...opts, gatewayUrl: effectiveGatewayUrl };
 
   const rid = requestId || crypto.randomUUID();
   console.log(`[chunkRunner] Starting: ${plan.totalChunks} chunks, strategy=${plan.strategy}, rid=${rid}`);
@@ -513,7 +527,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
 
     for (let attempt = 0; attempt <= maxChunkRepairs; attempt++) {
       try {
-        content = await generateSingleChunk(opts, chunk, previousEnding);
+        content = await generateSingleChunk(chunkOpts, chunk, previousEnding);
 
         // Validate chunk
         if (plan.strategy === "episodic_indexed" && chunk.episodeStart && chunk.episodeEnd) {
@@ -620,7 +634,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       if (!chunk) continue;
       const previousEnding = idx > 0 ? (chunkContents[idx - 1] || "").slice(-500) : undefined;
       try {
-        const regenContent = await generateSingleChunk(opts, chunk, previousEnding);
+        const regenContent = await generateSingleChunk(chunkOpts, chunk, previousEnding);
         if (regenContent) {
           chunkContents[idx] = regenContent;
           await supabase
@@ -714,7 +728,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         .eq("chunk_index", idx);
 
       try {
-        const content = await generateSingleChunk(opts, chunk, previousEnding);
+        const content = await generateSingleChunk(chunkOpts, chunk, previousEnding);
         chunkContents[idx] = content;
 
         const isValid = plan.strategy === "episodic_indexed" && chunk.episodeStart && chunk.episodeEnd
@@ -829,6 +843,15 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
  */
 export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise<ChunkRunResult> {
   const { supabase, documentId, versionId, plan } = opts;
+
+  // Resolve gateway URL if not explicitly provided
+  const resolvedGw = opts.gatewayUrl
+    ? { url: opts.gatewayUrl }
+    : (() => {
+        try { return resolveGateway(); } catch { return { url: "https://ai.gateway.lovable.dev/v1/chat/completions" }; }
+      })();
+  const effectiveGatewayUrl = opts.gatewayUrl || resolvedGw.url;
+  const chunkOpts = { ...opts, gatewayUrl: effectiveGatewayUrl };
 
   // Load existing chunks
   const { data: existingChunks } = await supabase

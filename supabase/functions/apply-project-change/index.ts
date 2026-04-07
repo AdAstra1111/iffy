@@ -94,14 +94,42 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const token = authHeader.replace("Bearer ", "").trim();
 
-    // ANON client — used ONLY for user validation
-    const sbAnon = createClient(supabaseUrl, anonKey);
-    const { data: { user }, error: authError } = await sbAnon.auth.getUser(token);
-
-    if (authError || !user) {
+    // Accept three auth modes:
+    // 1. Raw service role key match (machine-to-machine)
+    // 2. JWT with role=service_role (service role JWT — no sub claim, skip getUser)
+    // 3. User JWT via getUser() validation
+    let userId: string | null = null;
+    let isServiceRole = false;
+    if (token === serviceKey) {
+      isServiceRole = true;
+    } else if (token.split(".").length === 3) {
+      // Possibly a JWT — check for service_role claim without calling getUser
+      try {
+        const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return new Response(JSON.stringify({ error: "Token expired" }), { status: 401, headers: JSON_HEADERS });
+        }
+        if (payload.role === "service_role") {
+          isServiceRole = true; // Service role JWT accepted without getUser
+        } else if (payload.sub) {
+          // Regular user JWT — validate via getUser
+          const sbAnon = createClient(supabaseUrl, anonKey);
+          const { data: { user }, error: authError } = await sbAnon.auth.getUser(token);
+          if (authError || !user) {
+            return new Response(JSON.stringify({ error: "Invalid or expired token" }), { status: 401, headers: JSON_HEADERS });
+          }
+          userId = user.id;
+        } else {
+          return new Response(JSON.stringify({ error: "Invalid or expired token" }), { status: 401, headers: JSON_HEADERS });
+        }
+      } catch {
+        return new Response(JSON.stringify({ error: "Invalid or expired token" }), { status: 401, headers: JSON_HEADERS });
+      }
+    } else {
       return new Response(JSON.stringify({ error: "Invalid or expired token" }), { status: 401, headers: JSON_HEADERS });
     }
-    logs.push(`auth: user=${user.id}`);
 
     // ADMIN client — used for all DB writes (bypasses RLS, so we enforce authz manually)
     sbAdmin = createClient(supabaseUrl, serviceKey, {
@@ -120,17 +148,21 @@ Deno.serve(async (req) => {
 
     // ════════════════════════════════════════════════
     // REQ 2 — AUTHZ: enforce project access BEFORE any writes
+    // Service role calls bypass authorization check (already privileged)
     // ════════════════════════════════════════════════
-    const { data: hasAccess, error: accessErr } = await sbAdmin.rpc("has_project_access", {
-      _user_id: user.id,
-      _project_id: projectId,
-    });
-
-    if (accessErr || !hasAccess) {
-      logs.push(`authz: denied — ${accessErr?.message || "no access"}`);
-      return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: JSON_HEADERS });
+    if (!isServiceRole) {
+      const { data: hasAccess, error: accessErr } = await sbAdmin.rpc("has_project_access", {
+        _user_id: userId,
+        _project_id: projectId,
+      });
+      if (accessErr || !hasAccess) {
+        logs.push(`authz: denied — ${accessErr?.message || "no access"}`);
+        return new Response(JSON.stringify({ error: "Forbidden" }), { status: 403, headers: JSON_HEADERS });
+      }
+      logs.push("authz: granted");
+    } else {
+      logs.push("auth: service_role accepted");
     }
-    logs.push("authz: granted");
 
     // ════════════════════════════════════════════════
     // Look up the action record + verify it belongs to this project
@@ -163,7 +195,7 @@ Deno.serve(async (req) => {
         .from("document_assistant_apply_runs")
         .insert({
           action_id: actionId,
-          started_by: user.id,
+          started_by: userId ?? null,
           status: "running",
         })
         .select("id")
@@ -328,7 +360,7 @@ Deno.serve(async (req) => {
     try {
       const resolveRes = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: authHeader },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
         body: JSON.stringify({ projectId }),
       });
       const resolveData = await resolveRes.json();
@@ -437,7 +469,7 @@ Deno.serve(async (req) => {
       try {
         const genRes = await fetch(`${supabaseUrl}/functions/v1/generate-document`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
           body: JSON.stringify({
             projectId,
             docType,

@@ -28,9 +28,23 @@ function adminClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 }
 
-async function getUserId(req: Request): Promise<string> {
+async function getUserId(req: Request): Promise<string | null> {
   const authHeader = req.headers.get("Authorization") || "";
   const token = authHeader.replace("Bearer ", "");
+  // Accept service role JWTs without calling getUser
+  if (token.split(".").length === 3) {
+    try {
+      const seg = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+      const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+      const payload = JSON.parse(atob(padded));
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+        throw new Error("Token expired");
+      }
+      if (payload.role === "service_role") {
+        return null; // Service role — no user ID
+      }
+    } catch {  }
+  }
   const userClient = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY") || SUPABASE_SERVICE_ROLE_KEY, {
     global: { headers: { Authorization: `Bearer ${token}` } },
   });
@@ -140,7 +154,7 @@ async function generateShotsForScene(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
     },
     body: JSON.stringify({
       action: "shots_generate_for_scene",

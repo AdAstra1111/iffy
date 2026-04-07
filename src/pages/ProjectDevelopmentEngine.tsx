@@ -126,27 +126,30 @@ export default function ProjectDevelopmentEngine() {
   // PATCH 3: When ?tab=autorun, default to simple view for this session without overwriting saved preference.
   // userExplicitlyToggled prevents re-overriding if user navigates to autorun tab later after toggling.
   const userExplicitlyToggledRef = useRef(false);
-  const [autorunSessionOverride, setAutorunSessionOverride] = useState<boolean>(() => {
+  // Use ref so the toggle handler can read current value synchronously without stale state
+  const autorunSessionOverrideRef = useRef<boolean>(() => {
     const t = new URLSearchParams(window.location.search).get('tab');
     return t === 'autorun';
   });
+  const [, forceRender] = useState(0);
   // Re-set override when tab changes to autorun (SPA navigation) — unless user already toggled
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'autorun' && !userExplicitlyToggledRef.current) {
-      setAutorunSessionOverride(true);
+      autorunSessionOverrideRef.current = true;
+      forceRender(n => n + 1);
     } else if (tabParam !== 'autorun') {
-      setAutorunSessionOverride(false);
+      autorunSessionOverrideRef.current = false;
     }
   }, [searchParams]);
-  const viewMode = autorunSessionOverride ? 'simple' : uiMode;
+  const viewMode = autorunSessionOverrideRef.current ? 'simple' : uiMode;
   const handleToggleMode = useCallback(() => {
-    // User explicitly toggled — clear session override and persist preference based on effective viewMode
+    // Read uiMode directly — avoids stale closure from useCallback dependency on viewMode
     userExplicitlyToggledRef.current = true;
-    setAutorunSessionOverride(false);
-    const nextMode = viewMode === 'simple' ? 'advanced' : 'simple';
+    autorunSessionOverrideRef.current = false; // synchronous — no stale state
+    const nextMode = uiMode === 'simple' ? 'advanced' : 'simple';
     setUIMode(nextMode);
-  }, [viewMode, setUIMode]);
+  }, [uiMode, setUIMode]);
   // Execution mode preference (persists to job when one exists, otherwise local)
   const [localExecutionMode, setLocalExecutionMode] = useState<ExecutionMode>('full_autopilot');
   const qc = useQueryClient();
@@ -1321,16 +1324,15 @@ export default function ProjectDevelopmentEngine() {
 
   const analysisConvergence = latestAnalysis?.convergence;
   const isAnalysisConverged = analysisConvergence?.status === 'converged' || convergenceStatus === 'Converged';
-  // PIPELINE AUTHORITY: nextBestDocument MUST come from Pipeline Brain (promotionIntel),
-  // NOT from LLM analysis output. The LLM's convergence.next_best_document is unreliable
-  // and can suggest stages that skip the ladder (e.g. concept_brief → episode_beats).
-  const nextBestDocument = promotionIntel.data?.next_document ?? null;
+  // LABEL AUTHORITY: nextBestDocument for the Promote button label must always show
+  // the adjacent stage from the LADDER for the currently viewed document.
+  // Pipeline brain's next_document is authoritative for WHAT TO WORK ON NEXT,
+  // but the Promote button label must show what the VIEWED doc promotes TO.
+  const labelNextDoc = selectedDeliverableType
+    ? (getNextStage(selectedDeliverableType, projectFormat) ?? null)
+    : null;
+  const promoteAuthority = promotionIntel.data?.next_document ?? null; // actual next work target
   const verticalDramaGating = analysisConvergence?.vertical_drama_gating || null;
-  // IEL: log if LLM suggestion disagrees with Pipeline Brain
-  const llmNextBest = analysisConvergence?.next_best_document;
-  if (llmNextBest && nextBestDocument && llmNextBest !== nextBestDocument) {
-    console.warn(`[ui][IEL] promotion_alt_source_ignored { source: "llm_convergence", suggested: "${llmNextBest}", enforced: "${nextBestDocument}", current_doc: "${selectedDeliverableType}", format: "${projectFormat}" }`);
-  }
 
   // Pipeline statuses
   const pipelineStatuses = useMemo(() => {
@@ -1841,7 +1843,7 @@ export default function ProjectDevelopmentEngine() {
                     onConvert={() => convert.mutate({ targetOutput: selectedDeliverableType.toUpperCase(), protectItems: latestAnalysis?.protect })}
                     selectedNoteCount={selectedNotes.size}
                     totalNoteCount={allPrioritizedMoves.length}
-                    nextBestDocument={nextBestDocument || null}
+                    nextBestDocument={labelNextDoc}
                     selectedDeliverableType={selectedDeliverableType}
                     hasUnresolvedDrift={hasUnresolvedMajorDrift}
                     analyzePending={analyze.isPending}
@@ -2637,10 +2639,10 @@ export default function ProjectDevelopmentEngine() {
               <Button variant="outline" size="sm" onClick={() => setDriftOverrideOpen(false)}>Cancel</Button>
               <Button variant="destructive" size="sm" onClick={() => {
                 setDriftOverrideOpen(false);
-                if (nextBestDocument) {
+                if (labelNextDoc) {
                   // Do NOT eagerly set selectedDeliverableType — let the useEffect on selectedDoc.doc_type
                   // update it after the mutation succeeds and the actual document changes.
-                  convert.mutate({ targetOutput: nextBestDocument.toUpperCase(), protectItems: latestAnalysis?.protect });
+                  convert.mutate({ targetOutput: labelNextDoc.toUpperCase(), protectItems: latestAnalysis?.protect });
                 }
               }}>Promote Anyway</Button>
             </div>

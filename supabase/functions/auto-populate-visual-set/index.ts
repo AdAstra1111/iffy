@@ -53,15 +53,34 @@ serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Auth
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader || "" } },
-    });
-    const { data: { user }, error: authErr } = await userClient.auth.getUser();
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    // Accept both user JWTs (via getUser) and service role JWTs or raw keys (internal machine-to-machine)
+    const rawToken = (authHeader || "").replace("Bearer ", "").trim();
+    let isServiceRole = false;
+    if (rawToken && rawToken === supabaseKey) {
+      isServiceRole = true;
+    } else if (rawToken.split(".").length === 3) {
+      try {
+        const seg = rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = seg + "=".repeat((4 - (seg.length % 4)) % 4);
+        const payload = JSON.parse(atob(padded));
+        if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        if (payload.role === "service_role") {
+          isServiceRole = true;
+        }
+      } catch {  }
+    }
+    if (!isServiceRole) {
+      const userClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader || "" } },
       });
+      const { data: { user }, error: authErr } = await userClient.auth.getUser();
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     const body = await req.json();
@@ -313,8 +332,8 @@ serve(async (req) => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authHeader || "",
-            apikey: anonKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            apikey: supabaseKey,
           },
           body: JSON.stringify(genBody),
         });

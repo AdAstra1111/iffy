@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Play, ArrowRight, RefreshCw, Loader2, AlertTriangle, Info, Film, ShieldCheck, Camera, Eye, CheckCircle2 } from 'lucide-react';
 import { DELIVERABLE_LABELS, type DeliverableType, getDeliverableLabel } from '@/lib/dev-os-config';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { NextAction } from '@/lib/next-action';
 import { renderActionPillText } from '@/lib/next-action';
 import { GenerateShotListModal } from '@/components/shots/GenerateShotListModal';
@@ -229,26 +229,26 @@ export function ActionToolbar({
 
         {/* Why this step? */}
         {verticalDramaGating && nextBestDocument && (
-          <Tooltip>
-            <TooltipTrigger asChild>
+          <Popover>
+            <PopoverTrigger asChild>
               <button className="flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
                 <Info className="h-3 w-3" />
                 Why this step?
               </button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" className="max-w-[280px] text-xs space-y-1">
-              <p className="font-medium">Production: {verticalDramaGating.production_type}</p>
-              <p>{verticalDramaGating.reason}</p>
+            </PopoverTrigger>
+            <PopoverContent side="bottom" align="start" className="max-w-sm text-sm space-y-2 bg-zinc-900 text-zinc-100 border-zinc-700 shadow-lg p-4">
+              <p className="font-semibold text-zinc-100">Production: {verticalDramaGating.production_type}</p>
+              <p className="text-zinc-300 leading-relaxed">{verticalDramaGating.reason}</p>
               {hasMissingPrereqs && (
                 <p className="text-amber-400">
                   Missing: {verticalDramaGating.missing_prerequisites.map(p => DELIVERABLE_LABELS[p as DeliverableType] || p).join(', ')}
                 </p>
               )}
               {verticalDramaGating.canonical_episode_count && (
-                <p>Canonical episodes: {verticalDramaGating.canonical_episode_count}</p>
+                <p className="text-zinc-400">Canonical episodes: {verticalDramaGating.canonical_episode_count}</p>
               )}
-            </TooltipContent>
-          </Tooltip>
+            </PopoverContent>
+          </Popover>
         )}
 
         {/* Approve / Unapprove this version */}

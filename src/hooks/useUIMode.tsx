@@ -12,10 +12,30 @@ interface UIModeContextValue {
 
 const UIModeContext = createContext<UIModeContextValue | null>(null);
 
+const LOCAL_STORAGE_KEY = 'iffy_ui_mode';
+
+function readLocalStorage(): UIMode {
+  try {
+    const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (stored === 'advanced' || stored === 'simple') return stored;
+  } catch { /* ignore */ }
+  return 'simple';
+}
+
+function writeLocalStorage(mode: UIMode): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_KEY, mode);
+  } catch { /* ignore */ }
+}
+
 export function UIModeProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
+  // Local state always wins — read from localStorage immediately for instant toggle
+  const [localMode, setLocalMode] = useState<UIMode>(readLocalStorage);
+
+  // Supabase profile query (secondary — only used when available)
   const { data: profile, isLoading } = useQuery({
     queryKey: ['profile-mode', user?.id],
     queryFn: async () => {
@@ -28,43 +48,54 @@ export function UIModeProvider({ children }: { children: ReactNode }) {
       return data;
     },
     enabled: !!user,
+    // Don't refetch often — localStorage is source of truth
+    staleTime: Infinity,
+    retry: 1,
   });
 
+  // Supabase write mutation — non-blocking, best-effort
   const mutation = useMutation({
     mutationFn: async (mode: UIMode) => {
       if (!user) return;
       const { error } = await supabase
         .from('profiles')
-        .update({ mode_preference: mode } as any)
-        .eq('user_id', user.id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['profile-mode'] });
+        .upsert({ user_id: user.id, mode_preference: mode } as any, {
+          onConflict: 'user_id',
+        });
+      if (error) console.warn('[useUIMode] failed to persist mode to Supabase:', error.message);
     },
   });
 
-  const mode: UIMode = (profile as any)?.mode_preference === 'advanced' ? 'advanced' : 'simple';
-
-  const setMode = useCallback(async (m: UIMode) => {
-    const previous = mode;
-    // Optimistic update
-    queryClient.setQueryData(['profile-mode', user?.id], (old: any) => ({
-      ...old,
-      mode_preference: m,
-    }));
-    try {
-      await mutation.mutateAsync(m);
-    } catch (e) {
-      // Revert on failure
-      queryClient.setQueryData(['profile-mode', user?.id], (old: any) => ({
-        ...old,
-        mode_preference: previous,
-      }));
+  // Derive effective mode: prefer Supabase profile if loaded, else localStorage
+  const mode = useMemo<UIMode>(() => {
+    if (!isLoading && profile && (profile as any)?.mode_preference) {
+      return (profile as any).mode_preference === 'advanced' ? 'advanced' : 'simple';
     }
-  }, [user?.id, mode, mutation, queryClient]);
+    return localMode;
+  }, [profile, isLoading, localMode]);
 
-  const value = useMemo(() => ({ mode, setMode, loading: isLoading }), [mode, setMode, isLoading]);
+  // Sync localStorage when profile loads (migration path — first load after fix)
+  useEffect(() => {
+    if (!isLoading && profile && (profile as any)?.mode_preference) {
+      writeLocalStorage((profile as any).mode_preference);
+    }
+  }, [profile, isLoading]);
+
+  const setMode = useCallback(
+    (m: UIMode) => {
+      // Always update local state immediately (optimistic, no waiting)
+      setLocalMode(m);
+      writeLocalStorage(m);
+      // Also persist to Supabase in background (non-blocking)
+      mutation.mutate(m);
+    },
+    [mutation],
+  );
+
+  const value = useMemo(
+    () => ({ mode, setMode, loading: isLoading }),
+    [mode, setMode, isLoading],
+  );
 
   return <UIModeContext.Provider value={value}>{children}</UIModeContext.Provider>;
 }

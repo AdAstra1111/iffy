@@ -2133,16 +2133,17 @@ const docTypeMap: Record<string, string> = {
 
 // ── Vertical Drama Document Pipeline ──
 // Ordered steps with prerequisites for gating
+// Canonical ladder: idea → concept_brief → character_bible → format_rules → season_arc → episode_grid → episode_beats → season_script
 const VERTICAL_DRAMA_PIPELINE: Array<{ type: string; prerequisites: string[] }> = [
   { type: "idea", prerequisites: [] },
   { type: "concept_brief", prerequisites: ["idea"] },
   { type: "vertical_market_sheet", prerequisites: ["concept_brief"] },
-  { type: "format_rules", prerequisites: ["concept_brief"] },
   { type: "character_bible", prerequisites: ["concept_brief"] },
-  { type: "season_arc", prerequisites: ["concept_brief", "character_bible"] },
+  { type: "format_rules", prerequisites: ["concept_brief", "character_bible"] },
+  { type: "season_arc", prerequisites: ["character_bible", "format_rules"] },
   { type: "episode_grid", prerequisites: ["season_arc"] },
-  { type: "vertical_episode_beats", prerequisites: ["season_arc", "episode_grid"] },
-  { type: "season_script", prerequisites: ["vertical_episode_beats"] },
+  { type: "episode_beats", prerequisites: ["episode_grid"] },
+  { type: "season_script", prerequisites: ["episode_beats"] },
 ];
 
 function resolveVerticalDramaNextStep(
@@ -5047,7 +5048,7 @@ serve(async (req) => {
       try {
         const resolverResp = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
           body: JSON.stringify({ projectId }),
         });
         if (resolverResp.ok) {
@@ -7259,7 +7260,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
         try {
           const rrResp = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: authHeader },
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
             body: JSON.stringify({ projectId }),
           });
           if (rrResp.ok) { const rr = await rrResp.json(); rewriteResolverHash = rr.resolver_hash || null; }
@@ -7795,7 +7796,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       try {
         const rrResp = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
           body: JSON.stringify({ projectId }),
         });
         if (rrResp.ok) { const rr = await rrResp.json(); chunkedResolverHash = rr.resolver_hash || rr.resolved_qualifications_hash || null; }
@@ -7945,7 +7946,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       try {
         const resolverResp = await fetch(`${supabaseUrl}/functions/v1/resolve-qualifications`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
           body: JSON.stringify({ projectId }),
         });
         if (resolverResp.ok) {
@@ -8038,7 +8039,7 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
         console.log("[dev-engine-v2] convert: Redirecting episode doc type to generate-document chunked pipeline", { targetOutput, resolvedTargetForRedirect, projectId });
         const genResp = await fetch(`${supabaseUrl}/functions/v1/generate-document`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
           body: JSON.stringify({ projectId, docType: resolvedTargetForRedirect }),
         });
         const genResult = await genResp.json();
@@ -8104,7 +8105,7 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
         console.log("[dev-engine-v2] convert: Large-risk doc type, redirecting to generate-document chunked pipeline", { targetOutput, resolvedDocType, projectId });
         const genResp = await fetch(`${supabaseUrl}/functions/v1/generate-document`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authHeader },
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
           body: JSON.stringify({ projectId, docType: resolvedDocType }),
         });
         const genResult = await genResp.json();
