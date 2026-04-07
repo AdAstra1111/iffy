@@ -1161,8 +1161,71 @@ Deno.serve(async (req) => {
               is_active BOOLEAN NOT NULL DEFAULT true,
               source_poster_id UUID,
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-              user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
+              created_by UUID,
+              user_id UUID NOT NULL,
+              -- Extended columns used by generate-lookbook-image
+              asset_group TEXT,
+              subject TEXT,
+              shot_type TEXT,
+              curation_state TEXT,
+              subject_type TEXT,
+              subject_ref TEXT,
+              location_ref TEXT,
+              canon_location_id UUID,
+              generation_purpose TEXT,
+              state_key TEXT,
+              state_label TEXT,
+              lane_key TEXT,
+              prestige_style TEXT,
+              -- Prompt override + auto-complete
+              prompt_override_used BOOLEAN DEFAULT false,
+              prompt_override_length INTEGER,
+              auto_complete_context JSONB,
+              -- Character binding
+              resolved_character_names TEXT[],
+              expected_character_count INTEGER,
+              bound_dna_version_ids UUID[],
+              ai_actor_ids TEXT[],
+              ai_actor_version_ids UUID[],
+              identity_sources TEXT[],
+              -- Location binding
+              requested_location_ids UUID[],
+              resolved_location_ids UUID[],
+              resolved_location_names TEXT[],
+              world_binding_active BOOLEAN,
+              world_binding_era TEXT,
+              -- Vertical compliance
+              requested_aspect_ratio TEXT,
+              requested_width INTEGER,
+              requested_height INTEGER,
+              actual_width INTEGER,
+              actual_height INTEGER,
+              dims_source TEXT,
+              aspect_compliant BOOLEAN,
+              aspect_drift BOOLEAN,
+              vertical_drama_project BOOLEAN,
+              -- Cinematic style
+              style_lock_hash TEXT,
+              style_lock_active BOOLEAN,
+              shot_intent TEXT,
+              shot_intent_slide_type TEXT,
+              -- Composition + camera
+              composition_rule TEXT,
+              composition_rule_hash TEXT,
+              camera_language_hash TEXT,
+              -- Production design
+              production_design_hash TEXT,
+              production_design_architecture TEXT,
+              -- Shot list context
+              shot_list_id UUID,
+              shot_list_item_ids UUID[],
+              shot_list_context_used BOOLEAN,
+              shot_list_framing TEXT,
+              shot_list_camera_movement TEXT,
+              shot_list_location TEXT,
+              shot_list_time_of_day TEXT,
+              narrative_source TEXT,
+              dataset_provenance JSONB
             );
             CREATE INDEX IF NOT EXISTS idx_project_images_project ON public.project_images(project_id);
             CREATE INDEX IF NOT EXISTS idx_project_images_role ON public.project_images(project_id, role);
@@ -1172,6 +1235,64 @@ Deno.serve(async (req) => {
             CREATE POLICY "pim_insert" ON public.project_images FOR INSERT TO authenticated WITH CHECK (true);
             CREATE POLICY "pim_update" ON public.project_images FOR UPDATE TO authenticated USING (true);
             CREATE POLICY "pim_delete" ON public.project_images FOR DELETE TO authenticated USING (true);
+          `,
+
+          // Add missing columns to existing project_images table
+          "add_project_images_columns": `
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS asset_group TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS subject TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_type TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS curation_state TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS subject_type TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS subject_ref TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS location_ref TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS canon_location_id UUID;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS generation_purpose TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS state_key TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS state_label TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS lane_key TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS prestige_style TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS prompt_override_used BOOLEAN DEFAULT false;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS prompt_override_length INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS auto_complete_context JSONB;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS resolved_character_names TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS expected_character_count INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS bound_dna_version_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS ai_actor_ids TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS ai_actor_version_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS identity_sources TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_location_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS resolved_location_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS resolved_location_names TEXT[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS world_binding_active BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS world_binding_era TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_aspect_ratio TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_width INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS requested_height INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS actual_width INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS actual_height INTEGER;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS dims_source TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS aspect_compliant BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS aspect_drift BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS vertical_drama_project BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS style_lock_hash TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS style_lock_active BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_intent TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_intent_slide_type TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS composition_rule TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS composition_rule_hash TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS camera_language_hash TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS production_design_hash TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS production_design_architecture TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_id UUID;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_item_ids UUID[];
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_context_used BOOLEAN;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_framing TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_camera_movement TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_location TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS shot_list_time_of_day TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS narrative_source TEXT;
+            ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS dataset_provenance JSONB;
           `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
