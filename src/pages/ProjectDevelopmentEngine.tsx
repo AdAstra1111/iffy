@@ -143,6 +143,7 @@ export default function ProjectDevelopmentEngine() {
     }
   }, [searchParams]);
   const viewMode = autorunSessionOverrideRef.current ? 'simple' : uiMode;
+  console.log('[DEV] viewMode:', viewMode, 'uiMode:', uiMode, 'override:', autorunSessionOverrideRef.current);
   const handleToggleMode = useCallback(() => {
     // Read uiMode directly — avoids stale closure from useCallback dependency on viewMode
     userExplicitlyToggledRef.current = true;
