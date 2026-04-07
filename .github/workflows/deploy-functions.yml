@@ -37,5 +37,7 @@ jobs:
             script-intake \
             reverse-engineer-script \
             create-document-version \
+            devseed-autopilot \
+            generate-lookbook-image \
             --project-ref hdfderbphdobomkdjypc \
             --no-verify-jwt

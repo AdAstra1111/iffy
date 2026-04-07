@@ -58,6 +58,7 @@ const DOC_DEPENDENCY_MAP: Record<string, string[]> = {
 
 const UPSTREAM_DEPS: Record<string, string[]> = {
   concept_brief: ["idea"],
+  beat_sheet: ["character_bible", "concept_brief"],
   logline: ["idea_brief"],
   one_pager: ["idea_brief", "logline"],
   long_synopsis: ["one_pager", "logline"],
@@ -260,7 +261,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: authHeader,
+        Authorization: `Bearer ${serviceKey}`,
       },
       body: JSON.stringify({ projectId }),
     });
@@ -684,6 +685,14 @@ Output the COMPLETE final document with all 12 sections. Preserve the exact head
       userPrompt = `[visual_canon_brief multi-pass synthesis]`;
 
       console.log(`[generate-document][visual_canon_brief] generation_complete { chars: ${content.length}, missing_after_repair: ${missingHeadings.length}, generic_hits: ${genericHits} }`);
+    } else if (docType === "beat_sheet") {
+      // ── Beat Sheet: fail-closed if upstream is missing ──
+      if (!upstreamContent.trim()) {
+        return new Response(JSON.stringify({
+          error: "no_source_documents",
+          message: "Cannot generate Beat Sheet: requires a Character Bible and Concept Brief. Generate those documents first before generating the Beat Sheet.",
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
     } else if (docType === "visual_project_bible") {
       // ══════════════════════════════════════════════════════════════════════════
       // VISUAL PROJECT BIBLE — DETERMINISTIC ASSEMBLY (NO LLM)
@@ -1604,7 +1613,7 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
           // project_document_versions and project_document_chunks via RLS.
           try {
             const resumeResult = await resumeChunkedGeneration({
-              supabase: serviceClient, apiKey, projectId,
+              supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
               documentId: resumeDocId, versionId: resumeVersionId,
               docType, plan: resumePlan, systemPrompt: system, upstreamContent,
               projectTitle: project.title || "Untitled",
@@ -1730,7 +1739,7 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         // project_document_versions and project_document_chunks via RLS.
         try {
           const chunkResult = await runChunkedGeneration({
-            supabase: serviceClient, apiKey, projectId,
+            supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
             documentId: chunkDocRecord!.id, versionId: chunkVersion!.id,
             docType, plan, systemPrompt: system, upstreamContent,
             projectTitle: project.title || "Untitled",
