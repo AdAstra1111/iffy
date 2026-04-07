@@ -737,6 +737,19 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   // Build Mission Control URL
   const missionControlUrl = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`;
 
+  // Defensive navigation wrapper
+  const openMissionControl = () => {
+    if (!projectId) {
+      console.warn('[AutopilotPanel] cannot open mission control: projectId is missing');
+      return;
+    }
+    try {
+      navigate(missionControlUrl);
+    } catch (e) {
+      console.error('[AutopilotPanel] navigation failed:', e);
+    }
+  };
+
   // Describe the blocking reason for the user
   const getBlockingDescription = () => {
     if (autoRunApprovalType === 'input_incomplete') {
@@ -964,7 +977,7 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
                       Resume Auto-Run
                     </Button>
                   )}
-                  <Button type="button" size="sm" variant="outline" className="h-6 text-[10px] gap-1" onClick={() => navigate(missionControlUrl)}>
+                  <Button type="button" size="sm" variant="outline" className="h-6 text-[10px] gap-1" onClick={openMissionControl}>
                     <ExternalLink className="h-3 w-3" />
                     Open Mission Control
                   </Button>
@@ -998,7 +1011,7 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
               )}
               <button
                 type="button"
-                onClick={() => navigate(missionControlUrl)}
+                onClick={openMissionControl}
                 className="flex items-center gap-1 text-primary hover:underline text-[11px] mt-1"
               >
                 <ExternalLink className="h-3 w-3" />
