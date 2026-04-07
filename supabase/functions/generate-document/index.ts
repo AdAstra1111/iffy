@@ -2292,7 +2292,7 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
       success: true,
       document_id: docRecord!.id,
       version_id: newVersion!.id,
-      version_number: versionNumber,
+      version_number: newVersion.version_number,
       mode,
       resolver_hash: currentHash,
       inputs_used: inputsUsed,
