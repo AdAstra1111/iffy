@@ -499,7 +499,7 @@ async function executeApplySeedIntelPack(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
+      Authorization: `Bearer ${authHeader}`,
     },
     body: JSON.stringify({
       action: "create_and_apply",
@@ -537,7 +537,7 @@ async function executeRegenFoundation(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
+      Authorization: `Bearer ${authHeader}`,
     },
     body: JSON.stringify({
       action: "regen-insufficient-start",
@@ -574,7 +574,7 @@ async function executeRegenFoundation(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceKey}`,
+        Authorization: `Bearer ${authHeader}`,
       },
       body: JSON.stringify({
         action: "regen-insufficient-tick",
@@ -606,7 +606,7 @@ async function executeRegenFoundation(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${serviceKey}`,
+      Authorization: `Bearer ${authHeader}`,
     },
     body: JSON.stringify({ action: "regen-insufficient-status", jobId }),
   });
@@ -788,7 +788,7 @@ async function executeExtractComparables(
   // 2. Run extract_from_docs (JSON-first extraction from concept brief / market sheet)
   const extractResp = await fetch(`${supabaseUrl}/functions/v1/comps-engine`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
     body: JSON.stringify({ action: "extract_from_docs", project_id: projectId }),
   });
   const extractData = await extractResp.json();
@@ -798,7 +798,7 @@ async function executeExtractComparables(
   // 3. Run find_candidates — AI suggests comps based on concept brief
   const findResp = await fetch(`${supabaseUrl}/functions/v1/comps-engine`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
     body: JSON.stringify({
       action: "find_candidates",
       project_id: projectId,
