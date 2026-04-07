@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { AutoRunJob, AutoRunStep } from '@/hooks/useAutoRun';
+import type { AutoRunJob, AutoRunStep, DebugWhyBlockedResult } from '@/hooks/useAutoRun';
 import { mapDocTypeToLadderStage } from '@/lib/stages/registry';
 import { AUTO_RUN_EXECUTION_MODE } from '@/lib/autoRunConfig';
 import { parseEdgeResponse } from '@/lib/edgeResponseGuard';
@@ -106,6 +106,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
   const [error, setError] = useState<string | null>(null);
   const [activated, setActivated] = useState(false);
   const [connectionState, setConnectionState] = useState<ConnectionState>('online');
+  const [backendDiagnostic, setBackendDiagnostic] = useState<DebugWhyBlockedResult | null>(null);
   const abortRef = useRef(false);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const consecutiveFailuresRef = useRef(0);
@@ -145,7 +146,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     queryKey: ['auto-run-mission-status', projectId],
     queryFn: async () => {
       if (!projectId || !isValidUUID(projectId)) return null;
-      return await callAutoRun('status', { projectId });
+      return await callAutoRun('debug-why-blocked', { projectId });
     },
     enabled: isValidUUID(projectId) && activated,
     refetchOnWindowFocus: false,
@@ -155,6 +156,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     if (existingJob?.job) {
       setJob(existingJob.job);
       setSteps(existingJob.latest_steps || []);
+      setBackendDiagnostic(existingJob as DebugWhyBlockedResult);
       console.log(`[mission-control][IEL] job_rehydrate { job_id: "${existingJob.job.id}", status: "${existingJob.job.status}", current_document: "${existingJob.job.current_document}", step_count: ${existingJob.job.step_count} }`);
       if (existingJob.job.status === 'running' && !existingJob.job.awaiting_approval) {
         setIsRunning(true);
@@ -171,10 +173,11 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     let cancelled = false;
     const discover = async () => {
       try {
-        const result = await callAutoRun('status', { projectId });
+        const result = await callAutoRun('debug-why-blocked', { projectId });
         if (cancelled || !result?.job) return;
         setJob(result.job);
         setSteps(result.latest_steps || []);
+        setBackendDiagnostic(result as DebugWhyBlockedResult);
         setIsRunning(result.job.status === 'running' && !result.job.awaiting_approval);
       } catch {
         // no active job yet
@@ -211,7 +214,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
     pollInFlightRef.current = true;
     try {
-      const result = await callAutoRun('status', { jobId: currentJobId });
+      // Use debug-why-blocked for richer diagnostic info (returns status + ui_status + diagnosis)
+      const result = await callAutoRun('debug-why-blocked', { jobId: currentJobId });
 
       // ── Success path ──
       consecutiveFailuresRef.current = 0;
@@ -221,6 +225,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
       setJob(result.job);
       setSteps(result.latest_steps || []);
+      // Store diagnostic info for UI to display meaningful status
+      setBackendDiagnostic(result as DebugWhyBlockedResult);
 
       // Refresh document tray + version lists on every poll so auto-run-created docs/versions appear immediately
       qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
@@ -853,7 +859,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
 
   return {
-    job, steps, isRunning, error, activated, connectionState,
+    job, steps, isRunning, error, activated, connectionState, backendDiagnostic,
     // Core actions
     start, pause, resume, stop, runNext, clear, refreshStatus, activate,
     // Approval

@@ -130,6 +130,26 @@ async function callAutoRun(action: string, extra: Record<string, any> = {}) {
   return result;
 }
 
+export interface DebugWhyBlockedResult {
+  job_id: string;
+  project_id: string;
+  ui_status: string;
+  headline: string;
+  lock_diagnosis: string;
+  is_processing: boolean;
+  awaiting_approval: boolean;
+  pending_decisions_count: number;
+  current_document: string | null;
+  step_count: number;
+  last_ci: number | null;
+  last_gp: number | null;
+  doc_state: { exists: boolean; versionCount: number; hasApprovedVersion: boolean };
+  latest_steps: AutoRunStep[];
+  diagnosis: string[];
+  recommended_action: string | null;
+  server_time: string;
+}
+
 export function useAutoRun(projectId: string | undefined) {
   const qc = useQueryClient();
   const [job, setJob] = useState<AutoRunJob | null>(null);

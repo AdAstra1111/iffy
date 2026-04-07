@@ -109,6 +109,9 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   const [localAutoRunJob, setLocalAutoRunJob] = useState<any>(null);
   const autoRunJob = externalAutoRunJob ?? localAutoRunJob;
   const setAutoRunJob = setLocalAutoRunJob;
+  // Backend diagnostic from debug-why-blocked — null when using external job (external hook manages it)
+  const [localBackendDiagnostic, setLocalBackendDiagnostic] = useState<any>(null);
+  const backendDiagnostic = localBackendDiagnostic;
   const [autoRunLoading, setAutoRunLoading] = useState(false);
   // statusCheckedRef: true once the initial auto-run status fetch completes (prevents handoff race)
   const statusCheckedRef = useRef(false);
@@ -202,9 +205,10 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   const fetchAutoRunStatus = useCallback(async () => {
     if (hasExternalJob) { statusCheckedRef.current = true; return; }
     try {
-      const result = await callAutoRun('status', { projectId });
+      const result = await callAutoRun('debug-why-blocked', { projectId });
       if (mountedRef.current && result?.job) {
         setAutoRunJob(result.job);
+        setLocalBackendDiagnostic(result);
       }
     } catch {
       // no job yet — normal
@@ -685,12 +689,18 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
 
   // Phase 2 derived state — blocked/paused override running
   const autoRunStatus = autoRunJob?.status;
-  const autoRunBlocked = autoRunJob?.awaiting_approval === true;
+  // Enhanced blocking: backendDiagnostic tells us the real state
+  const autoRunBlocked =
+    autoRunJob?.awaiting_approval === true ||
+    backendDiagnostic?.ui_status === 'idle_blocked' ||
+    backendDiagnostic?.ui_status === 'stale_lock';
   const autoRunPaused = autoRunStatus === 'paused';
   const autoRunComplete = autoRunStatus === 'completed';
   const autoRunFailed = autoRunStatus === 'failed' || autoRunStatus === 'stopped';
   // "Running" only when truly running and NOT blocked/paused
   const autoRunRunning = (autoRunStatus === 'running' || autoRunStatus === 'queued') && !autoRunBlocked && !autoRunPaused;
+  // Expose backend diagnostic headline for user-facing messaging
+  const autoRunBackendHeadline = backendDiagnostic?.headline ?? null;
   const autoRunStopReason = autoRunJob?.stop_reason;
   const autoRunApprovalType = autoRunJob?.approval_type;
   const autoRunUiMessage = autoRunJob?.last_ui_message;
@@ -775,7 +785,15 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
           <CardTitle className="text-sm">Project Autopilot</CardTitle>
           {autoRunComplete && isSeedComplete && <Badge variant="default" className="text-[10px] h-5">Complete</Badge>}
           {(isRunning || autoRunRunning) && !autoRunBlocked && <Badge variant="secondary" className="text-[10px] h-5">Running</Badge>}
-          {(autoRunBlocked || autoRunPaused) && <Badge variant="outline" className="text-[10px] h-5 border-amber-500/50 text-amber-600">Blocked</Badge>}
+          {(autoRunBlocked || autoRunPaused) && (
+            <Badge variant="outline" className="text-[10px] h-5 border-amber-500/50 text-amber-600">
+              {backendDiagnostic?.ui_status === 'pending_decisions' ? 'Decision Needed'
+                : backendDiagnostic?.ui_status === 'awaiting_approval' ? 'Approval Needed'
+                : backendDiagnostic?.ui_status === 'idle_blocked' ? 'Click to Continue'
+                : backendDiagnostic?.ui_status === 'stale_lock' ? 'Restarting...'
+                : 'Blocked'}
+            </Badge>
+          )}
           {hasError && !isRunning && !autoRunBlocked && <Badge variant="destructive" className="text-[10px] h-5">Error</Badge>}
           {isPaused && !hasError && <Badge variant="secondary" className="text-[10px] h-5">Paused</Badge>}
         </div>
@@ -800,6 +818,16 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
       </CardHeader>
 
       <CardContent className="px-4 pb-3 pt-0 space-y-3">
+        {/* ═══ Backend diagnostic banner: shows why job is blocked/idle ═══ */}
+        {autoRunBackendHeadline && (autoRunBlocked || backendDiagnostic?.ui_status === 'running') && (
+          <div className={`px-2 py-1.5 rounded text-xs ${
+            backendDiagnostic?.ui_status === 'running'
+              ? 'bg-blue-500/10 text-blue-600 border border-blue-500/20'
+              : 'bg-amber-500/10 text-amber-600 border border-amber-500/20'
+          }`}>
+            {autoRunBackendHeadline}
+          </div>
+        )}
         {/* ═══ Full Autopilot Toggle ═══ */}
         {autoRunJob && !autoRunComplete && (
           <div className="flex items-center justify-between px-2 py-1.5 rounded border border-border/30 bg-muted/20">
@@ -871,7 +899,15 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
             {autoRunRunning && !autoRunBlocked && <Badge variant="secondary" className="text-[10px] h-5">Running</Badge>}
             {autoRunFailed && <Badge variant="destructive" className="text-[10px] h-5">Failed</Badge>}
             {autoRunLoading && <Badge variant="secondary" className="text-[10px] h-5">Starting…</Badge>}
-            {(autoRunBlocked || autoRunPaused) && <Badge variant="outline" className="text-[10px] h-5 border-amber-500/50 text-amber-600">Needs Input</Badge>}
+            {(autoRunBlocked || autoRunPaused) && (
+              <Badge variant="outline" className="text-[10px] h-5 border-amber-500/50 text-amber-600">
+                {backendDiagnostic?.ui_status === 'pending_decisions' ? 'Decision Needed'
+                  : backendDiagnostic?.ui_status === 'awaiting_approval' ? 'Approval Needed'
+                  : backendDiagnostic?.ui_status === 'idle_blocked' ? 'Click to Continue'
+                  : backendDiagnostic?.ui_status === 'stale_lock' ? 'Restarting...'
+                  : 'Needs Input'}
+              </Badge>
+            )}
           </div>
 
           {/* ═══ BLOCKING DECISION UI ═══ */}
