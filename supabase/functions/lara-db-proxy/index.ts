@@ -2026,6 +2026,21 @@ Deno.serve(async (req) => {
         break;
       }
 
+      // ── WRITE: Update plaintext for a specific version ──
+      case "update_version_plaintext": {
+        const { version_id, plaintext } = params;
+        if (!version_id) throw new Error("update_version_plaintext requires version_id");
+        const { data, error } = await supabase
+          .from("project_document_versions")
+          .update({ plaintext })
+          .eq("id", version_id)
+          .select("id, plaintext")
+          .maybeSingle();
+        if (error) throw error;
+        result = { ok: true, version_id, char_count: plaintext.length };
+        break;
+      }
+
       case "fix_json_plaintext": {
         // One-shot repair: find every version for a project whose plaintext is raw JSON,
         // convert it to readable markdown, and update in-place.
