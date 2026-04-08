@@ -468,6 +468,29 @@ Deno.serve(async (req) => {
               DROP CONSTRAINT IF EXISTS narrative_scene_entity_links_entity_id_fkey;
           `,
 
+          "fix_nsel_entity_id_fk": `
+            ALTER TABLE public.narrative_scene_entity_links
+              DROP CONSTRAINT IF EXISTS narrative_scene_entity_links_entity_id_fkey1,
+              DROP CONSTRAINT IF EXISTS narrative_scene_entity_links_entity_id_fkey;
+            ALTER TABLE public.narrative_scene_entity_links
+              ADD CONSTRAINT narrative_scene_entity_links_entity_id_fkey
+              FOREIGN KEY (entity_id) REFERENCES public.narrative_units(id) ON DELETE CASCADE;
+          `,
+
+          "create_yeti_script_doc": `
+            INSERT INTO public.project_documents (id, project_id, doc_type, doc_role, title, plaintext, status)
+            VALUES ('6b145f62-0000-0000-0000-000000000001', '6b145f62-d482-4cd4-99cc-0ea57079d98a', 'source_script', 'source_script', 'Yeti Script', 'Script content from scene graph.', 'completed')
+            ON CONFLICT DO NOTHING;
+          `,
+
+          "get_yeti_script_content": `
+            SELECT sv.id, sv.scene_id, LEFT(sv.content, 500) as content_preview
+            FROM public.scene_graph_versions sv
+            JOIN public.scene_graph_scenes s ON s.id = sv.scene_id
+            WHERE s.project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a'
+            ORDER BY s.scene_key::int LIMIT 5;
+          `,
+
           "debug_yeti_format": `
             SELECT project_id, doc_type, title, content_json->>'format' as fmt,
             content_json->>'assigned_lane' as lane,
