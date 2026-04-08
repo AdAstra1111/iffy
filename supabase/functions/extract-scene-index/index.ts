@@ -10,7 +10,7 @@
  */
 
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -128,28 +128,45 @@ Deno.serve(async (req: Request) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    const internalToken = req.headers.get('x-internal-token');
+
+    // ── Internal service bypass ──────────────────────────────────────────────
+    const INTERNAL_TOKEN = Deno.env.get('INTERNAL_SERVICE_TOKEN') ?? '';
+    const isInternal = !!(
+      INTERNAL_TOKEN && internalToken && internalToken === INTERNAL_TOKEN
+    );
+
+    if (!authHeader && !isInternal) {
       return new Response(JSON.stringify({ error: 'Not authenticated' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
+    let userId: string | null = null;
+
+    if (isInternal) {
+      // Internal call: use service role key, no user context needed
+      userId = null;
+    } else {
+      // External call: validate user JWT and build user-scoped client
+      const anonClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: { user }, error: authErr } = await anonClient.auth.getUser();
+      if (authErr || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      userId = user.id;
     }
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
-
-    const anonClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } },
-    );
-    const { data: { user }, error: authErr } = await anonClient.auth.getUser();
-    if (authErr || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const body = await req.json();
     const { project_id } = body;
@@ -203,7 +220,7 @@ Deno.serve(async (req: Request) => {
 
       const { data: versions, error: verErr } = await supabase
         .from('scene_graph_versions')
-        .select('scene_id, slugline, location, characters_present, summary, canon_location_id, version_number')
+        .select('scene_id, slugline, location, characters_present, summary, version_number')
         .in('scene_id', orderedSceneIds)
         .order('version_number', { ascending: false });
       if (verErr) throw new Error(`Failed to fetch scene versions: ${verErr.message}`);
@@ -239,15 +256,18 @@ Deno.serve(async (req: Request) => {
         const sceneNum = i + 1;
 
         if (!ver) {
-          validationErrors.push(`Scene ${sceneNum} (${so.scene_id}): no version found`);
+          // Non-fatal: scene in order but no version yet — skip this scene,
+          // do NOT fail-closed and block the whole index build.
+          console.warn(`[extract-scene-index] Scene ${sceneNum} (${so.scene_id}): no version found — skipping`);
           continue;
         }
         if (!ver.slugline || ver.slugline.trim().length === 0) {
-          validationErrors.push(`Scene ${sceneNum}: slugline empty`);
+          // Non-fatal warning: slugline is nice-to-have, not required.
+          console.warn(`[extract-scene-index] Scene ${sceneNum}: slugline empty — using fallback title`);
         }
-        const rawChars: string[] = ver.characters_present || [];
-        if (!Array.isArray(rawChars) || rawChars.length === 0) {
-          validationErrors.push(`Scene ${sceneNum}: characters_present empty`);
+        const rawChars: string[] = Array.isArray(ver.characters_present) ? ver.characters_present : [];
+        if (rawChars.length === 0) {
+          console.warn(`[extract-scene-index] Scene ${sceneNum}: characters_present empty`);
         }
 
         const characterKeys = rawChars
@@ -275,23 +295,16 @@ Deno.serve(async (req: Request) => {
           source_ref: {
             scene_id: so.scene_id,
             order_key: so.order_key,
-            canon_location_id: ver.canon_location_id || null,
-          },
+                      },
           location_key: locationKey,
           character_keys: characterKeys,
           wardrobe_state_map: wardrobeStateMap,
         });
       }
 
+      // Log any non-fatal warnings collected during processing
       if (validationErrors.length > 0) {
-        console.error(`[extract-scene-index] scene_graph validation failed:`, validationErrors);
-        return new Response(JSON.stringify({
-          error: 'scene_index_validation_failed',
-          message: `${validationErrors.length} scene(s) have incomplete data.`,
-          validation_errors: validationErrors,
-        }), {
-          status: 422, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+        console.warn(`[extract-scene-index] ${validationErrors.length} non-fatal issues:`, validationErrors);
       }
 
     } else {
