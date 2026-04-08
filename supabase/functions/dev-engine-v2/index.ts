@@ -11270,10 +11270,12 @@ Return ONLY valid JSON:
 
       // ── Fetch script text ─────────────────────────────────────────────────
       let scriptText = rawText || '';
+      // Declare docId and vId in outer scope so they're accessible in debug output
+      let docId: string = sourceDocumentId || '';
+      let vId: string = sourceVersionId || '';
 
       if (mode !== 'from_text' || !scriptText) {
         // Fetch from script doc
-        let docId = sourceDocumentId;
         if (!docId) {
           const { data: docs } = await supabase.from("project_documents")
             .select("id, doc_type")
@@ -11285,7 +11287,6 @@ Return ONLY valid JSON:
         }
         if (!docId) throw new Error("No script document found for this project");
 
-        let vId = sourceVersionId;
         if (!vId) {
           const { data: ver } = await supabase.from("project_document_versions")
             .select("id, plaintext").eq("document_id", docId)
@@ -11302,37 +11303,46 @@ Return ONLY valid JSON:
         throw new Error("No usable script text found. Upload or paste a script first.");
       }
 
-      console.log(`[scene_graph_extract] Script text length: ${scriptText.length}, docId: ${docId}, vId: ${vId}, mode: ${mode || 'from_script_doc'}`);
+      console.log(`[scene_graph_extract] Script text length: ${scriptText.length}, mode: ${mode || 'from_script_doc'}`);
 
       // ── Parse sluglines (pure, no DB) ─────────────────────────────────────
-      // DEBUG: show first 20 lines of script text
-      const dbgLines = scriptText.split('\n').slice(0, 20);
-      console.log('[scene_graph_extract] First 20 lines of script:');
-      dbgLines.forEach((l: string, i: number) => console.log(`  [${i}] ${l.slice(0, 120)}`));
-
       const lines = scriptText.split('\n');
+      // Patterns for scene heading detection
       const sluglineStartPattern = /^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)\s/i;
       const sluglineStartNoSpacePattern = /^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)/i;
+      // Orphaned number: line that is just a number (possibly with trailing spaces/punctuation)
       const orphanedNumberPattern = /^\s*(\d+)\s*[\.\)\s]*$/;
+      // Helper: strip leading numbers/whitespace, then check if it starts with INT./EXT.
+      function isSceneHeading(line: string): boolean {
+        const stripped = line.replace(/^[\s\d]+/, '');
+        return /^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)/i.test(stripped);
+      }
       const sceneBreaks: { startLine: number; headingLine: string }[] = [];
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        let headingLine: string;
+
         if (sluglineStartPattern.test(line)) {
-          // Normal case: line starts with INT./EXT. — merge if prev line is orphaned number
-          let headingLine = line;
+          // Case 1: normal — line starts with INT./EXT.
+          headingLine = line;
           if (i > 0 && orphanedNumberPattern.test(lines[i - 1])) {
-            const num = lines[i - 1].trim().replace(/[\.\)]+$/, '');
-            headingLine = `${num}\n${line}`;
+            headingLine = `${lines[i - 1].trim().replace(/[\.\)]+$/, '')}\n${line}`;
           }
           sceneBreaks.push({ startLine: i, headingLine });
+
         } else if (sluglineStartNoSpacePattern.test(line)) {
-          // Edge case: "INT.MOUNTAIN" (no space after INT.) — merge orphaned number
-          let headingLine = line;
+          // Case 2: "INT.MOUNTAIN" (no space after INT.) — merge orphaned number
+          headingLine = line;
           if (i > 0 && orphanedNumberPattern.test(lines[i - 1])) {
-            const num = lines[i - 1].trim().replace(/[\.\)]+$/, '');
-            headingLine = `${num}\n${line}`;
+            headingLine = `${lines[i - 1].trim().replace(/[\.\)]+$/, '')}\n${line}`;
           }
+          sceneBreaks.push({ startLine: i, headingLine });
+
+        } else if (isSceneHeading(line)) {
+          // Case 3: "1 1 EXT." or "44 INT." — embedded scene numbers at start of line.
+          // Strip the leading numbers so sgParseSlugline can parse the slugline part.
+          headingLine = line.replace(/^[\s\d]+/, '');
           sceneBreaks.push({ startLine: i, headingLine });
         }
       }
@@ -11481,12 +11491,6 @@ Return ONLY valid JSON:
         snapshotId: snapshot.id,
         content: assembledContent,
         sceneCount: scenes.length,
-        // DEBUG: return first 20 lines of ingested script text so we can see the actual format
-        debugScriptLines: scriptText.split('\n').slice(0, 20),
-        debugScriptFirst200: scriptText.slice(0, 200),
-        debugDocId: docId,
-        debugVersionId: vId,
-        debugMode: mode,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
