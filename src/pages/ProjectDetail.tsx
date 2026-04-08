@@ -263,7 +263,7 @@ export default function ProjectDetail() {
   const handleDelete = async () => {
     if (!id) return;
     await deleteProject.mutateAsync(id);
-    navigate('/dashboard');
+    navigate('/companies');
   };
 
   const handleDuplicate = () => {
@@ -341,8 +341,8 @@ export default function ProjectDetail() {
       <div className="bg-background">
         <main className="container max-w-6xl py-10 text-center">
           <p className="text-muted-foreground">Project not found.</p>
-          <Link to="/dashboard">
-            <Button variant="link" className="text-primary mt-4">Back to Dashboard</Button>
+          <Link to="/companies">
+            <Button variant="link" className="text-primary mt-4">Back to Companies</Button>
           </Link>
         </main>
       </div>
@@ -452,7 +452,7 @@ export default function ProjectDetail() {
         {/* Top-right utility buttons */}
         <div className="absolute top-3 right-3 flex items-center gap-1">
           <button
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate('/companies')}
             className="inline-flex items-center justify-center h-8 w-8 rounded-md text-white/60 hover:text-white hover:bg-white/10 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
