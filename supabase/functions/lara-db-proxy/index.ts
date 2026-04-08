@@ -376,6 +376,13 @@ Deno.serve(async (req) => {
         // Uses SUPABASE_DB_URL (direct pooler connection) for DDL execution.
         const { migration_key } = params;
         const APPROVED_MIGRATIONS: Record<string, string> = {
+          // DEBUG: get idea doc id and content length
+          "debug_get_idea": `
+            SELECT id, doc_type, title FROM public.project_documents
+            WHERE project_id = 'b3f9bdfa-e52f-4692-a1b3-c27d6d0f97a3'
+            AND doc_type IN ('idea', 'concept_brief');
+          `,
+
           // Clears stale bg_generating=true flags for a project's season_script versions
           // (run when background generation timed out without writing content)
           "add_narrative_units_status_columns": `
