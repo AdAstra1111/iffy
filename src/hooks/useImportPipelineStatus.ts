@@ -80,9 +80,9 @@ export function useImportPipelineStatus(projectId: string | undefined): ImportPi
           .select('id', { count: 'exact', head: true })
           .eq('project_id', projectId),
 
-        // Script unit links (NIT entity links + blueprint bindings)
+        // Entity links: narrative_scene_entity_links
         (supabase as any)
-          .from('script_unit_links')
+          .from('narrative_scene_entity_links')
           .select('id', { count: 'exact', head: true })
           .eq('project_id', projectId),
       ]);
