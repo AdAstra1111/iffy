@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
       // ── WRITE: Update job current_document and/or status ──
       case "update_job": {
         const { job_id, patch } = params;
-        const ALLOWED_FIELDS = ["current_document", "status", "stage_loop_count", "follow_latest", "converge_target_json", "pause_reason", "stop_reason"];
+        const ALLOWED_FIELDS = ["current_document", "status", "stage_loop_count", "follow_latest", "converge_target_json", "pause_reason", "stop_reason", "allow_defaults"];
         const safePatch: Record<string, any> = {};
         for (const [k, v] of Object.entries(patch)) {
           if (ALLOWED_FIELDS.includes(k)) safePatch[k] = v;
