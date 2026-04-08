@@ -116,6 +116,19 @@ Deno.serve(async (req) => {
         break;
       }
 
+      // ── READ: Get project documents by type ──
+      case "get_project_docs": {
+        const { project_id, doc_types } = params;
+        const { data, error } = await supabase
+          .from("project_documents")
+          .select("id, doc_type, title, created_at")
+          .eq("project_id", project_id)
+          .in("doc_type", doc_types || []);
+        if (error) throw error;
+        result = data;
+        break;
+      }
+
       // ── WRITE: Update job current_document and/or status ──
       case "update_job": {
         const { job_id, patch } = params;
