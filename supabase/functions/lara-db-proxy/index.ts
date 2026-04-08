@@ -396,6 +396,16 @@ Deno.serve(async (req) => {
             AND doc_type IN ('idea', 'concept_brief');
           `,
 
+          "debug_project_docs": `
+            SELECT id, doc_type, title, doc_role FROM public.project_documents
+            WHERE project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a';
+          `,
+
+          "debug_yeti_scenes": `
+            SELECT id, scene_key, slugline FROM public.scene_graph_scenes
+            WHERE project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a' LIMIT 3;
+          `,
+
           "get_nsel_constraints": `
             SELECT conname, contype,
               (SELECT attname FROM pg_attribute WHERE attrelid = conrelid AND attnum = conkey[1]) as column,
