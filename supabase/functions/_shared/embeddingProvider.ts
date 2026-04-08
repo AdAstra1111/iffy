@@ -1,5 +1,5 @@
 /**
- * Embedding provider using Lovable AI Gateway embeddings endpoint.
+ * Embedding provider using OpenRouter AI Gateway embeddings endpoint.
  * Calls /v1/embeddings with text-embedding-3-small for deterministic 1536-dim vectors.
  */
 

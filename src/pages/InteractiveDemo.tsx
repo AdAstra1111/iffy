@@ -16,7 +16,7 @@ import iffyLogo from '@/assets/iffy-logo-v3.png';
 const BERLIN = {
   title: 'The Berlin Protocol',
   genre: 'Thriller', format: 'Feature Film', budget: '€8.2M', lane: 'Independent',
-  heroUrl: 'https://mbwreoglhudppiwaxlsp.supabase.co/storage/v1/object/public/company-logos/demo-heroes/berlin-thriller.jpg',
+  heroUrl: 'https://hdfderbphdobomkdjypc.supabase.co/storage/v1/object/public/company-logos/demo-heroes/berlin-thriller.jpg',
   logline: 'A disgraced MI6 analyst discovers a Cold War cipher hidden in Berlin\'s architecture.',
   readiness: 72, financeReadiness: 68,
   scores: { Script: 85, Cast: 62, Finance: 68, Market: 78 },
@@ -38,7 +38,7 @@ const BERLIN = {
 const GLASS = {
   title: 'Glass Towers',
   genre: 'Drama', format: 'Feature Film', budget: '€14.5M', lane: 'Prestige',
-  heroUrl: 'https://mbwreoglhudppiwaxlsp.supabase.co/storage/v1/object/public/company-logos/demo-heroes/prestige-drama.jpg',
+  heroUrl: 'https://hdfderbphdobomkdjypc.supabase.co/storage/v1/object/public/company-logos/demo-heroes/prestige-drama.jpg',
   logline: 'Three generations of women confront the legacy of a brutalist housing estate.',
   readiness: 58, financeReadiness: 45,
   scores: { Script: 92, Cast: 45, Finance: 45, Market: 71 },
@@ -53,7 +53,7 @@ const GLASS = {
 const LASTSEEN = {
   title: 'Last Seen Online',
   genre: 'Thriller / Drama', format: '6×30 min Series', budget: '€2.1M', lane: 'Vertical Drama',
-  heroUrl: 'https://mbwreoglhudppiwaxlsp.supabase.co/storage/v1/object/public/company-logos/demo-heroes/vertical-drama.jpg',
+  heroUrl: 'https://hdfderbphdobomkdjypc.supabase.co/storage/v1/object/public/company-logos/demo-heroes/vertical-drama.jpg',
   logline: 'A teen vanishes from social media — told entirely through screens.',
   readiness: 41, financeReadiness: 22,
   scores: { Script: 78, Cast: 30, Finance: 22, Market: 85 },

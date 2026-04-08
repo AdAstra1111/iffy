@@ -66,11 +66,11 @@ const IMAGE_MODELS = {
   FLASH_IMAGE_LEGACY: 'google/gemini-2.5-flash-image',
 } as const;
 
-const GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-const FALLBACK_GATEWAY_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const PROVIDER = 'lovable-ai';
-const API_KEY_ENV = 'LOVABLE_API_KEY';
-const FALLBACK_API_KEY_ENV = 'OPENROUTER_API_KEY';
+const GATEWAY_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const FALLBACK_GATEWAY_URL = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+const PROVIDER = 'openrouter';
+const API_KEY_ENV = 'OPENROUTER_API_KEY';
+const FALLBACK_API_KEY_ENV = 'LOVABLE_API_KEY';
 
 // ── Role → Quality mapping ──────────────────────────────────────────────────
 

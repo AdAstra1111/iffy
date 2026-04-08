@@ -92,7 +92,7 @@ export function useImportPipelineStatus(projectId: string | undefined): ImportPi
       const spineCount = spineLinksResult.count ?? 0;
       const unitLinkCount = unitLinksResult.count ?? 0;
 
-      const ingested = dropDoc.extraction_status === 'done' || dropDoc.extraction_status === 'ready';
+      const ingested = dropDoc.extraction_status === 'done' || dropDoc.extraction_status === 'ready' || dropDoc.extraction_status === 'completed';
 
       const stages: PipelineStageInfo[] = [
         { key: 'uploaded', label: 'Script uploaded', status: 'done' },

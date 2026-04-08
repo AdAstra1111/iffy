@@ -323,6 +323,12 @@ async function ingestPdf(
     .update({ plaintext: plaintextFull })
     .eq("id", versionId);
 
+  // Mark extraction status as completed on the document record
+  await supabase
+    .from("project_documents")
+    .update({ extraction_status: "completed" })
+    .eq("id", documentId);
+
   // Update extraction run
   await supabase.from("script_extraction_runs").insert({
     project_id: projectId,
@@ -360,169 +366,185 @@ async function generateCoverage(
   // Cap at ~180k chars for context
   const cappedText = scriptText.slice(0, 180000);
 
-  const result = await callLLM(
-    [
-      {
-        role: "system",
-        content: `You are a professional script coverage analyst. You provide thorough, evidence-based screenplay coverage. 
+  let result: any;
+  try {
+    result = await callLLM(
+      [
+        {
+          role: "system",
+          content: `You are a professional script coverage analyst. You provide thorough, evidence-based screenplay coverage. 
 
 CLAIMS POLICY:
 - Every non-trivial claim MUST cite a page number.
 - If a claim cannot be backed by a direct quote + page, mark it as assumption=true and confidence=low.
 - Be specific and reference actual character names, scenes, and dialogue.
 - Never invent plot points or character details not present in the script.`,
-      },
-      {
-        role: "user",
-        content: `Provide full professional coverage of this screenplay. The script text includes [PAGE X] markers for reference.
+        },
+        {
+          role: "user",
+          content: `Provide full professional coverage of this screenplay. The script text includes [PAGE X] markers for reference.
 
 ${cappedText}
 
 Generate coverage using the output_coverage tool.`,
-      },
-    ],
-    [
-      {
-        type: "function",
-        function: {
-          name: "output_coverage",
-          description: "Output structured screenplay coverage with evidence",
-          parameters: {
-            type: "object",
-            properties: {
-              loglines: {
-                type: "array",
-                items: { type: "string" },
-                description: "3 logline options",
-              },
-              one_page_synopsis: { type: "string" },
-              full_synopsis: { type: "string" },
-              comments: { type: "string", description: "Reader's overall comments" },
-              strengths: {
-                type: "array",
-                items: { type: "string" },
-              },
-              weaknesses: {
-                type: "array",
-                items: { type: "string" },
-              },
-              market_positioning: {
-                type: "object",
-                properties: {
-                  comps: { type: "array", items: { type: "string" } },
-                  audience: { type: "string" },
-                  platform_fit: { type: "string" },
-                  budget_band: { type: "string" },
-                  risks: { type: "array", items: { type: "string" } },
+        },
+      ],
+      [
+        {
+          type: "function",
+          function: {
+            name: "output_coverage",
+            description: "Output structured screenplay coverage with evidence",
+            parameters: {
+              type: "object",
+              properties: {
+                loglines: {
+                  type: "array",
+                  items: { type: "string" },
+                  description: "3 logline options",
                 },
-                required: ["comps", "audience", "platform_fit", "budget_band", "risks"],
-                additionalProperties: false,
-              },
-              craft_structure: {
-                type: "object",
-                properties: {
-                  act_breakdown: { type: "string" },
-                  turning_points: { type: "array", items: { type: "string" } },
-                  pacing_notes: { type: "string" },
-                  character_arcs: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        character: { type: "string" },
-                        arc: { type: "string" },
-                        page_refs: { type: "array", items: { type: "integer" } },
+                one_page_synopsis: { type: "string" },
+                full_synopsis: { type: "string" },
+                comments: { type: "string", description: "Reader's overall comments" },
+                strengths: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                weaknesses: {
+                  type: "array",
+                  items: { type: "string" },
+                },
+                market_positioning: {
+                  type: "object",
+                  properties: {
+                    comps: { type: "array", items: { type: "string" } },
+                    audience: { type: "string" },
+                    platform_fit: { type: "string" },
+                    budget_band: { type: "string" },
+                    risks: { type: "array", items: { type: "string" } },
+                  },
+                  required: ["comps", "audience", "platform_fit", "budget_band", "risks"],
+                  additionalProperties: false,
+                },
+                craft_structure: {
+                  type: "object",
+                  properties: {
+                    act_breakdown: { type: "string" },
+                    turning_points: { type: "array", items: { type: "string" } },
+                    pacing_notes: { type: "string" },
+                    character_arcs: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          character: { type: "string" },
+                          arc: { type: "string" },
+                          page_refs: { type: "array", items: { type: "integer" } },
+                        },
+                        required: ["character", "arc"],
+                        additionalProperties: false,
                       },
-                      required: ["character", "arc"],
-                      additionalProperties: false,
                     },
                   },
-                },
-                required: ["act_breakdown", "turning_points", "pacing_notes", "character_arcs"],
-                additionalProperties: false,
-              },
-              scene_notes: {
-                type: "array",
-                items: {
-                  type: "object",
-                  properties: {
-                    scene_heading: { type: "string" },
-                    page: { type: "integer" },
-                    note: { type: "string" },
-                    strength_or_issue: { type: "string" },
-                  },
-                  required: ["scene_heading", "page", "note"],
+                  required: ["act_breakdown", "turning_points", "pacing_notes", "character_arcs"],
                   additionalProperties: false,
                 },
-                description: "Notes for top 30+ scenes",
-              },
-              scorecard: {
-                type: "object",
-                properties: {
-                  premise: { type: "integer", description: "1-10" },
-                  structure: { type: "integer" },
-                  characters: { type: "integer" },
-                  dialogue: { type: "integer" },
-                  originality: { type: "integer" },
-                  commercial_viability: { type: "integer" },
-                  overall: { type: "integer" },
-                  recommendation: {
-                    type: "string",
-                    description: "PASS / CONSIDER / RECOMMEND",
-                  },
-                },
-                required: ["premise", "structure", "characters", "dialogue", "originality", "commercial_viability", "overall", "recommendation"],
-                additionalProperties: false,
-              },
-              evidence_map: {
-                type: "object",
-                description: "Key claims mapped to page references and quotes",
-                additionalProperties: {
-                  type: "object",
-                  properties: {
-                    quote: { type: "string" },
-                    page: { type: "integer" },
-                    confidence: { type: "string" },
-                    assumption: { type: "boolean" },
-                  },
-                  required: ["quote", "page", "confidence", "assumption"],
-                  additionalProperties: false,
-                },
-              },
-              confidence_summary: {
-                type: "object",
-                properties: {
-                  overall: { type: "string" },
-                  sections: {
+                scene_notes: {
+                  type: "array",
+                  items: {
                     type: "object",
-                    additionalProperties: { type: "string" },
+                    properties: {
+                      scene_heading: { type: "string" },
+                      page: { type: "integer" },
+                      note: { type: "string" },
+                      strength_or_issue: { type: "string" },
+                    },
+                    required: ["scene_heading", "page", "note"],
+                    additionalProperties: false,
+                  },
+                  description: "Notes for top 30+ scenes",
+                },
+                scorecard: {
+                  type: "object",
+                  properties: {
+                    premise: { type: "integer", description: "1-10" },
+                    structure: { type: "integer" },
+                    characters: { type: "integer" },
+                    dialogue: { type: "integer" },
+                    originality: { type: "integer" },
+                    commercial_viability: { type: "integer" },
+                    overall: { type: "integer" },
+                    recommendation: {
+                      type: "string",
+                      description: "PASS / CONSIDER / RECOMMEND",
+                    },
+                  },
+                  required: ["premise", "structure", "characters", "dialogue", "originality", "commercial_viability", "overall", "recommendation"],
+                  additionalProperties: false,
+                },
+                evidence_map: {
+                  type: "object",
+                  description: "Key claims mapped to page references and quotes",
+                  additionalProperties: {
+                    type: "object",
+                    properties: {
+                      quote: { type: "string" },
+                      page: { type: "integer" },
+                      confidence: { type: "string" },
+                      assumption: { type: "boolean" },
+                    },
+                    required: ["quote", "page", "confidence", "assumption"],
+                    additionalProperties: false,
                   },
                 },
-                required: ["overall"],
-                additionalProperties: false,
+                confidence_summary: {
+                  type: "object",
+                  properties: {
+                    overall: { type: "string" },
+                    sections: {
+                      type: "object",
+                      additionalProperties: { type: "string" },
+                    },
+                  },
+                  required: ["overall"],
+                  additionalProperties: false,
+                },
               },
+              required: [
+                "loglines",
+                "one_page_synopsis",
+                "full_synopsis",
+                "comments",
+                "strengths",
+                "weaknesses",
+                "market_positioning",
+                "craft_structure",
+                "scene_notes",
+                "scorecard",
+                "evidence_map",
+                "confidence_summary",
+              ],
+              additionalProperties: false,
             },
-            required: [
-              "loglines",
-              "one_page_synopsis",
-              "full_synopsis",
-              "comments",
-              "strengths",
-              "weaknesses",
-              "market_positioning",
-              "craft_structure",
-              "scene_notes",
-              "scorecard",
-              "evidence_map",
-              "confidence_summary",
-            ],
-            additionalProperties: false,
           },
         },
-      },
-    ],
-    { type: "function", function: { name: "output_coverage" } }
-  );
+      ],
+      { type: "function", function: { name: "output_coverage" } }
+    );
+  } catch (llmErr: any) {
+    console.error("[script-intake] generateCoverage LLM error:", llmErr.message);
+    throw new Error(`Coverage generation failed: ${llmErr.message}`);
+  }
+
+  // Defensive: if result is a string (LLM returned content instead of calling tool), parse as JSON
+  if (typeof result === "string") {
+    console.warn("[script-intake] output_coverage returned content instead of tool call, attempting JSON parse...");
+    try {
+      result = JSON.parse(result);
+    } catch {
+      throw new Error("Coverage generation failed: model did not use output_coverage tool and content was not valid JSON.");
+    }
+  }
 
   return result;
 }

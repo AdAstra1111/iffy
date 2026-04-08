@@ -2,6 +2,9 @@
 /**
  * Shared LLM wrapper for all IFFY edge functions.
  * Centralizes AI gateway calls, system prompt composition, and JSON parsing.
+ *
+ * Gateway priority: OPENROUTER_API_KEY → OPENAI_API_KEY → LOVABLE_API_KEY
+ * (Lovable is last resort only — do not use as primary)
  */
 
 // ─── Constants ───
@@ -12,23 +15,23 @@ export const GATEWAY_URL_OPENAI = "https://api.openai.com/v1/chat/completions";
 
 /**
  * Resolve the active gateway URL and API key from environment.
- * Priority: LOVABLE_API_KEY → OPENROUTER_API_KEY → OPENAI_API_KEY
+ * Priority: OPENROUTER_API_KEY → OPENAI_API_KEY → LOVABLE_API_KEY
  */
 export function resolveGateway(): { url: string; apiKey: string } {
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-  if (lovableKey) return { url: GATEWAY_URL_LOVABLE, apiKey: lovableKey };
-
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   if (openrouterKey) return { url: GATEWAY_URL_OPENROUTER, apiKey: openrouterKey };
 
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (openaiKey) return { url: GATEWAY_URL_OPENAI, apiKey: openaiKey };
 
-  throw new Error("No AI gateway key configured. Set LOVABLE_API_KEY, OPENROUTER_API_KEY, or OPENAI_API_KEY.");
+  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
+  if (lovableKey) return { url: GATEWAY_URL_LOVABLE, apiKey: lovableKey };
+
+  throw new Error("No AI gateway key configured. Set OPENROUTER_API_KEY, OPENAI_API_KEY, or LOVABLE_API_KEY.");
 }
 
-// Backwards-compatible default for code that still reads GATEWAY_URL directly
-export const GATEWAY_URL = GATEWAY_URL_LOVABLE;
+// Backwards-compatible default — points to OpenRouter (our primary)
+export const GATEWAY_URL = GATEWAY_URL_OPENROUTER;
 
 export const MODELS = {
   PRO: "google/gemini-2.5-pro",
@@ -40,7 +43,6 @@ export const MODELS = {
   FLASH_IMAGE_V2: "google/gemini-3.1-flash-image-preview",
 } as const;
 
-// ─── Types ───
 
 export interface ComposeSystemOptions {
   baseSystem: string;

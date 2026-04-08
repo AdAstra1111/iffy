@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
-import { Loader2, Sprout, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Rocket } from 'lucide-react';
+import { Loader2, Sprout, CheckCircle2, AlertTriangle, ChevronDown, ChevronRight, Rocket, Circle, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { getLadderForFormat } from '@/lib/stages/registry';
@@ -44,15 +44,22 @@ const RISK_OPTIONS = [
 ];
 
 const PROGRESS_STAGES = [
-  'Distilling concept...',
-  'Extracting emotional thesis...',
-  'Stress-testing differentiation...',
-  'Validating sustainability...',
-  'Locking polarity...',
-  'Testing inevitability...',
-  'Constructing Narrative Energy Contract...',
-  'Assembling Seed Pack...',
+  'Analysing pitch...',
+  'Running strategic analysis...',
+  'Building Narrative Energy Contract...',
+  'Generating seed documents...',
 ];
+
+// The canonical set of documents this modal creates — shown as individual progress rows
+const SEED_DOC_ROWS = [
+  { key: 'nec',            label: 'Narrative Energy Contract',    icon: FileText },
+  { key: 'project_overview', label: 'Project Overview',             icon: FileText },
+  { key: 'creative_brief',  label: 'Creative Brief',               icon: FileText },
+  { key: 'market_positioning', label: 'Market Positioning',         icon: FileText },
+  { key: 'canon',          label: 'Canon & Constraints',           icon: FileText },
+] as const;
+
+type DocRowKey = typeof SEED_DOC_ROWS[number]['key'];
 
 interface StrategicAnalysis {
   concept_distillation?: Record<string, string>;
@@ -66,6 +73,9 @@ interface StrategicAnalysis {
   compression?: { words_25?: string; words_75?: string };
 }
 
+// Progress state for each seed doc row
+type DocProgress = 'pending' | 'working' | 'done';
+
 export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLane, projectFormat, onSuccess, onStartAutoRun }: Props) {
   const [pitch, setPitch] = useState('');
   const [lane, setLane] = useState(defaultLane || 'feature_film');
@@ -74,6 +84,9 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
   const [status, setStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [progressIdx, setProgressIdx] = useState(0);
+  const [docProgress, setDocProgress] = useState<Record<DocRowKey, DocProgress>>(
+    Object.fromEntries(SEED_DOC_ROWS.map(d => [d.key, 'pending'])) as Record<DocRowKey, DocProgress>
+  );
   const [strategicAnalysis, setStrategicAnalysis] = useState<StrategicAnalysis | null>(null);
   const [necText, setNecText] = useState('');
   const [necOriginal, setNecOriginal] = useState('');
@@ -88,9 +101,34 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
   useEffect(() => {
     if (status === 'generating') {
       setProgressIdx(0);
+      // Advance phase label + doc progress rows in sync
+      // Phase 0 (pitch/strategic analysis) → phase 1 (NEC) → phase 2+ (seed docs)
       progressInterval.current = setInterval(() => {
-        setProgressIdx(prev => (prev < PROGRESS_STAGES.length - 1 ? prev + 1 : prev));
-      }, 2800);
+        setProgressIdx(prev => {
+          const next = prev < PROGRESS_STAGES.length - 1 ? prev + 1 : prev;
+          // Advance doc progress markers in line with phases
+          if (next === 1) {
+            setDocProgress(dp => ({ ...dp, nec: 'done' }));
+          } else if (next === 2) {
+            setDocProgress(dp => ({
+              ...dp,
+              nec: 'done',
+              project_overview: 'done',
+              creative_brief: 'done',
+            }));
+          } else if (next === 3) {
+            setDocProgress(dp => ({
+              ...dp,
+              nec: 'done',
+              project_overview: 'done',
+              creative_brief: 'done',
+              market_positioning: 'done',
+              canon: 'done',
+            }));
+          }
+          return next;
+        });
+      }, 3500);
     } else {
       if (progressInterval.current) clearInterval(progressInterval.current);
     }
@@ -149,6 +187,7 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
     setNecText('');
     setNecOriginal('');
     setNecDocId(null);
+    setDocProgress(Object.fromEntries(SEED_DOC_ROWS.map(d => [d.key, 'pending'])) as Record<DocRowKey, DocProgress>);
 
     try {
       const { data, error } = await supabase.functions.invoke('generate-seed-pack', {
@@ -173,8 +212,10 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
         setNecOriginal(data.nec.plaintext || '');
       }
 
-      toast({ title: 'Pitch Architecture complete', description: `${data.documents?.length || 0} documents created.` });
-      onSuccess?.();
+      // Mark all docs done on success
+      setDocProgress(Object.fromEntries(SEED_DOC_ROWS.map(d => [d.key, 'done'])) as Record<DocRowKey, DocProgress>);
+      setStatus('success');
+      setStrategicAnalysis(data.strategic_analysis || null);
 
       // Auto-fill + auto-run after successful generation if enabled
       if (autofillEnabled || autoRunEnabled) {
@@ -366,9 +407,51 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
             </div>
 
             {status === 'generating' && (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground p-3 rounded-lg bg-muted/50">
-                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
-                <span className="animate-pulse">{PROGRESS_STAGES[progressIdx]}</span>
+              <div className="space-y-3 p-4 rounded-lg bg-muted/30 border border-border">
+                {/* Phase label */}
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0 text-primary" />
+                  <span className="animate-pulse font-medium">{PROGRESS_STAGES[progressIdx]}</span>
+                </div>
+
+                {/* Per-document progress rows */}
+                <div className="space-y-1.5">
+                  {SEED_DOC_ROWS.map(doc => {
+                    const Icon = doc.icon;
+                    const state = docProgress[doc.key];
+                    return (
+                      <div key={doc.key} className="flex items-center gap-2.5 text-xs">
+                        <div className="shrink-0 w-5 h-5 flex items-center justify-center">
+                          {state === 'done' ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                          ) : state === 'working' ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          ) : (
+                            <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />
+                          )}
+                        </div>
+                        <Icon className={`h-3.5 w-3.5 shrink-0 ${state === 'done' ? 'text-emerald-500/70' : state === 'working' ? 'text-primary' : 'text-muted-foreground/40'}`} />
+                        <span className={state === 'done' ? 'text-foreground/70' : state === 'working' ? 'text-foreground font-medium' : 'text-muted-foreground/60'}>
+                          {doc.label}
+                        </span>
+                        {state === 'done' && (
+                          <span className="ml-auto text-[10px] text-emerald-500/80 font-medium">Done</span>
+                        )}
+                        {state === 'working' && (
+                          <span className="ml-auto text-[10px] text-primary/70 animate-pulse">Generating…</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Overall progress bar */}
+                <div className="relative h-1 rounded-full bg-muted overflow-hidden mt-1">
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-500"
+                    style={{ width: `${((progressIdx + 1) / PROGRESS_STAGES.length) * 100}%` }}
+                  />
+                </div>
               </div>
             )}
             {status === 'error' && (

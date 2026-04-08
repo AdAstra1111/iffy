@@ -510,7 +510,7 @@ Deno.serve(async (req) => {
           "insert_yeti_script_doc": `
             INSERT INTO public.project_documents
               (id, project_id, doc_type, doc_role, title, plaintext, user_id, file_name, file_path)
-            VALUES (
+            SELECT
               '6b145f62-aaaa-bbbb-cccc-000000000001'::uuid,
               '6b145f62-d482-4cd4-99cc-0ea57079d98a'::uuid,
               'source_script',
@@ -528,8 +528,7 @@ Deno.serve(async (req) => {
               '00000000-0000-0000-0000-000000000001'::uuid,
               'yeti_script.txt',
               '/uploads/yeti_script.txt'
-            )
-            ON CONFLICT (id) DO UPDATE SET plaintext = EXCLUDED.plaintext;
+            ON CONFLICT (project_id, doc_type) DO UPDATE SET plaintext = EXCLUDED.plaintext;
           `,
 
           "insert_yeti_script_test": `
@@ -570,6 +569,67 @@ Deno.serve(async (req) => {
             JOIN public.scene_graph_scenes s ON s.id = sv.scene_id
             WHERE s.project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a'
             ORDER BY (s.display_number)::int LIMIT 5;
+          `,
+
+          "rename_proj_docs_extracted_text": `
+            ALTER TABLE public.project_documents
+              ADD COLUMN IF NOT EXISTS plaintext TEXT,
+              ADD COLUMN IF NOT EXISTS latest_version_id UUID;
+            UPDATE public.project_documents SET plaintext = extracted_text WHERE plaintext IS NULL AND extracted_text IS NOT NULL;
+          `,
+
+          "check_proj_docs_cols": `
+            SELECT column_name FROM information_schema.columns WHERE table_name = 'project_documents' AND table_schema = 'public';
+          `,
+
+          "check_yeti_proj_docs": `
+            SELECT id, LEFT(plaintext, 50) as p_text, LEFT(extracted_text, 50) as e_text
+            FROM public.project_documents
+            WHERE project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a';
+          `,
+
+          "test_yeti_insert": `
+            INSERT INTO public.project_documents
+              (id, project_id, doc_type, doc_role, title, plaintext, user_id, file_name, file_path)
+            VALUES (
+              '6b145f62-aaaa-bbbb-cccc-00000000000b'::uuid,
+              '6b145f62-d482-4cd4-99cc-0ea57079d98a'::uuid,
+              'source_script',
+              'source_script',
+              'Yeti Test',
+              'TEST - if you see this the insert works',
+              '00000000-0000-0000-0000-000000000001'::uuid,
+              'test.txt',
+              '/uploads/test.txt'
+            )
+            ON CONFLICT (project_id, doc_type) DO UPDATE SET plaintext = EXCLUDED.plaintext;
+          `,
+
+          "insert_yeti_test_v2": `
+            INSERT INTO public.project_documents
+              (id, project_id, doc_type, doc_role, title, plaintext, user_id, file_name, file_path)
+            SELECT
+              '6b145f62-aaaa-bbbb-cccc-00000000000c'::uuid,
+              '6b145f62-d482-4cd4-99cc-0ea57079d98a'::uuid,
+              'source_script',
+              'source_script',
+              'Yeti Test V2',
+              COALESCE(
+                (SELECT string_agg(subq.content, E'\n\n' ORDER BY subq.rn)
+                 FROM (
+                   SELECT sv.content, ROW_NUMBER() OVER (ORDER BY o.order_key) as rn
+                   FROM scene_graph_scenes sg
+                   JOIN scene_graph_order o ON o.scene_id = sg.id AND o.is_active = true
+                   JOIN scene_graph_versions sv ON sv.scene_id = sg.id
+                   WHERE sg.project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a'
+                   LIMIT 5
+                 ) subq
+                ), 'NO CONTENT'
+              ),
+              '00000000-0000-0000-0000-000000000001'::uuid,
+              'yeti_test.txt',
+              '/uploads/yeti_test.txt'
+            ON CONFLICT (project_id, doc_type) DO UPDATE SET plaintext = EXCLUDED.plaintext;
           `,
 
           "debug_yeti_format": `

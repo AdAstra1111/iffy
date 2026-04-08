@@ -362,12 +362,26 @@ serve(async (req) => {
     for (const path of documentPaths) {
       const fileName = path.split("/").pop() || "document";
 
-      const { data: fileData, error: downloadError } = await adminClient.storage
-        .from("project-documents")
-        .download(path);
+      // Try project-documents bucket first, fall back to scripts bucket
+      // (useScriptDropProject uploads to scripts, useAddDocuments/runLandingIntake use project-documents)
+      let fileData: ArrayBuffer | null = null;
+      let downloadError: any = null;
+      const bucketsToTry = ["project-documents", "scripts"];
 
-      if (downloadError || !fileData) {
-        console.error(`Failed to download ${path}:`, downloadError);
+      for (const bucket of bucketsToTry) {
+        const result = await adminClient.storage.from(bucket).download(path);
+        if (result.data) {
+          fileData = result.data;
+          console.log(`[extract] Downloaded ${path} from bucket '${bucket}'`);
+          break;
+        } else if (result.error) {
+          console.warn(`[extract] Not found in bucket '${bucket}':`, result.error.message);
+          if (!downloadError) downloadError = result.error;
+        }
+      }
+
+      if (!fileData) {
+        console.error(`Failed to download ${path} from any bucket:`, downloadError);
         const failResult: DocResult = {
           file_name: fileName,
           file_path: path,
