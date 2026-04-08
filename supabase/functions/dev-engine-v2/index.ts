@@ -5568,13 +5568,13 @@ ${docTextForScoring}`;
           } else {
             console.error("[dev-engine-v2] analyze strict retry failed -> returning success:false", { projectId, snippet: safeSnippet(raw2) });
             return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "analyze", attempt: 2, snippet: safeSnippet(raw2, 300), hint: "strict_retry_failed" }), {
-              status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+              status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
         } catch (retryErr: any) {
           console.error("[dev-engine-v2] analyze strict retry threw", { projectId, error: retryErr?.message });
           return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "analyze", attempt: 2, snippet: safeSnippet(raw, 300), hint: "strict_retry_exception" }), {
-            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
@@ -6200,7 +6200,7 @@ ${(() => {
       if (!parsed) {
         console.error("[dev-engine-v2] notes: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "notes", snippet: raw.slice(0, 300) }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -7160,7 +7160,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       if (!parsed) {
         console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "rewrite", snippet: raw.slice(0, 300) }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       // Guard: rewritten_text must be a string. If the model returned a nested object
@@ -9020,7 +9020,7 @@ Rules:
         } catch (e2) {
           console.error("[dev-engine-v2] executive-strategy JSON repair failed", raw.slice(0, 300));
           return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", snippet: raw.slice(0, 300) }), {
-            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
@@ -9371,7 +9371,7 @@ Return ONLY valid JSON matching this schema:
         } catch (e2) {
           console.error("[dev-engine-v2] extract-criteria JSON repair failed", raw.slice(0, 300));
           return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", snippet: raw.slice(0, 300) }), {
-            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
       }
@@ -9541,7 +9541,7 @@ Overall score = average of all 5 dimension scores. Passed = overall_score >= 65 
       }
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "validate-episode", snippet: raw.slice(0, 300) }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -9705,7 +9705,7 @@ RULES:
       }
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "episode-metrics", snippet: raw.slice(0, 300) }), {
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
@@ -11165,15 +11165,19 @@ Return ONLY valid JSON:
 
       for (const part of parts) {
         const trimmed = part.trim();
-        // Skip lines that are just scene numbers
+        // Skip lines that are just scene numbers (e.g. "1", "11", "11.")
         if (/^\d+\s*[\.\)\s]*$/.test(trimmed)) continue;
         // Use this as the slugline source
         sluglineText = trimmed;
         break;
       }
 
-      // Strip leading scene numbers (e.g. "1  EXT." or "23. INT.")
-      const sl = sluglineText.replace(/^\d+\s*[\.\)\s]+\s*/, '').trim();
+      // Strip ALL leading scene numbers — script headings can have the scene
+      // number appear twice: "1 1 EXT.", "2 2 INT.", "44 INT."
+      // The pattern /^(?:\d+\s*[\.\)\s]*)+\s*/ strips one or more
+      // number+separator groups, then trailing whitespace.
+      const sl = sluglineText.replace(/^(?:\d+\s*[\.\)\s]*)+\s*/, '').trim();
+
       // Match slugline: INT./EXT. + location + optional time
       const match = sl.match(/^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)\s*(.+?)(?:\s*[-–—]\s*(.+))?$/i);
       if (match) {
@@ -11298,7 +11302,7 @@ Return ONLY valid JSON:
         throw new Error("No usable script text found. Upload or paste a script first.");
       }
 
-      console.log(`[scene_graph_extract] Script text length: ${scriptText.length}`);
+      console.log(`[scene_graph_extract] Script text length: ${scriptText.length}, docId: ${docId}, vId: ${vId}, mode: ${mode || 'from_script_doc'}`);
 
       // ── Parse sluglines (pure, no DB) ─────────────────────────────────────
       // DEBUG: show first 20 lines of script text
@@ -11477,6 +11481,12 @@ Return ONLY valid JSON:
         snapshotId: snapshot.id,
         content: assembledContent,
         sceneCount: scenes.length,
+        // DEBUG: return first 20 lines of ingested script text so we can see the actual format
+        debugScriptLines: scriptText.split('\n').slice(0, 20),
+        debugScriptFirst200: scriptText.slice(0, 200),
+        debugDocId: docId,
+        debugVersionId: vId,
+        debugMode: mode,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -35095,7 +35105,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
     if (msg.includes("JSON") || msg.includes("Expected ','") || msg.includes("Unexpected token") || msg.includes("after array element")) {
       console.error("[dev-engine-v2] JSON parse bubble-up caught", msg);
       return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", detail: msg.slice(0, 300) }), {
-        status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
     return new Response(JSON.stringify({ error: msg }), {
