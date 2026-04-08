@@ -1,6 +1,6 @@
 
 -- Company Intelligence Profiles table
-CREATE TABLE public.company_intelligence_profiles (
+CREATE TABLE IF NOT EXISTS public.company_intelligence_profiles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   company_id UUID REFERENCES public.production_companies(id) ON DELETE CASCADE,
   company_name TEXT NOT NULL,

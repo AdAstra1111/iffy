@@ -1,6 +1,6 @@
 
 -- Store full script coverage results per draft
-CREATE TABLE public.script_coverages (
+CREATE TABLE IF NOT EXISTS public.script_coverages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -37,4 +37,4 @@ CREATE POLICY "Project members can delete coverages"
   USING (has_project_access(auth.uid(), project_id));
 
 -- Index for fast lookups
-CREATE INDEX idx_script_coverages_project ON public.script_coverages(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_script_coverages_project ON public.script_coverages(project_id, created_at DESC);

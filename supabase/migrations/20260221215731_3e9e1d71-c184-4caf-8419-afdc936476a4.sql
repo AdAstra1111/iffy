@@ -1,6 +1,6 @@
 
 -- Episode handoffs table: tracks roundtrip between Series Writer and Dev Engine
-CREATE TABLE public.episode_handoffs (
+CREATE TABLE IF NOT EXISTS public.episode_handoffs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_id UUID NOT NULL REFERENCES public.series_episodes(id) ON DELETE CASCADE,
@@ -27,9 +27,9 @@ ALTER TABLE public.series_episodes
     CHECK (handoff_status IS NULL OR handoff_status IN ('in_dev_engine', 'returned'));
 
 -- Indexes
-CREATE INDEX idx_episode_handoffs_project ON public.episode_handoffs(project_id, status);
-CREATE INDEX idx_episode_handoffs_episode ON public.episode_handoffs(episode_id, status);
-CREATE INDEX idx_series_episodes_handoff ON public.series_episodes(project_id, handoff_status) WHERE handoff_status IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_episode_handoffs_project ON public.episode_handoffs(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_episode_handoffs_episode ON public.episode_handoffs(episode_id, status);
+CREATE INDEX IF NOT EXISTS idx_series_episodes_handoff ON public.series_episodes(project_id, handoff_status) WHERE handoff_status IS NOT NULL;
 
 -- RLS
 ALTER TABLE public.episode_handoffs ENABLE ROW LEVEL SECURITY;

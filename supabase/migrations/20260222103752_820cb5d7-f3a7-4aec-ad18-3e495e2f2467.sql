@@ -44,19 +44,19 @@ CREATE POLICY "thread_ledgers_delete" ON public.project_thread_ledgers FOR DELET
 
 -- 1.3) Add columns to scene_graph_versions (if not present)
 DO $$ BEGIN
-  ALTER TABLE public.scene_graph_versions ADD COLUMN scene_roles jsonb NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE public.scene_graph_versions ADD COLUMN IF NOT EXISTS scene_roles jsonb NOT NULL DEFAULT '[]'::jsonb;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 DO $$ BEGIN
-  ALTER TABLE public.scene_graph_versions ADD COLUMN thread_links jsonb NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE public.scene_graph_versions ADD COLUMN IF NOT EXISTS thread_links jsonb NOT NULL DEFAULT '[]'::jsonb;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 DO $$ BEGIN
-  ALTER TABLE public.scene_graph_versions ADD COLUMN tension_delta int NULL;
+  ALTER TABLE public.scene_graph_versions ADD COLUMN IF NOT EXISTS tension_delta int NULL;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 DO $$ BEGIN
-  ALTER TABLE public.scene_graph_versions ADD COLUMN pacing_seconds int NULL;
+  ALTER TABLE public.scene_graph_versions ADD COLUMN IF NOT EXISTS pacing_seconds int NULL;
 EXCEPTION WHEN duplicate_column THEN NULL;
 END $$;
 

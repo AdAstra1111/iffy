@@ -1,6 +1,6 @@
 
 -- Create execution_recommendation_runs table for change detection snapshots
-CREATE TABLE public.execution_recommendation_runs (
+CREATE TABLE IF NOT EXISTS public.execution_recommendation_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   run_id text NOT NULL,
@@ -25,4 +25,4 @@ CREATE POLICY "Users can insert recommendation runs for accessible projects"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- Index for fast lookups
-CREATE INDEX idx_exec_rec_runs_project ON public.execution_recommendation_runs(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_exec_rec_runs_project ON public.execution_recommendation_runs(project_id, created_at DESC);

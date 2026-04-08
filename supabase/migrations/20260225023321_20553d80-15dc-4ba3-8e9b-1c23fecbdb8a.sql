@@ -1,6 +1,6 @@
 
 -- Video Render Jobs table
-CREATE TABLE public.video_render_jobs (
+CREATE TABLE IF NOT EXISTS public.video_render_jobs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   plan_id UUID NOT NULL REFERENCES public.video_generation_plans(id) ON DELETE CASCADE,
@@ -12,8 +12,8 @@ CREATE TABLE public.video_render_jobs (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_video_render_jobs_project_created ON public.video_render_jobs (project_id, created_at DESC);
-CREATE INDEX idx_video_render_jobs_status_updated ON public.video_render_jobs (status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_video_render_jobs_project_created ON public.video_render_jobs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_video_render_jobs_status_updated ON public.video_render_jobs (status, updated_at);
 
 ALTER TABLE public.video_render_jobs ENABLE ROW LEVEL SECURITY;
 
@@ -30,7 +30,7 @@ CREATE POLICY "Project members can update video_render_jobs"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Video Render Shots table
-CREATE TABLE public.video_render_shots (
+CREATE TABLE IF NOT EXISTS public.video_render_shots (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   job_id UUID NOT NULL REFERENCES public.video_render_jobs(id) ON DELETE CASCADE,
   shot_index INT NOT NULL,
@@ -44,8 +44,8 @@ CREATE TABLE public.video_render_shots (
   UNIQUE (job_id, shot_index)
 );
 
-CREATE INDEX idx_video_render_shots_job ON public.video_render_shots (job_id, shot_index);
-CREATE INDEX idx_video_render_shots_status ON public.video_render_shots (status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_video_render_shots_job ON public.video_render_shots (job_id, shot_index);
+CREATE INDEX IF NOT EXISTS idx_video_render_shots_status ON public.video_render_shots (status, updated_at);
 
 ALTER TABLE public.video_render_shots ENABLE ROW LEVEL SECURITY;
 

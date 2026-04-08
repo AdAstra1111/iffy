@@ -1,6 +1,6 @@
 
 -- Team Voices table
-CREATE TABLE public.team_voices (
+CREATE TABLE IF NOT EXISTS public.team_voices (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id uuid NOT NULL,
   label text NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE public.team_voices (
 );
 
 -- Team Voice Sources table
-CREATE TABLE public.team_voice_sources (
+CREATE TABLE IF NOT EXISTS public.team_voice_sources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   team_voice_id uuid NOT NULL REFERENCES public.team_voices(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

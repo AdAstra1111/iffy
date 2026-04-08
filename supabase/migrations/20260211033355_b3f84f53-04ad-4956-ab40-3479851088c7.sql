@@ -1,6 +1,6 @@
 
 -- Company members table: roster of people associated with a production company
-CREATE TABLE public.company_members (
+CREATE TABLE IF NOT EXISTS public.company_members (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   company_id UUID NOT NULL REFERENCES public.production_companies(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

@@ -1,6 +1,6 @@
 
 -- Phase WR: writers_room_changesets table for tracking applied changes with rollback support
-CREATE TABLE public.writers_room_changesets (
+CREATE TABLE IF NOT EXISTS public.writers_room_changesets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   document_id uuid NOT NULL REFERENCES project_documents(id) ON DELETE CASCADE,
@@ -31,5 +31,5 @@ CREATE POLICY "Users can update changesets for their projects"
   ON public.writers_room_changesets FOR UPDATE
   USING (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_wr_changesets_project ON public.writers_room_changesets(project_id, created_at DESC);
-CREATE INDEX idx_wr_changesets_document ON public.writers_room_changesets(document_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wr_changesets_project ON public.writers_room_changesets(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_wr_changesets_document ON public.writers_room_changesets(document_id, created_at DESC);

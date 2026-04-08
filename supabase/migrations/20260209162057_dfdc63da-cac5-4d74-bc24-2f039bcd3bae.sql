@@ -2,7 +2,7 @@
 -- =============================================
 -- Incentive Programs (AI-researched, cached)
 -- =============================================
-CREATE TABLE public.incentive_programs (
+CREATE TABLE IF NOT EXISTS public.incentive_programs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   jurisdiction TEXT NOT NULL,
   country_code TEXT NOT NULL DEFAULT '',
@@ -43,7 +43,7 @@ CREATE TRIGGER update_incentive_programs_updated_at
 -- =============================================
 -- Co-Production Frameworks
 -- =============================================
-CREATE TABLE public.copro_frameworks (
+CREATE TABLE IF NOT EXISTS public.copro_frameworks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
   type TEXT NOT NULL DEFAULT 'treaty', -- treaty / convention / fund
@@ -79,7 +79,7 @@ CREATE TRIGGER update_copro_frameworks_updated_at
 -- =============================================
 -- Project Incentive Scenarios (per-project)
 -- =============================================
-CREATE TABLE public.project_incentive_scenarios (
+CREATE TABLE IF NOT EXISTS public.project_incentive_scenarios (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -121,7 +121,7 @@ CREATE TRIGGER update_project_incentive_scenarios_updated_at
 -- =============================================
 -- Project Co-Production Scenarios (per-project)
 -- =============================================
-CREATE TABLE public.project_copro_scenarios (
+CREATE TABLE IF NOT EXISTS public.project_copro_scenarios (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

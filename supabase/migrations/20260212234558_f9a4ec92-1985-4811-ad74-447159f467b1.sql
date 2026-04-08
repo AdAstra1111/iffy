@@ -1,6 +1,6 @@
 
 -- Masterwork Canon: curated high-standard reference scripts for structural benchmarking
-CREATE TABLE public.masterwork_canon (
+CREATE TABLE IF NOT EXISTS public.masterwork_canon (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
   year INTEGER NOT NULL,
@@ -54,6 +54,6 @@ CREATE TRIGGER update_masterwork_canon_updated_at
   EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Index for common queries
-CREATE INDEX idx_masterwork_canon_genre ON public.masterwork_canon(genre);
-CREATE INDEX idx_masterwork_canon_format ON public.masterwork_canon(format);
-CREATE INDEX idx_masterwork_canon_lane ON public.masterwork_canon(monetisation_lane);
+CREATE INDEX IF NOT EXISTS idx_masterwork_canon_genre ON public.masterwork_canon(genre);
+CREATE INDEX IF NOT EXISTS idx_masterwork_canon_format ON public.masterwork_canon(format);
+CREATE INDEX IF NOT EXISTS idx_masterwork_canon_lane ON public.masterwork_canon(monetisation_lane);

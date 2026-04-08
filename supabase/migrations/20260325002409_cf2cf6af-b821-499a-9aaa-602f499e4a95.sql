@@ -1,4 +1,4 @@
-CREATE TABLE public.export_jobs (
+CREATE TABLE IF NOT EXISTS public.export_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   project_id uuid NOT NULL,

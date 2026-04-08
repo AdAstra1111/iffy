@@ -4,6 +4,6 @@
 
 DROP INDEX IF EXISTS public.idx_cast_regen_jobs_active_dedup;
 
-CREATE UNIQUE INDEX idx_cast_regen_jobs_active_dedup
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cast_regen_jobs_active_dedup
   ON public.cast_regen_jobs (project_id, character_key, output_id, reason)
   WHERE status IN ('queued', 'running');

@@ -1,6 +1,6 @@
 
 -- Create project_documents table to store uploaded files with extracted text
-CREATE TABLE public.project_documents (
+CREATE TABLE IF NOT EXISTS public.project_documents (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -31,4 +31,4 @@ ON public.project_documents FOR DELETE
 USING (auth.uid() = user_id);
 
 -- Index for efficient querying by project
-CREATE INDEX idx_project_documents_project_id ON public.project_documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_documents_project_id ON public.project_documents(project_id);

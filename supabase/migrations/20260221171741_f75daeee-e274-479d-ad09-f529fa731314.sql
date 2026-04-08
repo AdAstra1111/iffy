@@ -1,7 +1,7 @@
 
 -- Phase 4.1: Scenario Recommendation Engine tables
 
-CREATE TABLE public.scenario_scores (
+CREATE TABLE IF NOT EXISTS public.scenario_scores (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scenario_id uuid NOT NULL REFERENCES public.project_scenarios(id) ON DELETE CASCADE,
@@ -12,7 +12,7 @@ CREATE TABLE public.scenario_scores (
   UNIQUE(project_id, scenario_id)
 );
 
-CREATE TABLE public.scenario_recommendations (
+CREATE TABLE IF NOT EXISTS public.scenario_recommendations (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   recommended_scenario_id uuid NOT NULL REFERENCES public.project_scenarios(id) ON DELETE CASCADE,
@@ -23,9 +23,9 @@ CREATE TABLE public.scenario_recommendations (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_scenario_scores_project ON public.scenario_scores(project_id);
-CREATE INDEX idx_scenario_scores_scenario ON public.scenario_scores(scenario_id);
-CREATE INDEX idx_scenario_recommendations_project_created ON public.scenario_recommendations(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scenario_scores_project ON public.scenario_scores(project_id);
+CREATE INDEX IF NOT EXISTS idx_scenario_scores_scenario ON public.scenario_scores(scenario_id);
+CREATE INDEX IF NOT EXISTS idx_scenario_recommendations_project_created ON public.scenario_recommendations(project_id, created_at DESC);
 
 ALTER TABLE public.scenario_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scenario_recommendations ENABLE ROW LEVEL SECURITY;

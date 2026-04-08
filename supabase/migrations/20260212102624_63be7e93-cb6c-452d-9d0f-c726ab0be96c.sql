@@ -1,6 +1,6 @@
 
 -- Model accuracy scores: tracks prediction vs outcome per project, engine, and production type
-CREATE TABLE public.model_accuracy_scores (
+CREATE TABLE IF NOT EXISTS public.model_accuracy_scores (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   production_type TEXT NOT NULL DEFAULT '',
   engine_id UUID REFERENCES public.trend_engines(id) ON DELETE CASCADE,

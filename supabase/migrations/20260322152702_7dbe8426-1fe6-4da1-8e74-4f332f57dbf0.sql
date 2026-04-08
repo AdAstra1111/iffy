@@ -1,4 +1,4 @@
-CREATE TABLE public.project_ai_cast_history (
+CREATE TABLE IF NOT EXISTS public.project_ai_cast_history (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   character_key text NOT NULL,
@@ -22,5 +22,5 @@ CREATE POLICY "Users can insert own cast history"
   ON public.project_ai_cast_history FOR INSERT TO authenticated
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_cast_history_project ON public.project_ai_cast_history(project_id);
-CREATE INDEX idx_cast_history_character ON public.project_ai_cast_history(project_id, character_key);
+CREATE INDEX IF NOT EXISTS idx_cast_history_project ON public.project_ai_cast_history(project_id);
+CREATE INDEX IF NOT EXISTS idx_cast_history_character ON public.project_ai_cast_history(project_id, character_key);

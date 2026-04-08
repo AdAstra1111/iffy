@@ -1,6 +1,6 @@
 
 -- Vertical Episode Metrics: stores tension, retention, engagement scores per episode per canon snapshot
-CREATE TABLE public.vertical_episode_metrics (
+CREATE TABLE IF NOT EXISTS public.vertical_episode_metrics (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_number INTEGER NOT NULL,

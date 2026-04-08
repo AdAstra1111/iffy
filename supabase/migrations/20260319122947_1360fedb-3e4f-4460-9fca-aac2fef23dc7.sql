@@ -2,7 +2,7 @@
 -- Visual Set Curation Loop tables
 
 -- 1. Visual Sets — governed, slot-based set container
-CREATE TABLE public.visual_sets (
+CREATE TABLE IF NOT EXISTS public.visual_sets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   domain text NOT NULL DEFAULT 'character_identity',
@@ -19,7 +19,7 @@ CREATE TABLE public.visual_sets (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_visual_sets_project_domain ON public.visual_sets(project_id, domain, target_id);
+CREATE INDEX IF NOT EXISTS idx_visual_sets_project_domain ON public.visual_sets(project_id, domain, target_id);
 
 ALTER TABLE public.visual_sets ENABLE ROW LEVEL SECURITY;
 
@@ -30,7 +30,7 @@ CREATE POLICY "Users can manage own project visual sets"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 2. Visual Set Slots — deterministic slot definitions within a set
-CREATE TABLE public.visual_set_slots (
+CREATE TABLE IF NOT EXISTS public.visual_set_slots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   visual_set_id uuid NOT NULL REFERENCES public.visual_sets(id) ON DELETE CASCADE,
   slot_key text NOT NULL,
@@ -44,7 +44,7 @@ CREATE TABLE public.visual_set_slots (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_visual_set_slots_set_key ON public.visual_set_slots(visual_set_id, slot_key);
+CREATE INDEX IF NOT EXISTS idx_visual_set_slots_set_key ON public.visual_set_slots(visual_set_id, slot_key);
 
 ALTER TABLE public.visual_set_slots ENABLE ROW LEVEL SECURITY;
 
@@ -63,7 +63,7 @@ CREATE POLICY "Users can manage visual set slots via set access"
   ));
 
 -- 3. Visual Set Candidates — images attached to slots with producer decisions
-CREATE TABLE public.visual_set_candidates (
+CREATE TABLE IF NOT EXISTS public.visual_set_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   visual_set_slot_id uuid NOT NULL REFERENCES public.visual_set_slots(id) ON DELETE CASCADE,
   image_id uuid NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE public.visual_set_candidates (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_visual_set_candidates_slot_image ON public.visual_set_candidates(visual_set_slot_id, image_id);
+CREATE INDEX IF NOT EXISTS idx_visual_set_candidates_slot_image ON public.visual_set_candidates(visual_set_slot_id, image_id);
 
 ALTER TABLE public.visual_set_candidates ENABLE ROW LEVEL SECURITY;
 

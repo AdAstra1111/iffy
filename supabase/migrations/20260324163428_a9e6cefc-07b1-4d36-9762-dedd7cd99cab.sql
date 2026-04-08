@@ -1,6 +1,6 @@
 
 -- Costume Run Commands: persisted command/control layer for costume generation runs
-CREATE TABLE public.costume_run_commands (
+CREATE TABLE IF NOT EXISTS public.costume_run_commands (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id text NOT NULL,
   command_type text NOT NULL CHECK (command_type IN ('pause_run', 'resume_run', 'retry_state', 'skip_state', 'retry_slot')),
@@ -18,10 +18,10 @@ CREATE TABLE public.costume_run_commands (
 );
 
 -- Index for executor polling: fetch pending commands for a run
-CREATE INDEX idx_costume_run_commands_pending ON public.costume_run_commands (run_id, status) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_costume_run_commands_pending ON public.costume_run_commands (run_id, status) WHERE status = 'pending';
 
 -- Index for project-level audit
-CREATE INDEX idx_costume_run_commands_project ON public.costume_run_commands (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_costume_run_commands_project ON public.costume_run_commands (project_id, created_at DESC);
 
 -- RLS
 ALTER TABLE public.costume_run_commands ENABLE ROW LEVEL SECURITY;

@@ -1,6 +1,6 @@
 
 -- Layer 2: Project Pending Decisions (workflow decisions, NOT canon)
-CREATE TABLE public.project_pending_decisions (
+CREATE TABLE IF NOT EXISTS public.project_pending_decisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   decision_key text NOT NULL,
@@ -18,12 +18,12 @@ CREATE TABLE public.project_pending_decisions (
 );
 
 -- Only one pending decision per key per project
-CREATE UNIQUE INDEX project_pending_decisions_unique_key
+CREATE UNIQUE INDEX IF NOT EXISTS project_pending_decisions_unique_key
 ON public.project_pending_decisions (project_id, decision_key)
 WHERE status = 'pending';
 
 -- Fast lookup by project + status
-CREATE INDEX project_pending_decisions_project_status
+CREATE INDEX IF NOT EXISTS project_pending_decisions_project_status
 ON public.project_pending_decisions (project_id, status);
 
 -- Validation triggers (no CHECK constraints per project doctrine)

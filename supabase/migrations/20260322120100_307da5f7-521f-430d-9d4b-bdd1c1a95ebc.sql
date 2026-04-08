@@ -2,7 +2,7 @@
 -- Phase 4: Actor Promotion Decisions table + ai_actors promotion fields
 
 -- 1. Create actor_promotion_decisions table
-CREATE TABLE public.actor_promotion_decisions (
+CREATE TABLE IF NOT EXISTS public.actor_promotion_decisions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id uuid NOT NULL REFERENCES public.ai_actors(id),
   actor_version_id uuid NOT NULL REFERENCES public.ai_actor_versions(id),
@@ -34,8 +34,8 @@ CREATE TABLE public.actor_promotion_decisions (
 );
 
 -- Index for fast lookups
-CREATE INDEX idx_apd_actor_id ON public.actor_promotion_decisions(actor_id);
-CREATE INDEX idx_apd_final_status ON public.actor_promotion_decisions(final_decision_status);
+CREATE INDEX IF NOT EXISTS idx_apd_actor_id ON public.actor_promotion_decisions(actor_id);
+CREATE INDEX IF NOT EXISTS idx_apd_final_status ON public.actor_promotion_decisions(final_decision_status);
 
 -- RLS
 ALTER TABLE public.actor_promotion_decisions ENABLE ROW LEVEL SECURITY;

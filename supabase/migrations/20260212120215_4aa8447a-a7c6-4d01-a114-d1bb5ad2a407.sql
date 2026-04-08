@@ -1,6 +1,6 @@
 
 -- Pitch Ideas table
-CREATE TABLE public.pitch_ideas (
+CREATE TABLE IF NOT EXISTS public.pitch_ideas (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
@@ -39,7 +39,7 @@ CREATE TRIGGER update_pitch_ideas_updated_at BEFORE UPDATE ON public.pitch_ideas
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Pitch Feedback table
-CREATE TABLE public.pitch_feedback (
+CREATE TABLE IF NOT EXISTS public.pitch_feedback (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   pitch_idea_id UUID NOT NULL REFERENCES public.pitch_ideas(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

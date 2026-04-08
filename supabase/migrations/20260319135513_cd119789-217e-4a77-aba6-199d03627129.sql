@@ -2,7 +2,7 @@
 -- Visual Truth Dependency Propagation
 
 -- 1. visual_dependency_links — tracks what upstream truth each visual asset consumed
-CREATE TABLE public.visual_dependency_links (
+CREATE TABLE IF NOT EXISTS public.visual_dependency_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   asset_type text NOT NULL DEFAULT 'poster',
@@ -14,9 +14,9 @@ CREATE TABLE public.visual_dependency_links (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_vdl_project ON public.visual_dependency_links(project_id);
-CREATE INDEX idx_vdl_asset ON public.visual_dependency_links(asset_type, asset_id);
-CREATE INDEX idx_vdl_dependency ON public.visual_dependency_links(dependency_type, dependency_id);
+CREATE INDEX IF NOT EXISTS idx_vdl_project ON public.visual_dependency_links(project_id);
+CREATE INDEX IF NOT EXISTS idx_vdl_asset ON public.visual_dependency_links(asset_type, asset_id);
+CREATE INDEX IF NOT EXISTS idx_vdl_dependency ON public.visual_dependency_links(dependency_type, dependency_id);
 
 ALTER TABLE public.visual_dependency_links ENABLE ROW LEVEL SECURITY;
 

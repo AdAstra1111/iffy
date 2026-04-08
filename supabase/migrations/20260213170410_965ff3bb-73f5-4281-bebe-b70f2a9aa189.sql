@@ -4,7 +4,7 @@
 -- =====================================================
 
 -- 1. documentary_profiles: Core documentary project metadata
-CREATE TABLE public.documentary_profiles (
+CREATE TABLE IF NOT EXISTS public.documentary_profiles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -33,7 +33,7 @@ ALTER TABLE public.documentary_profiles ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own doc profiles" ON public.documentary_profiles FOR ALL USING (auth.uid() = user_id);
 
 -- 2. story_spine_versions: Versioned story arcs for docs
-CREATE TABLE public.story_spine_versions (
+CREATE TABLE IF NOT EXISTS public.story_spine_versions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -51,7 +51,7 @@ ALTER TABLE public.story_spine_versions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own story spines" ON public.story_spine_versions FOR ALL USING (auth.uid() = user_id);
 
 -- 3. interview_subjects: Track real people in documentary
-CREATE TABLE public.interview_subjects (
+CREATE TABLE IF NOT EXISTS public.interview_subjects (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -71,7 +71,7 @@ ALTER TABLE public.interview_subjects ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own interview subjects" ON public.interview_subjects FOR ALL USING (auth.uid() = user_id);
 
 -- 4. archive_assets: Track archival material
-CREATE TABLE public.archive_assets (
+CREATE TABLE IF NOT EXISTS public.archive_assets (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -90,7 +90,7 @@ ALTER TABLE public.archive_assets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own archive assets" ON public.archive_assets FOR ALL USING (auth.uid() = user_id);
 
 -- 5. consent_forms: Track releases and consent
-CREATE TABLE public.consent_forms (
+CREATE TABLE IF NOT EXISTS public.consent_forms (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -109,7 +109,7 @@ ALTER TABLE public.consent_forms ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own consent forms" ON public.consent_forms FOR ALL USING (auth.uid() = user_id);
 
 -- 6. legal_flags: Track legal risks for documentary
-CREATE TABLE public.legal_flags (
+CREATE TABLE IF NOT EXISTS public.legal_flags (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -128,7 +128,7 @@ ALTER TABLE public.legal_flags ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own legal flags" ON public.legal_flags FOR ALL USING (auth.uid() = user_id);
 
 -- 7. impact_partners: NGOs, universities, campaign orgs
-CREATE TABLE public.impact_partners (
+CREATE TABLE IF NOT EXISTS public.impact_partners (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -147,7 +147,7 @@ ALTER TABLE public.impact_partners ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own impact partners" ON public.impact_partners FOR ALL USING (auth.uid() = user_id);
 
 -- 8. grant_matches: Matched grant opportunities
-CREATE TABLE public.grant_matches (
+CREATE TABLE IF NOT EXISTS public.grant_matches (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -169,7 +169,7 @@ ALTER TABLE public.grant_matches ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users manage own grant matches" ON public.grant_matches FOR ALL USING (auth.uid() = user_id);
 
 -- 9. broadcaster_fit_scores: How well project fits each broadcaster
-CREATE TABLE public.broadcaster_fit_scores (
+CREATE TABLE IF NOT EXISTS public.broadcaster_fit_scores (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

@@ -2,7 +2,7 @@
 -- Feature Script Unit Engine tables
 
 -- 1) script_blueprints
-CREATE TABLE public.script_blueprints (
+CREATE TABLE IF NOT EXISTS public.script_blueprints (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   source_document_version_id uuid NULL REFERENCES public.project_document_versions(id) ON DELETE SET NULL,
@@ -13,7 +13,7 @@ CREATE TABLE public.script_blueprints (
 );
 
 -- 2) script_units
-CREATE TABLE public.script_units (
+CREATE TABLE IF NOT EXISTS public.script_units (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   blueprint_id uuid NULL REFERENCES public.script_blueprints(id) ON DELETE SET NULL,
@@ -32,11 +32,11 @@ CREATE TABLE public.script_units (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_script_units_project_type_order ON public.script_units(project_id, unit_type, order_index);
-CREATE INDEX idx_script_units_parent ON public.script_units(parent_unit_id);
+CREATE INDEX IF NOT EXISTS idx_script_units_project_type_order ON public.script_units(project_id, unit_type, order_index);
+CREATE INDEX IF NOT EXISTS idx_script_units_parent ON public.script_units(parent_unit_id);
 
 -- 3) script_unit_versions
-CREATE TABLE public.script_unit_versions (
+CREATE TABLE IF NOT EXISTS public.script_unit_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   unit_id uuid NOT NULL REFERENCES public.script_units(id) ON DELETE CASCADE,
   version_number int NOT NULL,
@@ -48,7 +48,7 @@ CREATE TABLE public.script_unit_versions (
 );
 
 -- 4) script_unit_links
-CREATE TABLE public.script_unit_links (
+CREATE TABLE IF NOT EXISTS public.script_unit_links (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   blueprint_id uuid NULL REFERENCES public.script_blueprints(id) ON DELETE SET NULL,
@@ -60,12 +60,12 @@ CREATE TABLE public.script_unit_links (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_script_unit_links_project_type ON public.script_unit_links(project_id, link_type);
-CREATE INDEX idx_script_unit_links_from ON public.script_unit_links(from_unit_id);
-CREATE INDEX idx_script_unit_links_to ON public.script_unit_links(to_unit_id);
+CREATE INDEX IF NOT EXISTS idx_script_unit_links_project_type ON public.script_unit_links(project_id, link_type);
+CREATE INDEX IF NOT EXISTS idx_script_unit_links_from ON public.script_unit_links(from_unit_id);
+CREATE INDEX IF NOT EXISTS idx_script_unit_links_to ON public.script_unit_links(to_unit_id);
 
 -- 5) script_world_state
-CREATE TABLE public.script_world_state (
+CREATE TABLE IF NOT EXISTS public.script_world_state (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   blueprint_id uuid NULL REFERENCES public.script_blueprints(id) ON DELETE SET NULL,

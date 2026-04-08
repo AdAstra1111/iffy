@@ -1,6 +1,6 @@
 
 -- Convergence Runs: top-level orchestration entity
-CREATE TABLE public.convergence_runs (
+CREATE TABLE IF NOT EXISTS public.convergence_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id uuid NOT NULL REFERENCES public.ai_actors(id) ON DELETE CASCADE,
   actor_version_id uuid NOT NULL REFERENCES public.ai_actor_versions(id) ON DELETE CASCADE,
@@ -21,7 +21,7 @@ CREATE TABLE public.convergence_runs (
 );
 
 -- Convergence Rounds: each iteration within a run
-CREATE TABLE public.convergence_rounds (
+CREATE TABLE IF NOT EXISTS public.convergence_rounds (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id uuid NOT NULL REFERENCES public.convergence_runs(id) ON DELETE CASCADE,
   round_number integer NOT NULL DEFAULT 1,
@@ -42,7 +42,7 @@ CREATE TABLE public.convergence_rounds (
 );
 
 -- Convergence Candidates: individual candidates within a round
-CREATE TABLE public.convergence_candidates (
+CREATE TABLE IF NOT EXISTS public.convergence_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   round_id uuid NOT NULL REFERENCES public.convergence_rounds(id) ON DELETE CASCADE,
   run_id uuid NOT NULL REFERENCES public.convergence_runs(id) ON DELETE CASCADE,
@@ -64,7 +64,7 @@ CREATE TABLE public.convergence_candidates (
 );
 
 -- Convergence Events: audit trail
-CREATE TABLE public.convergence_events (
+CREATE TABLE IF NOT EXISTS public.convergence_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id uuid NOT NULL REFERENCES public.convergence_runs(id) ON DELETE CASCADE,
   round_id uuid REFERENCES public.convergence_rounds(id) ON DELETE CASCADE,
@@ -74,12 +74,12 @@ CREATE TABLE public.convergence_events (
 );
 
 -- Indexes
-CREATE INDEX idx_convergence_runs_actor ON public.convergence_runs(actor_id);
-CREATE INDEX idx_convergence_runs_user ON public.convergence_runs(user_id);
-CREATE INDEX idx_convergence_rounds_run ON public.convergence_rounds(run_id);
-CREATE INDEX idx_convergence_candidates_round ON public.convergence_candidates(round_id);
-CREATE INDEX idx_convergence_candidates_run ON public.convergence_candidates(run_id);
-CREATE INDEX idx_convergence_events_run ON public.convergence_events(run_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_runs_actor ON public.convergence_runs(actor_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_runs_user ON public.convergence_runs(user_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_rounds_run ON public.convergence_rounds(run_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_candidates_round ON public.convergence_candidates(round_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_candidates_run ON public.convergence_candidates(run_id);
+CREATE INDEX IF NOT EXISTS idx_convergence_events_run ON public.convergence_events(run_id);
 
 -- RLS
 ALTER TABLE public.convergence_runs ENABLE ROW LEVEL SECURITY;

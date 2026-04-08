@@ -5,7 +5,7 @@
 -- ═══════════════════════════════════════════════════════════
 
 -- 1. Data Sources Registry
-CREATE TABLE public.data_sources (
+CREATE TABLE IF NOT EXISTS public.data_sources (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   source_name TEXT NOT NULL,
   production_types_supported TEXT[] NOT NULL DEFAULT '{}',
@@ -35,7 +35,7 @@ CREATE POLICY "Service role can manage data sources"
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- 2. Engine-Source Mapping
-CREATE TABLE public.engine_source_map (
+CREATE TABLE IF NOT EXISTS public.engine_source_map (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   engine_id UUID NOT NULL REFERENCES public.trend_engines(id) ON DELETE CASCADE,
   source_id UUID NOT NULL REFERENCES public.data_sources(id) ON DELETE CASCADE,
@@ -59,7 +59,7 @@ CREATE POLICY "Service role can manage engine source map"
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- 3. Model version log for quarterly audits (Phase 3 prep)
-CREATE TABLE public.model_version_log (
+CREATE TABLE IF NOT EXISTS public.model_version_log (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   version_label TEXT NOT NULL DEFAULT '',
   production_type TEXT NOT NULL DEFAULT '',

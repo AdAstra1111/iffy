@@ -1,6 +1,6 @@
 
 -- Actor Validation Runs
-CREATE TABLE public.actor_validation_runs (
+CREATE TABLE IF NOT EXISTS public.actor_validation_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id uuid NOT NULL REFERENCES public.ai_actors(id) ON DELETE CASCADE,
   actor_version_id uuid REFERENCES public.ai_actor_versions(id) ON DELETE SET NULL,
@@ -25,7 +25,7 @@ CREATE POLICY "Users can manage own validation runs"
   );
 
 -- Actor Validation Images
-CREATE TABLE public.actor_validation_images (
+CREATE TABLE IF NOT EXISTS public.actor_validation_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   validation_run_id uuid NOT NULL REFERENCES public.actor_validation_runs(id) ON DELETE CASCADE,
   slot_key text NOT NULL,
@@ -58,7 +58,7 @@ CREATE POLICY "Users can manage own validation images"
   );
 
 -- Actor Validation Results
-CREATE TABLE public.actor_validation_results (
+CREATE TABLE IF NOT EXISTS public.actor_validation_results (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   validation_run_id uuid NOT NULL REFERENCES public.actor_validation_runs(id) ON DELETE CASCADE UNIQUE,
   overall_score numeric,
@@ -89,6 +89,6 @@ CREATE POLICY "Users can manage own validation results"
     )
   );
 
-CREATE INDEX idx_validation_runs_actor ON public.actor_validation_runs(actor_id);
-CREATE INDEX idx_validation_images_run ON public.actor_validation_images(validation_run_id);
-CREATE INDEX idx_validation_results_run ON public.actor_validation_results(validation_run_id);
+CREATE INDEX IF NOT EXISTS idx_validation_runs_actor ON public.actor_validation_runs(actor_id);
+CREATE INDEX IF NOT EXISTS idx_validation_images_run ON public.actor_validation_images(validation_run_id);
+CREATE INDEX IF NOT EXISTS idx_validation_results_run ON public.actor_validation_results(validation_run_id);

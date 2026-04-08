@@ -2,7 +2,7 @@
 -- Visual similarity cache table
 -- Persists anchor-to-candidate AI vision comparison results
 -- Cache key: candidate_image_id + anchor_hash (sorted anchor image IDs) + scoring_version
-CREATE TABLE public.visual_similarity_cache (
+CREATE TABLE IF NOT EXISTS public.visual_similarity_cache (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   candidate_image_id uuid NOT NULL,
@@ -19,11 +19,11 @@ CREATE TABLE public.visual_similarity_cache (
 );
 
 -- Unique constraint = cache key
-CREATE UNIQUE INDEX uq_visual_similarity_cache_key
+CREATE UNIQUE INDEX IF NOT EXISTS uq_visual_similarity_cache_key
   ON public.visual_similarity_cache (candidate_image_id, anchor_hash, scoring_version);
 
 -- Lookup index
-CREATE INDEX idx_visual_similarity_cache_project
+CREATE INDEX IF NOT EXISTS idx_visual_similarity_cache_project
   ON public.visual_similarity_cache (project_id);
 
 -- RLS

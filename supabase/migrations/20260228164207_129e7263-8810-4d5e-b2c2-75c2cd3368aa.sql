@@ -1,6 +1,6 @@
 
 -- project_comparables: persistent extracted/manual comparable titles per project
-CREATE TABLE public.project_comparables (
+CREATE TABLE IF NOT EXISTS public.project_comparables (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   title text NOT NULL,
@@ -36,4 +36,4 @@ CREATE POLICY "Users can delete project comparables"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Index for fast lookups
-CREATE INDEX idx_project_comparables_project ON public.project_comparables(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_comparables_project ON public.project_comparables(project_id);

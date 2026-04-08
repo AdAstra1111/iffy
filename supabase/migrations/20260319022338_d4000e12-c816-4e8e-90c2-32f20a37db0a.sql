@@ -1,5 +1,5 @@
 
-CREATE TABLE public.character_identity_notes (
+CREATE TABLE IF NOT EXISTS public.character_identity_notes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   character_name text NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE public.character_identity_notes (
   user_id uuid NOT NULL
 );
 
-CREATE UNIQUE INDEX idx_character_identity_notes_unique ON public.character_identity_notes(project_id, character_name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_character_identity_notes_unique ON public.character_identity_notes(project_id, character_name);
 
 ALTER TABLE public.character_identity_notes ENABLE ROW LEVEL SECURITY;
 

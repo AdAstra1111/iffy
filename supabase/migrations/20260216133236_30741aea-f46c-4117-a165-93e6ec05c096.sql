@@ -1,6 +1,6 @@
 
 -- Series Writer Sessions: tracks active session, working set, resolver hash
-CREATE TABLE public.series_writer_sessions (
+CREATE TABLE IF NOT EXISTS public.series_writer_sessions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -29,7 +29,7 @@ CREATE TRIGGER update_series_writer_sessions_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Episode Continuity Notes: generated on lock per episode
-CREATE TABLE public.episode_continuity_notes (
+CREATE TABLE IF NOT EXISTS public.episode_continuity_notes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_number INT NOT NULL,

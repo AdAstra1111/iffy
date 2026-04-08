@@ -4,7 +4,7 @@
 -- ═══════════════════════════════════════════════════════════
 
 -- Finishing profiles (LUT, grain, letterbox, loudness, color consistency)
-CREATE TABLE public.trailer_finishing_profiles (
+CREATE TABLE IF NOT EXISTS public.trailer_finishing_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid REFERENCES public.projects(id) ON DELETE CASCADE,
   name text NOT NULL DEFAULT 'Custom',
@@ -39,7 +39,7 @@ CREATE POLICY "Users can manage finishing profiles for their projects"
   );
 
 -- Render variants (social exports, master, etc.)
-CREATE TABLE public.trailer_render_variants (
+CREATE TABLE IF NOT EXISTS public.trailer_render_variants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   trailer_cut_id uuid NOT NULL,
@@ -69,8 +69,8 @@ CREATE POLICY "Users can manage render variants for their projects"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_render_variants_cut ON public.trailer_render_variants(trailer_cut_id, status);
-CREATE INDEX idx_render_variants_project ON public.trailer_render_variants(project_id);
+CREATE INDEX IF NOT EXISTS idx_render_variants_cut ON public.trailer_render_variants(trailer_cut_id, status);
+CREATE INDEX IF NOT EXISTS idx_render_variants_project ON public.trailer_render_variants(project_id);
 
 -- Seed default finishing profiles (presets, no project_id)
 INSERT INTO public.trailer_finishing_profiles (name, is_preset, grain_amount, vignette_amount, letterbox_enabled, letterbox_ratio, sharpen_amount, saturation_boost, contrast_boost, highlights_rolloff, lufs_target, true_peak_db, color_consistency_enabled, color_consistency_strength)

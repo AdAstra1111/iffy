@@ -1,6 +1,6 @@
 
 -- trend_refresh_runs: log every refresh invocation
-CREATE TABLE public.trend_refresh_runs (
+CREATE TABLE IF NOT EXISTS public.trend_refresh_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at timestamptz NOT NULL DEFAULT now(),
   trigger text NOT NULL DEFAULT 'manual',
@@ -18,14 +18,14 @@ CREATE TABLE public.trend_refresh_runs (
   meta jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_trend_refresh_runs_created_at ON public.trend_refresh_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trend_refresh_runs_created_at ON public.trend_refresh_runs (created_at DESC);
 
 -- Add refresh_run_id to trend_signals and cast_trends
 ALTER TABLE public.trend_signals ADD COLUMN IF NOT EXISTS refresh_run_id uuid REFERENCES public.trend_refresh_runs(id);
 ALTER TABLE public.cast_trends ADD COLUMN IF NOT EXISTS refresh_run_id uuid REFERENCES public.trend_refresh_runs(id);
 
-CREATE INDEX idx_trend_signals_refresh_run_id ON public.trend_signals (refresh_run_id);
-CREATE INDEX idx_cast_trends_refresh_run_id ON public.cast_trends (refresh_run_id);
+CREATE INDEX IF NOT EXISTS idx_trend_signals_refresh_run_id ON public.trend_signals (refresh_run_id);
+CREATE INDEX IF NOT EXISTS idx_cast_trends_refresh_run_id ON public.cast_trends (refresh_run_id);
 
 -- RLS: allow authenticated users to read runs
 ALTER TABLE public.trend_refresh_runs ENABLE ROW LEVEL SECURITY;

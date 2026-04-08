@@ -1,5 +1,5 @@
 
-CREATE TABLE public.scenario_projections (
+CREATE TABLE IF NOT EXISTS public.scenario_projections (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scenario_id UUID NOT NULL REFERENCES public.project_scenarios(id) ON DELETE CASCADE,
@@ -12,7 +12,7 @@ CREATE TABLE public.scenario_projections (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_scenario_projections_lookup ON public.scenario_projections (project_id, scenario_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scenario_projections_lookup ON public.scenario_projections (project_id, scenario_id, created_at DESC);
 
 ALTER TABLE public.scenario_projections ENABLE ROW LEVEL SECURITY;
 

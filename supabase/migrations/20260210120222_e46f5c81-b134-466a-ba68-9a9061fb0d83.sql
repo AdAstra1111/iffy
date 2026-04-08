@@ -1,6 +1,6 @@
 
 -- Deal Tracker: territory-by-territory deal status
-CREATE TABLE public.project_deals (
+CREATE TABLE IF NOT EXISTS public.project_deals (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -40,7 +40,7 @@ BEFORE UPDATE ON public.project_deals
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Buyer CRM: meeting history and relationship tracking
-CREATE TABLE public.buyer_contacts (
+CREATE TABLE IF NOT EXISTS public.buyer_contacts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   buyer_name TEXT NOT NULL DEFAULT '',
@@ -76,7 +76,7 @@ BEFORE UPDATE ON public.buyer_contacts
 FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Buyer meeting log
-CREATE TABLE public.buyer_meetings (
+CREATE TABLE IF NOT EXISTS public.buyer_meetings (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   buyer_contact_id UUID NOT NULL REFERENCES public.buyer_contacts(id) ON DELETE CASCADE,

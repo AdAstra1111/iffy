@@ -3,7 +3,7 @@
 -- Dedicated table for cast-drift regeneration jobs.
 -- Separate from existing regen_jobs (document-oriented) to avoid schema overloading.
 
-CREATE TABLE public.cast_regen_jobs (
+CREATE TABLE IF NOT EXISTS public.cast_regen_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   character_key text NOT NULL,
@@ -19,13 +19,13 @@ CREATE TABLE public.cast_regen_jobs (
 );
 
 -- Prevent duplicate queued/running jobs for same output+reason
-CREATE UNIQUE INDEX idx_cast_regen_jobs_active_dedup
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cast_regen_jobs_active_dedup
   ON public.cast_regen_jobs (project_id, output_id, reason)
   WHERE status IN ('queued', 'running');
 
 -- Query indexes
-CREATE INDEX idx_cast_regen_jobs_project ON public.cast_regen_jobs (project_id, created_at DESC);
-CREATE INDEX idx_cast_regen_jobs_status ON public.cast_regen_jobs (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_cast_regen_jobs_project ON public.cast_regen_jobs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cast_regen_jobs_status ON public.cast_regen_jobs (project_id, status);
 
 -- RLS
 ALTER TABLE public.cast_regen_jobs ENABLE ROW LEVEL SECURITY;

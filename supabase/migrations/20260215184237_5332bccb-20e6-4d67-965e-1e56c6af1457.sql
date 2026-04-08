@@ -1,6 +1,6 @@
 
 -- Auto-Run Jobs table
-CREATE TABLE public.auto_run_jobs (
+CREATE TABLE IF NOT EXISTS public.auto_run_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -40,7 +40,7 @@ CREATE POLICY "Service role full access auto_run_jobs" ON public.auto_run_jobs
   FOR ALL USING (true) WITH CHECK (true);
 
 -- Auto-Run Steps table
-CREATE TABLE public.auto_run_steps (
+CREATE TABLE IF NOT EXISTS public.auto_run_steps (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   job_id uuid NOT NULL REFERENCES public.auto_run_jobs(id) ON DELETE CASCADE,
   step_index int NOT NULL,

@@ -15,7 +15,7 @@ CREATE INDEX IF NOT EXISTS idx_shot_plan_job_scenes_project ON public.shot_plan_
 -- Partial unique index for single active job per project (drop if exists first)
 DROP INDEX IF EXISTS shot_plan_one_active_per_project;
 DROP INDEX IF EXISTS one_active_shot_plan_job_per_project;
-CREATE UNIQUE INDEX one_active_shot_plan_job_per_project
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_shot_plan_job_per_project
   ON public.shot_plan_jobs(project_id)
   WHERE status IN ('running','paused','queued');
 

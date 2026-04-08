@@ -1,6 +1,6 @@
 
 -- Create rough_cuts table
-CREATE TABLE public.rough_cuts (
+CREATE TABLE IF NOT EXISTS public.rough_cuts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   job_id uuid NOT NULL REFERENCES public.video_render_jobs(id) ON DELETE CASCADE,
@@ -14,8 +14,8 @@ CREATE TABLE public.rough_cuts (
 );
 
 -- Indexes
-CREATE INDEX idx_rough_cuts_project_created ON public.rough_cuts (project_id, created_at DESC);
-CREATE INDEX idx_rough_cuts_job ON public.rough_cuts (job_id);
+CREATE INDEX IF NOT EXISTS idx_rough_cuts_project_created ON public.rough_cuts (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_rough_cuts_job ON public.rough_cuts (job_id);
 
 -- RLS
 ALTER TABLE public.rough_cuts ENABLE ROW LEVEL SECURITY;

@@ -1,6 +1,6 @@
 
 -- Episode patch runs: stores escalation requests from Series Writer to Dev Engine
-CREATE TABLE public.episode_patch_runs (
+CREATE TABLE IF NOT EXISTS public.episode_patch_runs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_id UUID NOT NULL REFERENCES public.series_episodes(id) ON DELETE CASCADE,
@@ -44,7 +44,7 @@ CREATE POLICY "Users can delete patch runs for their projects"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Episode activity log for audit trail
-CREATE TABLE public.episode_activity_log (
+CREATE TABLE IF NOT EXISTS public.episode_activity_log (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_id UUID REFERENCES public.series_episodes(id) ON DELETE SET NULL,

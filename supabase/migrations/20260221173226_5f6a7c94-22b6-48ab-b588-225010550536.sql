@@ -1,6 +1,6 @@
 
 -- Phase 4.2: scenario_stress_tests table
-CREATE TABLE public.scenario_stress_tests (
+CREATE TABLE IF NOT EXISTS public.scenario_stress_tests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scenario_id uuid NOT NULL REFERENCES public.project_scenarios(id) ON DELETE CASCADE,
@@ -13,7 +13,7 @@ CREATE TABLE public.scenario_stress_tests (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_stress_tests_project_scenario ON public.scenario_stress_tests (project_id, scenario_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stress_tests_project_scenario ON public.scenario_stress_tests (project_id, scenario_id, created_at DESC);
 
 ALTER TABLE public.scenario_stress_tests ENABLE ROW LEVEL SECURITY;
 

@@ -1,6 +1,6 @@
 
 -- Visual reference sets (characters, locations, styles)
-CREATE TABLE public.visual_reference_sets (
+CREATE TABLE IF NOT EXISTS public.visual_reference_sets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   ref_type TEXT NOT NULL DEFAULT 'character',
@@ -22,10 +22,10 @@ CREATE POLICY "Project members can manage visual reference sets"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_visual_ref_sets_project ON public.visual_reference_sets(project_id);
+CREATE INDEX IF NOT EXISTS idx_visual_ref_sets_project ON public.visual_reference_sets(project_id);
 
 -- Visual reference assets (images for ref sets)
-CREATE TABLE public.visual_reference_assets (
+CREATE TABLE IF NOT EXISTS public.visual_reference_assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   reference_set_id UUID NOT NULL REFERENCES public.visual_reference_sets(id) ON DELETE CASCADE,
@@ -45,16 +45,16 @@ CREATE POLICY "Project members can manage visual reference assets"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_visual_ref_assets_set ON public.visual_reference_assets(reference_set_id);
+CREATE INDEX IF NOT EXISTS idx_visual_ref_assets_set ON public.visual_reference_assets(reference_set_id);
 
 -- Extend storyboard_boards with ref fields
 ALTER TABLE public.storyboard_boards
-  ADD COLUMN character_refs JSONB,
-  ADD COLUMN location_refs JSONB,
-  ADD COLUMN style_preset_id UUID,
-  ADD COLUMN scene_seed TEXT,
-  ADD COLUMN board_seed TEXT,
-  ADD COLUMN continuity_lock BOOLEAN NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS character_refs JSONB,
+  ADD COLUMN IF NOT EXISTS location_refs JSONB,
+  ADD COLUMN IF NOT EXISTS style_preset_id UUID,
+  ADD COLUMN IF NOT EXISTS scene_seed TEXT,
+  ADD COLUMN IF NOT EXISTS board_seed TEXT,
+  ADD COLUMN IF NOT EXISTS continuity_lock BOOLEAN NOT NULL DEFAULT false;
 
 -- Updated at triggers
 CREATE TRIGGER set_visual_ref_sets_updated_at

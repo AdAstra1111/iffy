@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
-import { Zap, Loader2, X, FileText, CheckCircle2, Circle } from 'lucide-react';
+import { useState, useMemo, useEffect } from 'react';
+import { Zap, Loader2, X, FileText, CheckCircle2, Circle, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useReverseEngineer } from '@/hooks/useReverseEngineer';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,27 +14,24 @@ const BASE_DOC_ROWS: Array<{ key: string; label: string; icon: typeof FileText }
   { key: 'character_bible', label: 'Character Bible',   icon: FileText },
 ];
 
-/** Maps ladder stage → human-readable label for the post-character_bible stage */
 const POST_CHAR_BIBLE_LABELS: Partial<Record<DeliverableStage, string>> = {
   beat_sheet:             'Beat Sheet',
   episode_grid:           'Episode Grid',
   vertical_episode_beats: 'Episode Beats',
   story_outline:          'Story Outline',
-  season_arc:             'Story Arc',
-  treatment:              'Treatment',
+  season_arc:            'Story Arc',
+  treatment:             'Treatment',
 };
 
-type DocState = 'pending' | 'working' | 'done';
+type DocState = 'pending' | 'running' | 'done' | 'error';
 
 interface ReverseEngineerCalloutProps {
   projectId: string;
   documents: any[];
-  /** Project format (e.g. 'film', 'vertical-drama', 'tv-series') — used to determine format-specific doc stages */
   projectFormat?: string;
 }
 
 export function ReverseEngineerCallout({ projectId, documents, projectFormat }: ReverseEngineerCalloutProps) {
-  // Derive format-aware doc rows from the canonical ladder
   const docRows = useMemo(() => {
     const ladder = getLadderForFormat(projectFormat ?? 'film') ?? [];
     const cbIdx = ladder.indexOf('character_bible');
@@ -45,42 +42,9 @@ export function ReverseEngineerCallout({ projectId, documents, projectFormat }: 
       : BASE_DOC_ROWS;
   }, [projectFormat]);
 
-  // Format-aware phase labels (one per doc row, preceded by "Analysing script…")
-  const phases = useMemo(() => [
-    'Analysing script…',
-    ...docRows.map(d => `Generating ${d.label}…`),
-  ], [docRows]);
-
   const [dismissed, setDismissed] = useState(false);
-  const { reverseEngineerFromScript, isRunning } = useReverseEngineer();
+  const { reverseEngineerFromScript, isRunning, currentJob } = useReverseEngineer();
   const queryClient = useQueryClient();
-
-  // Per-doc progress animation
-  const [phaseIdx, setPhaseIdx] = useState(0);
-  const [docStates, setDocStates] = useState<Record<string, DocState>>(
-    Object.fromEntries(docRows.map(d => [d.key, 'pending'])) as Record<string, DocState>
-  );
-  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    if (isRunning) {
-      setPhaseIdx(0);
-      setDocStates(Object.fromEntries(docRows.map(d => [d.key, 'pending'])) as Record<string, DocState>);
-      progressInterval.current = setInterval(() => {
-        setPhaseIdx(prev => {
-          const next = Math.min(prev + 1, phases.length - 1);
-          // Mark doc rows done as phases advance (phase 0 = analysing, phase 1+ = doc rows)
-          docRows.forEach((doc, i) => {
-            if (next > i) setDocStates(ds => ({ ...ds, [doc.key]: 'done' }));
-          });
-          return next;
-        });
-      }, 5000);
-    } else {
-      if (progressInterval.current) clearInterval(progressInterval.current);
-    }
-    return () => { if (progressInterval.current) clearInterval(progressInterval.current); };
-  }, [isRunning, docRows, phases.length]);
 
   const scriptDoc = useMemo(() =>
     documents.find(d => {
@@ -99,20 +63,59 @@ export function ReverseEngineerCallout({ projectId, documents, projectFormat }: 
 
   if (dismissed || !scriptDoc || hasConceptBrief) return null;
 
-  const activePhaseLabel = isRunning ? phases[phaseIdx] : null;
+  // Map job stages to doc rows for live progress display
+  const stageToDocKey: Record<string, string> = {
+    structure:       'concept_brief',
+    beat_sheet:      'format_rules',
+    character_bible: 'character_bible',
+    storing_docs:   'market_sheet',
+  };
+
+  const getDocState = (docKey: string): DocState => {
+    if (!currentJob) return 'pending';
+    if (currentJob.status === 'done') return 'done';
+    if (currentJob.status === 'error') {
+      // If storing_docs is error, check which doc failed
+      const errStage = Object.entries(currentJob.stages || {}).find(([, s]) => s.status === 'error');
+      if (errStage) return 'error';
+      return 'done';
+    }
+    // Map current stage to which doc is "running"
+    const currentStage = currentJob.current_stage;
+    const stageForDoc = stageToDocKey[currentStage];
+    if (stageForDoc === docKey) return 'running';
+    // Check which stages are done
+    const stageOrder = ['structure', 'beat_sheet', 'character_bible', 'storing_docs'];
+    const docStageIndex = stageOrder.indexOf(stageForDoc ?? '');
+    const currentIndex = stageOrder.indexOf(currentStage);
+    if (docStageIndex < currentIndex) return 'done';
+    if (docStageIndex > currentIndex) return 'pending';
+    return 'running';
+  };
 
   const handleGenerate = async () => {
-    const result = await reverseEngineerFromScript(projectId, scriptDoc.id);
-    if (result.success) {
-      toast.success(`Pipeline documents generated! ${result.documents_created || ''} docs created.`);
+    try {
+      const { job_id } = await reverseEngineerFromScript(projectId, scriptDoc.id);
+      toast.success("Reverse-engineering started — you'll see live progress below");
+    } catch (e: any) {
+      toast.error(e?.message || 'Could not start reverse-engineering');
+    }
+  };
+
+  const handleDismiss = () => {
+    setDismissed(true);
+    if (currentJob?.status === 'done') {
       queryClient.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
       queryClient.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
       queryClient.invalidateQueries({ queryKey: ['project-documents', projectId] });
-      setDismissed(true);
-    } else {
-      toast.error(result.error || 'Could not generate pipeline documents');
     }
   };
+
+  const isDone = currentJob?.status === 'done';
+  const isError = currentJob?.status === 'error';
+  const totalStages = Object.keys(currentJob?.stages || {}).length;
+  const doneStages = Object.values(currentJob?.stages || {}).filter(s => s.status === 'done').length;
+  const progressPct = totalStages > 0 ? (doneStages / totalStages) * 100 : 0;
 
   return (
     <div className="relative rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 mb-4">
@@ -130,19 +133,32 @@ export function ReverseEngineerCallout({ projectId, documents, projectFormat }: 
         </div>
         <div className="min-w-0 flex-1">
           <h4 className="text-sm font-medium text-foreground mb-1">
-            Script detected — generate full pipeline?
+            {isDone ? '✅ Reverse-engineering complete!' : isError ? '⚠️ Reverse-engineering failed' : 'Script detected — generate full pipeline?'}
           </h4>
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-            Generate {docRows.map(d => d.label).join(', ')} from your script in one click.
+            {isRunning || isDone
+              ? `${docRows.length} foundation documents generated from your script.`
+              : `Generate ${docRows.map(d => d.label).join(', ')} from your script in one click.`}
           </p>
 
-          {isRunning && (
+          {/* Live stage progress */}
+          {(isRunning || isDone || isError) && (
             <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 mb-3 space-y-2">
-              {/* Phase label */}
+              {/* Current stage label */}
               <div className="flex items-center gap-2">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
-                <span className="text-[11px] text-amber-400 font-medium animate-pulse">
-                  {activePhaseLabel || 'Starting…'}
+                {isError ? (
+                  <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                ) : isDone ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                ) : (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
+                )}
+                <span className="text-[11px] text-amber-400 font-medium">
+                  {isError
+                    ? (currentJob?.error ?? 'An error occurred')
+                    : isDone
+                    ? 'All documents generated!'
+                    : (currentJob?.stages?.[currentJob.current_stage]?.label ?? 'Working…')}
                 </span>
               </div>
 
@@ -150,48 +166,60 @@ export function ReverseEngineerCallout({ projectId, documents, projectFormat }: 
               <div className="space-y-1 pl-1">
                 {docRows.map(doc => {
                   const Icon = doc.icon;
-                  const state = docStates[doc.key];
+                  const state = getDocState(doc.key);
                   return (
                     <div key={doc.key} className="flex items-center gap-2 text-[11px]">
                       <div className="shrink-0 w-4 h-4 flex items-center justify-center">
                         {state === 'done' ? (
                           <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        ) : state === 'working' ? (
+                        ) : state === 'running' ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+                        ) : state === 'error' ? (
+                          <AlertCircle className="h-3.5 w-3.5 text-red-400" />
                         ) : (
                           <Circle className="h-3 w-3 text-muted-foreground/40" />
                         )}
                       </div>
-                      <Icon className={`h-3 w-3 shrink-0 ${state === 'done' ? 'text-emerald-500/70' : state === 'working' ? 'text-amber-500' : 'text-muted-foreground/40'}`} />
-                      <span className={state === 'done' ? 'text-foreground/60' : state === 'working' ? 'text-foreground font-medium' : 'text-muted-foreground/50'}>
+                      <Icon className={`h-3 w-3 shrink-0 ${state === 'done' ? 'text-emerald-500/70' : state === 'running' ? 'text-amber-500' : 'text-muted-foreground/40'}`} />
+                      <span className={state === 'done' ? 'text-foreground/60' : state === 'running' ? 'text-foreground font-medium' : 'text-muted-foreground/50'}>
                         {doc.label}
                       </span>
                       {state === 'done' && <span className="ml-auto text-[9px] text-emerald-500/80 font-medium pr-1">Done</span>}
-                      {state === 'working' && <span className="ml-auto text-[9px] text-amber-400/70 animate-pulse pr-1">Working…</span>}
+                      {state === 'running' && <span className="ml-auto text-[9px] text-amber-400/70 animate-pulse pr-1">Working…</span>}
+                      {state === 'error' && <span className="ml-auto text-[9px] text-red-400/80 pr-1">Failed</span>}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Overall progress bar */}
+              {/* Progress bar */}
               <div className="relative h-0.5 rounded-full bg-amber-900/40 overflow-hidden mt-1">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full bg-amber-500 transition-all duration-700"
-                  style={{ width: `${((phaseIdx + 1) / phases.length) * 100}%` }}
+                  className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${
+                    isError ? 'bg-red-400' : isDone ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                  style={{ width: `${progressPct}%` }}
                 />
               </div>
             </div>
           )}
 
-          <Button
-            size="sm"
-            className="h-8 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-foreground border-0"
-            disabled={isRunning}
-            onClick={handleGenerate}
-          >
-            {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-            Generate Pipeline Documents
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="h-8 text-xs gap-1.5 bg-amber-600 hover:bg-amber-700 text-foreground border-0"
+              disabled={isRunning}
+              onClick={handleGenerate}
+            >
+              {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+              {isRunning ? 'Generating…' : 'Generate Pipeline Documents'}
+            </Button>
+            {(isDone || isError) && (
+              <Button size="sm" variant="outline" className="h-8 text-xs" onClick={handleDismiss}>
+                {isDone ? 'View Documents →' : 'Dismiss'}
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

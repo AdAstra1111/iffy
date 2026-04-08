@@ -1,6 +1,6 @@
 
 -- Create cast_trends table
-CREATE TABLE public.cast_trends (
+CREATE TABLE IF NOT EXISTS public.cast_trends (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   actor_name TEXT NOT NULL,
   region TEXT NOT NULL DEFAULT '',

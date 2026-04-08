@@ -1,6 +1,6 @@
 
 -- Look Bible table for storing visual style constraints
-CREATE TABLE public.trailer_look_bibles (
+CREATE TABLE IF NOT EXISTS public.trailer_look_bibles (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scope TEXT NOT NULL DEFAULT 'project', -- 'project', 'trailer_run', 'blueprint_run'
@@ -41,7 +41,7 @@ CREATE POLICY "Users can delete look bibles for accessible projects"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Index for fast lookup
-CREATE INDEX idx_trailer_look_bibles_project_scope ON public.trailer_look_bibles(project_id, scope);
+CREATE INDEX IF NOT EXISTS idx_trailer_look_bibles_project_scope ON public.trailer_look_bibles(project_id, scope);
 
 -- Updated_at trigger
 CREATE TRIGGER set_trailer_look_bibles_updated_at

@@ -1,6 +1,6 @@
 
 -- Score history snapshots for trend sparklines
-CREATE TABLE public.readiness_score_history (
+CREATE TABLE IF NOT EXISTS public.readiness_score_history (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -11,8 +11,8 @@ CREATE TABLE public.readiness_score_history (
 );
 
 -- One snapshot per project per day
-CREATE UNIQUE INDEX idx_score_history_project_date ON public.readiness_score_history(project_id, snapshot_date);
-CREATE INDEX idx_score_history_project ON public.readiness_score_history(project_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_score_history_project_date ON public.readiness_score_history(project_id, snapshot_date);
+CREATE INDEX IF NOT EXISTS idx_score_history_project ON public.readiness_score_history(project_id);
 
 ALTER TABLE public.readiness_score_history ENABLE ROW LEVEL SECURITY;
 

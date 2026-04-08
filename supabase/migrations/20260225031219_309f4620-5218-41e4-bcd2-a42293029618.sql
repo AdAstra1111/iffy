@@ -1,6 +1,6 @@
 
 -- Project Doc Sets: named groupings of documents for context control
-CREATE TABLE public.project_doc_sets (
+CREATE TABLE IF NOT EXISTS public.project_doc_sets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   name text NOT NULL,
@@ -13,9 +13,9 @@ CREATE TABLE public.project_doc_sets (
 );
 
 -- Partial unique index: at most one default per project
-CREATE UNIQUE INDEX idx_doc_sets_one_default ON public.project_doc_sets (project_id) WHERE is_default = true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_doc_sets_one_default ON public.project_doc_sets (project_id) WHERE is_default = true;
 
-CREATE INDEX idx_doc_sets_project_created ON public.project_doc_sets (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_doc_sets_project_created ON public.project_doc_sets (project_id, created_at DESC);
 
 ALTER TABLE public.project_doc_sets ENABLE ROW LEVEL SECURITY;
 
@@ -36,7 +36,7 @@ CREATE TRIGGER update_doc_sets_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- Doc Set Items: documents in a doc set with ordering
-CREATE TABLE public.project_doc_set_items (
+CREATE TABLE IF NOT EXISTS public.project_doc_set_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   doc_set_id uuid NOT NULL REFERENCES public.project_doc_sets(id) ON DELETE CASCADE,
   document_id uuid NOT NULL REFERENCES public.project_documents(id) ON DELETE CASCADE,
@@ -45,7 +45,7 @@ CREATE TABLE public.project_doc_set_items (
   UNIQUE (doc_set_id, document_id)
 );
 
-CREATE INDEX idx_doc_set_items_set_order ON public.project_doc_set_items (doc_set_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_doc_set_items_set_order ON public.project_doc_set_items (doc_set_id, sort_order);
 
 ALTER TABLE public.project_doc_set_items ENABLE ROW LEVEL SECURITY;
 

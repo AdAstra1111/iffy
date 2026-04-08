@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- 1. Participants: anyone with a stake in the project
-CREATE TABLE public.project_participants (
+CREATE TABLE IF NOT EXISTS public.project_participants (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE public.project_participants (
 );
 
 -- 2. Contracts: structured deal terms (not just PDF uploads)
-CREATE TABLE public.project_contracts (
+CREATE TABLE IF NOT EXISTS public.project_contracts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE public.project_contracts (
 );
 
 -- 3. Ownership stakes: who owns what percentage
-CREATE TABLE public.project_ownership_stakes (
+CREATE TABLE IF NOT EXISTS public.project_ownership_stakes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE public.project_ownership_stakes (
 );
 
 -- 4. Waterfall rules: recoupment order and terms
-CREATE TABLE public.project_waterfall_rules (
+CREATE TABLE IF NOT EXISTS public.project_waterfall_rules (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

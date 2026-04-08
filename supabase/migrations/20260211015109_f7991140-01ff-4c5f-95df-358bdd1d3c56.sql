@@ -1,6 +1,6 @@
 
 -- Create deliverables tracking table
-CREATE TABLE public.project_deliverables (
+CREATE TABLE IF NOT EXISTS public.project_deliverables (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -44,4 +44,4 @@ CREATE TRIGGER update_project_deliverables_updated_at
   EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Index for fast lookups
-CREATE INDEX idx_project_deliverables_project ON public.project_deliverables(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_deliverables_project ON public.project_deliverables(project_id);

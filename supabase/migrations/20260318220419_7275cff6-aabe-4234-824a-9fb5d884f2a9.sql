@@ -1,6 +1,6 @@
 
 -- Brand assets table for reusable branding (logos, marks, etc.)
-CREATE TABLE public.brand_assets (
+CREATE TABLE IF NOT EXISTS public.brand_assets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   asset_type TEXT NOT NULL DEFAULT 'logo',
@@ -25,7 +25,7 @@ CREATE POLICY "Users can manage own brand assets"
 -- Storage bucket for brand assets
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('brand-assets', 'brand-assets', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- RLS for brand-assets bucket
 CREATE POLICY "Users can upload own brand assets"

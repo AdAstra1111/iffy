@@ -1,5 +1,5 @@
 
-CREATE TABLE public.dna_extraction_runs (
+CREATE TABLE IF NOT EXISTS public.dna_extraction_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dna_profile_id UUID REFERENCES public.narrative_dna_profiles(id) ON DELETE CASCADE NOT NULL,
   user_id UUID NOT NULL,

@@ -1,6 +1,6 @@
 
 -- Visual Style Authority: canonical style profile per project
-CREATE TABLE public.project_visual_style (
+CREATE TABLE IF NOT EXISTS public.project_visual_style (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL,
   period text NOT NULL DEFAULT '',

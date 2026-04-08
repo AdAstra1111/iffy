@@ -17,7 +17,7 @@ DO $$ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'is_active'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN is_active boolean NOT NULL DEFAULT false;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS is_active boolean NOT NULL DEFAULT false;
   END IF;
 END $$;
 

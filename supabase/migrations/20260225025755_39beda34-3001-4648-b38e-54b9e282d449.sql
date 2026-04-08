@@ -1,5 +1,5 @@
 
-CREATE TABLE public.demo_bundles (
+CREATE TABLE IF NOT EXISTS public.demo_bundles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   demo_run_id uuid REFERENCES demo_runs(id) ON DELETE SET NULL,
@@ -23,4 +23,4 @@ CREATE POLICY "Users can delete bundles for their projects"
   ON public.demo_bundles FOR DELETE
   USING (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_demo_bundles_project ON public.demo_bundles(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_bundles_project ON public.demo_bundles(project_id, created_at DESC);

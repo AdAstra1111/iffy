@@ -2,7 +2,7 @@
 -- Phase 4: Structural Diagnostics + Cross-Document Coherence
 
 -- 1.1 story_metrics_runs
-CREATE TABLE public.story_metrics_runs (
+CREATE TABLE IF NOT EXISTS public.story_metrics_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -14,14 +14,14 @@ CREATE TABLE public.story_metrics_runs (
   charts jsonb NOT NULL DEFAULT '{}'::jsonb,
   status text NOT NULL DEFAULT 'complete'
 );
-CREATE INDEX idx_story_metrics_runs_project ON public.story_metrics_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_story_metrics_runs_project ON public.story_metrics_runs (project_id, created_at DESC);
 ALTER TABLE public.story_metrics_runs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project metrics" ON public.story_metrics_runs
   FOR ALL USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.2 coherence_checks_runs
-CREATE TABLE public.coherence_checks_runs (
+CREATE TABLE IF NOT EXISTS public.coherence_checks_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -31,14 +31,14 @@ CREATE TABLE public.coherence_checks_runs (
   findings jsonb NOT NULL DEFAULT '[]'::jsonb,
   status text NOT NULL DEFAULT 'complete'
 );
-CREATE INDEX idx_coherence_checks_runs_project ON public.coherence_checks_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coherence_checks_runs_project ON public.coherence_checks_runs (project_id, created_at DESC);
 ALTER TABLE public.coherence_checks_runs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project coherence runs" ON public.coherence_checks_runs
   FOR ALL USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.3 coherence_findings
-CREATE TABLE public.coherence_findings (
+CREATE TABLE IF NOT EXISTS public.coherence_findings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   run_id uuid NOT NULL REFERENCES public.coherence_checks_runs(id) ON DELETE CASCADE,
@@ -52,9 +52,9 @@ CREATE TABLE public.coherence_findings (
   suggested_repairs jsonb NOT NULL DEFAULT '[]'::jsonb,
   is_open boolean NOT NULL DEFAULT true
 );
-CREATE INDEX idx_coherence_findings_project_open ON public.coherence_findings (project_id, is_open);
-CREATE INDEX idx_coherence_findings_project_type ON public.coherence_findings (project_id, finding_type);
-CREATE INDEX idx_coherence_findings_project_date ON public.coherence_findings (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_coherence_findings_project_open ON public.coherence_findings (project_id, is_open);
+CREATE INDEX IF NOT EXISTS idx_coherence_findings_project_type ON public.coherence_findings (project_id, finding_type);
+CREATE INDEX IF NOT EXISTS idx_coherence_findings_project_date ON public.coherence_findings (project_id, created_at DESC);
 ALTER TABLE public.coherence_findings ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project coherence findings" ON public.coherence_findings
   FOR ALL USING (public.has_project_access(auth.uid(), project_id))

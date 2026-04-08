@@ -1,6 +1,6 @@
 
 -- Notifications table
-CREATE TABLE public.notifications (
+CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   type TEXT NOT NULL DEFAULT 'info', -- comment, trend_match, incentive_update, system
@@ -34,7 +34,7 @@ CREATE POLICY "Service can create notifications"
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Index for fast lookup
-CREATE INDEX idx_notifications_user_unread ON public.notifications(user_id, read) WHERE read = false;
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON public.notifications(user_id, read) WHERE read = false;
 
 -- Trigger: notify project owner when a comment is posted
 CREATE OR REPLACE FUNCTION public.notify_on_comment()

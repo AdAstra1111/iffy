@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS public.development_notes (
 );
 
 -- Index for fast lookups
-CREATE INDEX idx_dev_notes_project ON public.development_notes(project_id);
-CREATE INDEX idx_dev_notes_doc_version ON public.development_notes(document_version_id);
-CREATE INDEX idx_dev_notes_key ON public.development_notes(note_key);
+CREATE INDEX IF NOT EXISTS idx_dev_notes_project ON public.development_notes(project_id);
+CREATE INDEX IF NOT EXISTS idx_dev_notes_doc_version ON public.development_notes(document_version_id);
+CREATE INDEX IF NOT EXISTS idx_dev_notes_key ON public.development_notes(note_key);
 
 -- Enable RLS
 ALTER TABLE public.development_notes ENABLE ROW LEVEL SECURITY;

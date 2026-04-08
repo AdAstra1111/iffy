@@ -1,6 +1,6 @@
 
 -- Create cost entries table for tracking actual spend against budget
-CREATE TABLE public.project_cost_entries (
+CREATE TABLE IF NOT EXISTS public.project_cost_entries (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   budget_id UUID REFERENCES public.project_budgets(id) ON DELETE SET NULL,
@@ -39,5 +39,5 @@ CREATE TRIGGER update_project_cost_entries_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE INDEX idx_project_cost_entries_project ON public.project_cost_entries(project_id);
-CREATE INDEX idx_project_cost_entries_budget ON public.project_cost_entries(budget_id);
+CREATE INDEX IF NOT EXISTS idx_project_cost_entries_project ON public.project_cost_entries(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_cost_entries_budget ON public.project_cost_entries(budget_id);

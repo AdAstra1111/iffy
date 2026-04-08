@@ -1,6 +1,6 @@
 
 -- 1. Create narrative_engines reference table
-CREATE TABLE public.narrative_engines (
+CREATE TABLE IF NOT EXISTS public.narrative_engines (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   engine_key TEXT UNIQUE NOT NULL,
   engine_name TEXT NOT NULL,

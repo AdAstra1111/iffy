@@ -1,6 +1,6 @@
 
 -- Casting candidates: temporary casting submissions, distinct from permanent AI Actors
-CREATE TABLE public.casting_candidates (
+CREATE TABLE IF NOT EXISTS public.casting_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -19,9 +19,9 @@ CREATE TABLE public.casting_candidates (
 );
 
 -- Indexes
-CREATE INDEX idx_casting_candidates_project ON public.casting_candidates(project_id);
-CREATE INDEX idx_casting_candidates_project_char ON public.casting_candidates(project_id, character_key);
-CREATE INDEX idx_casting_candidates_status ON public.casting_candidates(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_casting_candidates_project ON public.casting_candidates(project_id);
+CREATE INDEX IF NOT EXISTS idx_casting_candidates_project_char ON public.casting_candidates(project_id, character_key);
+CREATE INDEX IF NOT EXISTS idx_casting_candidates_status ON public.casting_candidates(project_id, status);
 
 -- RLS
 ALTER TABLE public.casting_candidates ENABLE ROW LEVEL SECURITY;

@@ -6,7 +6,7 @@
 -- ══════════════════════════════════════════════════════════
 
 -- ── 1. candidate_groups ──
-CREATE TABLE public.candidate_groups (
+CREATE TABLE IF NOT EXISTS public.candidate_groups (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   run_context_type text NOT NULL DEFAULT 'image',
@@ -22,9 +22,9 @@ CREATE TABLE public.candidate_groups (
   created_by uuid
 );
 
-CREATE INDEX idx_candidate_groups_project ON public.candidate_groups (project_id);
-CREATE INDEX idx_candidate_groups_status ON public.candidate_groups (project_id, status);
-CREATE INDEX idx_candidate_groups_slot ON public.candidate_groups (project_id, slot_key);
+CREATE INDEX IF NOT EXISTS idx_candidate_groups_project ON public.candidate_groups (project_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_groups_status ON public.candidate_groups (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_candidate_groups_slot ON public.candidate_groups (project_id, slot_key);
 
 ALTER TABLE public.candidate_groups ENABLE ROW LEVEL SECURITY;
 
@@ -41,7 +41,7 @@ CREATE POLICY "Users can update their project candidate groups"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- ── 2. candidate_versions ──
-CREATE TABLE public.candidate_versions (
+CREATE TABLE IF NOT EXISTS public.candidate_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   version_ref_type text NOT NULL DEFAULT 'project_image',
@@ -51,10 +51,10 @@ CREATE TABLE public.candidate_versions (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX uq_candidate_versions_group_ref
+CREATE UNIQUE INDEX IF NOT EXISTS uq_candidate_versions_group_ref
   ON public.candidate_versions (group_id, version_ref_id);
 
-CREATE INDEX idx_candidate_versions_group ON public.candidate_versions (group_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_versions_group ON public.candidate_versions (group_id);
 
 ALTER TABLE public.candidate_versions ENABLE ROW LEVEL SECURITY;
 
@@ -75,7 +75,7 @@ CREATE POLICY "Users can insert candidate versions via group"
   ));
 
 -- ── 3. candidate_rankings ──
-CREATE TABLE public.candidate_rankings (
+CREATE TABLE IF NOT EXISTS public.candidate_rankings (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   candidate_version_id uuid NOT NULL REFERENCES public.candidate_versions(id) ON DELETE CASCADE,
@@ -87,8 +87,8 @@ CREATE TABLE public.candidate_rankings (
   ranking_version_key text NOT NULL DEFAULT 'v1'
 );
 
-CREATE INDEX idx_candidate_rankings_group ON public.candidate_rankings (group_id);
-CREATE INDEX idx_candidate_rankings_version ON public.candidate_rankings (group_id, ranking_version_key);
+CREATE INDEX IF NOT EXISTS idx_candidate_rankings_group ON public.candidate_rankings (group_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_rankings_version ON public.candidate_rankings (group_id, ranking_version_key);
 
 ALTER TABLE public.candidate_rankings ENABLE ROW LEVEL SECURITY;
 
@@ -117,7 +117,7 @@ CREATE POLICY "Users can delete candidate rankings via group"
   ));
 
 -- ── 4. candidate_selections ──
-CREATE TABLE public.candidate_selections (
+CREATE TABLE IF NOT EXISTS public.candidate_selections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   selected_candidate_version_id uuid NOT NULL REFERENCES public.candidate_versions(id) ON DELETE CASCADE,
@@ -128,7 +128,7 @@ CREATE TABLE public.candidate_selections (
 );
 
 -- Only one active selection per group
-CREATE UNIQUE INDEX uq_candidate_selections_group
+CREATE UNIQUE INDEX IF NOT EXISTS uq_candidate_selections_group
   ON public.candidate_selections (group_id);
 
 ALTER TABLE public.candidate_selections ENABLE ROW LEVEL SECURITY;

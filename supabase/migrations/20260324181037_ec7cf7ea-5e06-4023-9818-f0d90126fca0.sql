@@ -1,5 +1,5 @@
 
-CREATE TABLE public.scene_index (
+CREATE TABLE IF NOT EXISTS public.scene_index (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_number integer NOT NULL,

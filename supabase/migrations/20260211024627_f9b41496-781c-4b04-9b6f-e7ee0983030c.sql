@@ -1,6 +1,6 @@
 
 -- Production companies table
-CREATE TABLE public.production_companies (
+CREATE TABLE IF NOT EXISTS public.production_companies (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   name TEXT NOT NULL,
@@ -32,7 +32,7 @@ CREATE TRIGGER update_production_companies_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Junction table: many-to-many between projects and companies
-CREATE TABLE public.project_company_links (
+CREATE TABLE IF NOT EXISTS public.project_company_links (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   company_id UUID NOT NULL REFERENCES public.production_companies(id) ON DELETE CASCADE,

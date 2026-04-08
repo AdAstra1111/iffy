@@ -2,7 +2,7 @@
 -- Phase 5: Real Diff + Review + Comments
 
 -- 1.1) scene_diff_artifacts
-CREATE TABLE public.scene_diff_artifacts (
+CREATE TABLE IF NOT EXISTS public.scene_diff_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   change_set_id uuid NOT NULL REFERENCES public.scene_change_sets(id) ON DELETE CASCADE,
@@ -15,8 +15,8 @@ CREATE TABLE public.scene_diff_artifacts (
   artifact jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_scene_diff_artifacts_cs ON public.scene_diff_artifacts (project_id, change_set_id, diff_type);
-CREATE INDEX idx_scene_diff_artifacts_scene ON public.scene_diff_artifacts (change_set_id, scene_id);
+CREATE INDEX IF NOT EXISTS idx_scene_diff_artifacts_cs ON public.scene_diff_artifacts (project_id, change_set_id, diff_type);
+CREATE INDEX IF NOT EXISTS idx_scene_diff_artifacts_scene ON public.scene_diff_artifacts (change_set_id, scene_id);
 
 ALTER TABLE public.scene_diff_artifacts ENABLE ROW LEVEL SECURITY;
 
@@ -27,7 +27,7 @@ CREATE POLICY "Users can manage diff artifacts for their projects"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.2) scene_diff_comments
-CREATE TABLE public.scene_diff_comments (
+CREATE TABLE IF NOT EXISTS public.scene_diff_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   change_set_id uuid NOT NULL REFERENCES public.scene_change_sets(id) ON DELETE CASCADE,
@@ -41,9 +41,9 @@ CREATE TABLE public.scene_diff_comments (
   comment text NOT NULL
 );
 
-CREATE INDEX idx_scene_diff_comments_cs_scene ON public.scene_diff_comments (change_set_id, scene_id);
-CREATE INDEX idx_scene_diff_comments_cs_status ON public.scene_diff_comments (change_set_id, status);
-CREATE INDEX idx_scene_diff_comments_parent ON public.scene_diff_comments (parent_id);
+CREATE INDEX IF NOT EXISTS idx_scene_diff_comments_cs_scene ON public.scene_diff_comments (change_set_id, scene_id);
+CREATE INDEX IF NOT EXISTS idx_scene_diff_comments_cs_status ON public.scene_diff_comments (change_set_id, status);
+CREATE INDEX IF NOT EXISTS idx_scene_diff_comments_parent ON public.scene_diff_comments (parent_id);
 
 ALTER TABLE public.scene_diff_comments ENABLE ROW LEVEL SECURITY;
 
@@ -54,7 +54,7 @@ CREATE POLICY "Users can manage diff comments for their projects"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.3) scene_change_set_review_state
-CREATE TABLE public.scene_change_set_review_state (
+CREATE TABLE IF NOT EXISTS public.scene_change_set_review_state (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   change_set_id uuid NOT NULL REFERENCES public.scene_change_sets(id) ON DELETE CASCADE,

@@ -13,7 +13,7 @@ CREATE TYPE public.project_image_role AS ENUM (
 );
 
 -- Canonical image registry
-CREATE TABLE public.project_images (
+CREATE TABLE IF NOT EXISTS public.project_images (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   role project_image_role NOT NULL,
@@ -35,9 +35,9 @@ CREATE TABLE public.project_images (
 );
 
 -- Indexes
-CREATE INDEX idx_project_images_project ON public.project_images(project_id);
-CREATE INDEX idx_project_images_role ON public.project_images(project_id, role);
-CREATE INDEX idx_project_images_active ON public.project_images(project_id, is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_project_images_project ON public.project_images(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_images_role ON public.project_images(project_id, role);
+CREATE INDEX IF NOT EXISTS idx_project_images_active ON public.project_images(project_id, is_active) WHERE is_active = true;
 
 -- RLS
 ALTER TABLE public.project_images ENABLE ROW LEVEL SECURITY;

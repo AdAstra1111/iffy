@@ -1,6 +1,6 @@
 
 -- Table: project_baselines
-CREATE TABLE public.project_baselines (
+CREATE TABLE IF NOT EXISTS public.project_baselines (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   recorded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -14,7 +14,7 @@ CREATE TABLE public.project_baselines (
   UNIQUE (project_id)
 );
 
-CREATE INDEX idx_project_baselines_project_id ON public.project_baselines(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_baselines_project_id ON public.project_baselines(project_id);
 
 ALTER TABLE public.project_baselines ENABLE ROW LEVEL SECURITY;
 
@@ -35,7 +35,7 @@ CREATE POLICY "Users with project access can delete baselines"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Table: project_outcomes
-CREATE TABLE public.project_outcomes (
+CREATE TABLE IF NOT EXISTS public.project_outcomes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   recorded_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -53,7 +53,7 @@ CREATE TABLE public.project_outcomes (
   UNIQUE (project_id)
 );
 
-CREATE INDEX idx_project_outcomes_project_id ON public.project_outcomes(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_outcomes_project_id ON public.project_outcomes(project_id);
 
 ALTER TABLE public.project_outcomes ENABLE ROW LEVEL SECURITY;
 

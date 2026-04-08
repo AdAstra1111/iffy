@@ -1,6 +1,6 @@
 
 -- Create project_deferred_notes table for storing notes deferred to later deliverables
-CREATE TABLE public.project_deferred_notes (
+CREATE TABLE IF NOT EXISTS public.project_deferred_notes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -16,9 +16,9 @@ CREATE TABLE public.project_deferred_notes (
 );
 
 -- Indexes
-CREATE INDEX idx_deferred_notes_project ON public.project_deferred_notes(project_id);
-CREATE INDEX idx_deferred_notes_target ON public.project_deferred_notes(project_id, target_deliverable_type, status);
-CREATE UNIQUE INDEX idx_deferred_notes_unique ON public.project_deferred_notes(project_id, note_key, target_deliverable_type);
+CREATE INDEX IF NOT EXISTS idx_deferred_notes_project ON public.project_deferred_notes(project_id);
+CREATE INDEX IF NOT EXISTS idx_deferred_notes_target ON public.project_deferred_notes(project_id, target_deliverable_type, status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deferred_notes_unique ON public.project_deferred_notes(project_id, note_key, target_deliverable_type);
 
 -- Enable RLS
 ALTER TABLE public.project_deferred_notes ENABLE ROW LEVEL SECURITY;

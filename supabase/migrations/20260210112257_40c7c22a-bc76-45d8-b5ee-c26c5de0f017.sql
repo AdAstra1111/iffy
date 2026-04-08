@@ -1,5 +1,5 @@
 -- Create market buyers table (shared across all users)
-CREATE TABLE public.market_buyers (
+CREATE TABLE IF NOT EXISTS public.market_buyers (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   name text NOT NULL,
   company_type text NOT NULL DEFAULT 'distributor', -- distributor | sales-agent | streamer | broadcaster | financier | studio

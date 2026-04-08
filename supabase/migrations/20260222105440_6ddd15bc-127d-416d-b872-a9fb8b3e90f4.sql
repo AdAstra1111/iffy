@@ -2,7 +2,7 @@
 -- Phase 6: QC Engine tables
 
 -- 1.1) scene_qc_runs
-CREATE TABLE public.scene_qc_runs (
+CREATE TABLE IF NOT EXISTS public.scene_qc_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -13,8 +13,8 @@ CREATE TABLE public.scene_qc_runs (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_scene_qc_runs_project_date ON public.scene_qc_runs (project_id, created_at DESC);
-CREATE INDEX idx_scene_qc_runs_project_snapshot ON public.scene_qc_runs (project_id, snapshot_id);
+CREATE INDEX IF NOT EXISTS idx_scene_qc_runs_project_date ON public.scene_qc_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scene_qc_runs_project_snapshot ON public.scene_qc_runs (project_id, snapshot_id);
 
 ALTER TABLE public.scene_qc_runs ENABLE ROW LEVEL SECURITY;
 
@@ -31,7 +31,7 @@ CREATE POLICY "Users can update QC runs for accessible projects"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- 1.2) scene_qc_issues
-CREATE TABLE public.scene_qc_issues (
+CREATE TABLE IF NOT EXISTS public.scene_qc_issues (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   qc_run_id uuid NOT NULL REFERENCES public.scene_qc_runs(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -47,9 +47,9 @@ CREATE TABLE public.scene_qc_issues (
   linked_change_set_id uuid NULL REFERENCES public.scene_change_sets(id) ON DELETE SET NULL
 );
 
-CREATE INDEX idx_scene_qc_issues_project_run ON public.scene_qc_issues (project_id, qc_run_id);
-CREATE INDEX idx_scene_qc_issues_project_severity ON public.scene_qc_issues (project_id, severity);
-CREATE INDEX idx_scene_qc_issues_project_status ON public.scene_qc_issues (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_scene_qc_issues_project_run ON public.scene_qc_issues (project_id, qc_run_id);
+CREATE INDEX IF NOT EXISTS idx_scene_qc_issues_project_severity ON public.scene_qc_issues (project_id, severity);
+CREATE INDEX IF NOT EXISTS idx_scene_qc_issues_project_status ON public.scene_qc_issues (project_id, status);
 
 ALTER TABLE public.scene_qc_issues ENABLE ROW LEVEL SECURITY;
 

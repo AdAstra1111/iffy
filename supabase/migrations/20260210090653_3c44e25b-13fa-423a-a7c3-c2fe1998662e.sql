@@ -1,6 +1,6 @@
 
 -- Scenes extracted from scripts
-CREATE TABLE public.project_scenes (
+CREATE TABLE IF NOT EXISTS public.project_scenes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE public.project_scenes (
 );
 
 -- Shoot days for scheduling
-CREATE TABLE public.shoot_days (
+CREATE TABLE IF NOT EXISTS public.shoot_days (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE public.shoot_days (
 );
 
 -- Scene assignments to shoot days (the schedule)
-CREATE TABLE public.scene_schedule (
+CREATE TABLE IF NOT EXISTS public.scene_schedule (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_id UUID NOT NULL REFERENCES public.project_scenes(id) ON DELETE CASCADE,

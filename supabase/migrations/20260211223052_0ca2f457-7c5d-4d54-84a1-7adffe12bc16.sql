@@ -1,6 +1,6 @@
 
 -- Subscriptions table: tracks user plan and billing info
-CREATE TABLE public.subscriptions (
+CREATE TABLE IF NOT EXISTS public.subscriptions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   plan TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'enterprise')),
@@ -32,7 +32,7 @@ CREATE POLICY "Users can update their own subscription"
   USING (auth.uid() = user_id);
 
 -- Usage tracking table: counts per billing period
-CREATE TABLE public.usage_tracking (
+CREATE TABLE IF NOT EXISTS public.usage_tracking (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   period_start TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT date_trunc('month', now()),

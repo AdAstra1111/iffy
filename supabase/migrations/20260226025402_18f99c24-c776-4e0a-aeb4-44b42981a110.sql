@@ -1,6 +1,6 @@
 
 -- Table for comp script source references (provenance only, no full text)
-CREATE TABLE public.comparable_script_sources (
+CREATE TABLE IF NOT EXISTS public.comparable_script_sources (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -34,7 +34,7 @@ CREATE POLICY "Users can delete own script sources"
 -- Storage bucket for comp scripts
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('comp-scripts', 'comp-scripts', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS
 CREATE POLICY "Users can upload comp scripts"

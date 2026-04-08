@@ -1,6 +1,6 @@
 
 -- Nuance runs table: stores nuance profile + gate results for each story generation run
-CREATE TABLE public.nuance_runs (
+CREATE TABLE IF NOT EXISTS public.nuance_runs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -33,11 +33,11 @@ CREATE TABLE public.nuance_runs (
 );
 
 -- Indexes
-CREATE INDEX idx_nuance_runs_project_created ON public.nuance_runs (project_id, created_at DESC);
-CREATE INDEX idx_nuance_runs_project_engine ON public.nuance_runs (project_id, story_engine);
-CREATE INDEX idx_nuance_runs_project_restraint ON public.nuance_runs (project_id, restraint);
-CREATE INDEX idx_nuance_runs_anti_tropes ON public.nuance_runs USING GIN (anti_tropes);
-CREATE INDEX idx_nuance_runs_fingerprint ON public.nuance_runs USING GIN (fingerprint);
+CREATE INDEX IF NOT EXISTS idx_nuance_runs_project_created ON public.nuance_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nuance_runs_project_engine ON public.nuance_runs (project_id, story_engine);
+CREATE INDEX IF NOT EXISTS idx_nuance_runs_project_restraint ON public.nuance_runs (project_id, restraint);
+CREATE INDEX IF NOT EXISTS idx_nuance_runs_anti_tropes ON public.nuance_runs USING GIN (anti_tropes);
+CREATE INDEX IF NOT EXISTS idx_nuance_runs_fingerprint ON public.nuance_runs USING GIN (fingerprint);
 
 -- RLS
 ALTER TABLE public.nuance_runs ENABLE ROW LEVEL SECURITY;

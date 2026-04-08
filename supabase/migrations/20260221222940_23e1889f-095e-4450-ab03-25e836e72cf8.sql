@@ -1,6 +1,6 @@
 
 -- Storyboard boards
-CREATE TABLE public.storyboard_boards (
+CREATE TABLE IF NOT EXISTS public.storyboard_boards (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   shot_list_id UUID NOT NULL REFERENCES public.shot_lists(id) ON DELETE CASCADE,
@@ -28,11 +28,11 @@ CREATE POLICY "Project members can manage storyboard boards"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_storyboard_boards_shot_list ON public.storyboard_boards(shot_list_id);
-CREATE INDEX idx_storyboard_boards_item ON public.storyboard_boards(shot_list_item_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_boards_shot_list ON public.storyboard_boards(shot_list_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_boards_item ON public.storyboard_boards(shot_list_item_id);
 
 -- Storyboard exports
-CREATE TABLE public.storyboard_exports (
+CREATE TABLE IF NOT EXISTS public.storyboard_exports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shot_list_id UUID NOT NULL REFERENCES public.shot_lists(id) ON DELETE CASCADE,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

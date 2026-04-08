@@ -1,6 +1,6 @@
 
 -- Location Visual Datasets: canonical generation-ready visual truth per location
-CREATE TABLE public.location_visual_datasets (
+CREATE TABLE IF NOT EXISTS public.location_visual_datasets (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   canon_location_id UUID REFERENCES public.canon_locations(id) ON DELETE SET NULL,
@@ -50,10 +50,10 @@ CREATE TABLE public.location_visual_datasets (
 );
 
 -- Indexes
-CREATE INDEX idx_lvd_project ON public.location_visual_datasets(project_id);
-CREATE INDEX idx_lvd_location ON public.location_visual_datasets(canon_location_id);
-CREATE INDEX idx_lvd_current ON public.location_visual_datasets(project_id, is_current) WHERE is_current = true;
-CREATE UNIQUE INDEX idx_lvd_unique_current ON public.location_visual_datasets(project_id, canon_location_id) WHERE is_current = true AND canon_location_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_lvd_project ON public.location_visual_datasets(project_id);
+CREATE INDEX IF NOT EXISTS idx_lvd_location ON public.location_visual_datasets(canon_location_id);
+CREATE INDEX IF NOT EXISTS idx_lvd_current ON public.location_visual_datasets(project_id, is_current) WHERE is_current = true;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_lvd_unique_current ON public.location_visual_datasets(project_id, canon_location_id) WHERE is_current = true AND canon_location_id IS NOT NULL;
 
 -- RLS
 ALTER TABLE public.location_visual_datasets ENABLE ROW LEVEL SECURITY;

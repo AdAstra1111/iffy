@@ -65,10 +65,10 @@ CREATE TABLE IF NOT EXISTS public.regeneration_runs (
 );
 
 -- Indexes
-CREATE INDEX idx_regeneration_runs_project_id
+CREATE INDEX IF NOT EXISTS idx_regeneration_runs_project_id
   ON public.regeneration_runs(project_id);
 
-CREATE INDEX idx_regeneration_runs_active
+CREATE INDEX IF NOT EXISTS idx_regeneration_runs_active
   ON public.regeneration_runs(project_id, status)
   WHERE status IN ('pending', 'running');  -- partial index for concurrency guard
 

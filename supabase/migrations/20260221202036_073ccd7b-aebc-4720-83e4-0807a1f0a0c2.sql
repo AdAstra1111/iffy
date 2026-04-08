@@ -9,7 +9,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'governance'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN governance jsonb DEFAULT '{}'::jsonb;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS governance jsonb DEFAULT '{}'::jsonb;
   END IF;
 END$$;
 
@@ -20,7 +20,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'is_locked'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN is_locked boolean DEFAULT false;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS is_locked boolean DEFAULT false;
   END IF;
 END$$;
 
@@ -31,7 +31,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'protected_paths'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN protected_paths jsonb DEFAULT '[]'::jsonb;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS protected_paths jsonb DEFAULT '[]'::jsonb;
   END IF;
 END$$;
 
@@ -42,7 +42,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'locked_at'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN locked_at timestamptz NULL;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS locked_at timestamptz NULL;
   END IF;
 END$$;
 
@@ -53,7 +53,7 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'locked_by'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN locked_by uuid NULL;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS locked_by uuid NULL;
   END IF;
 END$$;
 
@@ -64,6 +64,6 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_schema = 'public' AND table_name = 'project_scenarios' AND column_name = 'merge_policy'
   ) THEN
-    ALTER TABLE public.project_scenarios ADD COLUMN merge_policy jsonb DEFAULT '{}'::jsonb;
+    ALTER TABLE public.project_scenarios ADD COLUMN IF NOT EXISTS merge_policy jsonb DEFAULT '{}'::jsonb;
   END IF;
 END$$;

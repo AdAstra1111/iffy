@@ -1,7 +1,7 @@
 
 -- AI Cast Library: actors, versions, assets, project mapping
 -- ai_actors: per-user synthetic actor library
-CREATE TABLE public.ai_actors (
+CREATE TABLE IF NOT EXISTS public.ai_actors (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid NOT NULL,
   name text NOT NULL DEFAULT '',
@@ -20,7 +20,7 @@ CREATE POLICY "Users can delete own actors" ON public.ai_actors FOR DELETE USING
 CREATE TRIGGER update_ai_actors_updated_at BEFORE UPDATE ON public.ai_actors FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- ai_actor_versions: versioned recipes
-CREATE TABLE public.ai_actor_versions (
+CREATE TABLE IF NOT EXISTS public.ai_actor_versions (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   actor_id uuid NOT NULL REFERENCES public.ai_actors(id) ON DELETE CASCADE,
   version_number int NOT NULL DEFAULT 1,
@@ -44,7 +44,7 @@ CREATE POLICY "Users can delete own actor versions" ON public.ai_actor_versions 
 );
 
 -- ai_actor_assets: reference images, expression sets, screen tests
-CREATE TABLE public.ai_actor_assets (
+CREATE TABLE IF NOT EXISTS public.ai_actor_assets (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   actor_version_id uuid NOT NULL REFERENCES public.ai_actor_versions(id) ON DELETE CASCADE,
   asset_type text NOT NULL DEFAULT 'reference_image',
@@ -77,7 +77,7 @@ CREATE POLICY "Users can delete own actor assets" ON public.ai_actor_assets FOR 
 );
 
 -- project_ai_cast: map project characters to AI actors
-CREATE TABLE public.project_ai_cast (
+CREATE TABLE IF NOT EXISTS public.project_ai_cast (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   character_key text NOT NULL DEFAULT '',

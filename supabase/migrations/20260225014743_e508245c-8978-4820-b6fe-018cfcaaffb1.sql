@@ -1,7 +1,7 @@
 
 -- Phase 1: Quality History tables for CIK
 
-CREATE TABLE public.cinematic_quality_runs (
+CREATE TABLE IF NOT EXISTS public.cinematic_quality_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   doc_id TEXT,
@@ -16,7 +16,7 @@ CREATE TABLE public.cinematic_quality_runs (
   created_by UUID REFERENCES auth.users(id)
 );
 
-CREATE TABLE public.cinematic_quality_attempts (
+CREATE TABLE IF NOT EXISTS public.cinematic_quality_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id UUID NOT NULL REFERENCES public.cinematic_quality_runs(id) ON DELETE CASCADE,
   attempt_index INT NOT NULL DEFAULT 0,
@@ -34,9 +34,9 @@ CREATE TABLE public.cinematic_quality_attempts (
 );
 
 -- Indexes
-CREATE INDEX idx_cqr_project ON public.cinematic_quality_runs(project_id);
-CREATE INDEX idx_cqr_created ON public.cinematic_quality_runs(created_at DESC);
-CREATE INDEX idx_cqa_run ON public.cinematic_quality_attempts(run_id);
+CREATE INDEX IF NOT EXISTS idx_cqr_project ON public.cinematic_quality_runs(project_id);
+CREATE INDEX IF NOT EXISTS idx_cqr_created ON public.cinematic_quality_runs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cqa_run ON public.cinematic_quality_attempts(run_id);
 
 -- RLS
 ALTER TABLE public.cinematic_quality_runs ENABLE ROW LEVEL SECURITY;

@@ -1,7 +1,7 @@
 -- Regen Queue: persistent resumable regeneration jobs
 -- TODO: Add RLS policies matching auto_run_jobs pattern once auth model stabilized
 
-CREATE TABLE public.regen_jobs (
+CREATE TABLE IF NOT EXISTS public.regen_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_by text NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE public.regen_jobs (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE TABLE public.regen_job_items (
+CREATE TABLE IF NOT EXISTS public.regen_job_items (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   job_id uuid NOT NULL REFERENCES public.regen_jobs(id) ON DELETE CASCADE,
   doc_type text NOT NULL,
@@ -31,9 +31,9 @@ CREATE TABLE public.regen_job_items (
 );
 
 -- Indexes
-CREATE INDEX idx_regen_jobs_project_created ON public.regen_jobs (project_id, created_at DESC);
-CREATE INDEX idx_regen_job_items_job_status ON public.regen_job_items (job_id, status);
-CREATE INDEX idx_regen_job_items_job_doctype ON public.regen_job_items (job_id, doc_type);
+CREATE INDEX IF NOT EXISTS idx_regen_jobs_project_created ON public.regen_jobs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_regen_job_items_job_status ON public.regen_job_items (job_id, status);
+CREATE INDEX IF NOT EXISTS idx_regen_job_items_job_doctype ON public.regen_job_items (job_id, doc_type);
 
 -- Reuse existing updated_at triggers
 CREATE TRIGGER set_regen_jobs_updated_at BEFORE UPDATE ON public.regen_jobs

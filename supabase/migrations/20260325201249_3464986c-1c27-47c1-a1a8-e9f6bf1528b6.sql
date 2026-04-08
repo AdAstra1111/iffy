@@ -1,6 +1,6 @@
 
 -- Poster Candidates: top 1-3 commercially viable images from hero/approved pools
-CREATE TABLE public.poster_candidates (
+CREATE TABLE IF NOT EXISTS public.poster_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   source_image_id uuid NOT NULL,
@@ -14,8 +14,8 @@ CREATE TABLE public.poster_candidates (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_poster_candidates_project ON public.poster_candidates(project_id);
-CREATE INDEX idx_poster_candidates_status ON public.poster_candidates(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_poster_candidates_project ON public.poster_candidates(project_id);
+CREATE INDEX IF NOT EXISTS idx_poster_candidates_status ON public.poster_candidates(project_id, status);
 
 ALTER TABLE public.poster_candidates ENABLE ROW LEVEL SECURITY;
 
@@ -31,7 +31,7 @@ CREATE POLICY "Users can manage own project poster candidates"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- Concept Brief Versions: curated 8-image executive artifact
-CREATE TABLE public.concept_brief_versions (
+CREATE TABLE IF NOT EXISTS public.concept_brief_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   version_number integer NOT NULL DEFAULT 1,
@@ -46,8 +46,8 @@ CREATE TABLE public.concept_brief_versions (
   UNIQUE(project_id, version_number)
 );
 
-CREATE INDEX idx_concept_brief_project ON public.concept_brief_versions(project_id);
-CREATE INDEX idx_concept_brief_status ON public.concept_brief_versions(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_concept_brief_project ON public.concept_brief_versions(project_id);
+CREATE INDEX IF NOT EXISTS idx_concept_brief_status ON public.concept_brief_versions(project_id, status);
 
 ALTER TABLE public.concept_brief_versions ENABLE ROW LEVEL SECURITY;
 

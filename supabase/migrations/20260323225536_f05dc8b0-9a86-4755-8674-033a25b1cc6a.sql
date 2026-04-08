@@ -1,6 +1,6 @@
 
 -- Scene demo generation runs
-CREATE TABLE public.scene_demo_runs (
+CREATE TABLE IF NOT EXISTS public.scene_demo_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_id uuid NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE public.scene_demo_runs (
 );
 
 -- Scene demo generated images
-CREATE TABLE public.scene_demo_images (
+CREATE TABLE IF NOT EXISTS public.scene_demo_images (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id uuid NOT NULL REFERENCES public.scene_demo_runs(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -34,9 +34,9 @@ CREATE TABLE public.scene_demo_images (
 );
 
 -- Indexes
-CREATE INDEX idx_scene_demo_runs_project ON public.scene_demo_runs(project_id);
-CREATE INDEX idx_scene_demo_runs_scene ON public.scene_demo_runs(scene_id);
-CREATE INDEX idx_scene_demo_images_run ON public.scene_demo_images(run_id);
+CREATE INDEX IF NOT EXISTS idx_scene_demo_runs_project ON public.scene_demo_runs(project_id);
+CREATE INDEX IF NOT EXISTS idx_scene_demo_runs_scene ON public.scene_demo_runs(scene_id);
+CREATE INDEX IF NOT EXISTS idx_scene_demo_images_run ON public.scene_demo_images(run_id);
 
 -- RLS
 ALTER TABLE public.scene_demo_runs ENABLE ROW LEVEL SECURITY;

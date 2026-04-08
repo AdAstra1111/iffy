@@ -1,6 +1,6 @@
 
 -- Commercial Proof: proven commercial hits for viability benchmarking
-CREATE TABLE public.commercial_proof (
+CREATE TABLE IF NOT EXISTS public.commercial_proof (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
   year INTEGER NOT NULL,
@@ -40,6 +40,6 @@ CREATE TRIGGER update_commercial_proof_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE INDEX idx_commercial_proof_genre ON public.commercial_proof(genre);
-CREATE INDEX idx_commercial_proof_format ON public.commercial_proof(format);
-CREATE INDEX idx_commercial_proof_roi ON public.commercial_proof(roi_tier);
+CREATE INDEX IF NOT EXISTS idx_commercial_proof_genre ON public.commercial_proof(genre);
+CREATE INDEX IF NOT EXISTS idx_commercial_proof_format ON public.commercial_proof(format);
+CREATE INDEX IF NOT EXISTS idx_commercial_proof_roi ON public.commercial_proof(roi_tier);

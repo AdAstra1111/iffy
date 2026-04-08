@@ -1,5 +1,5 @@
 
-CREATE TABLE public.lookbook_pages (
+CREATE TABLE IF NOT EXISTS public.lookbook_pages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_number INTEGER NOT NULL,

@@ -1,6 +1,6 @@
 
 -- Narrative Units table for Phase 1 NUE
-CREATE TABLE public.narrative_units (
+CREATE TABLE IF NOT EXISTS public.narrative_units (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   unit_type TEXT NOT NULL,
@@ -16,8 +16,8 @@ CREATE TABLE public.narrative_units (
 );
 
 -- Index for project lookups
-CREATE INDEX idx_narrative_units_project ON public.narrative_units(project_id);
-CREATE INDEX idx_narrative_units_type ON public.narrative_units(project_id, unit_type);
+CREATE INDEX IF NOT EXISTS idx_narrative_units_project ON public.narrative_units(project_id);
+CREATE INDEX IF NOT EXISTS idx_narrative_units_type ON public.narrative_units(project_id, unit_type);
 
 -- RLS
 ALTER TABLE public.narrative_units ENABLE ROW LEVEL SECURITY;

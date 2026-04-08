@@ -1,6 +1,6 @@
 
 -- Cashflow sources table: persists inflow/outflow line items per project
-CREATE TABLE public.project_cashflow_sources (
+CREATE TABLE IF NOT EXISTS public.project_cashflow_sources (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

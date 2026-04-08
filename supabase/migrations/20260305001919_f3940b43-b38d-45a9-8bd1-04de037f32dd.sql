@@ -4,7 +4,7 @@
 -- Shadow mode: these tables are populated by NUE but do not affect existing pipelines.
 
 -- 1. canon_units — atomic narrative units (characters, events, objects, etc.)
-CREATE TABLE public.canon_units (
+CREATE TABLE IF NOT EXISTS public.canon_units (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   unit_type TEXT NOT NULL CHECK (unit_type IN ('character', 'event', 'object', 'location', 'relationship', 'theme', 'rule')),
@@ -21,11 +21,11 @@ CREATE TABLE public.canon_units (
 );
 
 -- Index for fast project-scoped lookups
-CREATE INDEX idx_canon_units_project ON public.canon_units(project_id);
-CREATE INDEX idx_canon_units_type ON public.canon_units(project_id, unit_type);
+CREATE INDEX IF NOT EXISTS idx_canon_units_project ON public.canon_units(project_id);
+CREATE INDEX IF NOT EXISTS idx_canon_units_type ON public.canon_units(project_id, unit_type);
 
 -- 2. canon_unit_mentions — where units appear in documents
-CREATE TABLE public.canon_unit_mentions (
+CREATE TABLE IF NOT EXISTS public.canon_unit_mentions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   unit_id UUID NOT NULL REFERENCES public.canon_units(id) ON DELETE CASCADE,
   document_id UUID NOT NULL REFERENCES public.project_documents(id) ON DELETE CASCADE,
@@ -36,11 +36,11 @@ CREATE TABLE public.canon_unit_mentions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_canon_unit_mentions_unit ON public.canon_unit_mentions(unit_id);
-CREATE INDEX idx_canon_unit_mentions_doc ON public.canon_unit_mentions(document_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_canon_unit_mentions_unit ON public.canon_unit_mentions(unit_id);
+CREATE INDEX IF NOT EXISTS idx_canon_unit_mentions_doc ON public.canon_unit_mentions(document_id, version_id);
 
 -- 3. canon_unit_relations — relationships between units
-CREATE TABLE public.canon_unit_relations (
+CREATE TABLE IF NOT EXISTS public.canon_unit_relations (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   unit_id_from UUID NOT NULL REFERENCES public.canon_units(id) ON DELETE CASCADE,
@@ -51,9 +51,9 @@ CREATE TABLE public.canon_unit_relations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_canon_unit_relations_project ON public.canon_unit_relations(project_id);
-CREATE INDEX idx_canon_unit_relations_from ON public.canon_unit_relations(unit_id_from);
-CREATE INDEX idx_canon_unit_relations_to ON public.canon_unit_relations(unit_id_to);
+CREATE INDEX IF NOT EXISTS idx_canon_unit_relations_project ON public.canon_unit_relations(project_id);
+CREATE INDEX IF NOT EXISTS idx_canon_unit_relations_from ON public.canon_unit_relations(unit_id_from);
+CREATE INDEX IF NOT EXISTS idx_canon_unit_relations_to ON public.canon_unit_relations(unit_id_to);
 
 -- RLS: all tables scoped to project access
 ALTER TABLE public.canon_units ENABLE ROW LEVEL SECURITY;

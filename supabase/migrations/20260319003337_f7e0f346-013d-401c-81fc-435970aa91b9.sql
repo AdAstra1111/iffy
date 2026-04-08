@@ -1,6 +1,6 @@
 
 -- Poster credits: structured, editable billing fields per project
-CREATE TABLE public.poster_credits (
+CREATE TABLE IF NOT EXISTS public.poster_credits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -16,7 +16,7 @@ CREATE TABLE public.poster_credits (
   UNIQUE(project_id)
 );
 
-CREATE INDEX idx_poster_credits_project ON public.poster_credits(project_id);
+CREATE INDEX IF NOT EXISTS idx_poster_credits_project ON public.poster_credits(project_id);
 
 ALTER TABLE public.poster_credits ENABLE ROW LEVEL SECURITY;
 

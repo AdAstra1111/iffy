@@ -1,14 +1,14 @@
 
 -- Add document storage columns to projects
 ALTER TABLE public.projects
-ADD COLUMN document_urls text[] NOT NULL DEFAULT '{}'::text[];
+ADD COLUMN IF NOT EXISTS document_urls text[] NOT NULL DEFAULT '{}'::text[];
 
 ALTER TABLE public.projects
-ADD COLUMN analysis_passes jsonb DEFAULT NULL;
+ADD COLUMN IF NOT EXISTS analysis_passes jsonb DEFAULT NULL;
 
 -- Create storage bucket for project documents
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('project-documents', 'project-documents', false);
+VALUES ('project-documents', 'project-documents', false) ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- RLS: Users can upload documents to their own folder
 CREATE POLICY "Users can upload project documents"

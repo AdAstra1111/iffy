@@ -1,6 +1,6 @@
 
 -- Dev Engine Notes runs for Series Writer episodes
-CREATE TABLE public.series_dev_notes_runs (
+CREATE TABLE IF NOT EXISTS public.series_dev_notes_runs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_number INTEGER NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE public.series_dev_notes_runs (
 );
 
 -- Indexes
-CREATE INDEX idx_series_dev_notes_runs_project_ep ON public.series_dev_notes_runs (project_id, episode_number, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_series_dev_notes_runs_project_ep ON public.series_dev_notes_runs (project_id, episode_number, created_at DESC);
 
 -- RLS
 ALTER TABLE public.series_dev_notes_runs ENABLE ROW LEVEL SECURITY;

@@ -2,7 +2,7 @@
 CREATE TYPE public.project_role AS ENUM ('producer', 'sales_agent', 'lawyer', 'creative');
 
 -- Project collaborators table
-CREATE TABLE public.project_collaborators (
+CREATE TABLE IF NOT EXISTS public.project_collaborators (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
@@ -49,7 +49,7 @@ FOR UPDATE
 USING (auth.uid() = user_id);
 
 -- Project comments table (threaded)
-CREATE TABLE public.project_comments (
+CREATE TABLE IF NOT EXISTS public.project_comments (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,

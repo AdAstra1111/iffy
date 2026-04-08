@@ -6,7 +6,7 @@
 -- 0. ROLE SYSTEM
 CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');
 
-CREATE TABLE public.user_roles (
+CREATE TABLE IF NOT EXISTS public.user_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   role app_role NOT NULL,
@@ -31,7 +31,7 @@ CREATE POLICY "Admins can manage roles" ON public.user_roles
   FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
 -- 1. SCRIPTS TABLE
-CREATE TABLE public.scripts (
+CREATE TABLE IF NOT EXISTS public.scripts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   version INT NOT NULL DEFAULT 1,
@@ -47,7 +47,7 @@ CREATE POLICY "Scripts project access" ON public.scripts
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 2. COVERAGE PROMPT VERSIONS (created_by nullable for system seeds)
-CREATE TABLE public.coverage_prompt_versions (
+CREATE TABLE IF NOT EXISTS public.coverage_prompt_versions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
@@ -66,7 +66,7 @@ CREATE POLICY "Admins can manage prompt versions" ON public.coverage_prompt_vers
   FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
 -- 3. COVERAGE RUNS
-CREATE TABLE public.coverage_runs (
+CREATE TABLE IF NOT EXISTS public.coverage_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   script_id UUID NOT NULL REFERENCES public.scripts(id) ON DELETE CASCADE,
@@ -90,7 +90,7 @@ CREATE POLICY "Coverage runs project access" ON public.coverage_runs
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 4. COVERAGE FEEDBACK
-CREATE TABLE public.coverage_feedback (
+CREATE TABLE IF NOT EXISTS public.coverage_feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   coverage_run_id UUID NOT NULL REFERENCES public.coverage_runs(id) ON DELETE CASCADE,
   overall_usefulness INT NOT NULL DEFAULT 3,
@@ -107,7 +107,7 @@ CREATE POLICY "Feedback creator access" ON public.coverage_feedback
   FOR ALL USING (auth.uid() = created_by);
 
 -- 5. COVERAGE FEEDBACK NOTES
-CREATE TABLE public.coverage_feedback_notes (
+CREATE TABLE IF NOT EXISTS public.coverage_feedback_notes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   coverage_run_id UUID NOT NULL REFERENCES public.coverage_runs(id) ON DELETE CASCADE,
   note_id TEXT NOT NULL,
@@ -122,7 +122,7 @@ CREATE POLICY "Note feedback creator access" ON public.coverage_feedback_notes
   FOR ALL USING (auth.uid() = created_by);
 
 -- 6. GREAT NOTES LIBRARY
-CREATE TABLE public.great_notes_library (
+CREATE TABLE IF NOT EXISTS public.great_notes_library (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_type TEXT NOT NULL,
   genre TEXT,
@@ -142,7 +142,7 @@ CREATE POLICY "Creator can manage great notes" ON public.great_notes_library
   FOR ALL USING (auth.uid() = created_by);
 
 -- 7. HOUSE STYLE
-CREATE TABLE public.house_style (
+CREATE TABLE IF NOT EXISTS public.house_style (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id UUID,
   style_name TEXT NOT NULL DEFAULT 'Paradox House',
@@ -166,7 +166,7 @@ CREATE TRIGGER update_house_style_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- 8. COVERAGE BENCHMARKS (created_by nullable for seeds)
-CREATE TABLE public.coverage_benchmarks (
+CREATE TABLE IF NOT EXISTS public.coverage_benchmarks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   project_type TEXT NOT NULL,
@@ -183,7 +183,7 @@ CREATE POLICY "Authenticated can read benchmarks" ON public.coverage_benchmarks
   FOR SELECT TO authenticated USING (true);
 
 -- 9. COVERAGE BENCHMARK RUNS
-CREATE TABLE public.coverage_benchmark_runs (
+CREATE TABLE IF NOT EXISTS public.coverage_benchmark_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   benchmark_id UUID NOT NULL REFERENCES public.coverage_benchmarks(id) ON DELETE CASCADE,
   prompt_version_id UUID NOT NULL REFERENCES public.coverage_prompt_versions(id),
@@ -204,7 +204,7 @@ DROP TABLE IF EXISTS public.script_coverages;
 
 -- 11. STORAGE BUCKET for scripts
 INSERT INTO storage.buckets (id, name, public) VALUES ('scripts', 'scripts', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 CREATE POLICY "Script upload access" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'scripts' AND auth.uid() IS NOT NULL);

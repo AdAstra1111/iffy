@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_scene_graph_actions_project_created
 
 ALTER TABLE scene_graph_actions ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage scene graph actions for own projects" ON scene_graph_actions;
 CREATE POLICY "Users can manage scene graph actions for own projects"
   ON scene_graph_actions FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))
@@ -47,6 +48,7 @@ CREATE INDEX IF NOT EXISTS idx_scene_graph_patch_queue_project
 
 ALTER TABLE scene_graph_patch_queue ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage patch queue for own projects" ON scene_graph_patch_queue;
 CREATE POLICY "Users can manage patch queue for own projects"
   ON scene_graph_patch_queue FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))

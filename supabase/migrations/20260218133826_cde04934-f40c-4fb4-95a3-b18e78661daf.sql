@@ -74,7 +74,7 @@ CREATE POLICY "project_share_links_owner_all"
 -- Create exports storage bucket if not exists
 INSERT INTO storage.buckets (id, name, public) 
 VALUES ('exports', 'exports', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- RLS policies for exports bucket
 CREATE POLICY "exports_owner_access"

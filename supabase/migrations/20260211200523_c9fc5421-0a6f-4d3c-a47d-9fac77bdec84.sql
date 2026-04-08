@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- 1. Trend Engines (the 14 intelligence engines)
-CREATE TABLE public.trend_engines (
+CREATE TABLE IF NOT EXISTS public.trend_engines (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   engine_name TEXT NOT NULL UNIQUE,
   engine_type TEXT NOT NULL DEFAULT 'financial',
@@ -30,7 +30,7 @@ CREATE POLICY "Service role can manage engines"
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- 2. Production-type to engine weight mapping
-CREATE TABLE public.production_engine_weights (
+CREATE TABLE IF NOT EXISTS public.production_engine_weights (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   production_type TEXT NOT NULL,
   engine_id UUID NOT NULL REFERENCES public.trend_engines(id) ON DELETE CASCADE,
@@ -52,7 +52,7 @@ CREATE POLICY "Service role can manage weights"
   WITH CHECK (auth.uid() IS NOT NULL);
 
 -- 3. Per-project engine scores (hybrid: AI + manual override)
-CREATE TABLE public.project_engine_scores (
+CREATE TABLE IF NOT EXISTS public.project_engine_scores (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   engine_id UUID NOT NULL REFERENCES public.trend_engines(id) ON DELETE CASCADE,
@@ -86,7 +86,7 @@ CREATE POLICY "Project members can delete engine scores"
   USING (has_project_access(auth.uid(), project_id));
 
 -- 4. Prediction outcomes (Phase 3)
-CREATE TABLE public.prediction_outcomes (
+CREATE TABLE IF NOT EXISTS public.prediction_outcomes (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

@@ -1,6 +1,6 @@
 
 -- Activity log for tracking changes across project sections
-CREATE TABLE public.project_activity_log (
+CREATE TABLE IF NOT EXISTS public.project_activity_log (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE public.project_activity_log (
 );
 
 -- Index for fast project lookups
-CREATE INDEX idx_activity_log_project ON public.project_activity_log(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_project ON public.project_activity_log(project_id, created_at DESC);
 
 -- Enable RLS
 ALTER TABLE public.project_activity_log ENABLE ROW LEVEL SECURITY;

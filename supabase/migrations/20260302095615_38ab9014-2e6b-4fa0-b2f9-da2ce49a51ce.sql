@@ -17,8 +17,8 @@ CREATE TABLE IF NOT EXISTS public.intel_runs (
   error text,
   stats jsonb
 );
-CREATE INDEX idx_intel_runs_created ON public.intel_runs (created_at DESC);
-CREATE INDEX idx_intel_runs_engine_created ON public.intel_runs (engine_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intel_runs_created ON public.intel_runs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_intel_runs_engine_created ON public.intel_runs (engine_name, created_at DESC);
 
 -- 2) intel_policies — hierarchical policy control
 CREATE TABLE IF NOT EXISTS public.intel_policies (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS public.intel_events (
   project_id uuid,
   surface text
 );
-CREATE INDEX idx_intel_events_fingerprint ON public.intel_events (event_fingerprint);
+CREATE INDEX IF NOT EXISTS idx_intel_events_fingerprint ON public.intel_events (event_fingerprint);
 
 -- 4) intel_alerts — delivery log
 CREATE TABLE IF NOT EXISTS public.intel_alerts (
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS public.project_intel_alignment (
   breakdown jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_project_intel_alignment_project ON public.project_intel_alignment (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_intel_alignment_project ON public.project_intel_alignment (project_id, created_at DESC);
 
 -- IVFFlat indexes for vector similarity (require some rows to exist, but CREATE INDEX IF NOT EXISTS is safe)
 -- Using lists=10 since initial data is small

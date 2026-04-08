@@ -1,6 +1,6 @@
 
 -- Table to store generated pitch decks
-CREATE TABLE public.pitch_decks (
+CREATE TABLE IF NOT EXISTS public.pitch_decks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -38,8 +38,8 @@ CREATE POLICY "Anyone can view shared pitch decks"
   USING (share_token IS NOT NULL);
 
 -- Indexes
-CREATE INDEX idx_pitch_decks_project ON public.pitch_decks(project_id);
-CREATE INDEX idx_pitch_decks_share ON public.pitch_decks(share_token);
+CREATE INDEX IF NOT EXISTS idx_pitch_decks_project ON public.pitch_decks(project_id);
+CREATE INDEX IF NOT EXISTS idx_pitch_decks_share ON public.pitch_decks(share_token);
 
 -- Updated at trigger
 CREATE TRIGGER update_pitch_decks_updated_at

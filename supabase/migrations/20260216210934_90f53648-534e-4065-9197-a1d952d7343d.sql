@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- A) document_assistant_threads
-CREATE TABLE public.document_assistant_threads (
+CREATE TABLE IF NOT EXISTS public.document_assistant_threads (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   title text NOT NULL DEFAULT 'Document Assistant',
@@ -12,10 +12,10 @@ CREATE TABLE public.document_assistant_threads (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_da_threads_project ON public.document_assistant_threads(project_id);
+CREATE INDEX IF NOT EXISTS idx_da_threads_project ON public.document_assistant_threads(project_id);
 
 -- B) document_assistant_messages
-CREATE TABLE public.document_assistant_messages (
+CREATE TABLE IF NOT EXISTS public.document_assistant_messages (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   thread_id uuid NOT NULL REFERENCES public.document_assistant_threads(id) ON DELETE CASCADE,
   role text NOT NULL CHECK (role IN ('user','assistant','system')),
@@ -24,10 +24,10 @@ CREATE TABLE public.document_assistant_messages (
   created_by uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_da_messages_thread_time ON public.document_assistant_messages(thread_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_da_messages_thread_time ON public.document_assistant_messages(thread_id, created_at);
 
 -- C) document_assistant_actions
-CREATE TABLE public.document_assistant_actions (
+CREATE TABLE IF NOT EXISTS public.document_assistant_actions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   thread_id uuid NOT NULL REFERENCES public.document_assistant_threads(id) ON DELETE CASCADE,
   proposed_by_message_id uuid REFERENCES public.document_assistant_messages(id) ON DELETE SET NULL,
@@ -40,10 +40,10 @@ CREATE TABLE public.document_assistant_actions (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_da_actions_thread_status ON public.document_assistant_actions(thread_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_da_actions_thread_status ON public.document_assistant_actions(thread_id, status, created_at);
 
 -- D) document_assistant_test_runs
-CREATE TABLE public.document_assistant_test_runs (
+CREATE TABLE IF NOT EXISTS public.document_assistant_test_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   action_id uuid NOT NULL REFERENCES public.document_assistant_actions(id) ON DELETE CASCADE,
   started_by uuid NOT NULL,
@@ -54,10 +54,10 @@ CREATE TABLE public.document_assistant_test_runs (
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   logs text NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_da_test_runs_action ON public.document_assistant_test_runs(action_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_da_test_runs_action ON public.document_assistant_test_runs(action_id, started_at);
 
 -- E) document_assistant_apply_runs
-CREATE TABLE public.document_assistant_apply_runs (
+CREATE TABLE IF NOT EXISTS public.document_assistant_apply_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   action_id uuid NOT NULL REFERENCES public.document_assistant_actions(id) ON DELETE CASCADE,
   started_by uuid NOT NULL,
@@ -68,7 +68,7 @@ CREATE TABLE public.document_assistant_apply_runs (
   details jsonb NOT NULL DEFAULT '{}'::jsonb,
   logs text NOT NULL DEFAULT ''
 );
-CREATE INDEX idx_da_apply_runs_action ON public.document_assistant_apply_runs(action_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_da_apply_runs_action ON public.document_assistant_apply_runs(action_id, started_at);
 
 -- updated_at triggers
 CREATE TRIGGER da_threads_updated_at BEFORE UPDATE ON public.document_assistant_threads

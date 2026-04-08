@@ -1,6 +1,6 @@
 
 -- Chunk storage for large-risk document generation/rewrite
-CREATE TABLE public.project_document_chunks (
+CREATE TABLE IF NOT EXISTS public.project_document_chunks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   document_id UUID NOT NULL REFERENCES public.project_documents(id) ON DELETE CASCADE,
   version_id UUID REFERENCES public.project_document_versions(id) ON DELETE SET NULL,
@@ -63,5 +63,5 @@ CREATE POLICY "Users can manage chunks for their projects" ON public.project_doc
   );
 
 -- Index for fast chunk lookups
-CREATE INDEX idx_doc_chunks_doc_version ON public.project_document_chunks(document_id, version_id);
-CREATE INDEX idx_doc_chunks_status ON public.project_document_chunks(status) WHERE status != 'done';
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_doc_version ON public.project_document_chunks(document_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_doc_chunks_status ON public.project_document_chunks(status) WHERE status != 'done';

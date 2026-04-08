@@ -3,7 +3,7 @@
 -- Each row represents one promotion evaluation for a specific round.
 -- Supports both promoted and not_promoted outcomes.
 
-CREATE TABLE public.round_promotions (
+CREATE TABLE IF NOT EXISTS public.round_promotions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id UUID NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   round_id UUID NOT NULL REFERENCES public.competition_rounds(id) ON DELETE CASCADE,
@@ -17,7 +17,7 @@ CREATE TABLE public.round_promotions (
 );
 
 -- IEL: at most one promotion decision per round
-CREATE UNIQUE INDEX idx_round_promotions_one_per_round ON public.round_promotions (round_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_round_promotions_one_per_round ON public.round_promotions (round_id);
 
 -- IEL: if not_promoted, candidate must be null
 -- Enforced via trigger below

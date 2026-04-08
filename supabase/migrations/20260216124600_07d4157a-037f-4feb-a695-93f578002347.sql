@@ -4,7 +4,7 @@
 -- ══════════════════════════════════════════════════════════
 
 -- 1) doc_queries: user questions about documents
-CREATE TABLE public.doc_queries (
+CREATE TABLE IF NOT EXISTS public.doc_queries (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -18,7 +18,7 @@ ALTER TABLE public.doc_queries ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own doc queries" ON public.doc_queries FOR ALL USING (auth.uid() = user_id);
 
 -- 2) doc_query_answers: AI answers with citations
-CREATE TABLE public.doc_query_answers (
+CREATE TABLE IF NOT EXISTS public.doc_query_answers (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   doc_query_id UUID NOT NULL REFERENCES public.doc_queries(id) ON DELETE CASCADE,
   answer_text TEXT NOT NULL,
@@ -30,7 +30,7 @@ CREATE POLICY "Users can view answers for own queries" ON public.doc_query_answe
   USING (EXISTS (SELECT 1 FROM public.doc_queries q WHERE q.id = doc_query_id AND q.user_id = auth.uid()));
 
 -- 3) doc_change_proposals: change proposals with test reports
-CREATE TABLE public.doc_change_proposals (
+CREATE TABLE IF NOT EXISTS public.doc_change_proposals (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -47,7 +47,7 @@ ALTER TABLE public.doc_change_proposals ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own proposals" ON public.doc_change_proposals FOR ALL USING (auth.uid() = user_id);
 
 -- 4) project_doc_chunks: document chunks for RAG retrieval
-CREATE TABLE public.project_doc_chunks (
+CREATE TABLE IF NOT EXISTS public.project_doc_chunks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   version_id UUID NOT NULL,
@@ -65,10 +65,10 @@ CREATE POLICY "Users with project access can manage chunks" ON public.project_do
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Indexes for RAG performance
-CREATE INDEX idx_project_doc_chunks_project ON public.project_doc_chunks(project_id);
-CREATE INDEX idx_project_doc_chunks_version ON public.project_doc_chunks(version_id);
-CREATE INDEX idx_project_doc_chunks_search ON public.project_doc_chunks USING GIN(search_vector);
-CREATE UNIQUE INDEX idx_project_doc_chunks_unique ON public.project_doc_chunks(version_id, chunk_index);
+CREATE INDEX IF NOT EXISTS idx_project_doc_chunks_project ON public.project_doc_chunks(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_doc_chunks_version ON public.project_doc_chunks(version_id);
+CREATE INDEX IF NOT EXISTS idx_project_doc_chunks_search ON public.project_doc_chunks USING GIN(search_vector);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_project_doc_chunks_unique ON public.project_doc_chunks(version_id, chunk_index);
 
 -- Semantic search function for project docs
 CREATE OR REPLACE FUNCTION public.search_project_doc_chunks(

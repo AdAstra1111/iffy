@@ -1,6 +1,6 @@
 
 -- Script PDF pages (text per page for evidence/page references)
-CREATE TABLE public.script_pdf_pages (
+CREATE TABLE IF NOT EXISTS public.script_pdf_pages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   document_id UUID NOT NULL REFERENCES public.project_documents(id) ON DELETE CASCADE,
@@ -18,11 +18,11 @@ CREATE POLICY "Project members can manage script_pdf_pages"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_script_pdf_pages_project_version ON public.script_pdf_pages(project_id, version_id);
-CREATE INDEX idx_script_pdf_pages_version_page ON public.script_pdf_pages(version_id, page_number);
+CREATE INDEX IF NOT EXISTS idx_script_pdf_pages_project_version ON public.script_pdf_pages(project_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_script_pdf_pages_version_page ON public.script_pdf_pages(version_id, page_number);
 
 -- Script extraction runs
-CREATE TABLE public.script_extraction_runs (
+CREATE TABLE IF NOT EXISTS public.script_extraction_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   script_version_id UUID NOT NULL REFERENCES public.project_document_versions(id) ON DELETE CASCADE,
@@ -40,4 +40,4 @@ CREATE POLICY "Project members can manage script_extraction_runs"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_script_extraction_runs_project ON public.script_extraction_runs(project_id);
+CREATE INDEX IF NOT EXISTS idx_script_extraction_runs_project ON public.script_extraction_runs(project_id);

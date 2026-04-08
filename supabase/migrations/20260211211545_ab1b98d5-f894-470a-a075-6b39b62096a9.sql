@@ -1,6 +1,6 @@
 
 -- Table to track shared signals between users
-CREATE TABLE public.shared_signals (
+CREATE TABLE IF NOT EXISTS public.shared_signals (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   signal_id UUID NOT NULL,
   signal_type TEXT NOT NULL DEFAULT 'story', -- 'story' or 'cast'
@@ -28,5 +28,5 @@ ON public.shared_signals FOR DELETE
 USING (auth.uid() = shared_by);
 
 -- Index for fast lookups
-CREATE INDEX idx_shared_signals_shared_with ON public.shared_signals(shared_with);
-CREATE INDEX idx_shared_signals_shared_by ON public.shared_signals(shared_by);
+CREATE INDEX IF NOT EXISTS idx_shared_signals_shared_with ON public.shared_signals(shared_with);
+CREATE INDEX IF NOT EXISTS idx_shared_signals_shared_by ON public.shared_signals(shared_by);

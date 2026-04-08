@@ -4,7 +4,7 @@
 -- ================================================================
 
 -- 1.1) scene_shot_sets
-CREATE TABLE public.scene_shot_sets (
+CREATE TABLE IF NOT EXISTS public.scene_shot_sets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_id uuid NOT NULL REFERENCES public.scene_graph_scenes(id) ON DELETE CASCADE,
@@ -18,15 +18,15 @@ CREATE TABLE public.scene_shot_sets (
   provenance jsonb NOT NULL DEFAULT '{}'::jsonb,
   UNIQUE (project_id, scene_version_id, mode)
 );
-CREATE INDEX idx_scene_shot_sets_project ON public.scene_shot_sets(project_id);
-CREATE INDEX idx_scene_shot_sets_scene ON public.scene_shot_sets(project_id, scene_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shot_sets_project ON public.scene_shot_sets(project_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shot_sets_scene ON public.scene_shot_sets(project_id, scene_id);
 
 ALTER TABLE public.scene_shot_sets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project shot sets" ON public.scene_shot_sets
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 1.2) scene_shots
-CREATE TABLE public.scene_shots (
+CREATE TABLE IF NOT EXISTS public.scene_shots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   shot_set_id uuid NOT NULL REFERENCES public.scene_shot_sets(id) ON DELETE CASCADE,
@@ -56,17 +56,17 @@ CREATE TABLE public.scene_shots (
   status text NOT NULL DEFAULT 'draft',
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_scene_shots_project_scene ON public.scene_shots(project_id, scene_id);
-CREATE INDEX idx_scene_shots_project_version ON public.scene_shots(project_id, scene_version_id);
-CREATE INDEX idx_scene_shots_project_set ON public.scene_shots(project_id, shot_set_id);
-CREATE INDEX idx_scene_shots_project_status ON public.scene_shots(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_scene_shots_project_scene ON public.scene_shots(project_id, scene_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shots_project_version ON public.scene_shots(project_id, scene_version_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shots_project_set ON public.scene_shots(project_id, shot_set_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shots_project_status ON public.scene_shots(project_id, status);
 
 ALTER TABLE public.scene_shots ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project shots" ON public.scene_shots
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 1.3) scene_shot_versions
-CREATE TABLE public.scene_shot_versions (
+CREATE TABLE IF NOT EXISTS public.scene_shot_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   shot_id uuid NOT NULL REFERENCES public.scene_shots(id) ON DELETE CASCADE,
@@ -79,15 +79,15 @@ CREATE TABLE public.scene_shot_versions (
   data jsonb NOT NULL DEFAULT '{}'::jsonb,
   UNIQUE (shot_id, version_number)
 );
-CREATE INDEX idx_scene_shot_versions_project_shot ON public.scene_shot_versions(project_id, shot_id);
-CREATE INDEX idx_scene_shot_versions_project_date ON public.scene_shot_versions(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scene_shot_versions_project_shot ON public.scene_shot_versions(project_id, shot_id);
+CREATE INDEX IF NOT EXISTS idx_scene_shot_versions_project_date ON public.scene_shot_versions(project_id, created_at DESC);
 
 ALTER TABLE public.scene_shot_versions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project shot versions" ON public.scene_shot_versions
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 1.4) storyboard_frames
-CREATE TABLE public.storyboard_frames (
+CREATE TABLE IF NOT EXISTS public.storyboard_frames (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_id uuid NOT NULL REFERENCES public.scene_graph_scenes(id) ON DELETE CASCADE,
@@ -105,16 +105,16 @@ CREATE TABLE public.storyboard_frames (
   is_stale boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_storyboard_frames_project_shot ON public.storyboard_frames(project_id, shot_id);
-CREATE INDEX idx_storyboard_frames_project_version ON public.storyboard_frames(project_id, scene_version_id);
-CREATE INDEX idx_storyboard_frames_project_status ON public.storyboard_frames(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_storyboard_frames_project_shot ON public.storyboard_frames(project_id, shot_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_frames_project_version ON public.storyboard_frames(project_id, scene_version_id);
+CREATE INDEX IF NOT EXISTS idx_storyboard_frames_project_status ON public.storyboard_frames(project_id, status);
 
 ALTER TABLE public.storyboard_frames ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project frames" ON public.storyboard_frames
   FOR ALL USING (public.has_project_access(auth.uid(), project_id));
 
 -- 1.5) production_breakdowns
-CREATE TABLE public.production_breakdowns (
+CREATE TABLE IF NOT EXISTS public.production_breakdowns (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -125,7 +125,7 @@ CREATE TABLE public.production_breakdowns (
   totals jsonb NOT NULL DEFAULT '{}'::jsonb,
   suggestions jsonb NOT NULL DEFAULT '[]'::jsonb
 );
-CREATE INDEX idx_production_breakdowns_project ON public.production_breakdowns(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_production_breakdowns_project ON public.production_breakdowns(project_id, created_at DESC);
 
 ALTER TABLE public.production_breakdowns ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Users can manage own project breakdowns" ON public.production_breakdowns
@@ -175,7 +175,7 @@ $$;
 -- Storage bucket for storyboards
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('storyboards', 'storyboards', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS for storyboards bucket
 CREATE POLICY "Project members can manage storyboard files"

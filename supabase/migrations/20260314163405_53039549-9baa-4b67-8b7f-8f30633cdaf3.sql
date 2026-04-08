@@ -1,6 +1,6 @@
 
 -- Create execution_recommendation_triage table
-CREATE TABLE public.execution_recommendation_triage (
+CREATE TABLE IF NOT EXISTS public.execution_recommendation_triage (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   recommendation_id text NOT NULL,
@@ -58,4 +58,4 @@ CREATE POLICY "Users can delete triage for accessible projects"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Index for fast project-scoped lookups
-CREATE INDEX idx_exec_rec_triage_project ON public.execution_recommendation_triage(project_id);
+CREATE INDEX IF NOT EXISTS idx_exec_rec_triage_project ON public.execution_recommendation_triage(project_id);

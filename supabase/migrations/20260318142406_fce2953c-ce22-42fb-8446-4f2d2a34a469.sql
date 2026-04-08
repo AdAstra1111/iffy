@@ -1,6 +1,6 @@
 
 -- Project Posters table: stores poster versions with full provenance
-CREATE TABLE public.project_posters (
+CREATE TABLE IF NOT EXISTS public.project_posters (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
@@ -71,7 +71,7 @@ CREATE TRIGGER set_project_posters_updated_at
 -- Storage bucket for poster assets
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('project-posters', 'project-posters', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS: users can upload to their own project paths
 CREATE POLICY "Authenticated users can upload poster assets"

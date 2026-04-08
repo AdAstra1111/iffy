@@ -38,7 +38,7 @@ CREATE TRIGGER update_project_documents_updated_at
 -- 5) Create "projects" storage bucket for package exports
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('projects', 'projects', false)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- 6) Storage policies for the projects bucket
 CREATE POLICY "Users can read own project packages"

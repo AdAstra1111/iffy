@@ -2,7 +2,7 @@
 -- Phase 4: Change Sets + Diff Plumbing
 
 -- 1.1) scene_change_sets
-CREATE TABLE public.scene_change_sets (
+CREATE TABLE IF NOT EXISTS public.scene_change_sets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -16,8 +16,8 @@ CREATE TABLE public.scene_change_sets (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_scene_change_sets_project_date ON public.scene_change_sets (project_id, created_at DESC);
-CREATE INDEX idx_scene_change_sets_project_status ON public.scene_change_sets (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_scene_change_sets_project_date ON public.scene_change_sets (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scene_change_sets_project_status ON public.scene_change_sets (project_id, status);
 
 ALTER TABLE public.scene_change_sets ENABLE ROW LEVEL SECURITY;
 
@@ -28,7 +28,7 @@ CREATE POLICY "Users can manage change sets for their projects"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.2) scene_change_set_ops
-CREATE TABLE public.scene_change_set_ops (
+CREATE TABLE IF NOT EXISTS public.scene_change_set_ops (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   change_set_id uuid NOT NULL REFERENCES public.scene_change_sets(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -42,7 +42,7 @@ CREATE TABLE public.scene_change_set_ops (
   UNIQUE (change_set_id, op_index)
 );
 
-CREATE INDEX idx_scene_change_set_ops_project ON public.scene_change_set_ops (project_id, change_set_id, op_index);
+CREATE INDEX IF NOT EXISTS idx_scene_change_set_ops_project ON public.scene_change_set_ops (project_id, change_set_id, op_index);
 
 ALTER TABLE public.scene_change_set_ops ENABLE ROW LEVEL SECURITY;
 
@@ -53,7 +53,7 @@ CREATE POLICY "Users can manage change set ops for their projects"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 1.3) scene_change_set_comments
-CREATE TABLE public.scene_change_set_comments (
+CREATE TABLE IF NOT EXISTS public.scene_change_set_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   change_set_id uuid NOT NULL REFERENCES public.scene_change_sets(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

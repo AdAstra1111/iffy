@@ -1,6 +1,6 @@
 
 -- Development Engine sessions
-CREATE TABLE public.dev_engine_sessions (
+CREATE TABLE IF NOT EXISTS public.dev_engine_sessions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   project_id UUID REFERENCES public.projects(id) ON DELETE SET NULL,
@@ -23,7 +23,7 @@ CREATE TABLE public.dev_engine_sessions (
 );
 
 -- Development Engine iterations (each loop pass)
-CREATE TABLE public.dev_engine_iterations (
+CREATE TABLE IF NOT EXISTS public.dev_engine_iterations (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   session_id UUID NOT NULL REFERENCES public.dev_engine_sessions(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

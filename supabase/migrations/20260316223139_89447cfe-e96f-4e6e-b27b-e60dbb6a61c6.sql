@@ -2,7 +2,7 @@
 -- Narrative DNA Profiles — Phase 1
 -- Stores reusable narrative DNA extracted from source stories.
 
-CREATE TABLE public.narrative_dna_profiles (
+CREATE TABLE IF NOT EXISTS public.narrative_dna_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
 
@@ -54,7 +54,7 @@ CREATE POLICY "Users manage own DNA profiles"
   WITH CHECK (user_id = auth.uid());
 
 -- Index for user lookup
-CREATE INDEX idx_narrative_dna_profiles_user_id ON public.narrative_dna_profiles (user_id);
+CREATE INDEX IF NOT EXISTS idx_narrative_dna_profiles_user_id ON public.narrative_dna_profiles (user_id);
 
 -- Auto-update updated_at
 CREATE TRIGGER trg_narrative_dna_profiles_updated_at

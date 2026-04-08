@@ -2,7 +2,7 @@
 -- CI Blueprint Engine schema
 
 -- Blueprint runs: each invocation of the engine
-CREATE TABLE public.idea_blueprint_runs (
+CREATE TABLE IF NOT EXISTS public.idea_blueprint_runs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
@@ -18,7 +18,7 @@ CREATE TABLE public.idea_blueprint_runs (
 );
 
 -- Blueprints: structural patterns derived from high-CI ideas
-CREATE TABLE public.idea_blueprints (
+CREATE TABLE IF NOT EXISTS public.idea_blueprints (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   run_id UUID NOT NULL REFERENCES public.idea_blueprint_runs(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE public.idea_blueprints (
 );
 
 -- Candidates: generated pitch ideas from blueprints
-CREATE TABLE public.idea_blueprint_candidates (
+CREATE TABLE IF NOT EXISTS public.idea_blueprint_candidates (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   blueprint_id UUID NOT NULL REFERENCES public.idea_blueprints(id) ON DELETE CASCADE,
   run_id UUID NOT NULL REFERENCES public.idea_blueprint_runs(id) ON DELETE CASCADE,

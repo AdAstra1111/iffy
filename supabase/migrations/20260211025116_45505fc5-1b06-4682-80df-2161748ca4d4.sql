@@ -1,11 +1,11 @@
 
 -- Add branding columns to production companies
 ALTER TABLE public.production_companies
-  ADD COLUMN color_accent TEXT NOT NULL DEFAULT '',
-  ADD COLUMN jurisdiction TEXT NOT NULL DEFAULT '';
+  ADD COLUMN IF NOT EXISTS color_accent TEXT NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS jurisdiction TEXT NOT NULL DEFAULT '';
 
 -- Create storage bucket for company logos
-INSERT INTO storage.buckets (id, name, public) VALUES ('company-logos', 'company-logos', true);
+INSERT INTO storage.buckets (id, name, public) VALUES ('company-logos', 'company-logos', true) ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- Allow authenticated users to upload their own logos
 CREATE POLICY "Users can upload company logos"

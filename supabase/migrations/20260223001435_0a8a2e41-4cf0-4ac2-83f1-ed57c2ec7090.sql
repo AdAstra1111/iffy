@@ -1,6 +1,6 @@
 
 -- note_change_plans table
-CREATE TABLE public.note_change_plans (
+CREATE TABLE IF NOT EXISTS public.note_change_plans (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   thread_id uuid NOT NULL REFERENCES public.note_threads(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -13,8 +13,8 @@ CREATE TABLE public.note_change_plans (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_note_change_plans_thread ON public.note_change_plans(thread_id);
-CREATE INDEX idx_note_change_plans_project ON public.note_change_plans(project_id);
+CREATE INDEX IF NOT EXISTS idx_note_change_plans_thread ON public.note_change_plans(thread_id);
+CREATE INDEX IF NOT EXISTS idx_note_change_plans_project ON public.note_change_plans(project_id);
 
 -- updated_at trigger
 CREATE TRIGGER set_note_change_plans_updated_at

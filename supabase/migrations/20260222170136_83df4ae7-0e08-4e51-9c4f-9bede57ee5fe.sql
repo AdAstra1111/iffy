@@ -1,7 +1,7 @@
 
 -- 1) Enforce single current version per document (partial unique index)
 DROP INDEX IF EXISTS public.pdv_one_current_per_doc;
-CREATE UNIQUE INDEX pdv_one_current_per_doc
+CREATE UNIQUE INDEX IF NOT EXISTS pdv_one_current_per_doc
 ON public.project_document_versions(document_id)
 WHERE is_current = true;
 

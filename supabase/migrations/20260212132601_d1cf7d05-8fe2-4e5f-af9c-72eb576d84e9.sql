@@ -1,6 +1,6 @@
 
 -- Budget Assumptions table
-CREATE TABLE public.budget_assumptions (
+CREATE TABLE IF NOT EXISTS public.budget_assumptions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -38,7 +38,7 @@ ON public.budget_assumptions FOR DELETE
 USING (public.has_project_access(auth.uid(), project_id));
 
 -- Packaging Items table
-CREATE TABLE public.packaging_items (
+CREATE TABLE IF NOT EXISTS public.packaging_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -71,7 +71,7 @@ ON public.packaging_items FOR DELETE
 USING (public.has_project_access(auth.uid(), project_id));
 
 -- Stage Gates table
-CREATE TABLE public.stage_gates (
+CREATE TABLE IF NOT EXISTS public.stage_gates (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

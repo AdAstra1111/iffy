@@ -1,5 +1,5 @@
 
-CREATE TABLE public.documentary_coverage_runs (
+CREATE TABLE IF NOT EXISTS public.documentary_coverage_runs (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -33,4 +33,4 @@ CREATE POLICY "Collaborators can view coverage runs"
   ON public.documentary_coverage_runs FOR SELECT
   USING (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_doc_coverage_runs_project ON public.documentary_coverage_runs(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_doc_coverage_runs_project ON public.documentary_coverage_runs(project_id, created_at DESC);

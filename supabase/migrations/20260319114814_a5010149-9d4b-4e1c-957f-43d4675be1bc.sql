@@ -1,6 +1,6 @@
 
 -- Character Visual DNA — versioned, per-character visual truth model
-CREATE TABLE public.character_visual_dna (
+CREATE TABLE IF NOT EXISTS public.character_visual_dna (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   character_name TEXT NOT NULL,
@@ -43,7 +43,7 @@ CREATE POLICY "Users can update own project DNA"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Image Evaluations — per-image assessment against DNA
-CREATE TABLE public.image_evaluations (
+CREATE TABLE IF NOT EXISTS public.image_evaluations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   image_id UUID NOT NULL,
@@ -92,7 +92,7 @@ CREATE POLICY "Users can update own project evaluations"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- Visual Scenarios — what-if branching system
-CREATE TABLE public.visual_scenarios (
+CREATE TABLE IF NOT EXISTS public.visual_scenarios (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   domain TEXT NOT NULL DEFAULT 'character',
@@ -128,7 +128,7 @@ CREATE POLICY "Users can manage own project scenarios"
   ON public.visual_scenarios FOR ALL TO authenticated
   USING (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_visual_dna_project_char ON public.character_visual_dna(project_id, character_name, is_current);
-CREATE INDEX idx_image_evaluations_image ON public.image_evaluations(image_id);
-CREATE INDEX idx_image_evaluations_project ON public.image_evaluations(project_id);
-CREATE INDEX idx_visual_scenarios_project ON public.visual_scenarios(project_id, state);
+CREATE INDEX IF NOT EXISTS idx_visual_dna_project_char ON public.character_visual_dna(project_id, character_name, is_current);
+CREATE INDEX IF NOT EXISTS idx_image_evaluations_image ON public.image_evaluations(image_id);
+CREATE INDEX IF NOT EXISTS idx_image_evaluations_project ON public.image_evaluations(project_id);
+CREATE INDEX IF NOT EXISTS idx_visual_scenarios_project ON public.visual_scenarios(project_id, state);

@@ -1,6 +1,6 @@
 
 -- Share Packs
-CREATE TABLE public.project_share_packs (
+CREATE TABLE IF NOT EXISTS public.project_share_packs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL DEFAULT '',
@@ -23,10 +23,10 @@ CREATE POLICY "Project members can manage share packs"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_share_packs_project ON public.project_share_packs(project_id);
+CREATE INDEX IF NOT EXISTS idx_share_packs_project ON public.project_share_packs(project_id);
 
 -- Share Pack Links
-CREATE TABLE public.project_share_pack_links (
+CREATE TABLE IF NOT EXISTS public.project_share_pack_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   share_pack_id UUID NOT NULL REFERENCES public.project_share_packs(id) ON DELETE CASCADE,
   token TEXT NOT NULL UNIQUE DEFAULT md5(random()::text || clock_timestamp()::text || random()::text || random()::text),
@@ -64,10 +64,10 @@ CREATE POLICY "Anyone can read links by token"
   TO anon
   USING (true);
 
-CREATE INDEX idx_share_pack_links_token ON public.project_share_pack_links(token);
+CREATE INDEX IF NOT EXISTS idx_share_pack_links_token ON public.project_share_pack_links(token);
 
 -- Share Pack Events (analytics)
-CREATE TABLE public.project_share_pack_events (
+CREATE TABLE IF NOT EXISTS public.project_share_pack_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   link_id UUID NOT NULL REFERENCES public.project_share_pack_links(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL DEFAULT 'view',

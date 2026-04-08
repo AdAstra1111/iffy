@@ -1,6 +1,6 @@
 
 -- Concept Expansions: stores expansion engine outputs per pitch idea
-CREATE TABLE public.concept_expansions (
+CREATE TABLE IF NOT EXISTS public.concept_expansions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   pitch_idea_id UUID NOT NULL REFERENCES public.pitch_ideas(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE public.concept_expansions (
 );
 
 -- Concept Stress Tests: scores per expansion
-CREATE TABLE public.concept_stress_tests (
+CREATE TABLE IF NOT EXISTS public.concept_stress_tests (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   expansion_id UUID NOT NULL REFERENCES public.concept_expansions(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE public.concept_stress_tests (
 );
 
 -- Concept Lock Versions: frozen snapshots of locked concepts
-CREATE TABLE public.concept_lock_versions (
+CREATE TABLE IF NOT EXISTS public.concept_lock_versions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   pitch_idea_id UUID NOT NULL REFERENCES public.pitch_ideas(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

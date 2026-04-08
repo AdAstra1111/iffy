@@ -21,6 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_project_spines_project_status
 
 ALTER TABLE project_spines ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage spines for own projects" ON project_spines;
 CREATE POLICY "Users can manage spines for own projects"
   ON project_spines FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))
@@ -51,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_canon_facts_project_active ON canon_facts (projec
 
 ALTER TABLE canon_facts ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage canon facts for own projects" ON canon_facts;
 CREATE POLICY "Users can manage canon facts for own projects"
   ON canon_facts FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))
@@ -71,6 +73,7 @@ CREATE INDEX IF NOT EXISTS idx_canon_overrides_project_status
 
 ALTER TABLE canon_overrides ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage canon overrides for own projects" ON canon_overrides;
 CREATE POLICY "Users can manage canon overrides for own projects"
   ON canon_overrides FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))
@@ -96,6 +99,7 @@ CREATE INDEX IF NOT EXISTS idx_scene_spine_links_project_order
 
 ALTER TABLE scene_spine_links ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can manage scene spine links for own projects" ON scene_spine_links;
 CREATE POLICY "Users can manage scene spine links for own projects"
   ON scene_spine_links FOR ALL
   USING (public.has_project_access(auth.uid(), project_id))

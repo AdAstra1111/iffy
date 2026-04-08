@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS public.lookbook_rebuild_runs (
 );
 
 -- Indexes
-CREATE INDEX idx_lookbook_rebuild_runs_project
+CREATE INDEX IF NOT EXISTS idx_lookbook_rebuild_runs_project
   ON public.lookbook_rebuild_runs(project_id, started_at DESC);
 
 -- RLS

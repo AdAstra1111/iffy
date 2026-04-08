@@ -2,7 +2,7 @@
 -- Stage 7.0: Compilation tracking for Master Season Script
 
 -- Track compilation manifests (append-only audit trail)
-CREATE TABLE public.season_master_compilations (
+CREATE TABLE IF NOT EXISTS public.season_master_compilations (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   master_document_id uuid NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE public.season_master_compilations (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_season_master_compilations_project ON public.season_master_compilations(project_id);
+CREATE INDEX IF NOT EXISTS idx_season_master_compilations_project ON public.season_master_compilations(project_id);
 
 -- Out-of-date tracking on project_documents for season_master_script docs
 ALTER TABLE public.project_documents

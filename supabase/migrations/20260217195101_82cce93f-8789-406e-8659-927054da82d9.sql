@@ -1,6 +1,6 @@
 
 -- Active Project Folder: stores the canonical active (approved) doc version per project per doc_type_key
-CREATE TABLE public.project_active_docs (
+CREATE TABLE IF NOT EXISTS public.project_active_docs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   doc_type_key text NOT NULL,
@@ -14,9 +14,9 @@ CREATE TABLE public.project_active_docs (
 );
 
 -- Only one active doc per type per project
-CREATE UNIQUE INDEX project_active_docs_unique ON public.project_active_docs(project_id, doc_type_key);
-CREATE INDEX project_active_docs_project_idx ON public.project_active_docs(project_id);
-CREATE INDEX project_active_docs_version_idx ON public.project_active_docs(document_version_id);
+CREATE UNIQUE INDEX IF NOT EXISTS project_active_docs_unique ON public.project_active_docs(project_id, doc_type_key);
+CREATE INDEX IF NOT EXISTS project_active_docs_project_idx ON public.project_active_docs(project_id);
+CREATE INDEX IF NOT EXISTS project_active_docs_version_idx ON public.project_active_docs(document_version_id);
 
 CREATE TRIGGER update_project_active_docs_updated_at
   BEFORE UPDATE ON public.project_active_docs

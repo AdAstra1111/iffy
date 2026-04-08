@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- 1. Provider Registry
-CREATE TABLE public.integration_providers (
+CREATE TABLE IF NOT EXISTS public.integration_providers (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   key TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
@@ -23,7 +23,7 @@ CREATE POLICY "Integration providers are readable by authenticated users"
   USING (auth.uid() IS NOT NULL);
 
 -- 2. Project-level Connections
-CREATE TABLE public.integration_connections (
+CREATE TABLE IF NOT EXISTS public.integration_connections (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   provider_id UUID NOT NULL REFERENCES public.integration_providers(id) ON DELETE CASCADE,
@@ -43,7 +43,7 @@ CREATE POLICY "Users can manage own project connections"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- 3. Import Records
-CREATE TABLE public.integration_imports (
+CREATE TABLE IF NOT EXISTS public.integration_imports (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   provider_id UUID REFERENCES public.integration_providers(id),
@@ -65,7 +65,7 @@ CREATE POLICY "Users can manage own project imports"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- 4. Normalized Finance Snapshots
-CREATE TABLE public.project_finance_snapshots (
+CREATE TABLE IF NOT EXISTS public.project_finance_snapshots (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

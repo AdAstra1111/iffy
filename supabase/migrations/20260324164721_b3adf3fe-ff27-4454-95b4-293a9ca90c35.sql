@@ -1,6 +1,6 @@
 
 -- 1. Create costume_runs table for persisted run identity
-CREATE TABLE public.costume_runs (
+CREATE TABLE IF NOT EXISTS public.costume_runs (
   id TEXT PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   status TEXT NOT NULL DEFAULT 'running' CHECK (status IN ('running', 'paused', 'completed', 'aborted')),
@@ -20,7 +20,7 @@ CREATE POLICY "Users can manage own project costume runs"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_costume_runs_project_status ON public.costume_runs(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_costume_runs_project_status ON public.costume_runs(project_id, status);
 
 -- 2. Create atomic command consumption RPC
 CREATE OR REPLACE FUNCTION public.consume_next_costume_command(

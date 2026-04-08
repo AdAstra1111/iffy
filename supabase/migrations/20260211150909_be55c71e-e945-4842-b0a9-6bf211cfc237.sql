@@ -1,6 +1,6 @@
 
 -- Territory cost index: production cost norms by country/region
-CREATE TABLE public.territory_cost_index (
+CREATE TABLE IF NOT EXISTS public.territory_cost_index (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   territory TEXT NOT NULL,
   region TEXT NOT NULL DEFAULT '',

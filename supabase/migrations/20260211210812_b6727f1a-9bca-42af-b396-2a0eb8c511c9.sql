@@ -1,10 +1,10 @@
 -- Add intelligence_layer column to trend_engines
 ALTER TABLE public.trend_engines 
-ADD COLUMN intelligence_layer text NOT NULL DEFAULT 'market';
+ADD COLUMN IF NOT EXISTS intelligence_layer text NOT NULL DEFAULT 'market';
 
 -- Add enabled column for admin governance
 ALTER TABLE public.trend_engines
-ADD COLUMN enabled boolean NOT NULL DEFAULT true;
+ADD COLUMN IF NOT EXISTS enabled boolean NOT NULL DEFAULT true;
 
 -- Update existing engines with correct layer classifications
 -- Market Intelligence Layer
@@ -32,7 +32,7 @@ UPDATE public.trend_engines SET intelligence_layer = 'platform' WHERE engine_nam
 );
 
 -- Create engine weight snapshots table for model versioning
-CREATE TABLE public.engine_weight_snapshots (
+CREATE TABLE IF NOT EXISTS public.engine_weight_snapshots (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   snapshot_label text NOT NULL DEFAULT '',
   production_type text NOT NULL,
@@ -53,4 +53,4 @@ ON public.engine_weight_snapshots FOR INSERT
 WITH CHECK (auth.uid() IS NOT NULL);
 
 -- Add index for fast lookups
-CREATE INDEX idx_weight_snapshots_type ON public.engine_weight_snapshots(production_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_weight_snapshots_type ON public.engine_weight_snapshots(production_type, created_at DESC);

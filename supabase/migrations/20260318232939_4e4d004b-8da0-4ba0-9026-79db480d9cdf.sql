@@ -1,4 +1,4 @@
-CREATE TABLE public.creative_framing_strategies (
+CREATE TABLE IF NOT EXISTS public.creative_framing_strategies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   content_type text NOT NULL DEFAULT 'poster',
@@ -20,7 +20,7 @@ CREATE TABLE public.creative_framing_strategies (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_cfs_project_content ON public.creative_framing_strategies(project_id, content_type);
+CREATE INDEX IF NOT EXISTS idx_cfs_project_content ON public.creative_framing_strategies(project_id, content_type);
 
 ALTER TABLE public.creative_framing_strategies ENABLE ROW LEVEL SECURITY;
 

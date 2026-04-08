@@ -1,7 +1,7 @@
 -- Trailer Pipeline v2: Blueprint, Clips, Cuts
 
 -- ═══ trailer_blueprints ═══
-CREATE TABLE public.trailer_blueprints (
+CREATE TABLE IF NOT EXISTS public.trailer_blueprints (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   storyboard_run_id uuid REFERENCES public.storyboard_runs(id) ON DELETE SET NULL,
@@ -18,7 +18,7 @@ CREATE TABLE public.trailer_blueprints (
   created_by uuid NOT NULL
 );
 
-CREATE INDEX idx_trailer_blueprints_project ON public.trailer_blueprints(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_blueprints_project ON public.trailer_blueprints(project_id, created_at DESC);
 CREATE TRIGGER trg_trailer_blueprints_updated BEFORE UPDATE ON public.trailer_blueprints FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 ALTER TABLE public.trailer_blueprints ENABLE ROW LEVEL SECURITY;
@@ -31,7 +31,7 @@ CREATE POLICY "trailer_blueprints_update" ON public.trailer_blueprints
   FOR UPDATE TO authenticated USING (public.has_project_access(auth.uid(), project_id) AND created_by = auth.uid());
 
 -- ═══ trailer_clips ═══
-CREATE TABLE public.trailer_clips (
+CREATE TABLE IF NOT EXISTS public.trailer_clips (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   blueprint_id uuid NOT NULL REFERENCES public.trailer_blueprints(id) ON DELETE CASCADE,
@@ -51,8 +51,8 @@ CREATE TABLE public.trailer_clips (
   created_by uuid NOT NULL
 );
 
-CREATE INDEX idx_trailer_clips_blueprint ON public.trailer_clips(project_id, blueprint_id, beat_index);
-CREATE INDEX idx_trailer_clips_status ON public.trailer_clips(status);
+CREATE INDEX IF NOT EXISTS idx_trailer_clips_blueprint ON public.trailer_clips(project_id, blueprint_id, beat_index);
+CREATE INDEX IF NOT EXISTS idx_trailer_clips_status ON public.trailer_clips(status);
 CREATE TRIGGER trg_trailer_clips_updated BEFORE UPDATE ON public.trailer_clips FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 ALTER TABLE public.trailer_clips ENABLE ROW LEVEL SECURITY;
@@ -65,7 +65,7 @@ CREATE POLICY "trailer_clips_update" ON public.trailer_clips
   FOR UPDATE TO authenticated USING (public.has_project_access(auth.uid(), project_id) AND created_by = auth.uid());
 
 -- ═══ trailer_cuts ═══
-CREATE TABLE public.trailer_cuts (
+CREATE TABLE IF NOT EXISTS public.trailer_cuts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   blueprint_id uuid NOT NULL REFERENCES public.trailer_blueprints(id) ON DELETE CASCADE,
@@ -82,7 +82,7 @@ CREATE TABLE public.trailer_cuts (
   created_by uuid NOT NULL
 );
 
-CREATE INDEX idx_trailer_cuts_blueprint ON public.trailer_cuts(project_id, blueprint_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_cuts_blueprint ON public.trailer_cuts(project_id, blueprint_id, created_at DESC);
 CREATE TRIGGER trg_trailer_cuts_updated BEFORE UPDATE ON public.trailer_cuts FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 ALTER TABLE public.trailer_cuts ENABLE ROW LEVEL SECURITY;

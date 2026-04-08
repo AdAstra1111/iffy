@@ -1,6 +1,6 @@
 
 -- Table to store invite tokens
-CREATE TABLE public.project_invite_links (
+CREATE TABLE IF NOT EXISTS public.project_invite_links (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   token TEXT NOT NULL UNIQUE DEFAULT md5(random()::text || clock_timestamp()::text || random()::text),

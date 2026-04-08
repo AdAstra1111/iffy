@@ -2,7 +2,7 @@
 -- ═══════════════════════════════════════════════════════════════
 -- REWRITE JOBS TABLE (scene-level job queue)
 -- ═══════════════════════════════════════════════════════════════
-CREATE TABLE public.rewrite_jobs (
+CREATE TABLE IF NOT EXISTS public.rewrite_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE public.rewrite_jobs (
 -- ═══════════════════════════════════════════════════════════════
 -- REWRITE SCENE OUTPUTS TABLE (stores per-scene rewritten text)
 -- ═══════════════════════════════════════════════════════════════
-CREATE TABLE public.rewrite_scene_outputs (
+CREATE TABLE IF NOT EXISTS public.rewrite_scene_outputs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
@@ -44,10 +44,10 @@ CREATE TABLE public.rewrite_scene_outputs (
 -- ═══════════════════════════════════════════════════════════════
 -- INDEXES
 -- ═══════════════════════════════════════════════════════════════
-CREATE INDEX idx_rewrite_jobs_project_version ON public.rewrite_jobs (project_id, source_version_id);
-CREATE INDEX idx_rewrite_jobs_project_status ON public.rewrite_jobs (project_id, status);
-CREATE INDEX idx_rewrite_jobs_project_scene ON public.rewrite_jobs (project_id, scene_number);
-CREATE INDEX idx_rewrite_scene_outputs_version ON public.rewrite_scene_outputs (source_version_id, scene_number);
+CREATE INDEX IF NOT EXISTS idx_rewrite_jobs_project_version ON public.rewrite_jobs (project_id, source_version_id);
+CREATE INDEX IF NOT EXISTS idx_rewrite_jobs_project_status ON public.rewrite_jobs (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_rewrite_jobs_project_scene ON public.rewrite_jobs (project_id, scene_number);
+CREATE INDEX IF NOT EXISTS idx_rewrite_scene_outputs_version ON public.rewrite_scene_outputs (source_version_id, scene_number);
 
 -- ═══════════════════════════════════════════════════════════════
 -- UPDATED_AT TRIGGER FOR REWRITE_JOBS

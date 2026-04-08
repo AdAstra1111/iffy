@@ -147,7 +147,7 @@ $$;
 -- 7) Storage bucket for trailers
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('trailers', 'trailers', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 -- Storage RLS: allow authenticated users with project access to upload/read
 CREATE POLICY "trailers_select" ON storage.objects

@@ -1,6 +1,6 @@
 
 -- 1) series_continuity_runs
-CREATE TABLE public.series_continuity_runs (
+CREATE TABLE IF NOT EXISTS public.series_continuity_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_number INT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE public.series_continuity_runs (
   finished_at TIMESTAMPTZ
 );
 
-CREATE INDEX idx_scr_project_episode ON public.series_continuity_runs(project_id, episode_number);
+CREATE INDEX IF NOT EXISTS idx_scr_project_episode ON public.series_continuity_runs(project_id, episode_number);
 ALTER TABLE public.series_continuity_runs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users with project access can read continuity runs"
@@ -30,7 +30,7 @@ CREATE POLICY "Users with project access can update continuity runs"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- 2) series_episode_canon_facts
-CREATE TABLE public.series_episode_canon_facts (
+CREATE TABLE IF NOT EXISTS public.series_episode_canon_facts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_number INT NOT NULL,
@@ -56,7 +56,7 @@ CREATE POLICY "Users with project access can update canon facts"
   USING (public.has_project_access(auth.uid(), project_id));
 
 -- 3) series_continuity_issues
-CREATE TABLE public.series_continuity_issues (
+CREATE TABLE IF NOT EXISTS public.series_continuity_issues (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   run_id UUID NOT NULL REFERENCES public.series_continuity_runs(id) ON DELETE CASCADE,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -73,8 +73,8 @@ CREATE TABLE public.series_continuity_issues (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_sci_run ON public.series_continuity_issues(run_id);
-CREATE INDEX idx_sci_project_episode ON public.series_continuity_issues(project_id, episode_number);
+CREATE INDEX IF NOT EXISTS idx_sci_run ON public.series_continuity_issues(run_id);
+CREATE INDEX IF NOT EXISTS idx_sci_project_episode ON public.series_continuity_issues(project_id, episode_number);
 ALTER TABLE public.series_continuity_issues ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Users with project access can read continuity issues"

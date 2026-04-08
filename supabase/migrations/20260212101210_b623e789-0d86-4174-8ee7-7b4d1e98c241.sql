@@ -1,6 +1,6 @@
 
 -- Production Daily Reports
-CREATE TABLE public.production_daily_reports (
+CREATE TABLE IF NOT EXISTS public.production_daily_reports (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -42,7 +42,7 @@ CREATE TRIGGER update_daily_reports_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Production Cost Actuals
-CREATE TABLE public.production_cost_actuals (
+CREATE TABLE IF NOT EXISTS public.production_cost_actuals (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

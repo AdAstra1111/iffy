@@ -1,6 +1,6 @@
 
 -- Phase 17.1: Pending actor bind context table
-CREATE TABLE public.pending_actor_binds (
+CREATE TABLE IF NOT EXISTS public.pending_actor_binds (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   actor_id uuid NOT NULL,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -22,4 +22,4 @@ CREATE POLICY "Users can manage own pending binds"
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
 
-CREATE INDEX idx_pending_actor_binds_project ON public.pending_actor_binds(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_pending_actor_binds_project ON public.pending_actor_binds(project_id, status);

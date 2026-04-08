@@ -1,5 +1,5 @@
 -- Canonical Lookbook Sections table
-CREATE TABLE public.lookbook_sections (
+CREATE TABLE IF NOT EXISTS public.lookbook_sections (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   section_key text NOT NULL,

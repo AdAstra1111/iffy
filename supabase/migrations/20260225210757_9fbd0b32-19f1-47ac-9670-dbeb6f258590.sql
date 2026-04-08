@@ -1,6 +1,6 @@
 
 -- 1. comparable_candidates
-CREATE TABLE public.comparable_candidates (
+CREATE TABLE IF NOT EXISTS public.comparable_candidates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   lane text NOT NULL,
@@ -16,11 +16,11 @@ CREATE TABLE public.comparable_candidates (
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid NOT NULL
 );
-CREATE INDEX idx_comp_candidates_project_lane ON public.comparable_candidates(project_id, lane, created_at DESC);
-CREATE INDEX idx_comp_candidates_genres ON public.comparable_candidates USING GIN(genres);
+CREATE INDEX IF NOT EXISTS idx_comp_candidates_project_lane ON public.comparable_candidates(project_id, lane, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_comp_candidates_genres ON public.comparable_candidates USING GIN(genres);
 
 -- 2. comparable_influencers
-CREATE TABLE public.comparable_influencers (
+CREATE TABLE IF NOT EXISTS public.comparable_influencers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   lane text NOT NULL,
@@ -33,10 +33,10 @@ CREATE TABLE public.comparable_influencers (
   created_by uuid NOT NULL,
   UNIQUE(project_id, lane, candidate_id)
 );
-CREATE INDEX idx_comp_influencers_project_lane ON public.comparable_influencers(project_id, lane);
+CREATE INDEX IF NOT EXISTS idx_comp_influencers_project_lane ON public.comparable_influencers(project_id, lane);
 
 -- 3. engine_profiles
-CREATE TABLE public.engine_profiles (
+CREATE TABLE IF NOT EXISTS public.engine_profiles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   lane text NOT NULL,
@@ -49,11 +49,11 @@ CREATE TABLE public.engine_profiles (
   created_by uuid NOT NULL,
   is_active boolean NOT NULL DEFAULT true
 );
-CREATE INDEX idx_engine_profiles_project_lane ON public.engine_profiles(project_id, lane, created_at DESC);
-CREATE INDEX idx_engine_profiles_active ON public.engine_profiles(project_id, lane, is_active);
+CREATE INDEX IF NOT EXISTS idx_engine_profiles_project_lane ON public.engine_profiles(project_id, lane, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_engine_profiles_active ON public.engine_profiles(project_id, lane, is_active);
 
 -- 4. engine_overrides
-CREATE TABLE public.engine_overrides (
+CREATE TABLE IF NOT EXISTS public.engine_overrides (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   lane text NOT NULL,
@@ -64,11 +64,11 @@ CREATE TABLE public.engine_overrides (
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid NOT NULL
 );
-CREATE INDEX idx_engine_overrides_project_lane ON public.engine_overrides(project_id, lane, scope, created_at DESC);
-CREATE INDEX idx_engine_overrides_run ON public.engine_overrides(target_run_id);
+CREATE INDEX IF NOT EXISTS idx_engine_overrides_project_lane ON public.engine_overrides(project_id, lane, scope, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_engine_overrides_run ON public.engine_overrides(target_run_id);
 
 -- 5. story_rulesets
-CREATE TABLE public.story_rulesets (
+CREATE TABLE IF NOT EXISTS public.story_rulesets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   lane text NOT NULL,
@@ -89,10 +89,10 @@ CREATE TABLE public.story_rulesets (
   created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid NOT NULL
 );
-CREATE INDEX idx_story_rulesets_project_lane ON public.story_rulesets(project_id, lane, created_at DESC);
-CREATE INDEX idx_story_rulesets_sim ON public.story_rulesets(project_id, lane, similarity_risk);
-CREATE INDEX idx_story_rulesets_fingerprint ON public.story_rulesets USING GIN(fingerprint);
-CREATE INDEX idx_story_rulesets_rules ON public.story_rulesets USING GIN(resolved_rules);
+CREATE INDEX IF NOT EXISTS idx_story_rulesets_project_lane ON public.story_rulesets(project_id, lane, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_story_rulesets_sim ON public.story_rulesets(project_id, lane, similarity_risk);
+CREATE INDEX IF NOT EXISTS idx_story_rulesets_fingerprint ON public.story_rulesets USING GIN(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_story_rulesets_rules ON public.story_rulesets USING GIN(resolved_rules);
 
 -- RLS
 ALTER TABLE public.comparable_candidates ENABLE ROW LEVEL SECURITY;

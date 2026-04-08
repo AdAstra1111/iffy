@@ -81,7 +81,7 @@ CREATE POLICY "Users can manage trailer shotlists" ON public.trailer_shotlists
 -- Storage bucket for AI media
 INSERT INTO storage.buckets (id, name, public)
 VALUES ('ai-media', 'ai-media', true)
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
 
 CREATE POLICY "Project members can upload ai media" ON storage.objects
   FOR INSERT WITH CHECK (bucket_id = 'ai-media' AND auth.uid() IS NOT NULL);

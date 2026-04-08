@@ -1,6 +1,6 @@
 
 -- Decision Journal table
-CREATE TABLE public.project_decisions (
+CREATE TABLE IF NOT EXISTS public.project_decisions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -44,7 +44,7 @@ CREATE TRIGGER log_project_decisions_activity
   FOR EACH ROW EXECUTE FUNCTION public.log_project_activity();
 
 -- AI Chat history table
-CREATE TABLE public.project_chat_messages (
+CREATE TABLE IF NOT EXISTS public.project_chat_messages (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

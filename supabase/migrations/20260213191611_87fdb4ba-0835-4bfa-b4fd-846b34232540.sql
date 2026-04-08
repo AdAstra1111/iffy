@@ -1,6 +1,6 @@
 
 -- Convergence score history for trajectory tracking
-CREATE TABLE public.convergence_scores (
+CREATE TABLE IF NOT EXISTS public.convergence_scores (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -40,4 +40,4 @@ ON public.convergence_scores FOR DELETE
 USING (auth.uid() = user_id);
 
 -- Index for fast project lookups
-CREATE INDEX idx_convergence_scores_project ON public.convergence_scores(project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_convergence_scores_project ON public.convergence_scores(project_id, created_at DESC);

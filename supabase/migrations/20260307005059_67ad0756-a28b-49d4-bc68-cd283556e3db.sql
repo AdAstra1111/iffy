@@ -2,7 +2,7 @@
 -- Pipeline Transitions: immutable, append-only transition ledger
 -- Records every critical pipeline state mutation as a validated transition event.
 
-CREATE TABLE public.pipeline_transitions (
+CREATE TABLE IF NOT EXISTS public.pipeline_transitions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   event_type TEXT NOT NULL,
@@ -44,11 +44,11 @@ CREATE TABLE public.pipeline_transitions (
 );
 
 -- Indexes for lookup patterns
-CREATE INDEX idx_pipeline_transitions_project_id ON public.pipeline_transitions(project_id);
-CREATE INDEX idx_pipeline_transitions_event_type ON public.pipeline_transitions(event_type);
-CREATE INDEX idx_pipeline_transitions_job_id ON public.pipeline_transitions(job_id) WHERE job_id IS NOT NULL;
-CREATE INDEX idx_pipeline_transitions_project_event ON public.pipeline_transitions(project_id, event_type, created_at DESC);
-CREATE INDEX idx_pipeline_transitions_version ON public.pipeline_transitions(resulting_version_id) WHERE resulting_version_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pipeline_transitions_project_id ON public.pipeline_transitions(project_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_transitions_event_type ON public.pipeline_transitions(event_type);
+CREATE INDEX IF NOT EXISTS idx_pipeline_transitions_job_id ON public.pipeline_transitions(job_id) WHERE job_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_pipeline_transitions_project_event ON public.pipeline_transitions(project_id, event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_pipeline_transitions_version ON public.pipeline_transitions(resulting_version_id) WHERE resulting_version_id IS NOT NULL;
 
 -- RLS: service-role writes, authenticated reads own projects
 ALTER TABLE public.pipeline_transitions ENABLE ROW LEVEL SECURITY;

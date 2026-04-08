@@ -3,7 +3,7 @@
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions;
 
 -- Approved Sources allowlist
-CREATE TABLE public.approved_sources (
+CREATE TABLE IF NOT EXISTS public.approved_sources (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   title text NOT NULL DEFAULT '',
@@ -24,7 +24,7 @@ CREATE POLICY "Users can update own approved_sources" ON public.approved_sources
 CREATE POLICY "Users can delete own approved_sources" ON public.approved_sources FOR DELETE USING (auth.uid() = user_id);
 
 -- Corpus Scripts (ingested metadata)
-CREATE TABLE public.corpus_scripts (
+CREATE TABLE IF NOT EXISTS public.corpus_scripts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   source_id uuid NOT NULL REFERENCES public.approved_sources(id) ON DELETE CASCADE,
@@ -46,7 +46,7 @@ CREATE POLICY "Users can update own corpus_scripts" ON public.corpus_scripts FOR
 CREATE POLICY "Users can delete own corpus_scripts" ON public.corpus_scripts FOR DELETE USING (auth.uid() = user_id);
 
 -- Corpus Scenes
-CREATE TABLE public.corpus_scenes (
+CREATE TABLE IF NOT EXISTS public.corpus_scenes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   script_id uuid NOT NULL REFERENCES public.corpus_scripts(id) ON DELETE CASCADE,
@@ -65,7 +65,7 @@ CREATE POLICY "Users can insert own corpus_scenes" ON public.corpus_scenes FOR I
 CREATE POLICY "Users can delete own corpus_scenes" ON public.corpus_scenes FOR DELETE USING (auth.uid() = user_id);
 
 -- Corpus Chunks (with full-text search + vector placeholder)
-CREATE TABLE public.corpus_chunks (
+CREATE TABLE IF NOT EXISTS public.corpus_chunks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   script_id uuid NOT NULL REFERENCES public.corpus_scripts(id) ON DELETE CASCADE,
@@ -83,7 +83,7 @@ CREATE POLICY "Users can insert own corpus_chunks" ON public.corpus_chunks FOR I
 CREATE POLICY "Users can delete own corpus_chunks" ON public.corpus_chunks FOR DELETE USING (auth.uid() = user_id);
 
 -- Full-text search index
-CREATE INDEX idx_corpus_chunks_search ON public.corpus_chunks USING GIN (search_vector);
+CREATE INDEX IF NOT EXISTS idx_corpus_chunks_search ON public.corpus_chunks USING GIN (search_vector);
 
 -- Auto-generate tsvector on insert/update
 CREATE OR REPLACE FUNCTION public.corpus_chunks_search_vector_trigger()
@@ -102,7 +102,7 @@ BEFORE INSERT OR UPDATE ON public.corpus_chunks
 FOR EACH ROW EXECUTE FUNCTION public.corpus_chunks_search_vector_trigger();
 
 -- Derived Artifacts
-CREATE TABLE public.corpus_derived_artifacts (
+CREATE TABLE IF NOT EXISTS public.corpus_derived_artifacts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
   script_id uuid NOT NULL REFERENCES public.corpus_scripts(id) ON DELETE CASCADE,

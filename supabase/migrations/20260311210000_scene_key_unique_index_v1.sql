@@ -6,7 +6,7 @@
 -- to production outside the migrations folder.
 --
 -- Index already present in production:
---   CREATE UNIQUE INDEX idx_scene_graph_scenes_project_scene_key
+--   CREATE UNIQUE INDEX IF NOT EXISTS idx_scene_graph_scenes_project_scene_key
 --   ON public.scene_graph_scenes USING btree (project_id, scene_key)
 --   WHERE (scene_key IS NOT NULL)
 --

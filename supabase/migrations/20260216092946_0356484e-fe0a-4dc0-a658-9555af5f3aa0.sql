@@ -1,6 +1,6 @@
 
 -- Canon Snapshots: stores locked canon state for series writer stage
-CREATE TABLE public.canon_snapshots (
+CREATE TABLE IF NOT EXISTS public.canon_snapshots (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE public.canon_snapshots (
 );
 
 -- Only one active snapshot per project
-CREATE UNIQUE INDEX idx_canon_snapshots_active ON public.canon_snapshots(project_id) WHERE status = 'active';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_canon_snapshots_active ON public.canon_snapshots(project_id) WHERE status = 'active';
 
 -- Enable RLS
 ALTER TABLE public.canon_snapshots ENABLE ROW LEVEL SECURITY;
@@ -40,7 +40,7 @@ CREATE POLICY "Users can delete own canon snapshots"
   USING (auth.uid() = user_id);
 
 -- Series episode validation results
-CREATE TABLE public.episode_validations (
+CREATE TABLE IF NOT EXISTS public.episode_validations (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   episode_id UUID NOT NULL REFERENCES public.series_episodes(id) ON DELETE CASCADE,

@@ -1,6 +1,6 @@
 
 -- Character Visual Datasets — canonical visual identity truth for AI performers
-CREATE TABLE public.character_visual_datasets (
+CREATE TABLE IF NOT EXISTS public.character_visual_datasets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid REFERENCES public.projects(id) ON DELETE CASCADE NOT NULL,
   canonical_character_id uuid,
@@ -54,14 +54,14 @@ CREATE TABLE public.character_visual_datasets (
 );
 
 -- Unique current-row protection
-CREATE UNIQUE INDEX idx_cvd_unique_current
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cvd_unique_current
   ON public.character_visual_datasets (project_id, canonical_name)
   WHERE is_current = true;
 
 -- Lookup indexes
-CREATE INDEX idx_cvd_project ON public.character_visual_datasets (project_id);
-CREATE INDEX idx_cvd_actor ON public.character_visual_datasets (ai_actor_id) WHERE ai_actor_id IS NOT NULL;
-CREATE INDEX idx_cvd_current ON public.character_visual_datasets (project_id, is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_cvd_project ON public.character_visual_datasets (project_id);
+CREATE INDEX IF NOT EXISTS idx_cvd_actor ON public.character_visual_datasets (ai_actor_id) WHERE ai_actor_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_cvd_current ON public.character_visual_datasets (project_id, is_current) WHERE is_current = true;
 
 -- Auto-update updated_at
 CREATE TRIGGER set_cvd_updated_at

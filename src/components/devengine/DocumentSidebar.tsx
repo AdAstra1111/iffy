@@ -340,13 +340,12 @@ export function DocumentSidebar({
             className="w-full text-xs gap-1.5 h-7 justify-start border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
             disabled={isReverseEngineering}
             onClick={async () => {
-              const result = await reverseEngineerFromScript(projectId, scriptDoc.id);
-              if (result.success) {
-                toast.success(`Pipeline documents generated! ${result.documents_created || ''} docs created.`);
+              try {
+                const { job_id } = await reverseEngineerFromScript(projectId, scriptDoc.id);
+                toast.success("Reverse-engineering started — you'll see live progress in the pipeline view");
                 queryClient.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-                queryClient.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
-              } else {
-                toast.error(result.error || 'Could not reverse engineer script');
+              } catch (e: any) {
+                toast.error(e?.message || 'Could not start reverse-engineering');
               }
             }}
           >

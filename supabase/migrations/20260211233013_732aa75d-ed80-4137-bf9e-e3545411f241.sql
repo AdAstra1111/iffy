@@ -1,6 +1,6 @@
 
 -- Shadow source evaluations: tracks performance of shadow-mode data sources
-CREATE TABLE public.shadow_source_evaluations (
+CREATE TABLE IF NOT EXISTS public.shadow_source_evaluations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   source_id UUID NOT NULL REFERENCES public.data_sources(id) ON DELETE CASCADE,
   evaluation_period TEXT NOT NULL DEFAULT '',

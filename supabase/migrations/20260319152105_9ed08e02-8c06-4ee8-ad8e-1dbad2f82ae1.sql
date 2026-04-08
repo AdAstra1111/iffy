@@ -1,6 +1,6 @@
 
 -- Project Title History / Alias Table
-CREATE TABLE public.project_title_history (
+CREATE TABLE IF NOT EXISTS public.project_title_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
@@ -15,9 +15,9 @@ CREATE TABLE public.project_title_history (
 );
 
 -- Indexes
-CREATE INDEX idx_project_title_history_project_id ON public.project_title_history(project_id);
-CREATE INDEX idx_project_title_history_normalized ON public.project_title_history(normalized_title);
-CREATE INDEX idx_project_title_history_current ON public.project_title_history(project_id, is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_project_title_history_project_id ON public.project_title_history(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_title_history_normalized ON public.project_title_history(normalized_title);
+CREATE INDEX IF NOT EXISTS idx_project_title_history_current ON public.project_title_history(project_id, is_current) WHERE is_current = true;
 
 -- RLS
 ALTER TABLE public.project_title_history ENABLE ROW LEVEL SECURITY;

@@ -2,7 +2,7 @@
 -- ============================================
 -- PROJECT CAST (wishlist → attached talent)
 -- ============================================
-CREATE TABLE public.project_cast (
+CREATE TABLE IF NOT EXISTS public.project_cast (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -27,7 +27,7 @@ CREATE TRIGGER update_project_cast_updated_at BEFORE UPDATE ON public.project_ca
 -- ============================================
 -- PROJECT PARTNERS (sales agents, co-producers, etc.)
 -- ============================================
-CREATE TABLE public.project_partners (
+CREATE TABLE IF NOT EXISTS public.project_partners (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -52,7 +52,7 @@ CREATE TRIGGER update_project_partners_updated_at BEFORE UPDATE ON public.projec
 -- ============================================
 -- PROJECT SCRIPTS (versioning)
 -- ============================================
-CREATE TABLE public.project_scripts (
+CREATE TABLE IF NOT EXISTS public.project_scripts (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -76,7 +76,7 @@ CREATE TRIGGER update_project_scripts_updated_at BEFORE UPDATE ON public.project
 -- ============================================
 -- PROJECT FINANCE SCENARIOS
 -- ============================================
-CREATE TABLE public.project_finance_scenarios (
+CREATE TABLE IF NOT EXISTS public.project_finance_scenarios (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -105,7 +105,7 @@ CREATE TRIGGER update_project_finance_scenarios_updated_at BEFORE UPDATE ON publ
 -- ============================================
 -- PROJECT UPDATES TIMELINE
 -- ============================================
-CREATE TABLE public.project_updates (
+CREATE TABLE IF NOT EXISTS public.project_updates (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

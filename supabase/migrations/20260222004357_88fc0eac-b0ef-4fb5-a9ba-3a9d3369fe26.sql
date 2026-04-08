@@ -1,6 +1,6 @@
 
 -- Animatics table
-CREATE TABLE public.animatics (
+CREATE TABLE IF NOT EXISTS public.animatics (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   shot_list_id uuid NOT NULL REFERENCES public.shot_lists(id) ON DELETE CASCADE,
@@ -17,7 +17,7 @@ CREATE TABLE public.animatics (
 );
 
 -- Animatic panels table
-CREATE TABLE public.animatic_panels (
+CREATE TABLE IF NOT EXISTS public.animatic_panels (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   animatic_id uuid NOT NULL REFERENCES public.animatics(id) ON DELETE CASCADE,
   storyboard_board_id uuid NOT NULL REFERENCES public.storyboard_boards(id) ON DELETE CASCADE,
@@ -32,7 +32,7 @@ CREATE TABLE public.animatic_panels (
 );
 
 -- Animatic markers table
-CREATE TABLE public.animatic_markers (
+CREATE TABLE IF NOT EXISTS public.animatic_markers (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   animatic_id uuid NOT NULL REFERENCES public.animatics(id) ON DELETE CASCADE,
   time_seconds numeric NOT NULL DEFAULT 0,
@@ -85,8 +85,8 @@ CREATE POLICY "animatic_markers_delete" ON public.animatic_markers FOR DELETE TO
   USING (EXISTS (SELECT 1 FROM public.animatics a WHERE a.id = animatic_id AND public.has_project_access(auth.uid(), a.project_id)));
 
 -- Indexes
-CREATE INDEX idx_animatics_project ON public.animatics(project_id);
-CREATE INDEX idx_animatics_shot_list ON public.animatics(shot_list_id);
-CREATE INDEX idx_animatic_panels_animatic ON public.animatic_panels(animatic_id);
-CREATE INDEX idx_animatic_panels_board ON public.animatic_panels(storyboard_board_id);
-CREATE INDEX idx_animatic_markers_animatic ON public.animatic_markers(animatic_id);
+CREATE INDEX IF NOT EXISTS idx_animatics_project ON public.animatics(project_id);
+CREATE INDEX IF NOT EXISTS idx_animatics_shot_list ON public.animatics(shot_list_id);
+CREATE INDEX IF NOT EXISTS idx_animatic_panels_animatic ON public.animatic_panels(animatic_id);
+CREATE INDEX IF NOT EXISTS idx_animatic_panels_board ON public.animatic_panels(storyboard_board_id);
+CREATE INDEX IF NOT EXISTS idx_animatic_markers_animatic ON public.animatic_markers(animatic_id);

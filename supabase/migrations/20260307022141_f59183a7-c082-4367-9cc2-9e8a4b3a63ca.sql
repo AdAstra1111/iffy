@@ -1,6 +1,6 @@
 
 -- review_tasks: lightweight manual review queue for validation findings
-CREATE TABLE public.review_tasks (
+CREATE TABLE IF NOT EXISTS public.review_tasks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   source_type TEXT NOT NULL DEFAULT 'validation',
@@ -22,10 +22,10 @@ CREATE TABLE public.review_tasks (
 );
 
 -- Unique constraint for fingerprint-based dedupe per project
-CREATE UNIQUE INDEX review_tasks_project_fingerprint_unique ON public.review_tasks (project_id, fingerprint) WHERE status IN ('open', 'acknowledged');
+CREATE UNIQUE INDEX IF NOT EXISTS review_tasks_project_fingerprint_unique ON public.review_tasks (project_id, fingerprint) WHERE status IN ('open', 'acknowledged');
 
 -- Index for project lookups
-CREATE INDEX review_tasks_project_id_status_idx ON public.review_tasks (project_id, status);
+CREATE INDEX IF NOT EXISTS review_tasks_project_id_status_idx ON public.review_tasks (project_id, status);
 
 -- Auto-update updated_at
 CREATE TRIGGER review_tasks_updated_at

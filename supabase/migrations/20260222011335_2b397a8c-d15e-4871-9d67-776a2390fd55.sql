@@ -4,7 +4,7 @@
 -- ============================================================
 
 -- 1.1 scene_graph_scenes
-CREATE TABLE public.scene_graph_scenes (
+CREATE TABLE IF NOT EXISTS public.scene_graph_scenes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_kind text NOT NULL DEFAULT 'narrative',
@@ -13,10 +13,10 @@ CREATE TABLE public.scene_graph_scenes (
   deprecated_at timestamptz NULL,
   provenance jsonb NOT NULL DEFAULT '{}'::jsonb
 );
-CREATE INDEX idx_sg_scenes_project ON public.scene_graph_scenes(project_id);
+CREATE INDEX IF NOT EXISTS idx_sg_scenes_project ON public.scene_graph_scenes(project_id);
 
 -- 1.2 scene_graph_versions
-CREATE TABLE public.scene_graph_versions (
+CREATE TABLE IF NOT EXISTS public.scene_graph_versions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   scene_id uuid NOT NULL REFERENCES public.scene_graph_scenes(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -39,11 +39,11 @@ CREATE TABLE public.scene_graph_versions (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   UNIQUE(scene_id, version_number)
 );
-CREATE INDEX idx_sg_versions_scene ON public.scene_graph_versions(scene_id);
-CREATE INDEX idx_sg_versions_project ON public.scene_graph_versions(project_id);
+CREATE INDEX IF NOT EXISTS idx_sg_versions_scene ON public.scene_graph_versions(scene_id);
+CREATE INDEX IF NOT EXISTS idx_sg_versions_project ON public.scene_graph_versions(project_id);
 
 -- 1.3 scene_graph_order
-CREATE TABLE public.scene_graph_order (
+CREATE TABLE IF NOT EXISTS public.scene_graph_order (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   scene_id uuid NOT NULL REFERENCES public.scene_graph_scenes(id) ON DELETE CASCADE,
@@ -55,11 +55,11 @@ CREATE TABLE public.scene_graph_order (
   inserted_intent jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_sg_order_project_key ON public.scene_graph_order(project_id, order_key);
-CREATE INDEX idx_sg_order_active ON public.scene_graph_order(project_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sg_order_project_key ON public.scene_graph_order(project_id, order_key);
+CREATE INDEX IF NOT EXISTS idx_sg_order_active ON public.scene_graph_order(project_id, is_active);
 
 -- 1.4 scene_graph_snapshots
-CREATE TABLE public.scene_graph_snapshots (
+CREATE TABLE IF NOT EXISTS public.scene_graph_snapshots (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -69,7 +69,7 @@ CREATE TABLE public.scene_graph_snapshots (
   content text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'draft'
 );
-CREATE INDEX idx_sg_snapshots_project ON public.scene_graph_snapshots(project_id);
+CREATE INDEX IF NOT EXISTS idx_sg_snapshots_project ON public.scene_graph_snapshots(project_id);
 
 -- RLS
 ALTER TABLE public.scene_graph_scenes ENABLE ROW LEVEL SECURITY;

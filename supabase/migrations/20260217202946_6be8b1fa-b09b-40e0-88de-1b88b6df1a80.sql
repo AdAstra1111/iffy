@@ -44,14 +44,17 @@ ALTER TABLE project_documents
 -- RLS for decision_ledger
 ALTER TABLE decision_ledger ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read own project decision_ledger" ON decision_ledger;
 CREATE POLICY "Users can read own project decision_ledger"
   ON decision_ledger FOR SELECT
   USING (public.has_project_access(auth.uid(), project_id));
 
+DROP POLICY IF EXISTS "Users can insert own project decision_ledger" ON decision_ledger;
 CREATE POLICY "Users can insert own project decision_ledger"
   ON decision_ledger FOR INSERT
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
+DROP POLICY IF EXISTS "Users can update own project decision_ledger" ON decision_ledger;
 CREATE POLICY "Users can update own project decision_ledger"
   ON decision_ledger FOR UPDATE
   USING (public.has_project_access(auth.uid(), project_id));
@@ -59,14 +62,17 @@ CREATE POLICY "Users can update own project decision_ledger"
 -- RLS for resolved_notes
 ALTER TABLE resolved_notes ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Users can read resolved notes" ON resolved_notes;
 CREATE POLICY "Users can read resolved notes"
   ON resolved_notes FOR SELECT
   USING (public.has_project_access(auth.uid(), project_id));
 
+DROP POLICY IF EXISTS "Users can insert resolved notes" ON resolved_notes;
 CREATE POLICY "Users can insert resolved notes"
   ON resolved_notes FOR INSERT
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
+DROP POLICY IF EXISTS "Users can update resolved notes" ON resolved_notes;
 CREATE POLICY "Users can update resolved notes"
   ON resolved_notes FOR UPDATE
   USING (public.has_project_access(auth.uid(), project_id));

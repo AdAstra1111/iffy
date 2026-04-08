@@ -1,6 +1,6 @@
 
 -- Demo runs orchestration table
-CREATE TABLE public.demo_runs (
+CREATE TABLE IF NOT EXISTS public.demo_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   document_id uuid NULL REFERENCES public.project_documents(id) ON DELETE SET NULL,
@@ -15,7 +15,7 @@ CREATE TABLE public.demo_runs (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_demo_runs_project_created ON public.demo_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_demo_runs_project_created ON public.demo_runs (project_id, created_at DESC);
 
 -- RLS
 ALTER TABLE public.demo_runs ENABLE ROW LEVEL SECURITY;

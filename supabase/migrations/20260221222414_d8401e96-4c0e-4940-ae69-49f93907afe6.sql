@@ -1,6 +1,6 @@
 
 -- Shot Lists
-CREATE TABLE public.shot_lists (
+CREATE TABLE IF NOT EXISTS public.shot_lists (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   name TEXT NOT NULL DEFAULT 'Shot List',
@@ -22,10 +22,10 @@ CREATE POLICY "Project members can manage shot lists"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_shot_lists_project ON public.shot_lists(project_id);
+CREATE INDEX IF NOT EXISTS idx_shot_lists_project ON public.shot_lists(project_id);
 
 -- Shot List Items
-CREATE TABLE public.shot_list_items (
+CREATE TABLE IF NOT EXISTS public.shot_list_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shot_list_id UUID NOT NULL REFERENCES public.shot_lists(id) ON DELETE CASCADE,
   project_id UUID NOT NULL,
@@ -59,11 +59,11 @@ CREATE POLICY "Project members can manage shot list items"
   USING (public.has_project_access(auth.uid(), project_id))
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
-CREATE INDEX idx_shot_list_items_list ON public.shot_list_items(shot_list_id);
-CREATE INDEX idx_shot_list_items_project ON public.shot_list_items(project_id);
+CREATE INDEX IF NOT EXISTS idx_shot_list_items_list ON public.shot_list_items(shot_list_id);
+CREATE INDEX IF NOT EXISTS idx_shot_list_items_project ON public.shot_list_items(project_id);
 
 -- Shot List Regens
-CREATE TABLE public.shot_list_regens (
+CREATE TABLE IF NOT EXISTS public.shot_list_regens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shot_list_id UUID NOT NULL REFERENCES public.shot_lists(id) ON DELETE CASCADE,
   source_version_id UUID NOT NULL,

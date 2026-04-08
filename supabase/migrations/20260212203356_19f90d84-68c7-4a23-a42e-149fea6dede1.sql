@@ -1,6 +1,6 @@
 
 -- Table for storing health check results
-CREATE TABLE public.system_health_checks (
+CREATE TABLE IF NOT EXISTS public.system_health_checks (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NULL,
   check_name TEXT NOT NULL,
@@ -12,7 +12,7 @@ CREATE TABLE public.system_health_checks (
 );
 
 -- Index for fast lookups
-CREATE INDEX idx_system_health_checks_name_date ON public.system_health_checks (check_name, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_system_health_checks_name_date ON public.system_health_checks (check_name, created_at DESC);
 
 -- Enable RLS
 ALTER TABLE public.system_health_checks ENABLE ROW LEVEL SECURITY;

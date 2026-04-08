@@ -4,7 +4,7 @@
 -- ══════════════════════════════════════════════════════════
 
 -- 1) Canonical Notes Table
-CREATE TABLE public.project_notes (
+CREATE TABLE IF NOT EXISTS public.project_notes (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   source VARCHAR NOT NULL DEFAULT 'user',
@@ -30,12 +30,12 @@ CREATE TABLE public.project_notes (
 );
 
 -- Indexes
-CREATE INDEX idx_project_notes_project_status ON public.project_notes (project_id, status);
-CREATE INDEX idx_project_notes_project_doc_type ON public.project_notes (project_id, doc_type);
-CREATE INDEX idx_project_notes_project_timing ON public.project_notes (project_id, timing);
-CREATE INDEX idx_project_notes_document_version ON public.project_notes (document_id, version_id);
-CREATE INDEX idx_project_notes_anchor_gin ON public.project_notes USING gin (anchor);
-CREATE INDEX idx_project_notes_later_destination ON public.project_notes (project_id, destination_doc_type) WHERE timing = 'later';
+CREATE INDEX IF NOT EXISTS idx_project_notes_project_status ON public.project_notes (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_project_notes_project_doc_type ON public.project_notes (project_id, doc_type);
+CREATE INDEX IF NOT EXISTS idx_project_notes_project_timing ON public.project_notes (project_id, timing);
+CREATE INDEX IF NOT EXISTS idx_project_notes_document_version ON public.project_notes (document_id, version_id);
+CREATE INDEX IF NOT EXISTS idx_project_notes_anchor_gin ON public.project_notes USING gin (anchor);
+CREATE INDEX IF NOT EXISTS idx_project_notes_later_destination ON public.project_notes (project_id, destination_doc_type) WHERE timing = 'later';
 
 -- RLS
 ALTER TABLE public.project_notes ENABLE ROW LEVEL SECURITY;
@@ -62,7 +62,7 @@ CREATE TRIGGER trg_project_notes_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
 
 -- 2) Change Events Table
-CREATE TABLE public.note_change_events (
+CREATE TABLE IF NOT EXISTS public.note_change_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   note_id UUID NOT NULL REFERENCES public.project_notes(id) ON DELETE CASCADE,
@@ -76,8 +76,8 @@ CREATE TABLE public.note_change_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_note_change_events_note ON public.note_change_events (note_id);
-CREATE INDEX idx_note_change_events_project ON public.note_change_events (project_id, status);
+CREATE INDEX IF NOT EXISTS idx_note_change_events_note ON public.note_change_events (note_id);
+CREATE INDEX IF NOT EXISTS idx_note_change_events_project ON public.note_change_events (project_id, status);
 
 -- RLS
 ALTER TABLE public.note_change_events ENABLE ROW LEVEL SECURITY;

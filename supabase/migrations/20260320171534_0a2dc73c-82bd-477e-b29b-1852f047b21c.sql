@@ -1,6 +1,6 @@
 
 -- Round progressions: canonical next-task advancement decisions
-CREATE TABLE public.round_progressions (
+CREATE TABLE IF NOT EXISTS public.round_progressions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   round_id uuid NOT NULL REFERENCES public.competition_rounds(id) ON DELETE CASCADE,
@@ -16,7 +16,7 @@ CREATE TABLE public.round_progressions (
 );
 
 -- IEL: exactly one progression decision per round
-CREATE UNIQUE INDEX idx_round_progressions_unique_round ON public.round_progressions(round_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_round_progressions_unique_round ON public.round_progressions(round_id);
 
 -- IEL: validate progression invariants via trigger
 CREATE OR REPLACE FUNCTION public.validate_round_progression()

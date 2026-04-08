@@ -1,6 +1,6 @@
 
 -- Plateau Diagnosis table for DevSeed Optimizer MVP
-CREATE TABLE public.devseed_plateau_diagnoses (
+CREATE TABLE IF NOT EXISTS public.devseed_plateau_diagnoses (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID NOT NULL,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -30,9 +30,9 @@ CREATE TABLE public.devseed_plateau_diagnoses (
 );
 
 -- Indexes
-CREATE INDEX idx_devseed_plateau_diag_project ON public.devseed_plateau_diagnoses(project_id);
-CREATE INDEX idx_devseed_plateau_diag_job ON public.devseed_plateau_diagnoses(auto_run_job_id);
-CREATE INDEX idx_devseed_plateau_diag_user ON public.devseed_plateau_diagnoses(user_id);
+CREATE INDEX IF NOT EXISTS idx_devseed_plateau_diag_project ON public.devseed_plateau_diagnoses(project_id);
+CREATE INDEX IF NOT EXISTS idx_devseed_plateau_diag_job ON public.devseed_plateau_diagnoses(auto_run_job_id);
+CREATE INDEX IF NOT EXISTS idx_devseed_plateau_diag_user ON public.devseed_plateau_diagnoses(user_id);
 
 -- RLS
 ALTER TABLE public.devseed_plateau_diagnoses ENABLE ROW LEVEL SECURITY;

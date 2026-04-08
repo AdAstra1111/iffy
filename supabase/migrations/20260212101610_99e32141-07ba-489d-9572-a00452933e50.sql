@@ -1,6 +1,6 @@
 
 -- Post-production milestones
-CREATE TABLE public.post_milestones (
+CREATE TABLE IF NOT EXISTS public.post_milestones (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -30,7 +30,7 @@ CREATE TRIGGER update_post_milestones_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Edit versions
-CREATE TABLE public.edit_versions (
+CREATE TABLE IF NOT EXISTS public.edit_versions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -52,7 +52,7 @@ CREATE POLICY "Users can delete edit versions" ON public.edit_versions
   FOR DELETE USING (public.has_project_access(auth.uid(), project_id));
 
 -- VFX shots
-CREATE TABLE public.vfx_shots (
+CREATE TABLE IF NOT EXISTS public.vfx_shots (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,

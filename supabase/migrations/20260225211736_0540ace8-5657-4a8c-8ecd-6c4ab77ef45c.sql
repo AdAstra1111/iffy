@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS public.project_lane_prefs (
   UNIQUE(project_id, lane)
 );
 
-CREATE INDEX idx_project_lane_prefs_project ON public.project_lane_prefs(project_id, lane);
+CREATE INDEX IF NOT EXISTS idx_project_lane_prefs_project ON public.project_lane_prefs(project_id, lane);
 
 ALTER TABLE public.project_lane_prefs ENABLE ROW LEVEL SECURITY;
 

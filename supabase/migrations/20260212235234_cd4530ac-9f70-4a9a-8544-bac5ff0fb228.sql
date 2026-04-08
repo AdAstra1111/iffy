@@ -1,6 +1,6 @@
 
 -- Failure Contrast: scripts exhibiting structural/commercial weakness for risk detection training
-CREATE TABLE public.failure_contrast (
+CREATE TABLE IF NOT EXISTS public.failure_contrast (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL,
   year INTEGER,
@@ -49,6 +49,6 @@ CREATE TRIGGER update_failure_contrast_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION public.update_updated_at_column();
 
-CREATE INDEX idx_failure_contrast_genre ON public.failure_contrast(genre);
-CREATE INDEX idx_failure_contrast_weakness ON public.failure_contrast(primary_weakness);
-CREATE INDEX idx_failure_contrast_outcome ON public.failure_contrast(development_outcome);
+CREATE INDEX IF NOT EXISTS idx_failure_contrast_genre ON public.failure_contrast(genre);
+CREATE INDEX IF NOT EXISTS idx_failure_contrast_weakness ON public.failure_contrast(primary_weakness);
+CREATE INDEX IF NOT EXISTS idx_failure_contrast_outcome ON public.failure_contrast(development_outcome);

@@ -1,6 +1,6 @@
 
 -- DNA source links child table
-CREATE TABLE public.dna_source_links (
+CREATE TABLE IF NOT EXISTS public.dna_source_links (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dna_profile_id UUID NOT NULL REFERENCES public.narrative_dna_profiles(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -14,8 +14,8 @@ CREATE TABLE public.dna_source_links (
 );
 
 -- Indexes
-CREATE INDEX idx_dna_source_links_dna_profile_id ON public.dna_source_links(dna_profile_id);
-CREATE INDEX idx_dna_source_links_user_id ON public.dna_source_links(user_id);
+CREATE INDEX IF NOT EXISTS idx_dna_source_links_dna_profile_id ON public.dna_source_links(dna_profile_id);
+CREATE INDEX IF NOT EXISTS idx_dna_source_links_user_id ON public.dna_source_links(user_id);
 
 -- Updated_at trigger
 CREATE TRIGGER set_dna_source_links_updated_at

@@ -4,7 +4,7 @@
 -- =====================================================
 
 -- 1) trailer_audio_assets — reusable audio files
-CREATE TABLE public.trailer_audio_assets (
+CREATE TABLE IF NOT EXISTS public.trailer_audio_assets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
   kind text NOT NULL CHECK (kind IN ('music_bed', 'sfx')),
@@ -16,8 +16,8 @@ CREATE TABLE public.trailer_audio_assets (
   created_by uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_trailer_audio_assets_project_kind ON public.trailer_audio_assets (project_id, kind);
-CREATE INDEX idx_trailer_audio_assets_project_created ON public.trailer_audio_assets (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_audio_assets_project_kind ON public.trailer_audio_assets (project_id, kind);
+CREATE INDEX IF NOT EXISTS idx_trailer_audio_assets_project_created ON public.trailer_audio_assets (project_id, created_at DESC);
 
 ALTER TABLE public.trailer_audio_assets ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "trailer_audio_assets_access" ON public.trailer_audio_assets
@@ -25,7 +25,7 @@ CREATE POLICY "trailer_audio_assets_access" ON public.trailer_audio_assets
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 2) trailer_audio_runs — audio plan + mix settings per trailer cut
-CREATE TABLE public.trailer_audio_runs (
+CREATE TABLE IF NOT EXISTS public.trailer_audio_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
   trailer_cut_id uuid NOT NULL REFERENCES public.trailer_cuts(id) ON DELETE CASCADE,
@@ -40,8 +40,8 @@ CREATE TABLE public.trailer_audio_runs (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_trailer_audio_runs_project ON public.trailer_audio_runs (project_id, created_at DESC);
-CREATE INDEX idx_trailer_audio_runs_cut ON public.trailer_audio_runs (trailer_cut_id);
+CREATE INDEX IF NOT EXISTS idx_trailer_audio_runs_project ON public.trailer_audio_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_audio_runs_cut ON public.trailer_audio_runs (trailer_cut_id);
 
 ALTER TABLE public.trailer_audio_runs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "trailer_audio_runs_access" ON public.trailer_audio_runs
@@ -53,7 +53,7 @@ CREATE TRIGGER trg_trailer_audio_runs_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- 3) trailer_render_jobs — server render queue for MP4 mux
-CREATE TABLE public.trailer_render_jobs (
+CREATE TABLE IF NOT EXISTS public.trailer_render_jobs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
   trailer_cut_id uuid NOT NULL REFERENCES public.trailer_cuts(id) ON DELETE CASCADE,
@@ -71,10 +71,10 @@ CREATE TABLE public.trailer_render_jobs (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_trailer_render_jobs_project ON public.trailer_render_jobs (project_id, created_at DESC);
-CREATE INDEX idx_trailer_render_jobs_cut ON public.trailer_render_jobs (trailer_cut_id);
-CREATE INDEX idx_trailer_render_jobs_status ON public.trailer_render_jobs (status, claimed_at);
-CREATE UNIQUE INDEX idx_trailer_render_jobs_idempotency ON public.trailer_render_jobs (idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_trailer_render_jobs_project ON public.trailer_render_jobs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_render_jobs_cut ON public.trailer_render_jobs (trailer_cut_id);
+CREATE INDEX IF NOT EXISTS idx_trailer_render_jobs_status ON public.trailer_render_jobs (status, claimed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trailer_render_jobs_idempotency ON public.trailer_render_jobs (idempotency_key);
 
 ALTER TABLE public.trailer_render_jobs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "trailer_render_jobs_access" ON public.trailer_render_jobs
@@ -86,7 +86,7 @@ CREATE TRIGGER trg_trailer_render_jobs_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.touch_updated_at();
 
 -- 4) trailer_render_events — audit log
-CREATE TABLE public.trailer_render_events (
+CREATE TABLE IF NOT EXISTS public.trailer_render_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL,
   render_job_id uuid NOT NULL REFERENCES public.trailer_render_jobs(id) ON DELETE CASCADE,
@@ -95,8 +95,8 @@ CREATE TABLE public.trailer_render_events (
   created_by uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_trailer_render_events_project ON public.trailer_render_events (project_id, created_at DESC);
-CREATE INDEX idx_trailer_render_events_job ON public.trailer_render_events (render_job_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_render_events_project ON public.trailer_render_events (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trailer_render_events_job ON public.trailer_render_events (render_job_id, created_at DESC);
 
 ALTER TABLE public.trailer_render_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "trailer_render_events_access" ON public.trailer_render_events

@@ -1,6 +1,6 @@
 
 -- Create project_dev_note_state table for persistent note fingerprinting and loop-killing
-CREATE TABLE public.project_dev_note_state (
+CREATE TABLE IF NOT EXISTS public.project_dev_note_state (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   doc_type text NOT NULL,
@@ -27,7 +27,7 @@ CREATE TABLE public.project_dev_note_state (
 );
 
 -- Unique constraint: one state row per (project, doc_type, episode_number, fingerprint)
-CREATE UNIQUE INDEX project_dev_note_state_unique_idx
+CREATE UNIQUE INDEX IF NOT EXISTS project_dev_note_state_unique_idx
   ON public.project_dev_note_state (project_id, doc_type, COALESCE(episode_number, -1), note_fingerprint);
 
 -- Enable RLS

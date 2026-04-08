@@ -1,6 +1,6 @@
 
 -- Versioned budgets per project
-CREATE TABLE public.project_budgets (
+CREATE TABLE IF NOT EXISTS public.project_budgets (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE public.project_budgets (
 );
 
 -- Budget line items
-CREATE TABLE public.project_budget_lines (
+CREATE TABLE IF NOT EXISTS public.project_budget_lines (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   budget_id UUID NOT NULL REFERENCES public.project_budgets(id) ON DELETE CASCADE,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

@@ -1,6 +1,6 @@
 
 -- Document ingestion audit log
-CREATE TABLE public.document_ingestions (
+CREATE TABLE IF NOT EXISTS public.document_ingestions (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -27,8 +27,8 @@ CREATE POLICY "Users can insert own ingestion logs"
   WITH CHECK (auth.uid() = user_id);
 
 -- Index for fast lookups
-CREATE INDEX idx_document_ingestions_project ON public.document_ingestions(project_id);
-CREATE INDEX idx_document_ingestions_file ON public.document_ingestions(file_path);
+CREATE INDEX IF NOT EXISTS idx_document_ingestions_project ON public.document_ingestions(project_id);
+CREATE INDEX IF NOT EXISTS idx_document_ingestions_file ON public.document_ingestions(file_path);
 
 -- Add ingestion metadata columns to project_documents
 ALTER TABLE public.project_documents

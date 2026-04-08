@@ -1,5 +1,5 @@
 
-CREATE TABLE public.vertical_data_sources (
+CREATE TABLE IF NOT EXISTS public.vertical_data_sources (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   source_name TEXT NOT NULL,
   region TEXT NOT NULL DEFAULT 'Global',
@@ -25,7 +25,7 @@ CREATE POLICY "Service role can manage vertical data sources"
   USING (auth.uid() IS NOT NULL)
   WITH CHECK (auth.uid() IS NOT NULL);
 
-CREATE TABLE public.vertical_trend_snapshots (
+CREATE TABLE IF NOT EXISTS public.vertical_trend_snapshots (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   snapshot_date DATE NOT NULL DEFAULT CURRENT_DATE,
   region TEXT NOT NULL DEFAULT 'Global',

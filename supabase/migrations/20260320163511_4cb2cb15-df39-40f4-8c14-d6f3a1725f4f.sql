@@ -1,6 +1,6 @@
 
 -- Competition Rounds table: represents one discrete competition pass within a group
-CREATE TABLE public.competition_rounds (
+CREATE TABLE IF NOT EXISTS public.competition_rounds (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id UUID NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   round_index INTEGER NOT NULL DEFAULT 0,
@@ -15,17 +15,17 @@ CREATE TABLE public.competition_rounds (
 );
 
 -- Only one active round per group (enforced by partial unique index)
-CREATE UNIQUE INDEX uq_competition_rounds_active_per_group
+CREATE UNIQUE INDEX IF NOT EXISTS uq_competition_rounds_active_per_group
   ON public.competition_rounds (group_id)
   WHERE status = 'active';
 
 -- Add round_id to candidate_rankings
 ALTER TABLE public.candidate_rankings
-  ADD COLUMN round_id UUID REFERENCES public.competition_rounds(id);
+  ADD COLUMN IF NOT EXISTS round_id UUID REFERENCES public.competition_rounds(id);
 
 -- Add round_id to candidate_selections
 ALTER TABLE public.candidate_selections
-  ADD COLUMN round_id UUID REFERENCES public.competition_rounds(id);
+  ADD COLUMN IF NOT EXISTS round_id UUID REFERENCES public.competition_rounds(id);
 
 -- RLS
 ALTER TABLE public.competition_rounds ENABLE ROW LEVEL SECURITY;

@@ -1,7 +1,7 @@
 
 -- Phase 7: Pass Runner tables
 
-CREATE TABLE public.scene_pass_runs (
+CREATE TABLE IF NOT EXISTS public.scene_pass_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -16,8 +16,8 @@ CREATE TABLE public.scene_pass_runs (
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb
 );
 
-CREATE INDEX idx_scene_pass_runs_project_date ON public.scene_pass_runs (project_id, created_at DESC);
-CREATE INDEX idx_scene_pass_runs_project_type ON public.scene_pass_runs (project_id, pass_type);
+CREATE INDEX IF NOT EXISTS idx_scene_pass_runs_project_date ON public.scene_pass_runs (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scene_pass_runs_project_type ON public.scene_pass_runs (project_id, pass_type);
 
 ALTER TABLE public.scene_pass_runs ENABLE ROW LEVEL SECURITY;
 

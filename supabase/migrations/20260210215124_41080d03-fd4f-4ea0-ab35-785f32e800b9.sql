@@ -1,6 +1,6 @@
 
 -- Talent triage table for managing AI-suggested talent across all surfaces
-CREATE TABLE public.project_talent_triage (
+CREATE TABLE IF NOT EXISTS public.project_talent_triage (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -38,8 +38,8 @@ CREATE POLICY "Project members can delete triage"
   USING (has_project_access(auth.uid(), project_id));
 
 -- Index for fast project lookups
-CREATE INDEX idx_talent_triage_project ON public.project_talent_triage(project_id);
-CREATE INDEX idx_talent_triage_status ON public.project_talent_triage(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_talent_triage_project ON public.project_talent_triage(project_id);
+CREATE INDEX IF NOT EXISTS idx_talent_triage_status ON public.project_talent_triage(project_id, status);
 
 -- Trigger for updated_at
 CREATE TRIGGER update_talent_triage_updated_at

@@ -1,6 +1,6 @@
 
 -- Recoupment waterfall scenarios
-CREATE TABLE public.project_recoupment_scenarios (
+CREATE TABLE IF NOT EXISTS public.project_recoupment_scenarios (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id UUID NOT NULL,
@@ -35,7 +35,7 @@ CREATE TRIGGER update_recoupment_scenarios_updated_at
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 -- Recoupment waterfall tiers (ordered tranches within a scenario)
-CREATE TABLE public.project_recoupment_tiers (
+CREATE TABLE IF NOT EXISTS public.project_recoupment_tiers (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   scenario_id UUID NOT NULL REFERENCES public.project_recoupment_scenarios(id) ON DELETE CASCADE,
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,

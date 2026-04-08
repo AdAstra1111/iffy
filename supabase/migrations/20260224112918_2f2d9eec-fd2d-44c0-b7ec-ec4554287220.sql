@@ -8,7 +8,7 @@ ALTER TABLE public.trailer_clips
   ADD COLUMN IF NOT EXISTS continuity_scored_at timestamptz NULL;
 
 -- 2) trailer_continuity_runs
-CREATE TABLE public.trailer_continuity_runs (
+CREATE TABLE IF NOT EXISTS public.trailer_continuity_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   trailer_cut_id uuid NOT NULL,
@@ -32,7 +32,7 @@ CREATE POLICY "Users can access own project continuity runs"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 3) trailer_continuity_scores
-CREATE TABLE public.trailer_continuity_scores (
+CREATE TABLE IF NOT EXISTS public.trailer_continuity_scores (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   continuity_run_id uuid NOT NULL REFERENCES public.trailer_continuity_runs(id) ON DELETE CASCADE,
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -49,9 +49,9 @@ CREATE TABLE public.trailer_continuity_scores (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_continuity_scores_project_cut ON public.trailer_continuity_scores(project_id, trailer_cut_id);
-CREATE INDEX idx_continuity_scores_run ON public.trailer_continuity_scores(continuity_run_id);
-CREATE INDEX idx_continuity_scores_beats ON public.trailer_continuity_scores(from_beat_index, to_beat_index);
+CREATE INDEX IF NOT EXISTS idx_continuity_scores_project_cut ON public.trailer_continuity_scores(project_id, trailer_cut_id);
+CREATE INDEX IF NOT EXISTS idx_continuity_scores_run ON public.trailer_continuity_scores(continuity_run_id);
+CREATE INDEX IF NOT EXISTS idx_continuity_scores_beats ON public.trailer_continuity_scores(from_beat_index, to_beat_index);
 
 ALTER TABLE public.trailer_continuity_scores ENABLE ROW LEVEL SECURITY;
 
@@ -62,7 +62,7 @@ CREATE POLICY "Users can access own project continuity scores"
   WITH CHECK (public.has_project_access(auth.uid(), project_id));
 
 -- 4) trailer_continuity_events
-CREATE TABLE public.trailer_continuity_events (
+CREATE TABLE IF NOT EXISTS public.trailer_continuity_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   continuity_run_id uuid NOT NULL REFERENCES public.trailer_continuity_runs(id) ON DELETE CASCADE,

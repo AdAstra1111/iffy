@@ -10,7 +10,7 @@ ALTER TABLE public.candidate_versions
   ADD COLUMN IF NOT EXISTS creation_mode text NOT NULL DEFAULT 'initial';
 
 -- 2. Create repair_runs table
-CREATE TABLE public.repair_runs (
+CREATE TABLE IF NOT EXISTS public.repair_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   group_id uuid NOT NULL REFERENCES public.candidate_groups(id) ON DELETE CASCADE,
   source_round_id uuid NOT NULL REFERENCES public.competition_rounds(id),
@@ -24,7 +24,7 @@ CREATE TABLE public.repair_runs (
 );
 
 -- 3. Create repair_targets table
-CREATE TABLE public.repair_targets (
+CREATE TABLE IF NOT EXISTS public.repair_targets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   repair_run_id uuid NOT NULL REFERENCES public.repair_runs(id) ON DELETE CASCADE,
   source_candidate_version_id uuid NOT NULL REFERENCES public.candidate_versions(id),

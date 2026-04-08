@@ -1,6 +1,6 @@
 
 -- Video Generation Plans table
-CREATE TABLE public.video_generation_plans (
+CREATE TABLE IF NOT EXISTS public.video_generation_plans (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   document_id UUID NULL,
@@ -15,9 +15,9 @@ CREATE TABLE public.video_generation_plans (
 );
 
 -- Indexes
-CREATE INDEX idx_video_gen_plans_project_created ON public.video_generation_plans (project_id, created_at DESC);
-CREATE INDEX idx_video_gen_plans_quality_run ON public.video_generation_plans (quality_run_id);
-CREATE INDEX idx_video_gen_plans_lane_created ON public.video_generation_plans (lane, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_video_gen_plans_project_created ON public.video_generation_plans (project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_video_gen_plans_quality_run ON public.video_generation_plans (quality_run_id);
+CREATE INDEX IF NOT EXISTS idx_video_gen_plans_lane_created ON public.video_generation_plans (lane, created_at DESC);
 
 -- RLS
 ALTER TABLE public.video_generation_plans ENABLE ROW LEVEL SECURITY;
