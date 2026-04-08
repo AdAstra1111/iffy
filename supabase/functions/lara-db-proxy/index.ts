@@ -396,6 +396,61 @@ Deno.serve(async (req) => {
             AND doc_type IN ('idea', 'concept_brief');
           `,
 
+          "get_nsel_constraints": `
+            SELECT conname, contype,
+              (SELECT attname FROM pg_attribute WHERE attrelid = conrelid AND attnum = conkey[1]) as column,
+              confrelid::regclass as ref
+            FROM pg_constraint
+            WHERE conrelid = 'public.narrative_scene_entity_links'::regclass
+            AND contype IN ('f', 'p');
+          `,
+
+          "create_narrative_entities": `
+            CREATE TABLE IF NOT EXISTS public.narrative_entities (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              project_id UUID,
+              entity_key TEXT NOT NULL,
+              canonical_name TEXT NOT NULL DEFAULT '',
+              entity_type TEXT NOT NULL DEFAULT 'character',
+              source_kind TEXT NOT NULL DEFAULT 'project_canon',
+              source_key TEXT,
+              status TEXT NOT NULL DEFAULT 'active',
+              meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              UNIQUE (project_id, entity_key)
+            );
+          `,
+
+          "create_narrative_repairs": `
+            CREATE TABLE IF NOT EXISTS public.narrative_repairs (
+              repair_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              project_id UUID,
+              source_diagnostic_id TEXT NOT NULL,
+              source_system TEXT NOT NULL DEFAULT 'unknown',
+              diagnostic_type TEXT NOT NULL DEFAULT 'unknown',
+              repair_type TEXT NOT NULL DEFAULT 'unknown',
+              scope_type TEXT NOT NULL DEFAULT 'project',
+              scope_key TEXT,
+              strategy TEXT NOT NULL DEFAULT 'balanced',
+              priority_score NUMERIC NOT NULL DEFAULT 0,
+              repairability TEXT NOT NULL DEFAULT 'unknown',
+              status TEXT NOT NULL DEFAULT 'pending',
+              summary TEXT NOT NULL DEFAULT '',
+              recommended_action TEXT,
+              skipped_reason TEXT,
+              executed_at TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              UNIQUE (project_id, source_diagnostic_id)
+            );
+          `,
+
+          "drop_nsel_fk_to_ne": `
+            ALTER TABLE public.narrative_scene_entity_links
+              DROP CONSTRAINT IF EXISTS narrative_scene_entity_links_entity_id_fkey;
+          `,
+
           "debug_yeti_format": `
             SELECT project_id, doc_type, title, content_json->>'format' as fmt,
             content_json->>'assigned_lane' as lane,

@@ -183,7 +183,7 @@ serve(async (req) => {
       }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const isTV = /\b(episode|ep\.\s*\d|season \d|series \d|int\.\s+\w.*?—\s*ep)/i.test(scriptText.slice(0, 3000));
+    const isTV = /\b(episode\s*\d|ep\.?\s*\d|season\s*\d|series\s*\d)\b/i.test(scriptText.slice(0, 3000));
     const format = isTV ? "tv-series" : "film";
     const script = scriptText.slice(0, 42000);
 
