@@ -442,6 +442,20 @@ Deno.serve(async (req) => {
               ALTER COLUMN project_id DROP NOT NULL;
           `,
 
+          // Allow service role to read narrative_units (bypass has_project_access RLS)
+          "add_narrative_units_service_policy": `
+            DROP POLICY IF EXISTS narrative_units_service_select ON public.narrative_units;
+            CREATE POLICY narrative_units_service_select ON public.narrative_units
+              FOR SELECT TO service_role USING (true);
+          `,
+
+          // Allow service role to read narrative_scene_entity_links
+          "add_nsel_service_policy": `
+            DROP POLICY IF EXISTS nsel_service_select ON public.narrative_scene_entity_links;
+            CREATE POLICY nsel_service_select ON public.narrative_scene_entity_links
+              FOR SELECT TO service_role USING (true);
+          `,
+
           "clear_stale_bg_generating_season_script": `
             UPDATE project_document_versions
             SET is_current = false,
