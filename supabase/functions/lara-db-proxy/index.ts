@@ -396,12 +396,50 @@ Deno.serve(async (req) => {
             AND doc_type IN ('idea', 'concept_brief');
           `,
 
+          // Fixes schema drift: axis_key column missing from scene_spine_links
+          "add_scene_spine_links_axis_key": `
+            ALTER TABLE public.scene_spine_links
+              ADD COLUMN IF NOT EXISTS axis_key text;
+          `,
+
+          // Set YETI project to vertical-drama format and vertical_drama lane
+          "fix_yeti_format": `
+            UPDATE public.projects
+            SET format = 'vertical-drama',
+                assigned_lane = 'vertical_drama'
+            WHERE id = '63724279-5023-4372-8cec-8700b8059de5';
+          `,
+
+          // Fix the newer YETI project (from URL) to vertical-drama
+          "fix_yeti_url_format": `
+            UPDATE public.projects
+            SET format = 'vertical-drama',
+                assigned_lane = 'vertical_drama'
+            WHERE id = 'ad5d9bfc-30ce-42ed-af37-538f54537b0a';
+          `,
+
           // Clears stale bg_generating=true flags for a project's season_script versions
           // (run when background generation timed out without writing content)
           "add_narrative_units_status_columns": `
             ALTER TABLE public.narrative_units
               ADD COLUMN IF NOT EXISTS status text NOT NULL DEFAULT 'active',
               ADD COLUMN IF NOT EXISTS stale_reason jsonb;
+          `,
+
+          // Remove FK constraint from narrative_units so text-extract-engine can write
+          // without requiring a valid project_id in the empty projects table
+          "remove_narrative_units_project_fk": `
+            ALTER TABLE public.narrative_units
+              DROP CONSTRAINT IF EXISTS narrative_units_project_id_fkey,
+              ALTER COLUMN project_id DROP NOT NULL;
+          `,
+
+          // Also remove FK from narrative_scene_entity_links → projects(id)
+          // and make project_id nullable (projects table is empty)
+          "remove_nsel_project_fk": `
+            ALTER TABLE public.narrative_scene_entity_links
+              DROP CONSTRAINT IF EXISTS nsel_project_id_fkey,
+              ALTER COLUMN project_id DROP NOT NULL;
           `,
 
           "clear_stale_bg_generating_season_script": `
@@ -1352,6 +1390,77 @@ Deno.serve(async (req) => {
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_status TEXT;
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_rejection_codes TEXT[];
             ALTER TABLE public.project_images ADD COLUMN IF NOT EXISTS quality_warnings TEXT[];
+          `,
+
+          // ════════════════════════════════════════════════════════════════════════
+          // YETI Entity Pipeline: text_extract + entity_links_create
+          // Migration: create narrative_scene_entity_links with FK → narrative_units
+          // (narrative_entities doesn't exist; using narrative_units per NCP continuation)
+          // ════════════════════════════════════════════════════════════════════════
+          "create_narrative_scene_entity_links_v2": `
+            CREATE TABLE IF NOT EXISTS public.narrative_scene_entity_links (
+              id                uuid        NOT NULL DEFAULT gen_random_uuid(),
+              project_id        uuid        NOT NULL,
+              scene_id          uuid        NOT NULL,
+              entity_id         uuid        NOT NULL,
+              relation_type     text        NOT NULL,
+              confidence        text        NOT NULL DEFAULT 'deterministic'::text,
+              source_version_id uuid,
+              created_at        timestamptz NOT NULL DEFAULT now(),
+              updated_at        timestamptz NOT NULL DEFAULT now(),
+              CONSTRAINT narrative_scene_entity_links_pkey PRIMARY KEY (id)
+            );
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_project_id_fkey' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_project_id_fkey
+                  FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_scene_id_fkey' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_scene_id_fkey
+                  FOREIGN KEY (scene_id) REFERENCES public.scene_graph_scenes(id) ON DELETE CASCADE;
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_entity_id_fkey' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_entity_id_fkey
+                  FOREIGN KEY (entity_id) REFERENCES public.narrative_units(id) ON DELETE CASCADE;
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_source_version_id_fkey' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_source_version_id_fkey
+                  FOREIGN KEY (source_version_id) REFERENCES public.scene_graph_versions(id);
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_scene_entity_rel_type_key' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_scene_entity_rel_type_key
+                  UNIQUE (scene_id, entity_id, relation_type);
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_relation_type_check' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_relation_type_check
+                  CHECK (relation_type = ANY (ARRAY['character_present'::text, 'arc_carrier'::text, 'conflict_arena'::text, 'entity_mentioned'::text, 'prop_present'::text, 'location_present'::text]));
+              END IF;
+            END $$;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='nsel_confidence_check' AND conrelid='public.narrative_scene_entity_links'::regclass) THEN
+                ALTER TABLE public.narrative_scene_entity_links ADD CONSTRAINT nsel_confidence_check
+                  CHECK (confidence = ANY (ARRAY['deterministic'::text, 'inferred'::text]));
+              END IF;
+            END $$;
+            CREATE INDEX IF NOT EXISTS idx_nsel_project ON public.narrative_scene_entity_links (project_id);
+            CREATE INDEX IF NOT EXISTS idx_nsel_scene   ON public.narrative_scene_entity_links (scene_id);
+            CREATE INDEX IF NOT EXISTS idx_nsel_entity  ON public.narrative_scene_entity_links (entity_id);
+            ALTER TABLE public.narrative_scene_entity_links ENABLE ROW LEVEL SECURITY;
+            DO $$ BEGIN
+              IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='narrative_scene_entity_links' AND policyname='nsel_select') THEN
+                CREATE POLICY "nsel_select" ON public.narrative_scene_entity_links FOR SELECT TO authenticated USING (has_project_access(auth.uid(), project_id));
+              END IF;
+            END $$;
           `,
         };
         if (!migration_key || !APPROVED_MIGRATIONS[migration_key]) {
