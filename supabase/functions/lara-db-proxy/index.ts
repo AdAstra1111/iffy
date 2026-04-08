@@ -1894,6 +1894,46 @@ Deno.serve(async (req) => {
         break;
       }
 
+      case "read_narrative_units": {
+        // Direct read from narrative_units bypassing RLS (uses postgres driver)
+        const { project_id, limit = 100 } = params ?? {};
+        const dbUrlR = Deno.env.get("SUPABASE_DB_URL");
+        if (!dbUrlR) throw new Error("SUPABASE_DB_URL not available");
+        const sqlR = postgres(dbUrlR, { max: 1 });
+        try {
+          let rows: any[];
+          if (project_id) {
+            rows = await sqlR`SELECT id, project_id, unit_type, unit_key, payload_json, source_doc_type, confidence, extraction_method, status FROM public.narrative_units WHERE project_id = ${project_id} LIMIT ${limit}`;
+          } else {
+            rows = await sqlR`SELECT id, project_id, unit_type, unit_key, payload_json, source_doc_type, confidence, extraction_method, status FROM public.narrative_units LIMIT ${limit}`;
+          }
+          result = { count: rows.length, rows };
+        } finally {
+          await sqlR.end();
+        }
+        break;
+      }
+
+      case "read_narrative_scene_links": {
+        // Direct read from narrative_scene_entity_links bypassing RLS
+        const { project_id, limit = 100 } = params ?? {};
+        const dbUrlL = Deno.env.get("SUPABASE_DB_URL");
+        if (!dbUrlL) throw new Error("SUPABASE_DB_URL not available");
+        const sqlL = postgres(dbUrlL, { max: 1 });
+        try {
+          let rows: any[];
+          if (project_id) {
+            rows = await sqlL`SELECT id, project_id, scene_id, entity_id, relation_type, confidence FROM public.narrative_scene_entity_links WHERE project_id = ${project_id} LIMIT ${limit}`;
+          } else {
+            rows = await sqlL`SELECT id, project_id, scene_id, entity_id, relation_type, confidence FROM public.narrative_scene_entity_links LIMIT ${limit}`;
+          }
+          result = { count: rows.length, rows };
+        } finally {
+          await sqlL.end();
+        }
+        break;
+      }
+
       case "check_table_exists": {
         // Checks whether a given table exists in the public schema
         const { table_name } = params;
