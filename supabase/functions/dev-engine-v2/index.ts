@@ -11158,8 +11158,23 @@ Return ONLY valid JSON:
 
     // --- Parse slugline helper ---
     function sgParseSlugline(line: string): { slugline: string; location: string; time_of_day: string } {
+      // Handle merged headingLines with newlines (e.g. "11\nINT. LOCATION – DAY")
+      // by finding the first line that contains INT./EXT. and parsing from there.
+      const parts = line.split('\n');
+      let sluglineText = line.trim();
+
+      for (const part of parts) {
+        const trimmed = part.trim();
+        // Skip lines that are just scene numbers
+        if (/^\d+\s*[\.\)\s]*$/.test(trimmed)) continue;
+        // Use this as the slugline source
+        sluglineText = trimmed;
+        break;
+      }
+
       // Strip leading scene numbers (e.g. "1  EXT." or "23. INT.")
-      const sl = line.trim().replace(/^\d+\s*[\.\)\s]\s*/, '');
+      const sl = sluglineText.replace(/^\d+\s*[\.\)\s]+\s*/, '').trim();
+      // Match slugline: INT./EXT. + location + optional time
       const match = sl.match(/^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)\s*(.+?)(?:\s*[-–—]\s*(.+))?$/i);
       if (match) {
         return {
@@ -11168,7 +11183,19 @@ Return ONLY valid JSON:
           time_of_day: (match[3] || '').trim(),
         };
       }
-      return { slugline: sl, location: '', time_of_day: '' };
+      // Last resort: bare "INT.MOUNT" (no space after INT.) — parse manually
+      const bareMatch = sl.match(/^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)(.+)$/i);
+      if (bareMatch) {
+        const locationPart = bareMatch[2].trim();
+        const timeMatch = locationPart.match(/^(.+?)\s*[-–—]\s*(.+)$/);
+        return {
+          slugline: sl,
+          location: timeMatch ? locationPart.replace(/\s*[-–—]\s*.*$/, '').trim() : locationPart,
+          time_of_day: timeMatch ? timeMatch[2].trim() : '',
+        };
+      }
+      // Bare scene number (e.g. 11) with no INT./EXT. — use original line as slugline
+      return { slugline: line.trim() || sl, location: '', time_of_day: '' };
     }
 
     // --- Resolve canon_location_id from location text ---
@@ -11274,13 +11301,35 @@ Return ONLY valid JSON:
       console.log(`[scene_graph_extract] Script text length: ${scriptText.length}`);
 
       // ── Parse sluglines (pure, no DB) ─────────────────────────────────────
+      // DEBUG: show first 20 lines of script text
+      const dbgLines = scriptText.split('\n').slice(0, 20);
+      console.log('[scene_graph_extract] First 20 lines of script:');
+      dbgLines.forEach((l: string, i: number) => console.log(`  [${i}] ${l.slice(0, 120)}`));
+
       const lines = scriptText.split('\n');
-      const sluglinePattern = /^\s*(\d+\s*[\.\)\s]\s*)?(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)\s/i;
+      const sluglineStartPattern = /^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)\s/i;
+      const sluglineStartNoSpacePattern = /^(INT\.|EXT\.|INT\.\/EXT\.|INT\/EXT\.|I\/E\.?)/i;
+      const orphanedNumberPattern = /^\s*(\d+)\s*[\.\)\s]*$/;
       const sceneBreaks: { startLine: number; headingLine: string }[] = [];
 
       for (let i = 0; i < lines.length; i++) {
-        if (sluglinePattern.test(lines[i])) {
-          sceneBreaks.push({ startLine: i, headingLine: lines[i] });
+        const line = lines[i];
+        if (sluglineStartPattern.test(line)) {
+          // Normal case: line starts with INT./EXT. — merge if prev line is orphaned number
+          let headingLine = line;
+          if (i > 0 && orphanedNumberPattern.test(lines[i - 1])) {
+            const num = lines[i - 1].trim().replace(/[\.\)]+$/, '');
+            headingLine = `${num}\n${line}`;
+          }
+          sceneBreaks.push({ startLine: i, headingLine });
+        } else if (sluglineStartNoSpacePattern.test(line)) {
+          // Edge case: "INT.MOUNTAIN" (no space after INT.) — merge orphaned number
+          let headingLine = line;
+          if (i > 0 && orphanedNumberPattern.test(lines[i - 1])) {
+            const num = lines[i - 1].trim().replace(/[\.\)]+$/, '');
+            headingLine = `${num}\n${line}`;
+          }
+          sceneBreaks.push({ startLine: i, headingLine });
         }
       }
 

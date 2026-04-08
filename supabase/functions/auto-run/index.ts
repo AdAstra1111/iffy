@@ -6722,6 +6722,13 @@ Deno.serve(async (req) => {
       if (preJobErr || !preJob) return respond({ error: "Job not found" }, 404);
       if (preJob.awaiting_approval) return respond({ job: preJob, latest_steps: [], next_action_hint: "awaiting-approval" });
 
+      // Guard: if job has pending decisions, block run-next from proceeding —
+      // pending decisions must be resolved via the approve action first.
+      // Without this, run-next clears pending_decisions between show_options and approve.
+      if (preJob.pending_decisions && preJob.pending_decisions.length > 0) {
+        return respond({ job: preJob, latest_steps: [], next_action_hint: "approve-decision" });
+      }
+
       // Auto-resume stale criteria pause when Auto-Decide is ON
       if (preJob.status !== "running"
         && preJob.status === "paused"

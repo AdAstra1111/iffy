@@ -232,7 +232,7 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
             projectId,
             sourceDocumentId: data.run.source_doc_id,
             sourceVersionId:  data.run.script_version_id,
-            force:            false,
+            force:            true,
           }, token);
           break;
         }
