@@ -396,6 +396,15 @@ Deno.serve(async (req) => {
             AND doc_type IN ('idea', 'concept_brief');
           `,
 
+          "debug_yeti_format": `
+            SELECT project_id, doc_type, title, content_json->>'format' as fmt,
+            content_json->>'assigned_lane' as lane,
+            content_json->>'season_episode_count' as ep_count
+            FROM public.project_documents
+            WHERE project_id = 'ad5d9bfc-30ce-42ed-af37-538f54537b0a'
+            LIMIT 5;
+          `,
+
           // Fixes schema drift: axis_key column missing from scene_spine_links
           "add_scene_spine_links_axis_key": `
             ALTER TABLE public.scene_spine_links
