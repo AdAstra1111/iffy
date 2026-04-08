@@ -4,60 +4,75 @@ import { Button } from '@/components/ui/button';
 import { useReverseEngineer } from '@/hooks/useReverseEngineer';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { getLadderForFormat } from '@/lib/stages/registry';
+import type { DeliverableStage } from '@/lib/stages/registry';
 
-// Pipeline stages + docs shown as individual progress rows while running
-const PIPELINE_PHASES = [
-  'Analysing script…',
-  'Generating Concept Brief…',
-  'Generating Market Sheet…',
-  'Generating Format Rules…',
-  'Generating Character Bible…',
-  'Generating Episode Grid…',
+const BASE_DOC_ROWS: Array<{ key: string; label: string; icon: typeof FileText }> = [
+  { key: 'concept_brief',   label: 'Concept Brief',    icon: FileText },
+  { key: 'market_sheet',    label: 'Market Sheet',     icon: FileText },
+  { key: 'format_rules',    label: 'Format Rules',     icon: FileText },
+  { key: 'character_bible', label: 'Character Bible',   icon: FileText },
 ];
 
-// Per-doc row config — order matches last 5 phases
-const PIPELINE_DOC_ROWS = [
-  { key: 'concept_brief',      label: 'Concept Brief',      icon: FileText },
-  { key: 'market_sheet',      label: 'Market Sheet',      icon: FileText },
-  { key: 'format_rules',      label: 'Format Rules',      icon: FileText },
-  { key: 'character_bible',   label: 'Character Bible',   icon: FileText },
-  { key: 'episode_grid',      label: 'Episode Grid',      icon: FileText },
-] as const;
+/** Maps ladder stage → human-readable label for the post-character_bible stage */
+const POST_CHAR_BIBLE_LABELS: Partial<Record<DeliverableStage, string>> = {
+  beat_sheet:             'Beat Sheet',
+  episode_grid:           'Episode Grid',
+  vertical_episode_beats: 'Episode Beats',
+  story_outline:          'Story Outline',
+  season_arc:             'Story Arc',
+  treatment:              'Treatment',
+};
 
-type DocKey = typeof PIPELINE_DOC_ROWS[number]['key'];
 type DocState = 'pending' | 'working' | 'done';
 
 interface ReverseEngineerCalloutProps {
   projectId: string;
   documents: any[];
+  /** Project format (e.g. 'film', 'vertical-drama', 'tv-series') — used to determine format-specific doc stages */
+  projectFormat?: string;
 }
 
-export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineerCalloutProps) {
+export function ReverseEngineerCallout({ projectId, documents, projectFormat }: ReverseEngineerCalloutProps) {
+  // Derive format-aware doc rows from the canonical ladder
+  const docRows = useMemo(() => {
+    const ladder = getLadderForFormat(projectFormat ?? 'film') ?? [];
+    const cbIdx = ladder.indexOf('character_bible');
+    const afterCharBible = ladder[cbIdx + 1] as DeliverableStage | undefined;
+    const extraLabel = afterCharBible ? (POST_CHAR_BIBLE_LABELS[afterCharBible] ?? afterCharBible.replace(/_/g, ' ')) : null;
+    return extraLabel
+      ? [...BASE_DOC_ROWS, { key: afterCharBible, label: extraLabel, icon: FileText as typeof FileText }]
+      : BASE_DOC_ROWS;
+  }, [projectFormat]);
+
+  // Format-aware phase labels (one per doc row, preceded by "Analysing script…")
+  const phases = useMemo(() => [
+    'Analysing script…',
+    ...docRows.map(d => `Generating ${d.label}…`),
+  ], [docRows]);
+
   const [dismissed, setDismissed] = useState(false);
   const { reverseEngineerFromScript, isRunning } = useReverseEngineer();
   const queryClient = useQueryClient();
 
   // Per-doc progress animation
   const [phaseIdx, setPhaseIdx] = useState(0);
-  const [docStates, setDocStates] = useState<Record<DocKey, DocState>>(
-    Object.fromEntries(PIPELINE_DOC_ROWS.map(d => [d.key, 'pending'])) as Record<DocKey, DocState>
+  const [docStates, setDocStates] = useState<Record<string, DocState>>(
+    Object.fromEntries(docRows.map(d => [d.key, 'pending'])) as Record<string, DocState>
   );
   const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (isRunning) {
       setPhaseIdx(0);
-      setDocStates(Object.fromEntries(PIPELINE_DOC_ROWS.map(d => [d.key, 'pending'])) as Record<DocKey, DocState>);
-      // Animate through phases — each phase ~5 seconds for a ~90s total run
+      setDocStates(Object.fromEntries(docRows.map(d => [d.key, 'pending'])) as Record<string, DocState>);
       progressInterval.current = setInterval(() => {
         setPhaseIdx(prev => {
-          const next = prev < PIPELINE_PHASES.length - 1 ? prev + 1 : prev;
-          // Mark docs done as phases advance past their phase index
-          if (next >= 1) setDocStates(ds => ({ ...ds, concept_brief: 'done' }));
-          if (next >= 2) setDocStates(ds => ({ ...ds, market_sheet: 'done' }));
-          if (next >= 3) setDocStates(ds => ({ ...ds, format_rules: 'done' }));
-          if (next >= 4) setDocStates(ds => ({ ...ds, character_bible: 'done' }));
-          if (next >= 5) setDocStates(ds => ({ ...ds, episode_grid: 'done' }));
+          const next = Math.min(prev + 1, phases.length - 1);
+          // Mark doc rows done as phases advance (phase 0 = analysing, phase 1+ = doc rows)
+          docRows.forEach((doc, i) => {
+            if (next > i) setDocStates(ds => ({ ...ds, [doc.key]: 'done' }));
+          });
           return next;
         });
       }, 5000);
@@ -65,7 +80,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
       if (progressInterval.current) clearInterval(progressInterval.current);
     }
     return () => { if (progressInterval.current) clearInterval(progressInterval.current); };
-  }, [isRunning]);
+  }, [isRunning, docRows, phases.length]);
 
   const scriptDoc = useMemo(() =>
     documents.find(d => {
@@ -84,7 +99,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
 
   if (dismissed || !scriptDoc || hasConceptBrief) return null;
 
-  const activePhaseLabel = isRunning ? PIPELINE_PHASES[phaseIdx] : null;
+  const activePhaseLabel = isRunning ? phases[phaseIdx] : null;
 
   const handleGenerate = async () => {
     const result = await reverseEngineerFromScript(projectId, scriptDoc.id);
@@ -118,7 +133,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
             Script detected — generate full pipeline?
           </h4>
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
-            Generate Concept Brief, Market Sheet, Format Rules, Character Bible, Story Arc and Episode Grid from your script in one click.
+            Generate {docRows.map(d => d.label).join(', ')} from your script in one click.
           </p>
 
           {isRunning && (
@@ -133,7 +148,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
 
               {/* Per-doc progress rows */}
               <div className="space-y-1 pl-1">
-                {PIPELINE_DOC_ROWS.map(doc => {
+                {docRows.map(doc => {
                   const Icon = doc.icon;
                   const state = docStates[doc.key];
                   return (
@@ -162,7 +177,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
               <div className="relative h-0.5 rounded-full bg-amber-900/40 overflow-hidden mt-1">
                 <div
                   className="absolute inset-y-0 left-0 rounded-full bg-amber-500 transition-all duration-700"
-                  style={{ width: `${((phaseIdx + 1) / PIPELINE_PHASES.length) * 100}%` }}
+                  style={{ width: `${((phaseIdx + 1) / phases.length) * 100}%` }}
                 />
               </div>
             </div>
