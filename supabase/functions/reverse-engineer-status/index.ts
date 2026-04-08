@@ -49,13 +49,10 @@ serve(async (req) => {
       .select("id, project_id, payload_json")
       .eq("project_id", project_id)
       .eq("unit_type", "async_job")
-      .eq("payload_json.job_type", "reverse_engineer")
       .order("created_at", { ascending: false });
-    if (error)
-      return new Response(JSON.stringify({ error: error.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-    const jobs = (data || []).map((d: any) => {
+    // Filter in JS: only reverse_engineer jobs
+    const allJobs = (data || []).filter((d: any) => d.payload_json?.job_type === "reverse_engineer");
+    const jobs = allJobs.map((d: any) => {
       const p = d.payload_json || {};
       return { job_id: d.id, project_id: d.project_id, status: p.status, current_stage: p.current_stage, stages: p.stages, result: p.result, error: p.error, created_at: p.created_at, updated_at: p.updated_at };
     });

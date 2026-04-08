@@ -192,6 +192,7 @@ serve(async (req) => {
       unit_type: "async_job",
       unit_key: jobKey,
       project_id,
+      source_doc_type: "script",
       payload_json: {
         job_type: "reverse_engineer",
         script_document_id,
