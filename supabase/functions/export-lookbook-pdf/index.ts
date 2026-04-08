@@ -4,7 +4,7 @@
  * POST { projectId, lookBookData }
  * Returns { job_id } — client polls export_jobs table for completion.
  */
-import { createClient } from "@supabase/supabase-js";
+import { createClient } from "jsr:@supabase/supabase-js@2";
 import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont, PDFImage } from "npm:pdf-lib@1.17.1";
 
 const corsHeaders = {

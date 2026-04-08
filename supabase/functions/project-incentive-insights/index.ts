@@ -49,24 +49,10 @@ Deno.serve(async (req) => {
     const guardrails = buildGuardrailBlock({ productionType: format, engineName: "project-incentive-insights" });
     console.log(`[project-incentive-insights] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
 
-    const systemPrompt = `You are an expert in international film finance, specialising in tax incentives, co-production structures, and capital stack planning.
-You help producers understand which jurisdictions offer the best non-dilutive financing, and how to structure a realistic finance plan.
-Today's date is ${new Date().toISOString().split("T")[0]}.
-Be specific about numbers, timing, and actionable next steps. If uncertain, say so.
-${guardrails.textBlock}`;
+    const todaysDate = new Date().toISOString().split("T")[0];
+const systemPrompt = "You are an expert in international film finance, specialising in tax incentives, co-production structures, and capital stack planning.\nYou help producers understand which jurisdictions offer the best non-dilutive financing, and how to structure a realistic finance plan.\nToday's date is " + todaysDate + ".\nBe specific about numbers, timing, and actionable next steps. If uncertain, say so.\n" + guardrails.textBlock;
 
-    const userPrompt = `A producer is developing a ${format || 'feature film'} project.
-Budget range: ${budget_range}
-Genres: ${genres?.join(', ') || 'Not specified'}
-Target/flexible territories: ${territories.join(', ')}
-
-Provide:
-1. The top 3 jurisdictions from the list that offer the best incentive opportunities for this project
-2. For each, explain: what incentive is available, estimated benefit range, payment timing, and key eligibility requirements
-3. Whether a co-production structure between any of these territories would unlock additional value
-4. A suggested financing stack order (what to secure first, second, third)
-5. Key risks or blockers
-6. Confidence level for each recommendation`;
+    const userPrompt = "A producer is developing a " + (format || "feature film") + " project.\n" + "Budget range: " + budget_range + "\n" + "Genres: " + (genres ? genres.join(", ") : "Not specified") + "\n" + "Target/flexible territories: " + territories.join(", ") + "\n\n" + "Provide:\n1. The top 3 jurisdictions from the list that offer the best incentive opportunities for this project\n2. For each, explain: what incentive is available, estimated benefit range, payment timing, and key eligibility requirements\n3. Whether a co-production structure between any of these territories would unlock additional value\n4. A suggested financing stack order (what to secure first, second, third)\n5. Key risks or blockers\n6. Confidence level for each recommendation";
 
     const tools = [{
       type: "function",
@@ -127,11 +113,11 @@ Provide:
       },
     }];
 
-    const aiResponse = const gw = resolveGateway();
+    const gw = resolveGateway();
     const aiResponse = await fetch(gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${gw.apiKey`,
+        Authorization: "Bearer " + gw.apiKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -151,7 +137,7 @@ Provide:
       console.error("AI gateway error:", status, body);
       if (status === 429) return new Response(JSON.stringify({ error: "Rate limit exceeded." }), { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (status === 402) return new Response(JSON.stringify({ error: "AI credits exhausted." }), { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      throw new Error(`AI gateway error ${status}`);
+      throw new Error("AI gateway error " + status);
     }
 
     const aiData = await aiResponse.json();
