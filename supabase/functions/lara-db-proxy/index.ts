@@ -483,12 +483,42 @@ Deno.serve(async (req) => {
             ON CONFLICT DO NOTHING;
           `,
 
+          "create_yeti_script_doc_full": `
+            WITH scene_content AS (
+              SELECT string_agg(
+                COALESCE(sv.content, ''), E'\n\n' ORDER BY (sg.display_number)::int
+              ) as full_text
+              FROM scene_graph_scenes sg
+              LEFT JOIN scene_graph_versions sv ON sv.scene_id = sg.id
+              WHERE sg.project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a'
+            )
+            INSERT INTO public.project_documents (id, project_id, doc_type, doc_role, title, plaintext, status, user_id, file_name, file_path)
+            SELECT
+              '6b145f62-aaaa-bbbb-cccc-000000000001'::uuid,
+              '6b145f62-d482-4cd4-99cc-0ea57079d98a'::uuid,
+              'source_script',
+              'source_script',
+              'Yeti Script',
+              COALESCE(full_text, ''),
+              'completed',
+              '00000000-0000-0000-0000-000000000001'::uuid,
+              'yeti_script.txt',
+              '/uploads/yeti_script.txt'
+            FROM scene_content;
+          `,
+
+          "drop_project_docs_fk": `
+            ALTER TABLE public.project_documents
+              DROP CONSTRAINT IF EXISTS project_documents_project_id_fkey,
+              ALTER COLUMN project_id DROP NOT NULL;
+          `,
+
           "get_yeti_script_content": `
-            SELECT sv.id, sv.scene_id, LEFT(sv.content, 500) as content_preview
+            SELECT sv.id, sv.scene_id, LEFT(sv.content, 200) as content_preview
             FROM public.scene_graph_versions sv
             JOIN public.scene_graph_scenes s ON s.id = sv.scene_id
             WHERE s.project_id = '6b145f62-d482-4cd4-99cc-0ea57079d98a'
-            ORDER BY s.scene_key::int LIMIT 5;
+            ORDER BY (s.display_number)::int LIMIT 5;
           `,
 
           "debug_yeti_format": `
