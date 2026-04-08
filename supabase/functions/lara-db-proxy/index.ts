@@ -415,6 +415,13 @@ Deno.serve(async (req) => {
             AND contype IN ('f', 'p');
           `,
 
+          "check_nsel_entity_fk": `
+            SELECT conname, confrelid::regclass as ref_table
+            FROM pg_constraint
+            WHERE conrelid = 'public.narrative_scene_entity_links'::regclass
+            AND contype = 'f';
+          `,
+
           "create_narrative_entities": `
             CREATE TABLE IF NOT EXISTS public.narrative_entities (
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
