@@ -453,11 +453,17 @@ export function useScriptDropProject() {
       await markRunning('entity_extract');
       try {
         // Step 1: text-extract-engine — extract characters/locations/props/wardrobe into narrative_units
-        await callFunction('text-extract-engine', {
-          projectId: pid,
-        }, token);
+        // Non-fatal if it fails: entity-links-engine has inline fallback extraction
+        try {
+          await callFunction('text-extract-engine', {
+            projectId: pid,
+          }, token);
+        } catch (textExtractErr: any) {
+          console.warn('[entity_extract] text-extract-engine failed (non-fatal, entity-links-engine will self-extract):', textExtractErr?.message);
+        }
 
         // Step 2: entity-links-engine — link narrative_units entities to scenes
+        // Self-extracts inline if narrative_units is empty
         const entityResult = await callFunction('entity-links-engine', {
           projectId: pid,
         }, token);

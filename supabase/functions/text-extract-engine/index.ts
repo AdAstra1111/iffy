@@ -110,9 +110,9 @@ function extractLocation(content: string): string | null {
  */
 function extractCharacters(content: string): string[] {
   const chars = new Set<string>();
-  // Match ALL-CAPS name lines: 1-4 words of 2+ chars each, possibly with (O.S.) or (V.O.)
-  // Words must be all uppercase letters (no mixed case). Includes single-name characters.
-  const charPattern = /^([A-Z]{2,}(?:\s+[A-Z]{2,}){0,3}(?:\s*\([A-Z\.]+\))?)$/gm;
+  // Match ALL-CAPS name lines: 2-4 words of 2+ chars each, possibly with (O.S.) or (V.O.)
+  // Words must be all uppercase letters (no mixed case).
+  const charPattern = /^([A-Z]{2,}(?:\s+[A-Z]{2,}){1,3}(?:\s*\([A-Z\.]+\))?)$/gm;
   let match;
   while ((match = charPattern.exec(content)) !== null) {
     const name = match[1].trim();
@@ -125,9 +125,9 @@ function extractCharacters(content: string): string[] {
     }
     // Remove parentheticals like (O.S.), (V.O.), (cont'd)
     const cleanName = name.replace(/\s*\([A-Z\.]+\)\s*/g, "").trim();
-    // Validate: 1-4 words, each 2+ uppercase letters
+    // Validate: 2-4 words, each 2+ uppercase letters
     const words = cleanName.split(/\s+/).filter(w => w.length >= 2);
-    if (words.length < 1 || words.length > 4) continue;
+    if (words.length < 2 || words.length > 4) continue;
     if (!words.every(w => /^[A-Z]{2,}$/.test(w))) continue;
     // Filter out candidates containing noise words (sound cues, scene directions, etc.)
     if (containsNoiseWord(cleanName)) continue;
