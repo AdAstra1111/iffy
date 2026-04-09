@@ -47,7 +47,122 @@ const FIELD_LABELS: Record<string, string> = {
   episode_appearances: 'Episode Appearances',
   casting_notes: 'Casting Notes',
   notes: 'Notes',
+  // Beat / moment shared fields
+  number: 'Number',
+  title: 'Title',
+  description: 'Description',
+  summary: 'Summary',
+  // Beat-specific fields
+  page_range: 'Page Range',
+  emotional_shift: 'Emotional Shift',
+  protagonist_state: 'Protagonist State',
+  dramatic_function: 'Dramatic Function',
+  // Generic display helpers
+  comparable_titles: 'Comparable Titles',
+  target_audience: 'Target Audience',
+  genre: 'Genre',
+  subgenre: 'Subgenre',
+  tone: 'Tone',
+  tone_tags: 'Tone Tags',
+  themes: 'Themes',
+  premise: 'Premise',
+  central_question: 'Central Question',
+  world_building_notes: 'World Building Notes',
 };
+
+/** Beat card — for beat_sheet and similar beat-pattern documents */
+function BeatCard({ beat, index }: { beat: Record<string, any>; index: number }) {
+  const num = beat.number ?? index + 1;
+  const name = beat.name || beat.title || `Beat ${num}`;
+  const page = beat.page_range || beat.page || '';
+
+  const excludeKeys = new Set(['number', 'name', 'title', 'page_range', 'page']);
+  const fields = Object.entries(beat).filter(([k, v]) => !excludeKeys.has(k) && v != null && v !== '');
+
+  return (
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+      <div style={{ marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c49a3d', whiteSpace: 'nowrap' }}>
+            Beat {num}
+          </span>
+          {page && (
+            <span style={{ fontSize: '0.65rem', color: 'rgba(138,136,128,0.7)' }}>
+              p. {page}
+            </span>
+          )}
+        </div>
+        <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--foreground, #e2e0dc)', marginTop: '0.2rem', lineHeight: 1.3 }}>
+          {name}
+        </div>
+      </div>
+
+      {beat.description && (
+        <div style={{ fontSize: '0.82rem', lineHeight: 1.6, color: 'rgba(226,224,220,0.85)', marginBottom: fields.length > 0 ? '0.85rem' : 0, whiteSpace: 'pre-wrap' }}>
+          {beat.description}
+        </div>
+      )}
+
+      {fields.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.75rem' }}>
+          {fields.map(([key, value]) => {
+            const label = FIELD_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const displayValue = Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? null : String(value);
+            if (displayValue === null) return null;
+            return (
+              <div key={key}>
+                <div style={{ fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(138,136,128,0.7)', marginBottom: '0.15rem' }}>{label}</div>
+                <div style={{ fontSize: '0.78rem', color: 'rgba(226,224,220,0.75)', lineHeight: 1.5 }}>{displayValue}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Moment card — for story_outline and similar entry-pattern documents */
+function MomentCard({ entry, index }: { entry: Record<string, any>; index: number }) {
+  const num = entry.number ?? index + 1;
+  const title = entry.title || entry.name || `Moment ${num}`;
+
+  const excludeKeys = new Set(['number', 'title', 'name']);
+  const fields = Object.entries(entry).filter(([k, v]) => !excludeKeys.has(k) && v != null && v !== '');
+
+  return (
+    <div style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1.5rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', marginBottom: '0.4rem' }}>
+        <span style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c49a3d', whiteSpace: 'nowrap' }}>
+          Moment {num}
+        </span>
+      </div>
+      <div style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--foreground, #e2e0dc)', marginBottom: '0.5rem', lineHeight: 1.3 }}>
+        {title}
+      </div>
+      {entry.description && (
+        <div style={{ fontSize: '0.82rem', lineHeight: 1.6, color: 'rgba(226,224,220,0.85)', whiteSpace: 'pre-wrap' }}>
+          {entry.description}
+        </div>
+      )}
+      {fields.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.75rem', borderTop: '1px solid rgba(255,255,255,0.04)', paddingTop: '0.75rem' }}>
+          {fields.map(([key, value]) => {
+            const label = FIELD_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const displayValue = Array.isArray(value) ? value.join(', ') : typeof value === 'object' ? null : String(value);
+            if (displayValue === null) return null;
+            return (
+              <div key={key}>
+                <div style={{ fontSize: '0.62rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'rgba(138,136,128,0.7)', marginBottom: '0.15rem' }}>{label}</div>
+                <div style={{ fontSize: '0.78rem', color: 'rgba(226,224,220,0.75)', lineHeight: 1.5 }}>{displayValue}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function CharacterCard({ char, index }: { char: Record<string, any>; index: number }) {
   const name = char.name || char.character_name || `Character ${index + 1}`;
@@ -142,12 +257,40 @@ function renderJSON(parsed: any) {
   if (Array.isArray(parsed)) {
     // Check if it's an array of character objects
     if (parsed.length > 0 && typeof parsed[0] === 'object') {
+      // Determine dispatch: beat pattern (number+name), moment pattern (number+title), or character
+      const first = parsed[0];
+      const isBeatArray = first.number != null && (first.name != null || first.title != null) && (first.page_range != null || first.dramatic_function != null || first.emotional_shift != null);
+      const isMomentArray = first.number != null && first.title != null && first.description != null && !first.backstory && !first.arc;
+      const isCharacterArray = first.name != null || first.character_name != null || first.role != null;
+
+      if (isBeatArray) {
+        return (
+          <div>
+            {parsed.map((item, i) => <BeatCard key={i} beat={item} index={i} />)}
+          </div>
+        );
+      }
+      if (isMomentArray) {
+        return (
+          <div>
+            {parsed.map((item, i) => <MomentCard key={i} entry={item} index={i} />)}
+          </div>
+        );
+      }
+      if (isCharacterArray) {
+        return (
+          <div>
+            {parsed.map((item, i) => <CharacterCard key={i} char={item} index={i} />)}
+          </div>
+        );
+      }
+      // Array of primitive values
       return (
-        <div>
+        <ul style={{ paddingLeft: '1.25rem', color: 'rgba(226,224,220,0.85)', fontSize: '0.85rem', lineHeight: 1.7 }}>
           {parsed.map((item, i) => (
-            <CharacterCard key={i} char={item} index={i} />
+            <li key={i}>{String(item)}</li>
           ))}
-        </div>
+        </ul>
       );
     }
     // Simple array
@@ -160,8 +303,8 @@ function renderJSON(parsed: any) {
     );
   }
 
-  // Unwrap common wrapper keys: CHARACTER_BIBLE, character_bible, CHARACTERS, etc.
-  const WRAPPER_KEYS = ['CHARACTER_BIBLE', 'character_bible', 'CHARACTERS', 'characters_list', 'cast'];
+  // Unwrap common wrapper keys: CHARACTER_BIBLE, character_bible, CHARACTERS, BEATS, ENTRIES, etc.
+  const WRAPPER_KEYS = ['CHARACTER_BIBLE', 'character_bible', 'CHARACTERS', 'characters_list', 'cast', 'BEATS', 'ENTRIES', 'beats', 'entries'];
   for (const wk of WRAPPER_KEYS) {
     if (parsed[wk] && typeof parsed[wk] === 'object') {
       return renderJSON(parsed[wk]);
@@ -179,9 +322,44 @@ function renderJSON(parsed: any) {
     );
   }
 
-  // Single character object (has name or role)
+  // Beat pattern: array of objects with number + name (beat_sheet, episode_beats, etc.)
+  // Detect: has number field + name field + NO typical character fields (backstory, arc, want, need)
+  if (parsed.beats && Array.isArray(parsed.beats)) {
+    return (
+      <div>
+        {parsed.beats.map((beat: any, i: number) => (
+          <BeatCard key={i} beat={beat} index={i} />
+        ))}
+      </div>
+    );
+  }
+
+  // Story outline / moment pattern: array of objects with number + title
+  if (parsed.entries && Array.isArray(parsed.entries)) {
+    return (
+      <div>
+        {parsed.entries.map((entry: any, i: number) => (
+          <MomentCard key={i} entry={entry} index={i} />
+        ))}
+      </div>
+    );
+  }
+
+  // Single character object (has name or role — not a beat or moment)
   if (parsed.name || parsed.role || parsed.character_name) {
+    // Exclude beat/moment objects that accidentally have a 'name' or 'title' field
+    const isBeat = parsed.number != null && (parsed.page_range != null || parsed.dramatic_function != null);
+    const isMoment = parsed.number != null && parsed.description != null && parsed.title != null;
+    if (isBeat) return <BeatCard beat={parsed} index={0} />;
+    if (isMoment) return <MomentCard entry={parsed} index={0} />;
     return <CharacterCard char={parsed} index={0} />;
+  }
+
+  // Single beat object (has number + name but arrived as a lone object)
+  if (parsed.number != null && (parsed.name || parsed.title)) {
+    const isMoment = parsed.description != null;
+    if (isMoment) return <MomentCard entry={parsed} index={0} />;
+    return <BeatCard beat={parsed} index={0} />;
   }
 
   // Generic object — render as labelled fields
