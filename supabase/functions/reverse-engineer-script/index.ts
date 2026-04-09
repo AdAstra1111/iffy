@@ -480,8 +480,8 @@ Return ONLY valid JSON:
 Respond with ONLY JSON.`, 3000);
 
     let inferred: any = {};
-    try { inferred = JSON.parse(extractJSON(callCriteria)); }
-    catch { console.warn("[reverse-engineer] criteria inference JSON parse failed:", callCriteria.slice(0, 200)); }
+    try { inferred = extractJSON(callCriteria); }
+    catch (e) { console.warn("[reverse-engineer] criteria inference JSON parse failed:", String(callCriteria).slice(0, 200)); }
 
     updateStage(payload, "infer_criteria", "done");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
