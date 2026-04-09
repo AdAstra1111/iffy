@@ -285,12 +285,32 @@ Produce a complete concept brief and market sheet.
 IMPORTANT: Return ONLY raw JSON with no thinking, no explanation, no markdown.
 
 IMPORTANT — genre classification guide:
-- "genre" = the PRIMARY story TYPE / STRUCTURAL CATEGORY. Choose from: action-adventure, comedy, drama, thriller, horror, sci-fi, fantasy, romance, animated, documentary.
-- "subgenre" = the SPECIFIC SUB-CATEGORY (e.g. monster movie, pulp adventure, period action, psychological thriller, found footage horror).
-- CRITICAL: If the story features a giant creature, kaiju, dinosaur, or large animal as a central threat/plot engine → genre is "action-adventure" and subgenre should reflect the creature type.
-- CRITICAL: If the story is fundamentally about a person overcoming external obstacles/forces → genre is NOT "psychological drama". "Psychological drama" means the central conflict is the character's internal mental state.
-- "tone" = the EMOTIONAL REGISTER (e.g. darkly comedic, earnest, pulp adventurous, brooding, exhilarating).
-- "comparable_titles" = 2-4 films with similar AUDIENCE APPEAL, not just similar premise. Think: who walks out of this wanting more of the same?
+Classify by what the story is STRUCTURALLY and FUNCTIONALLY about, not the tone, setting, or subject matter.
+
+PRIMARY GENRE (pick ONE — answer: what drives the plot and what does the audience come for?):
+- action-adventure: physical stakes, external conflict, action set-pieces, survival, pursuit. Examples: Die Hard, Mad Max: Fury Road, Jumanji, The Lost World, Independence Day, Jurassic Park
+- comedy: primarily designed to amuse, driven by character quirks, dialogue, or situation. Examples: Groundhog Day, Bridesmaids, The Big Lebowski, Clueless, mean Girls
+- drama: character interiority, emotional relationships, personal stakes, life choices. Examples: Marriage Story, Manchester by the Sea, Moonlight, The Florida Project
+- thriller: suspense, threat, pacing, mystery, cat-and-mouse. Examples: Se7en, Gone Girl, Prisoners, Shutter Island, No Country for Old Men
+- horror: fear, dread, survival, the supernatural or psychological unknown. Examples: Hereditary, Get Out, The Witch, A Quiet Place, The Descent
+- sci-fi: speculative technology, science, or world-building logic as plot engine. Examples: Blade Runner 2049, Arrival, Ex Machina, Interstellar, Annihilation
+- fantasy: magical systems, mythological logic, otherworldly setting. Examples: LOTR, Pan's Labyrinth, Spirited Away, Shape of Water
+- romance: love, relationships, or emotional connection as primary engine. Examples: When Harry Met Sally, La La Land, Call Me by Your Name, Brokeback Mountain
+- animated: animation as the storytelling medium (can be any genre above for plot). Examples: Spider-Verse, Toy Story, Wall-E, The Triplets of Belleville
+- documentary: real-world subject, factual or真实性-based. Examples: Free Solo, 20 Feet from Stardom, Capote
+
+SUBGENRE (one level deeper — be specific):
+- action-adventure subgenres: creature feature (giant animal/monster as threat), heist, survival, martial arts, disaster, war, adventure-comedy
+- comedy subgenres: workplace, romantic, dark/cult, parody/satire, coming-of-age, mockumentary
+- drama subgenres: period drama, family drama, crime drama, psychological drama, political drama
+- thriller subgenres: psychological thriller, crime thriller, political thriller, supernatural thriller, survival thriller
+- horror subgenres: body horror, psychological horror, folk horror, found footage, creature horror, domestic horror
+- sci-fi subgenres: hard sci-fi, space opera, dystopian, time travel, biopunk/techno-thriller
+- fantasy subgenres: high fantasy, urban fantasy, dark fantasy, fairy tale, mythic
+
+TONE (emotional register — can combine): darkly comedic, earnestly dramatic, pulp adventurous, brooding, exhilarating, wry, bittersweet, lighthearted, intense, quirky, operatic, grounded
+
+COMPARABLE TITLES: 2-4 films with similar AUDIENCE EXPERIENCE, not just premise. Think: "someone who loved X would love this because..."
 
 Return ONLY valid JSON:
 {
@@ -299,8 +319,8 @@ Return ONLY valid JSON:
     "logline": "string — 1-2 sentence hook",
     "format": "string — must be one of: film, tv-series, limited-series, vertical-drama, documentary, documentary-series, short, animation",
     "genre": "string — primary story type (action-adventure, comedy, drama, thriller, horror, sci-fi, fantasy, romance, animated, documentary)",
-    "subgenre": "string or null — specific sub-category (e.g. monster movie, pulp adventure, period action)",
-    "tone": "string — emotional register",
+    "subgenre": "string or null — specific sub-category based on the genre-specific subgenre list above",
+    "tone": "string — emotional register (can combine, e.g. 'darkly comedic', 'pulp adventurous high-stakes')",
     "themes": ["string"],
     "target_audience": "string"
   },
