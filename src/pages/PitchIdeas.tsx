@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { initEditedFields, normalizePitchCriteria, type EditedFieldsMap } from '@/lib/pitch/normalizePitchCriteria';
@@ -19,6 +20,7 @@ import { usePitchIdeas, type PitchIdea } from '@/hooks/usePitchIdeas';
 import { useProjects } from '@/hooks/useProjects';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
+import { supabase as supabaseAdmin } from '@/lib/supabase-admin';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import { type AnimationMeta, ANIMATION_PRIMARY_LIST, ANIMATION_STYLE_LIST, ANIMATION_TAG_LIST } from '@/config/animationMeta';
@@ -82,14 +84,27 @@ export default function PitchIdeas() {
   const linkedProject = isProjectMode ? projects.find(p => p.id === selectedProject) : null;
   const projectFeatures = (linkedProject as any)?.project_features as Record<string, any> | null | undefined;
 
-  // Pre-fill criteria from criteria_json when a project is selected (from reverse engineer or manual entry)
+  // Direct query for criteria_json — bypasses useProjects cache so fresh data always shows
+  const { data: projectCriteriaData } = useQuery({
+    queryKey: ['project-criteria', selectedProject],
+    queryFn: async () => {
+      if (!selectedProject || !isProjectMode) return null;
+      const { data } = await supabase
+        .from('projects')
+        .select('criteria_json')
+        .eq('id', selectedProject)
+        .single();
+      return (data?.criteria_json as Partial<HardCriteria> | null) ?? null;
+    },
+    enabled: isProjectMode && !!selectedProject,
+  });
+
+  // Pre-fill criteria from freshly-fetched criteria_json
   useEffect(() => {
-    if (!linkedProject) return;
-    const stored = (linkedProject as any)?.criteria_json as Partial<HardCriteria> | null;
-    if (stored && Object.keys(stored).length > 0) {
-      setCriteria({ ...EMPTY_CRITERIA, ...stored });
+    if (projectCriteriaData && Object.keys(projectCriteriaData).length > 0) {
+      setCriteria({ ...EMPTY_CRITERIA, ...projectCriteriaData });
     }
-  }, [linkedProject?.id]);
+  }, [projectCriteriaData]);
 
   // Poll for new ideas during generation to show incremental progress
   const generatingRef = useRef(false);
