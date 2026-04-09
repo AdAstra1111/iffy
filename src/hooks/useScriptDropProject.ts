@@ -72,6 +72,7 @@ export const STAGE_DEFINITIONS: StageDef[] = [
   { key: 'project_create', label: 'Creating project…',                    functionName: 'supabase:projects',  retryable: false },
   { key: 'scene_extract',  label: 'Extracting scene graph…',              functionName: 'dev-engine-v2',      actionName: 'scene_graph_extract',                 retryable: true  },
   { key: 'nit_dialogue',   label: 'Linking characters (dialogue)…',       functionName: 'nit-sync',           actionName: 'sync_dialogue_characters',            retryable: true  },
+  { key: 'entity_extract', label: 'Extracting entities & links…',         functionName: 'entity-links-engine',                                          retryable: true  },
   { key: 'role_classify',  label: 'Classifying scene roles…',             functionName: 'dev-engine-v2',      actionName: 'scene_graph_classify_roles_heuristic',retryable: true  },
   { key: 'spine_sync',     label: 'Syncing spine links…',                 functionName: 'dev-engine-v2',      actionName: 'scene_graph_sync_spine_links',        retryable: true  },
   { key: 'binding_derive', label: 'Deriving blueprint bindings…',         functionName: 'dev-engine-v2',      actionName: 'scene_derive_blueprint_bindings',     retryable: true  },
@@ -428,7 +429,8 @@ export function useScriptDropProject() {
       }
 
       // Stage 4: nit_dialogue (sync_dialogue_characters)
-      await markRunning('nit_dialogue');
+      // MUST run before entity_extract — populates characters_present on scene versions
+      // which entity-links-engine then uses to create character_present links.
       try {
         const nitResult = await callFunction('nit-sync', {
           projectId: pid,
@@ -441,6 +443,31 @@ export function useScriptDropProject() {
         });
       } catch (e: any) {
         await markFailed('nit_dialogue', e);
+      }
+
+      // Stage 5: entity_extract
+      // Runs text-extract-engine (populates narrative_units from scenes) then
+      // entity-links-engine (creates narrative_scene_entity_links).
+      // Runs AFTER nit_dialogue so characters_present is populated on scene versions.
+      // Both are idempotent — safe to re-run.
+      await markRunning('entity_extract');
+      try {
+        // Step 1: text-extract-engine — extract characters/locations/props/wardrobe into narrative_units
+        await callFunction('text-extract-engine', {
+          projectId: pid,
+        }, token);
+
+        // Step 2: entity-links-engine — link narrative_units entities to scenes
+        const entityResult = await callFunction('entity-links-engine', {
+          projectId: pid,
+        }, token);
+        await markDone('entity_extract', {
+          linked: entityResult?.linked ?? 0,
+          by_type: entityResult?.byType ?? {},
+        });
+      } catch (e: any) {
+        // Non-fatal: entity extraction is best-effort; other stages can still proceed
+        await markFailed('entity_extract', e);
       }
 
       // Stage 5: role_classify
