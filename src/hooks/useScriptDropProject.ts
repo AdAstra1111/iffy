@@ -380,15 +380,21 @@ export function useScriptDropProject() {
           .eq('id', doc.id);
       }
 
-      // Create project_scripts record
-      await (supabase as any).from('project_scripts').upsert({
+      // Create project_scripts record — archive any existing current first, then insert.
+      // (No unique constraint on project_id alone, so upsert would silently fail.)
+      await (supabase as any)
+        .from('project_scripts')
+        .update({ status: 'archived' })
+        .eq('project_id', pid)
+        .eq('status', 'current');
+      await (supabase as any).from('project_scripts').insert({
         project_id:    pid,
         user_id:       user.id,
         version_label: titleGuess,
         status:        'current',
         file_path:     storagePath,
         notes:         'Created via Script Drop Zone',
-      }, { onConflict: 'project_id' });
+      });
 
       // Update intake run with doc refs now that we have them
       if (currentRunId) {

@@ -352,7 +352,9 @@ export default function ProjectDetail() {
   const analysis = project.analysis_passes as FullAnalysis | null;
   const hasNewAnalysis = analysis?.structural_read != null;
   const hasDocuments = documents.length > 0;
-  const hasScript = scripts.length > 0;
+  // hasScript: true if there's a project_scripts entry OR a feature_script/script document
+  const SCRIPT_DOC_TYPES = new Set(['feature_script', 'episode_script', 'season_script', 'script', 'pilot_script', 'production_draft']);
+  const hasScript = scripts.length > 0 || documents.some(d => SCRIPT_DOC_TYPES.has((d as any).doc_type));
 
   const heroImageUrl = activePoster.url || (project as any).hero_image_url;
 

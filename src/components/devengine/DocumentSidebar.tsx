@@ -263,7 +263,17 @@ export function DocumentSidebar({
 
               const systemDocs = documents.filter(d => SYSTEM_DOC_TYPES.has(d.doc_type));
               const outputDocs = documents.filter(d => !SYSTEM_DOC_TYPES.has(d.doc_type) && isOutputDocType(d.doc_type, effectiveLane));
-              const allowedDocs = documents.filter(d => !SYSTEM_DOC_TYPES.has(d.doc_type) && !isOutputDocType(d.doc_type, effectiveLane) && isDocAllowed(d.doc_type, d));
+              const rawAllowedDocs = documents.filter(d => !SYSTEM_DOC_TYPES.has(d.doc_type) && !isOutputDocType(d.doc_type, effectiveLane) && isDocAllowed(d.doc_type, d));
+              // Sort allowed docs by ladder order so the script always appears in the correct position
+              const ladderOrder = ladder || [];
+              const allowedDocs = [...rawAllowedDocs].sort((a, b) => {
+                const ai = ladderOrder.indexOf(a.doc_type);
+                const bi = ladderOrder.indexOf(b.doc_type);
+                if (ai === -1 && bi === -1) return 0;
+                if (ai === -1) return 1;
+                if (bi === -1) return -1;
+                return ai - bi;
+              });
               const hiddenDocs = documents.filter(d => !SYSTEM_DOC_TYPES.has(d.doc_type) && !isOutputDocType(d.doc_type, effectiveLane) && !isDocAllowed(d.doc_type, d));
 
               return (
