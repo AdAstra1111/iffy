@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { execSync } from "child_process";
 
-// Force dependency re-optimization v2
+// Force dependency re-optimization v3
 
 const commitHash = (() => {
   try { return execSync('git rev-parse --short HEAD').toString().trim(); }
