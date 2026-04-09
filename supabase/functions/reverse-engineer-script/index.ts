@@ -382,6 +382,8 @@ Return ONLY valid JSON:
   "ensemble_notes": "string"
 }
 
+CRITICAL ORDERING RULE: Characters array MUST be ordered by narrative importance — protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time and story weight, then recurring/minor roles last. NEVER alphabetical order.
+
 SCRIPT (first 80k chars):
 ${charScript}
 

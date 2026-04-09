@@ -1749,7 +1749,8 @@ Output the COMPLETE character bible as a JSON ARRAY of character objects. Every 
 - ALL existing characters must be present in the output — do not drop characters.
 - Apply notes only to the specific characters those notes affect.
 - Preserve all unaffected characters exactly as they are.
-- Do NOT convert character profiles to prose or screenplay format.`;
+- Do NOT convert character profiles to prose or screenplay format.
+- ORDER characters by narrative importance: protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time / story weight, then recurring/minor roles last. NEVER alphabetical order.`;
   }
 
   // Episode grid format enforcement — mandatory when rewriting a grid doc
