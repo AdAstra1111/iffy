@@ -306,12 +306,14 @@ export function useScriptDropProject() {
       }
 
       // Create project_documents record so ingest_pdf can write extracted text
+      // Use feature_script as doc_type so the script is visible in the dev engine
+      // document tray on the feature_film ladder. Title will be updated after ingest.
       const { data: doc, error: docErr } = await (supabase as any)
         .from('project_documents')
         .insert({
           project_id:       pid,
           user_id:          user.id,
-          doc_type:         'script_pdf',
+          doc_type:         'feature_script',
           title:            placeholderTitle,
           file_name:        file.name,
           file_path:        storagePath,
@@ -330,8 +332,8 @@ export function useScriptDropProject() {
           created_by:      user.id,
           version_number:  1,
           plaintext:       '',
-          label:           'Script drop upload',
-          deliverable_type:'script_pdf',
+          label:           'v1',
+          deliverable_type:'feature_script',
         })
         .select('id')
         .single();
@@ -368,9 +370,14 @@ export function useScriptDropProject() {
         console.warn('[drop] ingest_pdf failed (non-fatal):', ingestErr.message);
       }
 
-      // Update project title with AI-detected title
+      // Update project title and document title with AI-detected title
       if (titleGuess !== placeholderTitle) {
         await supabase.from('projects').update({ title: titleGuess }).eq('id', pid);
+        // Update the script document title to match the detected script title
+        await (supabase as any)
+          .from('project_documents')
+          .update({ title: titleGuess })
+          .eq('id', doc.id);
       }
 
       // Create project_scripts record
