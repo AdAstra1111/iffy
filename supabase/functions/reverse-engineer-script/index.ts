@@ -284,15 +284,23 @@ Respond with ONLY JSON.`, 8000);
 Produce a complete concept brief and market sheet.
 IMPORTANT: Return ONLY raw JSON with no thinking, no explanation, no markdown.
 
+IMPORTANT — genre classification guide:
+- "genre" = the PRIMARY story TYPE / STRUCTURAL CATEGORY. Choose from: action-adventure, comedy, drama, thriller, horror, sci-fi, fantasy, romance, animated, documentary.
+- "subgenre" = the SPECIFIC SUB-CATEGORY (e.g. monster movie, pulp adventure, period action, psychological thriller, found footage horror).
+- CRITICAL: If the story features a giant creature, kaiju, dinosaur, or large animal as a central threat/plot engine → genre is "action-adventure" and subgenre should reflect the creature type.
+- CRITICAL: If the story is fundamentally about a person overcoming external obstacles/forces → genre is NOT "psychological drama". "Psychological drama" means the central conflict is the character's internal mental state.
+- "tone" = the EMOTIONAL REGISTER (e.g. darkly comedic, earnest, pulp adventurous, brooding, exhilarating).
+- "comparable_titles" = 2-4 films with similar AUDIENCE APPEAL, not just similar premise. Think: who walks out of this wanting more of the same?
+
 Return ONLY valid JSON:
 {
   "metadata": {
     "title": "string",
     "logline": "string — 1-2 sentence hook",
     "format": "string — must be one of: film, tv-series, limited-series, vertical-drama, documentary, documentary-series, short, animation",
-    "genre": "string",
-    "subgenre": "string or null",
-    "tone": "string",
+    "genre": "string — primary story type (action-adventure, comedy, drama, thriller, horror, sci-fi, fantasy, romance, animated, documentary)",
+    "subgenre": "string or null — specific sub-category (e.g. monster movie, pulp adventure, period action)",
+    "tone": "string — emotional register",
     "themes": ["string"],
     "target_audience": "string"
   },
@@ -324,6 +332,9 @@ Respond with ONLY JSON.`, 12000);
 
     updateStage(payload, "synthesise", "done");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    // Debug: log the raw genre/subgenre/tone from synthesis stage so we can see exactly what the LLM returned
+    console.log("[reverse-engineer] call1 genre =", (call1 as any)?.metadata?.genre, "| subgenre =", (call1 as any)?.metadata?.subgenre, "| tone =", (call1 as any)?.metadata?.tone);
 
     // ── Stage 5: Beat sheet (use full script head + synthesis) ──────────────
     updateStage(payload, "beat_sheet", "running");
