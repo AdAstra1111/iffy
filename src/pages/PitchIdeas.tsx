@@ -82,6 +82,15 @@ export default function PitchIdeas() {
   const linkedProject = isProjectMode ? projects.find(p => p.id === selectedProject) : null;
   const projectFeatures = (linkedProject as any)?.project_features as Record<string, any> | null | undefined;
 
+  // Pre-fill criteria from criteria_json when a project is selected (from reverse engineer or manual entry)
+  useEffect(() => {
+    if (!linkedProject) return;
+    const stored = (linkedProject as any)?.criteria_json as Partial<HardCriteria> | null;
+    if (stored && Object.keys(stored).length > 0) {
+      setCriteria({ ...EMPTY_CRITERIA, ...stored });
+    }
+  }, [linkedProject?.id]);
+
   // Poll for new ideas during generation to show incremental progress
   const generatingRef = useRef(false);
   generatingRef.current = generating;

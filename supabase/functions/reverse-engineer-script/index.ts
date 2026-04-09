@@ -428,6 +428,57 @@ Respond with ONLY JSON.`, 12000);
       else await sb.from("project_canon").insert({ project_id, canon_json: { voice_profile: call1.voice_profile, title: metadata.title } });
     } catch (_) {}
 
+    // ── Auto-populate pitch criteria from extracted metadata ──────────────────
+    try {
+      const marketSheet = (call2 as any)?.market_sheet || {};
+      const criteriaFields: Record<string, any> = {};
+      if (metadata.genre)                      criteriaFields.genre             = metadata.genre;
+      if (metadata.subgenre)                   criteriaFields.subgenre          = metadata.subgenre;
+      if (metadata.tone)                       criteriaFields.toneAnchor        = metadata.tone;
+      if (metadata.target_audience)            criteriaFields.audience         = metadata.target_audience;
+      if (marketSheet.audience_age_range)      criteriaFields.rating           = marketSheet.audience_age_range;
+      if (marketSheet.comparable_titles?.length) criteriaFields.prohibitedComps = marketSheet.comparable_titles;
+      if (marketSheet.market_positioning)       criteriaFields.differentiateBy  = marketSheet.market_positioning;
+
+      // Build criteria_json with provenance flag
+      const criteriaJson = {
+        ...criteriaFields,
+        _auto_populated: true,
+        _source_doc_id: script_document_id,
+        _populated_at: new Date().toISOString(),
+      };
+
+      // Also seed guardrails qualifications from market sheet + metadata
+      const quals: Record<string, any> = {};
+      if (metadata.format)      quals.format_subtype     = metadata.format;
+      if (marketSheet.episode_target_duration_seconds) quals.episode_target_duration_seconds = marketSheet.episode_target_duration_seconds;
+      if (metadata.season_episode_count)             quals.season_episode_count              = metadata.season_episode_count;
+
+      // Read current guardrails_config
+      const { data: projRow } = await sb.from("projects")
+        .select("guardrails_config, criteria_json")
+        .eq("id", project_id).single();
+
+      const gc = (projRow?.guardrails_config as any) || {};
+      gc.overrides = gc.overrides || {};
+      if (Object.keys(quals).length > 0) {
+        gc.overrides.qualifications = { ...(gc.overrides.qualifications || {}), ...quals };
+      }
+      gc.derived_from_reverse_engineer = {
+        populated_at: new Date().toISOString(),
+        script_document_id: script_document_id,
+      };
+
+      await sb.from("projects").update({
+        criteria_json: criteriaJson,
+        guardrails_config: gc,
+      }).eq("id", project_id);
+
+      console.log("[reverse-engineer] criteria populated:", Object.keys(criteriaFields).join(", "));
+    } catch (criteriaErr) {
+      console.warn("[reverse-engineer] criteria population failed (non-fatal):", criteriaErr);
+    }
+
     await sb.from("projects").update({ title: metadata.title, lifecycle_stage: outlineType, format: isTV ? "tv-series" : "film" }).eq("id", project_id);
 
     // Mark all stages done
