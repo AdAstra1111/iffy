@@ -373,6 +373,8 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
                   <SelectContent>{BUDGET_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
+              {editCriteria.format_subtype !== 'film' && (
+              <>
               {/* ─── Episode Length (canonical) ─── */}
               <div className="col-span-2">
                 <Label className="text-[9px] font-semibold">Episode Length (canonical — single source of truth)</Label>
@@ -434,6 +436,9 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
                   value={editCriteria.season_episode_count || ''}
                   onChange={(e) => setEditCriteria(prev => ({ ...prev, season_episode_count: Number(e.target.value) || null }))} />
               </div>
+              </>
+              )}
+              {editCriteria.format_subtype === 'film' && (
               <div>
                 <Label className="text-[9px]">Runtime (min)</Label>
                 <div className="flex gap-1">
@@ -445,6 +450,7 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
                     onChange={(e) => setEditCriteria(prev => ({ ...prev, target_runtime_min_high: Number(e.target.value) || null }))} />
                 </div>
               </div>
+              )}
             </div>
           ) : (
             <div className="space-y-0.5">
