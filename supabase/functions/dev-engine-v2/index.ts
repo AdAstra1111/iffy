@@ -2138,7 +2138,7 @@ const docTypeMap: Record<string, string> = {
 
 // ── Vertical Drama Document Pipeline ──
 // Ordered steps with prerequisites for gating
-// Canonical ladder: idea → concept_brief → character_bible → format_rules → season_arc → episode_grid → episode_beats → season_script
+// Canonical ladder: idea → concept_brief → character_bible → format_rules → season_arc → episode_grid → vertical_episode_beats → season_script
 const VERTICAL_DRAMA_PIPELINE: Array<{ type: string; prerequisites: string[] }> = [
   { type: "idea", prerequisites: [] },
   { type: "concept_brief", prerequisites: ["idea"] },
@@ -2147,8 +2147,8 @@ const VERTICAL_DRAMA_PIPELINE: Array<{ type: string; prerequisites: string[] }> 
   { type: "format_rules", prerequisites: ["concept_brief", "character_bible"] },
   { type: "season_arc", prerequisites: ["character_bible", "format_rules"] },
   { type: "episode_grid", prerequisites: ["season_arc"] },
-  { type: "episode_beats", prerequisites: ["episode_grid"] },
-  { type: "season_script", prerequisites: ["episode_beats"] },
+  { type: "vertical_episode_beats", prerequisites: ["episode_grid"] },
+  { type: "season_script", prerequisites: ["vertical_episode_beats"] },
 ];
 
 function resolveVerticalDramaNextStep(

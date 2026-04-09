@@ -183,6 +183,59 @@ serve(async (req) => {
     }
 
     // ── Step 4: Extract locations from sluglines ──────────────────────────────
+    // Handles all screenplay slugline formats:
+    //   EXT. DESERT ROAD. NIGHT    INT. BILL'S HQ. DAY
+    //   EXT.DESERT ROAD.NIGHT      TRIBAL VILLAGE HUT. DAY
+    //   EXT. BILLS HQ.DAWN         /EXT
+    //   AIRSTRIP.DAY
+    //
+    // Normalization:
+    //   - Strip INT./EXT. prefix
+    //   - Strip time-of-day suffixes: DAY, NIGHT, DAWN, DUSK, MORNING, EVENING, CONTINUOUS, FLASHBACK + periods
+    //   - Collapse sub-location variants: TRIBAL VILLAGE HUT → TRIBAL VILLAGE
+    //   - Discard bad data: /EXT, VARIOUS LOCATIONS, single chars
+
+    const TIME_OF_DAY_RE = /(?:\s*[.,-]?\s*(?:DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|FLASHBACK|LATER|MOMENTS?\s*LATER|DARKNESS|SUNSET|DAW)\s*[.,-]?)+$/i;
+    const INT_EXT_RE = /^(?:INT\.?|EXT\.?)\s*/i;
+    const PERIOD_SUFFIX_RE = /\s*[.,-]+\s*$/;
+    // Sub-location suffixes to strip (only when location has 3+ words — so "TRIBAL VILLAGE HUT" → "TRIBAL VILLAGE" but "TRIBAL VILLAGE" stays)
+    const SUB_LOCATION_RE = /\s+(?:HUT|ROOM|OFFICE|HOUSE|HALL|COMPOUND|CAV|CAVES?|ENTRANCE|INTERIOR|LAKE|KINGDOM|TENT)\s*$/i;
+    // Also strip single-word suffixes when they're clearly generic (applied last)
+    const TRAILING_GENERIC_RE = /\s+(?:CAVE|CAVES?|MOUNTAIN|PLATEAU|LEDGE|PATH|VALLEY|CAMPS?)\s*$/i;
+    // Consolidate repeated suffixes
+    const DEDUP_SUFFIX_RE = /\s+(?:CAVES?)\s*$/i;
+    // Generic/universal words that are not standalone locations
+    const GENERIC_LOC_RE = /^(?:INT|EXT|EXT\s|MAIN|ROOM|RUINS|MOUNTAIN|PLATEAU|VILLAGE|CAVE|KINGDOM|UNKNOWN|VARIOUS|AL)$/i;
+
+    function normalizeLocation(raw: string): string | null {
+      let loc = raw.trim();
+      // Strip INT./EXT. prefix
+      loc = loc.replace(INT_EXT_RE, "");
+      // Normalize separators: / → SPACE, strip surrounding punctuation around separators
+      // e.g. "PLATEAU/WOODLANDS" → "PLATEAU WOODLANDS"
+      // e.g. "MOUNTAIN ROADS/PASS" → "MOUNTAIN ROADS PASS"
+      loc = loc.replace(/\s*\/\s*/g, " ");
+      loc = loc.replace(/\s*[.,-]+\s*/g, " ").trim();
+      // Now strip time-of-day suffixes: "DESERT ROAD DAY" → "DESERT ROAD"
+      loc = loc.replace(TIME_OF_DAY_RE, "");
+      loc = loc.replace(/\s+/g, " ").trim().toUpperCase();
+      // Discard bad/meaningless locations
+      if (loc.length < 2) return null;
+      if (/^(INT|EXT|VARIOUS|UNKNOWN|N\/A)$/i.test(loc)) return null;
+      if (loc === "VARIOUS LOCATIONS") return null;
+      // Collapse sub-locations iteratively: "TRIBAL VILLAGE HUT" → "TRIBAL VILLAGE"
+      let prev = "";
+      while (prev !== loc) {
+        prev = loc;
+        loc = loc.replace(SUB_LOCATION_RE, "");
+        loc = loc.replace(TRAILING_GENERIC_RE, "");
+        loc = loc.replace(DEDUP_SUFFIX_RE, "");
+        loc = loc.trim();
+      }
+      if (loc.length < 2) return null;
+      return loc;
+    }
+
     const locationSet = new Map<string, number>();
     for (const scene of scenes) {
       const ver = latestVersionByScene.get(scene.id);
@@ -190,19 +243,25 @@ serve(async (req) => {
       const slugline = ver.slugline || "";
       const locField = ver.location || "";
 
-      // Extract from slugline: "EXT. DESERT ROAD. NIGHT" → "DESERT ROAD"
-      const m = slugline.match(/(?:INT\.|EXT\.)\s*(.+?)\s*[.,\-]/i);
-      if (m) {
-        const loc = m[1].trim().replace(/\s+/g, " ").toUpperCase();
-        if (loc.length > 2 && !/^(INT|EXT|DAY|NIGHT|MORNING|EVENING|DAWN|DUSK)/i.test(loc)) {
-          locationSet.set(loc, (locationSet.get(loc) || 0) + 1);
-        }
-      }
-
-      if (locField && locField.trim()) {
-        const cleanLoc = locField.replace(/^(INT\.|EXT\.)/i, "").trim().replace(/\s+/g, " ").toUpperCase();
-        if (cleanLoc.length > 2) {
-          locationSet.set(cleanLoc, (locationSet.get(cleanLoc) || 0) + 1);
+      for (const src of [slugline, locField]) {
+        if (!src.trim()) continue;
+        // Extract: strip INT./EXT. prefix, remove time-of-day suffix (with/without period), keep location
+        // e.g. "EXT. BRITISH SAFE HOUSE. DAY" → "BRITISH SAFE HOUSE"
+        // e.g. "EXT. NAZI MOUNTAIN CAMP. DAW" → "NAZI MOUNTAIN CAMP"
+        // e.g. "EXT.BILLS HQ. DAY" → "BILLS HQ" → "BILL'S HQ"
+        // e.g. "INT./EXT. BILLS HQ. DAY" → "BILLS HQ"
+        let raw = src
+          .replace(/^(?:INT\.?\s*|EXT\.?\s*|INT\.\/EXT\.?\s*|INT\/EXT\.?\s*)/i, "")
+          .replace(/\s*\/.*$/, "") // strip after / (slash-separated alternatives)
+          .replace(/\s*-\s*.*$/, "") // strip after hyphen (alternative locations)
+          .replace(/(?:\s*\.\s*)(?:DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|FLASHBACK|LATER|MOMENTS?\s*LATER|DARKNESS|SUNSET|DAW|DAY\/NIGHT)(\s|$)/i, "$1") // strip time-of-day with period
+          .replace(/\s*(?:DAY|NIGHT|DAWN|DUSK|MORNING|EVENING|CONTINUOUS|FLASHBACK|LATER|MOMENTS?\s*LATER|DARKNESS|SUNSET|DAW|DAY\/NIGHT)\s*$/i, "") // strip time-of-day without period
+          .trim()
+          .replace(/\bBILLS\b/, "BILL'S");
+        if (!raw || raw.length < 2) continue;
+        const normalized = normalizeLocation(raw);
+        if (normalized) {
+          locationSet.set(normalized, (locationSet.get(normalized) || 0) + 1);
         }
       }
     }

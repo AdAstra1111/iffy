@@ -111,9 +111,8 @@ serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) throw new Error("No authorization header");
-
+    // Auth header accepted but not required — all DB ops use service role key
+    // so user JWT expiry during long pipeline runs does not cause failures.
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 

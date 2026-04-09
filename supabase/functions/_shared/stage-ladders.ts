@@ -7,7 +7,7 @@ export const STAGE_LADDERS = {
     "tv-series":          ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
     "limited-series":     ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
     "digital-series":     ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
-    "vertical-drama":     ["idea","concept_brief","character_bible","format_rules","season_arc","episode_grid","episode_beats","season_script"],
+    "vertical-drama":     ["idea","concept_brief","character_bible","format_rules","season_arc","episode_grid","vertical_episode_beats","season_script"],
     "documentary":        ["idea","concept_brief","documentary_outline"],
     "documentary-series": ["idea","concept_brief","documentary_outline"],
     "hybrid-documentary": ["idea","concept_brief","documentary_outline","treatment"],
@@ -38,6 +38,7 @@ export const STAGE_LADDERS = {
     "draft":                 "feature_script",
     "coverage":              "production_draft",
     "complete_season_script": "season_script",
+    "vertical_episode_beats": "vertical_episode_beats",
   } as Record<string, string>,
   FORMAT_SCRIPT_TYPES: {
     "film":               "feature_script",

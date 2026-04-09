@@ -64,33 +64,42 @@ export function ReverseEngineerCallout({ projectId, documents, projectFormat }: 
   if (dismissed || !scriptDoc || hasConceptBrief) return null;
 
   // Map job stages to doc rows for live progress display
+  // structure_1/2/3 + synthesise → concept_brief; beat_sheet → beat_sheet; character_bible → character_bible; storing_docs → market_sheet
+  const STAGE_ORDER = ['structure_1', 'structure_2', 'structure_3', 'synthesise', 'beat_sheet', 'character_bible', 'storing_docs'];
   const stageToDocKey: Record<string, string> = {
-    structure:       'concept_brief',
+    structure_1:     'concept_brief',
+    structure_2:     'concept_brief',
+    structure_3:     'concept_brief',
+    synthesise:      'concept_brief',
     beat_sheet:      'format_rules',
     character_bible: 'character_bible',
-    storing_docs:   'market_sheet',
+    storing_docs:    'market_sheet',
   };
 
   const getDocState = (docKey: string): DocState => {
     if (!currentJob) return 'pending';
     if (currentJob.status === 'done') return 'done';
     if (currentJob.status === 'error') {
-      // If storing_docs is error, check which doc failed
       const errStage = Object.entries(currentJob.stages || {}).find(([, s]) => s.status === 'error');
       if (errStage) return 'error';
       return 'done';
     }
-    // Map current stage to which doc is "running"
     const currentStage = currentJob.current_stage;
     const stageForDoc = stageToDocKey[currentStage];
     if (stageForDoc === docKey) return 'running';
-    // Check which stages are done
-    const stageOrder = ['structure', 'beat_sheet', 'character_bible', 'storing_docs'];
-    const docStageIndex = stageOrder.indexOf(stageForDoc ?? '');
-    const currentIndex = stageOrder.indexOf(currentStage);
+    const docStageIndex = STAGE_ORDER.indexOf(
+      Object.entries(stageToDocKey).find(([, dk]) => dk === docKey)?.[0] ?? ''
+    );
+    const currentIndex = STAGE_ORDER.indexOf(currentStage);
+    // A doc is done if ALL stages that produce it are done
+    const stagesForThisDoc = STAGE_ORDER.filter(s => stageToDocKey[s] === docKey);
+    const allDone = stagesForThisDoc.every(s => currentJob.stages?.[s]?.status === 'done');
+    if (allDone) return 'done';
+    const anyRunning = stagesForThisDoc.some(s => currentJob.stages?.[s]?.status === 'running');
+    if (anyRunning) return 'running';
     if (docStageIndex < currentIndex) return 'done';
     if (docStageIndex > currentIndex) return 'pending';
-    return 'running';
+    return 'pending';
   };
 
   const handleGenerate = async () => {

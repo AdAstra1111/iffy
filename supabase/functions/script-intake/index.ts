@@ -244,7 +244,7 @@ async function ingestPdf(
 
   // Step 2: Detect scenes from extracted text (lightweight AI call on text only, not the PDF)
   const fullText = pages.map(p => `[PAGE ${p.pageNumber}]\n${p.text}`).join("\n\n");
-  const cappedForScenes = fullText.slice(0, 60000); // Scene detection doesn't need full text
+  const cappedForScenes = fullText.slice(0, 180000); // Use as much as possible for scene detection
 
   let titleGuess = "Untitled";
   let scenes: any[] = [];
@@ -340,7 +340,7 @@ async function ingestPdf(
   return {
     pageCount: pages.length,
     titleGuess,
-    scenes: scenes.slice(0, 100),
+    scenes: scenes.slice(0, 300), // support large feature films (YETI = 83 scenes, some films 200+)
   };
 }
 

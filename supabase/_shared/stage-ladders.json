@@ -36,7 +36,8 @@
     "notes":                 "concept_brief",
     "draft":                 "feature_script",
     "coverage":              "production_draft",
-    "complete_season_script": "season_script"
+    "complete_season_script": "season_script",
+    "vertical_episode_beats": "vertical_episode_beats"
   },
   "FORMAT_SCRIPT_TYPES": {
     "_comment": "Maps project format to the correct script doc_type. Used by all flows (promote, convert, create, auto-run).",
