@@ -287,6 +287,26 @@ IMPORTANT: Return ONLY raw JSON with no thinking, no explanation, no markdown.
 IMPORTANT — genre classification guide:
 Classify by what the story is STRUCTURALLY and FUNCTIONALLY about, not the tone, setting, or subject matter.
 
+NUANCED DETECTION RULES (use these when genres overlap):
+
+ACTION-ADVENTURE vs THRILLER: If the script has chases, physical fights, explosions, or survival sequences as the PRIMARY draw → action-adventure. If the primary draw is not knowing what happens next, a threat you can't see, or a mystery that keeps you on edge → thriller.
+
+DRAMA vs THRILLER: If the emotional/relationship conflict would still drive the story if you removed all suspense elements → drama. If removing the threat/secret/mystery collapses the plot → thriller.
+
+DRAMA vs HORROR: If the story is primarily about a character's grief, trauma, or mental state as an internal journey → drama (psychological drama). If the dread, fear, or survival against a supernatural/physical threat is what the audience comes for → horror.
+
+THRILLER vs HORROR: Thriller keeps you anxious about WHAT WILL HAPPEN. Horror keeps you disturbed by WHAT IS HAPPENING. Thriller threat is usually human/knowable. Horror threat is often unknowable, cosmic, or primal.
+
+DRAMA vs ROMANCE: If the central relationship is the vehicle for exploring a character's emotional journey → drama. If the relationship IS the story and its development/resolution is the primary payoff → romance.
+
+SCI-FI vs FANTASY: If the story would BREAK without the speculative science/technology rule → sci-fi. If it would break without a magical/mythological logic → fantasy. If it works with either explanation → prefer the more specific.
+
+COMEDY vs DRAMA: If you laugh more than you feel → comedy. If you're moved more than you laugh → drama. Blends exist: call it comedy-drama if both laugh and emotional beats land equally.
+
+PERIOD SETTING: Setting era does not determine genre. A period piece can be a thriller, romance, drama, or action-adventure. Determine genre by plot structure first, then note the period in subgenre if structurally relevant.
+
+GENRE BLENDS: When two genres are equally strong (e.g., action-comedy, horror-thriller) → pick the stronger PRIMARY and put the secondary in subgenre. "It's a [subgenre] [genre]" is the test: "a creature-feature action-adventure" ✓, "a thriller comedy" → thriller is primary, comedy is subgenre.
+
 PRIMARY GENRE (pick ONE — answer: what drives the plot and what does the audience come for?):
 - action-adventure: physical stakes, external conflict, action set-pieces, survival, pursuit. Examples: Die Hard, Mad Max: Fury Road, Jumanji, The Lost World, Independence Day, Jurassic Park
 - comedy: primarily designed to amuse, driven by character quirks, dialogue, or situation. Examples: Groundhog Day, Bridesmaids, The Big Lebowski, Clueless, mean Girls
