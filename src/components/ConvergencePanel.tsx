@@ -54,11 +54,13 @@ interface Props {
   scoringGrid?: Record<string, number | null>;
   riskFlags?: string[];
   coverageSummary?: string;
+  /** The document type being evaluated — enables purpose-aware scoring rubric injection. */
+  deliverableType?: string;
 }
 
 export function ConvergencePanel({
   projectId, projectTitle, format, genres, lane, budget,
-  scoringGrid, riskFlags, coverageSummary,
+  scoringGrid, riskFlags, coverageSummary, deliverableType,
 }: Props) {
   const { user } = useAuth();
   const [result, setResult] = useState<ConvergenceResult | null>(null);
@@ -96,6 +98,7 @@ export function ConvergencePanel({
           previousCreativeScore: lastScore?.creative_integrity_score,
           previousGreenlightScore: lastScore?.greenlight_probability,
           previousGap: lastScore?.gap,
+          deliverableType,
         },
       });
       if (error) throw error;
