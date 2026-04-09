@@ -47,6 +47,29 @@ function chunkScript(text: string, numChunks = 3): string[] {
   return chunks.filter(c => c.trim().length > 0);
 }
 
+/** Chunks script text AND tracks 1-indexed line ranges for each chunk.
+ *  lineRanges[i] = { startLine, endLine } for chunks[i].
+ */
+function chunkScriptWithLines(text: string, numChunks = 3): {
+  chunks: string[];
+  lineRanges: Array<{ startLine: number; endLine: number }>;
+} {
+  const lines = text.split("\n");
+  const chunkSize = Math.ceil(lines.length / numChunks);
+  const chunks: string[] = [];
+  const lineRanges: Array<{ startLine: number; endLine: number }> = [];
+  for (let i = 0; i < numChunks; i++) {
+    const startIdx = i * chunkSize;
+    const endIdx = Math.min(startIdx + chunkSize, lines.length);
+    const chunkText = lines.slice(startIdx, endIdx).join("\n");
+    if (chunkText.trim().length > 0) {
+      chunks.push(chunkText);
+      lineRanges.push({ startLine: startIdx + 1, endLine: endIdx }); // 1-indexed
+    }
+  }
+  return { chunks, lineRanges };
+}
+
 // ─── LLM Gateway ─────────────────────────────────────────────────────────────
 function resolveGatewayKey(): { key: string; baseUrl: string; model: string } {
   const lovable = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
@@ -167,7 +190,7 @@ async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
 }
 
 // ─── Doc storage ──────────────────────────────────────────────────────────────
-async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any): Promise<void> {
+async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any, extraMeta?: Record<string, any>): Promise<void> {
   const content = JSON.stringify(data, null, 2);
   const plaintext = Object.entries(data).map(([k, v]) => {
     if (v === null || v === undefined) return "";
@@ -187,7 +210,7 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
   if (error || !doc) throw new Error(`Failed to upsert ${docType}: ${error?.message}`);
   try {
     const { createVersion } = await import("../_shared/doc-os.ts");
-    const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "approved", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, metaJson: { reverse_engineered: true } });
+    const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "approved", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
     if (ver) await sb.from("project_documents").update({ latest_version_id: ver.id }).eq("id", doc.id);
   } catch (e) { console.warn("Version creation skipped:", e); }
 }
@@ -226,8 +249,8 @@ async function runBackgroundJob(body: any) {
   if (!payload.stages) payload = makePayload(jobId);
 
   // ── Split full script into 3 chunks for complete coverage ────────────────
-  const chunks = chunkScript(script_text, 3);
-  console.log(`[reverse-engineer] script length: ${script_text.length} chars, chunks: ${chunks.map(c => c.length)}`);
+  const { chunks, lineRanges } = chunkScriptWithLines(script_text, 3);
+  console.log(`[reverse-engineer] script length: ${script_text.length} chars, chunks: ${chunks.map(c => c.length)}, lineRanges: ${JSON.stringify(lineRanges)}`);
 
   try {
     // ── Stages 1-3: Analyse each chunk ──────────────────────────────────────
@@ -512,9 +535,20 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
     const { metadata } = call1;
     const isTV = format === "tv-series";
 
+    // ── Build source citations from line-range tracking ──────────────────────
+    const scriptTitle = metadata.title || "Script";
+    const allLinesStart = lineRanges[0]?.startLine ?? 1;
+    const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
+    const allChunksCitation = `${scriptTitle}, lines ${allLinesStart}–${allLinesEnd}`;
+    const chunkCitations = lineRanges.map((r, i) => `${scriptTitle}, lines ${r.startLine}–${r.endLine} (part ${i + 1})`);
+    // beatScript / charScript use first 80 000 chars — compute which lines that covers
+    const beatScriptLineEnd = script_text.slice(0, 80000).split("\n").length;
+    const partialCitation   = `${scriptTitle}, lines 1–${beatScriptLineEnd}`;
+
     await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
       `${metadata.title} — Concept Brief`,
-      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...call1.concept_brief });
+      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...call1.concept_brief },
+      { source_citations: [allChunksCitation, ...chunkCitations] });
 
     const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
     await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
@@ -524,14 +558,17 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
     const arcType = isTV ? "season_arc" : "treatment";
     await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
       `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
-      { title: metadata.title, logline: metadata.logline, format, treatment: callTreatment });
+      { title: metadata.title, logline: metadata.logline, format, treatment: callTreatment },
+      { source_citations: [partialCitation] });
 
     const beatType = isTV ? "format_rules" : "beat_sheet";
     await storeDoc(sb, project_id, script_document_id, user_id, beatType, "creative_primary",
-      `${metadata.title} — Beat Sheet`, call2);
+      `${metadata.title} — Beat Sheet`, call2,
+      { source_citations: [partialCitation] });
 
     await storeDoc(sb, project_id, script_document_id, user_id, "character_bible", "creative_primary",
-      `${metadata.title} — Character Bible`, call3);
+      `${metadata.title} — Character Bible`, call3,
+      { source_citations: [partialCitation] });
 
     const outlineType = isTV ? "episode_grid" : "story_outline";
     await storeDoc(sb, project_id, script_document_id, user_id, outlineType, "creative_primary",
@@ -706,6 +743,7 @@ serve(async (req) => {
   // ── Foreground: create job, dispatch background, return immediately ────────
   try {
     const { project_id, script_document_id, script_version_id, user_id } = body;
+    console.log("[reverse-engineer] foreground body:", JSON.stringify({ project_id, script_document_id, script_version_id, user_id: user_id ? '[present]' : '[missing]' }));
     if (!project_id || !script_document_id)
       return new Response(JSON.stringify({ error: "project_id and script_document_id required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -729,12 +767,12 @@ serve(async (req) => {
       const { data: latestVer } = await sb.from("project_document_versions").select("plaintext").eq("document_id", script_document_id).order("version_number", { ascending: false }).limit(1).maybeSingle();
       scriptText = latestVer?.plaintext || "";
     }
+    const isTV = /\b(episode\s*\d|ep\.?\s*\d|season\s*\d|series\s*\d)\b/i.test(scriptText.slice(0, 3000));
+    const format = isTV ? "tv-series" : "film";
+    console.log(`[reverse-engineer] scriptText length: ${scriptText.length}, format: ${format}`);
     if (!scriptText || scriptText.length < 100)
       return new Response(JSON.stringify({ error: "Script text not found — ensure the script has been uploaded and saved." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-    const isTV = /\b(episode\s*\d|ep\.?\s*\d|season\s*\d|series\s*\d)\b/i.test(scriptText.slice(0, 3000));
-    const format = isTV ? "tv-series" : "film";
 
     // Create job record
     const jobKey = `reverse_job_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -748,6 +786,7 @@ serve(async (req) => {
     };
 
     const { data: created, error: jobErr } = await sb.from("narrative_units").insert(jobRecord).select("id").single();
+    console.log(`[reverse-engineer] job insert: created=${!!created}, err=${jobErr?.message}`);
     if (jobErr || !created)
       return new Response(JSON.stringify({ error: `Failed to create job: ${jobErr?.message}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
