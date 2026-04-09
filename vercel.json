@@ -4,7 +4,7 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/llm", "destination": "/api/llm" },
-    { "source": "/api/supabase-proxy/:path*", "destination": "/api/supabase-proxy" },
+    { "source": "/api/supabase-proxy/(.*)", "destination": "/api/supabase-proxy?path=$1" },
     { "source": "/((?!assets|favicon|og-image|robots|api).*)", "destination": "/index.html" }
   ],
   "env": {
