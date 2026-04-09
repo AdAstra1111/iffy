@@ -383,6 +383,16 @@ Respond with ONLY JSON.`, 12000);
     const beatScript = script_text.slice(0, 80000); // beats need enough to track structure
     const call2 = await callLLM(`Extract a beat sheet from this ${format} script. Use the full structural arc.
 
+IMPORTANT — beat naming:
+- Each beat "name" must be a SHORT, EVOCATIVE DESCRIPTIVE TITLE (1-6 words)
+- Use the ACTUAL CHARACTER NAMES from the cast list below
+- NEVER use "Character 1", "Character 2", "Protagonist", "MC", or placeholder labels
+- Good names: "The Discovery", "Amara's Betrayal", "First Contact", "Point of No Return", "The Reckoning"
+- Bad names: "Character 1 Arrives", "Protagonist meets someone", "MC does something"
+
+CHARACTER NAMES (use these in beat names and descriptions):
+${allCharacters.map(c => `- ${c}`).join("\n")}
+
 Return ONLY valid JSON:
 {
   "title": "string",
@@ -390,7 +400,7 @@ Return ONLY valid JSON:
   "beats": [
     {
       "number": 1,
-      "name": "string",
+      "name": "string — short evocative title for this beat (1-6 words, use real character names)",
       "page_range": "string",
       "description": "string",
       "emotional_shift": "string",
