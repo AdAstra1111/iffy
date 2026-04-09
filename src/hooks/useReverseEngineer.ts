@@ -31,7 +31,7 @@ interface UseReverseEngineerReturn {
   currentJob: ReverseEngineerJob | null;
 }
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 2000;
 
 export function useReverseEngineer(): UseReverseEngineerReturn {
   const [isRunning, setIsRunning] = useState(false);

@@ -174,7 +174,7 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return `${k.toUpperCase().replace(/_/g," ")}\n${v}`;
   }).filter(Boolean).join("\n\n");
 
-  const { data: doc, error } = await sb.from("project_documents").upsert({ project_id: projectId, doc_type: docType, doc_role: docRole, title, plaintext, user_id }, { onConflict: "project_id,doc_type" }).select("id").single();
+  const { data: doc, error } = await sb.from("project_documents").upsert({ project_id: projectId, doc_type: docType, doc_role: docRole, title, plaintext, user_id: userId }, { onConflict: "project_id,doc_type" }).select("id").single();
   if (error || !doc) throw new Error(`Failed to upsert ${docType}: ${error?.message}`);
   try {
     const { createVersion } = await import("../_shared/doc-os.ts");
@@ -510,25 +510,17 @@ serve(async (req) => {
 
     const jobId = created.id;
 
-    // Dispatch background work — use Deno Deploy's built-in way via fetch with await
-    // This ensures the background task completes before the edge function times out
+    // Dispatch background work — fire and forget so we return job_id immediately
+    // The background invocation does all LLM work and updates the job record as it goes
     const bgPayload = JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text: scriptText, format });
     const bgHeaders = new Headers({ "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` });
 
-    // Run synchronously within this invocation to ensure completion
-    // (Edge Functions can run up to 60s — sufficient for LLM work)
-    try {
-      const bgRes = await fetch(`${SUPABASE_URL}/functions/v1/reverse-engineer-script`, {
-        method: "POST",
-        headers: bgHeaders,
-        body: bgPayload,
-      });
-      // Job completes within this request — read result but don't block on it
-      bgRes.text().catch(() => {});
-    } catch (bgErr) {
-      // Fire-and-forget: job record is created; user can poll status
-      console.error("[reverse-engineer] bg dispatch error:", bgErr);
-    }
+    // Do NOT await — return job_id to client immediately so polling can show real progress
+    fetch(`${SUPABASE_URL}/functions/v1/reverse-engineer-script`, {
+      method: "POST",
+      headers: bgHeaders,
+      body: bgPayload,
+    }).catch(err => console.error("[reverse-engineer] bg dispatch error:", err));
 
     return new Response(JSON.stringify({
       job_id: jobId,
