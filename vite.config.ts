@@ -1,8 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { execSync } from "child_process";
 
 // Force dependency re-optimization v2
+
+const commitHash = (() => {
+  try { return execSync('git rev-parse --short HEAD').toString().trim(); }
+  catch { return 'unknown'; }
+})();
+const buildTime = new Date().toISOString();
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
@@ -12,6 +19,10 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+  },
+  define: {
+    __COMMIT_HASH__: JSON.stringify(commitHash),
+    __BUILD_TIME__: JSON.stringify(buildTime),
   },
   plugins: [react()].filter(Boolean),
   resolve: {

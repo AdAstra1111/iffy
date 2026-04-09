@@ -269,6 +269,10 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      {/* Build stamp — fixed bottom-left, only visible in dev/staging awareness */}
+      <div style={{ position: 'fixed', bottom: 4, left: 6, zIndex: 9999, fontSize: '9px', color: 'rgba(255,255,255,0.18)', pointerEvents: 'none', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
+        {__COMMIT_HASH__} · {new Date(__BUILD_TIME__).toISOString().slice(0,16).replace('T',' ')}Z
+      </div>
       <BrowserRouter>
         <ScrollToTop />
         <CorpusIntegrityBanner />
