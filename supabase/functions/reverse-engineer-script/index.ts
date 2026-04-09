@@ -175,7 +175,14 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return `${k.toUpperCase().replace(/_/g," ")}\n${v}`;
   }).filter(Boolean).join("\n\n");
 
-  const { data: doc, error } = await sb.from("project_documents").upsert({ project_id: projectId, doc_type: docType, doc_role: docRole, title, plaintext, user_id: userId }, { onConflict: "project_id,doc_type" }).select("id").single();
+  // Fall back to project owner if userId not provided (e.g. direct API calls without auth)
+  let effectiveUserId = userId;
+  if (!effectiveUserId) {
+    const { data: proj } = await sb.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+    effectiveUserId = proj?.user_id || "system";
+  }
+
+  const { data: doc, error } = await sb.from("project_documents").upsert({ project_id: projectId, doc_type: docType, doc_role: docRole, title, plaintext, user_id: effectiveUserId }, { onConflict: "project_id,doc_type" }).select("id").single();
   if (error || !doc) throw new Error(`Failed to upsert ${docType}: ${error?.message}`);
   try {
     const { createVersion } = await import("../_shared/doc-os.ts");
