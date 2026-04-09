@@ -27,7 +27,8 @@ const JOB_STAGES = [
   { key: "synthesise",      label: "Synthesising analysis..." },
   { key: "beat_sheet",      label: "Building beat sheet..." },
   { key: "character_bible", label: "Building character bible..." },
-  { key: "infer_criteria", label: "Inferring criteria..." },
+  { key: "treatment",       label: "Writing treatment..." },
+  { key: "infer_criteria",  label: "Inferring criteria..." },
   { key: "storing_docs",   label: "Saving foundation documents..." },
 ];
 
@@ -350,10 +351,13 @@ Return ONLY valid JSON:
     "world_building_notes": "string"
   },
   "market_sheet": {
+    "tagline": "string — one-line hook summing the core appeal (derive from tone + premise). Use null if script provides insufficient signal.",
     "comparable_titles": ["string"],
     "market_positioning": "string",
-    "audience_age_range": "string",
-    "audience_breakdown": {"string": "percentage"}
+    "budget_range": "string — micro | low | medium | high | tent-pole. Infer from: location count, period/era, VFX complexity, cast size, action density. Use null if script provides insufficient signal.",
+    "project_status": "string — default 'pre-production' for reverse-engineered pipelines. Use null if script provides a signal suggesting otherwise (e.g., 'in-development', 'script-completed').",
+    "audience_age_range": "string — derive from genre norms and content rating signals. Use null if insufficient signal.",
+    "audience_breakdown": {"male": "string — percentage", "female": "string — percentage"}
   },
   "voice_profile": {
     "narrative_voice": "string",
@@ -375,6 +379,9 @@ Respond with ONLY JSON.`, 12000);
 
     // Debug: log the raw genre/subgenre/tone from synthesis stage so we can see exactly what the LLM returned
     console.log("[reverse-engineer] call1 genre =", (call1 as any)?.metadata?.genre, "| subgenre =", (call1 as any)?.metadata?.subgenre, "| tone =", (call1 as any)?.metadata?.tone);
+    // Debug: log market_sheet fields so we can see what was inferred vs left null
+    const ms = (call1 as any)?.market_sheet || {};
+    console.log("[reverse-engineer] market_sheet: tagline =", ms.tagline, "| budget_range =", ms.budget_range, "| project_status =", ms.project_status, "| comparable_titles =", ms.comparable_titles, "| audience_age_range =", ms.audience_age_range);
 
     // ── Stage 5: Beat sheet (use full script head + synthesis) ──────────────
     updateStage(payload, "beat_sheet", "running");
@@ -459,6 +466,45 @@ ${charScript}
 
 Respond with ONLY JSON.`, 12000);
 
+    // ── Stage 6.5: Treatment synthesis ──────────────────────────────────────
+    updateStage(payload, "treatment", "running");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    const premise      = (call1.concept_brief as any)?.premise || "";
+    const worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
+    const protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
+    const beats       = (call2 as any).beats || [];
+    const storyOutline = (call2 as any).beats
+      ? (call2 as any).beats.slice(0, 20).map((b: any, i: number) => ({ number: i + 1, title: b.name, description: b.description }))
+      : [];
+
+    const callTreatment = await callLLM(`You are a senior story analyst. Write a factual treatment narrative for this screenplay — a prose summary of WHAT HAPPENS in the story.
+
+RULES:
+- Write in third-person narrative prose. No beat markers, no scene numbers, no stage directions.
+- Structure as flowing paragraphs that tell the story as a reader would experience it.
+- Do NOT invent scenes, dialogue, or details not present in the script. Stick strictly to what the source material contains.
+- Act breaks should feel like natural story progressions, not bullet-point summaries.
+- Mention key characters by name and ground events in specific locations.
+- Length: 3-6 paragraphs. Treat this as a polished narrative summary, not a line-by-line synopsis.
+
+SOURCE MATERIAL:
+
+LOGLINE: ${metadata.logline}
+
+PREMISE: ${premise}
+
+WORLD NOTES: ${worldNotes}
+
+PROTAGONIST: ${protagonist}
+
+BEAT STRUCTURE (use these to trace the story arc — write prose, not a list):
+${beats.map((b: any, i: number) => `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 300)}`).join("\n")}
+
+Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`, 6000);
+
+    updateStage(payload, "treatment", "done");
+
     // ── Stage 4: Store documents ────────────────────────────────────────────
     updateStage(payload, "storing_docs", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -478,7 +524,7 @@ Respond with ONLY JSON.`, 12000);
     const arcType = isTV ? "season_arc" : "treatment";
     await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
       `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
-      { title: metadata.title, logline: metadata.logline, format, ...call1.treatment });
+      { title: metadata.title, logline: metadata.logline, format, treatment: callTreatment });
 
     const beatType = isTV ? "format_rules" : "beat_sheet";
     await storeDoc(sb, project_id, script_document_id, user_id, beatType, "creative_primary",

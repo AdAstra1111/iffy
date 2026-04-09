@@ -20,7 +20,7 @@ const CONVERGENCE_STAGES = [
 ];
 
 interface CiSubScores {
-  originality_delta: number;
+  originality: number;
   emotional_conviction: number;
   thematic_coherence: number;
   voice_strength: number;

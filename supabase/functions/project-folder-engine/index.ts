@@ -77,18 +77,12 @@ function isSeriesFormat(format: string): boolean {
   return SERIES_FORMATS.includes((format || "").toLowerCase().replace(/_/g, "-"));
 }
 
-// ─── Helper: resolve best CI/GP for a version from development_runs or meta_json ───
+// ─── Helper: resolve CI/GP for a version — development_runs is authoritative ───
+// After Option A reconciliation, meta_json.ci/gp is kept in sync by dev-engine-v2's
+// post-analyze stamp, so it should match development_runs. This function uses
+// development_runs as the single source of truth.
 async function resolveVersionScores(db: any, versionId: string): Promise<{ ci: number | null; gp: number | null }> {
-  // 1. Check existing meta_json scores
-  const { data: verRow } = await db.from("project_document_versions")
-    .select("meta_json")
-    .eq("id", versionId)
-    .maybeSingle();
-  const meta = verRow?.meta_json || {};
-  const metaCi = typeof meta.ci === "number" ? meta.ci : null;
-  const metaGp = typeof meta.gp === "number" ? meta.gp : null;
-
-  // 2. Check most recent ANALYZE development_run for this version
+  // Check most recent ANALYZE development_run for this version
   const { data: latestRun } = await db.from("development_runs")
     .select("output_json")
     .eq("version_id", versionId)
@@ -97,59 +91,64 @@ async function resolveVersionScores(db: any, versionId: string): Promise<{ ci: n
     .limit(1)
     .maybeSingle();
 
-  let runCi: number | null = null;
-  let runGp: number | null = null;
-  if (latestRun?.output_json) {
-    const out = latestRun.output_json;
-    runCi = out?.ci_score ?? out?.scores?.ci_score ?? out?.scores?.ci ?? out?.ci ?? null;
-    runGp = out?.gp_score ?? out?.scores?.gp_score ?? out?.scores?.gp ?? out?.gp ?? null;
+  if (!latestRun?.output_json) {
+    // Fallback to meta_json only if no development_runs entry exists (legacy version)
+    const { data: verRow } = await db.from("project_document_versions")
+      .select("meta_json")
+      .eq("id", versionId)
+      .maybeSingle();
+    const meta = verRow?.meta_json || {};
+    return {
+      ci: typeof meta.ci === "number" ? meta.ci : null,
+      gp: typeof meta.gp === "number" ? meta.gp : null,
+    };
   }
 
-  // Use the highest available scores (run vs meta_json)
-  const bestCi = (runCi !== null && metaCi !== null) ? Math.max(runCi, metaCi)
-    : (runCi ?? metaCi);
-  const bestGp = (runGp !== null && metaGp !== null) ? Math.max(runGp, metaGp)
-    : (runGp ?? metaGp);
-
-  return { ci: bestCi, gp: bestGp };
+  const out = latestRun.output_json;
+  return {
+    ci: out?.ci_score ?? out?.scores?.ci_score ?? out?.scores?.ci ?? out?.ci ?? null,
+    gp: out?.gp_score ?? out?.scores?.gp_score ?? out?.scores?.gp ?? out?.gp ?? null,
+  };
 }
 
 // ─── Helper: mark version as approved in project_document_versions ───
-// Atomically writes approval_status AND persists CI/GP to meta_json
+// Uses development_runs as authoritative source for ci/gp.
+// meta_json.ci/gp is kept in sync by dev-engine-v2's post-analyze stamp.
 async function markVersionApproved(db: any, versionId: string, userId: string) {
-  // Resolve best available scores
   const { ci, gp } = await resolveVersionScores(db, versionId);
 
-  // Read existing meta_json to merge
-  const { data: existing } = await db.from("project_document_versions")
-    .select("meta_json")
-    .eq("id", versionId)
-    .maybeSingle();
-  const existingMeta = (existing?.meta_json && typeof existing.meta_json === "object" && !Array.isArray(existing.meta_json))
-    ? existing.meta_json : {};
+  const updatePayload: any = {
+    approval_status: "approved",
+    approved_at: new Date().toISOString(),
+    approved_by: userId,
+  };
 
-  // Build merged update — only override scores if we have values
-  const mergedMeta = { ...existingMeta };
-  if (ci !== null) {
-    mergedMeta.ci = ci;
-    mergedMeta.score_source = mergedMeta.score_source || "approval_stamp";
-    mergedMeta.score_updated_at = new Date().toISOString();
-  }
-  if (gp !== null) {
-    mergedMeta.gp = gp;
+  // Stamp ci/gp to meta_json if available (dev-engine-v2 should have already done this,
+  // but belt-and-suspenders ensures meta_json is consistent after approval)
+  if (ci !== null || gp !== null) {
+    const { data: existing } = await db.from("project_document_versions")
+      .select("meta_json")
+      .eq("id", versionId)
+      .maybeSingle();
+    const existingMeta = (existing?.meta_json &&
+      typeof existing.meta_json === "object" &&
+      !Array.isArray(existing.meta_json))
+      ? existing.meta_json : {};
+
+    updatePayload.meta_json = {
+      ...existingMeta,
+      ...(ci !== null ? { ci } : {}),
+      ...(gp !== null ? { gp } : {}),
+      _ci_gp_approved_at: new Date().toISOString(),
+      _ci_gp_score_source: "development_runs_approval",
+    };
   }
 
-  // Atomic write: approval + scores in one update
   await db.from("project_document_versions")
-    .update({
-      approval_status: "approved",
-      approved_at: new Date().toISOString(),
-      approved_by: userId,
-      meta_json: mergedMeta,
-    })
+    .update(updatePayload)
     .eq("id", versionId);
 
-  console.log(`[project-folder-engine] version_approved_with_scores { version_id: "${versionId}", ci: ${ci}, gp: ${gp}, source: "markVersionApproved" }`);
+  console.log(`[project-folder-engine] version_approved { version_id: "${versionId}", ci: ${ci}, gp: ${gp} }`);
 }
 
 // ─── Main Handler ───

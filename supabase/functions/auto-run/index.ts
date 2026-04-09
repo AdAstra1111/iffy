@@ -213,6 +213,7 @@ async function completionGate(
   projectId: string,
   targetDocument: string,
   format: string,
+  jobId?: string,
 ): Promise<{ stop_reason: string; details: string } | null> {
   // Gate 1: Ladder integrity
   // getLadderForJob is defined in this same file
@@ -269,6 +270,146 @@ async function completionGate(
           stop_reason: "CANON_MISMATCH",
           details: `Canon alignment failed for ${targetDocument}: coverage=${alignment.result.entityCoverage}, missing=${alignment.result.missingEntities.slice(0, 5).join(",")}, foreign=${alignment.result.foreignEntities.slice(0, 5).join(",")}. Sources: ${alignment.sources.join(",")}`,
         };
+      }
+    }
+  }
+
+  // ── Gate 4: Defensibility Validator ────────────────────────────────────────────
+  {
+    const currentVerMeta = currentVer?.meta_json || {};
+    const currentCi = currentVerMeta.ci ?? null;
+
+    // G4-1: REVERSIBILITY (HARD)
+    // Cannot cleanly reverse a completion if an approved version already exists.
+    {
+      const { data: approvedVersion } = await supabase
+        .from("project_document_versions")
+        .select("id, version_number, ci, gp")
+        .eq("document_id", targetDoc.id)
+        .eq("approval_status", "approved")
+        .maybeSingle();
+
+      const currentApproved = approvedVersion?.id === currentVer?.id;
+      if (approvedVersion && !currentApproved) {
+        return {
+          stop_reason: "REVERSIBILITY_RISK",
+          details: `Document '${targetDocument}' already has an approved version (v${approvedVersion.version_number}). Completing a different version creates an ambiguous approval state. Revert the approved version first, or promote the current version through the approval workflow.`,
+        };
+      }
+    }
+
+    // G4-2: CI RETENTION (HARD)
+    // Completing a version with no CI when a scored version exists destroys validated content.
+    {
+      const { data: historicalVersions } = await supabase
+        .from("project_document_versions")
+        .select("id, version_number, ci")
+        .eq("document_id", targetDoc.id)
+        .neq("id", currentVer?.id)
+        .order("version_number", { ascending: false })
+        .limit(10);
+
+      const bestHistCi = (historicalVersions || []).reduce(
+        (best: number, v: any) => Math.max(best, v.ci ?? -1), -1
+      );
+
+      if (bestHistCi >= 0 && currentCi === null && bestHistCi >= 60) {
+        return {
+          stop_reason: "CI_RETENTION_FAIL",
+          details: `Current version of '${targetDocument}' has no CI score but a previous version scored CI=${bestHistCi}. Completing an unvalidated version over a validated one destroys creative integrity.`,
+        };
+      }
+    }
+
+    // G4-3: PROPAGATION (HARD) — all upstream ladder inputs must exist before completion
+    {
+      const ladder = getLadderForJob(format);
+      if (ladder) {
+        const targetIdx = ladder.indexOf(targetDocument);
+        if (targetIdx > 0) {
+          const requiredDocs = ladder.slice(0, targetIdx);
+          const missing: string[] = [];
+          for (const req of requiredDocs) {
+            const { data: doc } = await supabase
+              .from("project_documents")
+              .select("id")
+              .eq("project_id", projectId)
+              .eq("doc_type", req)
+              .maybeSingle();
+            if (!doc) { missing.push(req); continue; }
+            const { data: ver } = await supabase
+              .from("project_document_versions")
+              .select("plaintext")
+              .eq("document_id", doc.id)
+              .eq("is_current", true)
+              .maybeSingle();
+            if (!ver?.plaintext || ver.plaintext.length === 0) missing.push(req + " (empty)");
+          }
+          if (missing.length > 0) {
+            return {
+              stop_reason: "PROPAGATION_BLOCKED",
+              details: `Upstream deliverables not ready for '${targetDocument}': [${missing.join(", ")}]. Ladder requires these before propagation. Do not complete.`,
+            };
+          }
+        }
+      }
+    }
+
+    // G4-4: SPIRAL RISK (HARD) — monotonic CI decline over 3+ attempts
+    if (jobId) {
+      const { data: jobHistory } = await supabase
+        .from("auto_run_step_history")
+        .select("id, ci_after, stage_document")
+        .eq("job_id", jobId)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      const sameStageSteps = (jobHistory || [])
+        .filter((s: any) => s.stage_document === targetDocument)
+        .slice(0, 6);
+
+      if (sameStageSteps.length >= 3) {
+        const ciHistory = sameStageSteps.map((s: any) => s.ci_after ?? 0);
+        let declining = true;
+        for (let i = 0; i < ciHistory.length - 1; i++) {
+          if (ciHistory[i] >= ciHistory[i + 1]) { declining = false; break; }
+        }
+        if (declining && ciHistory[0] > 0 && ciHistory[ciHistory.length - 1] < ciHistory[0] - 15) {
+          return {
+            stop_reason: "SPIRAL_RISK",
+            details: `SPIRAL DETECTED: CI declined monotonically over ${sameStageSteps.length} attempts on '${targetDocument}' (v1 CI=${ciHistory[0]}, v${ciHistory.length} CI=${ciHistory[ciHistory.length - 1]}). Force-completing perpetuates a reinforcing failure loop. Pause and investigate.`,
+          };
+        }
+      }
+    }
+
+    // G4-5: MOAT (SOFT / WEAK_SIGNAL) — stub content does not strengthen the moat
+    {
+      const text = currentVer?.plaintext || "";
+      const isStub = text.length < 200;
+      if (isStub && currentCi !== null && currentCi < 40) {
+        console.warn(`[auto-run][G4] moat_weak_signal { project_id: "${projectId}", doc_type: "${targetDocument}", ci: ${currentCi}, len: ${text.length} }`);
+      }
+    }
+
+    // G4-6: UNDO RISK (SOFT / WEAK_SIGNAL) — downstream jobs already consuming this stage
+    {
+      const { data: downstreamJobs } = await supabase
+        .from("auto_run_jobs")
+        .select("id, target_document, status")
+        .eq("project_id", projectId)
+        .in("status", ["running", "completed", "paused"])
+        .limit(10);
+
+      const ladder = getLadderForJob(format);
+      const targetIdx = ladder ? ladder.indexOf(targetDocument) : -1;
+      if (targetIdx >= 0 && ladder && downstreamJobs && downstreamJobs.length > 0) {
+        const downstreamStages = downstreamJobs
+          .filter((j: any) => ladder.indexOf(j.target_document) > targetIdx)
+          .map((j: any) => j.target_document);
+        if (downstreamStages.length > 0) {
+          console.warn(`[auto-run][G4] undo_risk_soft { project_id: "${projectId}", doc_type: "${targetDocument}", downstream: [${downstreamStages.join(", ")}], note: "reversal may affect downstream inputs" }`);
+        }
       }
     }
   }
@@ -3239,7 +3380,7 @@ async function updateJob(supabase: any, jobId: string, fields: Record<string, an
         const { data: proj } = await supabase.from("projects").select("format").eq("id", job.project_id).single();
         const fmt = (proj?.format || "film").toLowerCase().replace(/_/g, "-");
 
-        const gateResult = await completionGate(supabase, job.project_id, job.target_document, fmt);
+        const gateResult = await completionGate(supabase, job.project_id, job.target_document, fmt, jobId);
         if (gateResult) {
           // Gate failed — override to paused
           console.warn(`[auto-run] Completion gate BLOCKED: ${gateResult.stop_reason} — ${gateResult.details}`);

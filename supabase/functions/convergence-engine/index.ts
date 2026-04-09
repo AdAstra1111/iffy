@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { buildGuardrailBlock } from "../_shared/guardrails.ts";
 import { composeSystem, resolveGateway } from "../_shared/llm.ts";
+import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS } from "../_shared/docPurposeRegistry.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -145,25 +146,29 @@ You MUST return ONLY valid JSON matching this exact structure (no prose, no mark
   "executive_snapshot": "3 blunt sentences",
   "creative_integrity": {
     "score": 0-100,
-    "originality_delta": "vs market noise assessment",
-    "emotional_conviction": "assessment",
-    "thematic_coherence": "assessment",
-    "voice_strength": "assessment",
-    "directorial_magnetism": "assessment",
-    "scene_memorability": "assessment",
-    "risk_taking_value": "assessment",
-    "edge_retention": "assessment (especially if redraft)",
-    "flags": ["Identity Erosion" or "Productive Refinement" if applicable]
+    "sub_scores": {
+      "originality": 0-10,
+      "emotional_conviction": 0-10,
+      "thematic_coherence": 0-10,
+      "voice_strength": 0-10,
+      "directorial_magnetism": 0-10,
+      "scene_memorability": 0-10,
+      "risk_taking_value": 0-10,
+      "edge_retention": 0-10
+    },
+    "flags": ["Identity Erosion" | "Productive Refinement" if applicable]
   },
   "greenlight_probability": {
     "score": 0-100,
-    "packaging_probability": "assessment",
-    "finance_viability": "assessment",
-    "lane_clarity": "assessment",
-    "market_timing": "assessment",
-    "risk_exposure": "assessment",
-    "travelability": "assessment if relevant",
-    "detail": "any type-specific assessment"
+    "sub_scores": {
+      "packaging_probability": 0-10,
+      "finance_viability": 0-10,
+      "lane_clarity": 0-10,
+      "market_timing": 0-10,
+      "risk_exposure": 0-10,
+      "travelability": 0-10
+    },
+    "detail": "brief type-specific assessment (string)"
   },
   "primary_creative_risk": "one sentence",
   "primary_commercial_risk": "one sentence",
@@ -273,6 +278,7 @@ serve(async (req) => {
       developmentStage = "IDEA",
       analysisMode = "DUAL",
       previousCreativeScore, previousGreenlightScore, previousGap,
+      deliverableType,
     } = body;
 
     if (!projectTitle) {
@@ -295,10 +301,24 @@ serve(async (req) => {
 
     // Inject guardrails with per-engine mode
     const guardrails = buildGuardrailBlock({ productionType: format || "film", engineName: "convergence-engine" });
-    const guardrailedSystem = composeSystem({ baseSystem: CONVERGENCE_SYSTEM, guardrailsBlock: guardrails.textBlock });
+    let systemPrompt = composeSystem({ baseSystem: CONVERGENCE_SYSTEM, guardrailsBlock: guardrails.textBlock });
+
+    // ── Purpose-Aware Scoring Rubric Injection ──────────────────────
+    // When a specific document type is known (e.g. character_bible, beat_sheet),
+    // inject the corresponding PURPOSE_SCORING_RUBRICS so the LLM evaluates
+    // with the correct purpose class, not a generic rubric.
+    if (deliverableType) {
+      const purposeClass = getDocPurposeClass(deliverableType);
+      const purposeRubric = PURPOSE_SCORING_RUBRICS[purposeClass];
+      if (purposeRubric) {
+        systemPrompt = `${purposeRubric}\n\n${systemPrompt}`;
+        console.log(`[convergence-engine] purpose rubric injected: deliverableType=${deliverableType} → purposeClass=${purposeClass}`);
+      }
+    }
+
     console.log(`[convergence-engine] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
 
-    const raw = await callAI(LOVABLE_API_KEY, model, guardrailedSystem, userPrompt);
+    const raw = await callAI(LOVABLE_API_KEY, model, systemPrompt, userPrompt);
     let parsed: any;
 
     try {
@@ -317,9 +337,19 @@ serve(async (req) => {
       }
     }
 
-    // Extract scores
-    const ciScore = parsed.creative_integrity?.score ?? parsed.creative_integrity_score ?? 50;
-    const gpScore = parsed.greenlight_probability?.score ?? parsed.greenlight_probability ?? 50;
+        // Extract sub-scores (arithmetic calculation is authoritative — not LLM self-score)
+    const ciSubScores = parsed.creative_integrity?.sub_scores ?? {};
+    const gpSubScores = parsed.greenlight_probability?.sub_scores ?? {};
+
+    const CI_COMPONENTS = ["originality", "emotional_conviction", "thematic_coherence", "voice_strength", "directorial_magnetism", "scene_memorability", "risk_taking_value", "edge_retention"];
+    const GP_COMPONENTS = ["packaging_probability", "finance_viability", "lane_clarity", "market_timing", "risk_exposure", "travelability"];
+
+    const avgCI = CI_COMPONENTS.reduce((sum, k) => sum + (Number(ciSubScores[k]) || 5), 0) / CI_COMPONENTS.length;
+    const avgGP = GP_COMPONENTS.reduce((sum, k) => sum + (Number(gpSubScores[k]) || 5), 0) / GP_COMPONENTS.length;
+
+    // Enforce CI 2× arithmetic — this is the canonical calculation
+    const ciScore = Math.round(avgCI * 2);
+    const gpScore = Math.round(avgGP);
     const gap = Math.abs(ciScore - gpScore);
 
     // Calculate allowed gap
@@ -344,6 +374,9 @@ serve(async (req) => {
       }
     }
 
+    // Resolve purpose class for traceability and logging
+    const purposeClass = deliverableType ? getDocPurposeClass(deliverableType) : null;
+
     const result: ConvergenceOutput = {
       executive_snapshot: parsed.executive_snapshot || "",
       creative_integrity_score: ciScore,
@@ -359,7 +392,11 @@ serve(async (req) => {
       executive_guidance: parsed.executive_guidance || "Refine",
       creative_detail: parsed.creative_integrity,
       greenlight_detail: parsed.greenlight_probability,
+      // purpose_class is not in the base ConvergenceOutput type — inject into full_result below
     };
+
+    // Include purpose_class in the returned full_result for API consumers
+    const fullResult = { ...result, purpose_class: purposeClass };
 
     // Save to DB
     try {
@@ -390,7 +427,7 @@ serve(async (req) => {
           leverage_moves: result.leverage_moves,
           format_advisory: result.format_advisory,
           executive_guidance: result.executive_guidance,
-          full_result: result,
+          full_result: fullResult,
         });
       }
     } catch (dbErr) {
@@ -398,7 +435,7 @@ serve(async (req) => {
       // Non-fatal — still return result
     }
 
-    return new Response(JSON.stringify(result), {
+    return new Response(JSON.stringify(fullResult), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

@@ -350,6 +350,57 @@ async function runCCEPostGeneration(
 
 const NEC_MAX_CHARS = 3000;
 
+// ── Genre → tier ceiling inference ──────────────────────────────────────────
+// When no NEC doc exists, derive appropriate tier limits from the concept_brief genre.
+// Action/creature-content legitimately needs higher ceiling than psychological drama.
+// Logic mirrors the genre classification matrix used in reverse-engineer-script.
+function inferTierFromConceptBrief(supabaseClient: any, projectId: string): Promise<{ prefTier: number; maxTier: number }> {
+  return Promise.resolve().then(async () => {
+    try {
+      const { data: cbDoc } = await supabaseClient
+        .from('project_documents')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('doc_type', 'concept_brief')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!cbDoc) return { prefTier: 2, maxTier: 3 };
+
+      const { data: cbVer } = await supabaseClient
+        .from('project_document_versions')
+        .select('plaintext')
+        .eq('document_id', cbDoc.id)
+        .eq('is_current', true)
+        .maybeSingle();
+
+      const text: string = cbVer?.plaintext || '';
+      // Extract first GENRE line from plaintext (reverse-engineered concept briefs use plaintext format)
+      const genreMatch = text.match(/(?:^|\n)GENRE\s*\n\s*([^\n]+)/i) || text.match(/(?:^|\n)GENRE:\s*([^\n,]+)/i);
+      const genreRaw: string = (genreMatch?.[1] || '').toLowerCase().trim();
+
+      // ── Tier ceiling by genre structural type ───────────────────────────────
+      // Horror: supernatural dread is the primary draw — elevated ceiling needed
+      if (/horror/.test(genreRaw))             return { prefTier: 2, maxTier: 4 };
+      // Sci-fi: speculative escalation + world stakes often exceed drama ceiling
+      if (/sci.fi|science.fiction/.test(genreRaw)) return { prefTier: 2, maxTier: 4 };
+      // Fantasy: mythological escalation + epic scope
+      if (/fantasy/.test(genreRaw))             return { prefTier: 2, maxTier: 4 };
+      // Action-adventure: physical stakes, chases, survival — Tier-4 content is
+      // structurally normal (explosions, mass destruction set-pieces, creature attacks)
+      if (/action.adventure|action.dventure/.test(genreRaw)) return { prefTier: 2, maxTier: 4 };
+      // Thriller: suspense + threat — some Tier-4 threat is genre-normal
+      if (/thriller/.test(genreRaw))             return { prefTier: 2, maxTier: 4 };
+      // Animated: can contain any of the above; default conservative
+      if (/animated/.test(genreRaw))             return { prefTier: 2, maxTier: 4 };
+      // Drama / comedy / romance / documentary — grounded relational stakes
+      return { prefTier: 2, maxTier: 3 };
+    } catch {
+      return { prefTier: 2, maxTier: 3 };
+    }
+  });
+}
+
 const NEC_HARD_ENFORCEMENT = `If your proposal introduces blackmail, public spectacle, mass-casualty/catastrophic stakes, life-ruin stakes, assassinations, or supernatural escalation and the NEC does not explicitly permit it, you MUST replace it with an alternative that stays at or below the Preferred Operating Tier, preserving tone and nuance.`;
 
 const NEC_DEFAULT_GUARDRAIL = `\nNEC_GUARDRAIL: source=default prefTier=2 maxTier=3
@@ -389,8 +440,21 @@ async function loadNECGuardrailBlock(
       .maybeSingle();
 
     if (!necDoc) {
-      console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=default prefTier=2 maxTier=3`);
-      return NEC_DEFAULT_GUARDRAIL;
+      // No NEC doc — infer tier ceiling from concept_brief genre so the default
+      // guardrail is genre-appropriate rather than always assuming psychological drama.
+      const { prefTier, maxTier } = await inferTierFromConceptBrief(supabaseClient, projectId);
+      console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier} (no NEC doc)`);
+      return `\nNEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier}
+NARRATIVE ENERGY CONTRACT (AUTO-DERIVED from concept_brief genre — no project NEC found):
+- Preferred Operating Tier: ${prefTier} (structural genre norms for escalation).
+- Absolute Maximum Tier: ${maxTier} (hard ceiling for this genre family).
+- Genre family tier ceiling: for action-adventure, horror, sci-fi, fantasy, thriller — Tier 4 content (supernatural escalation, mass-casualty set-pieces, global stakes) is structurally normal and permitted. For drama/comedy/romance — stay at Tier 3.
+- HARD RULES:
+  • Do NOT introduce events above Tier ${maxTier}.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
+  • Stay inside the tonal envelope established by the source material.
+HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
     }
 
     const { data: necVersion } = await supabaseClient
@@ -402,8 +466,18 @@ async function loadNECGuardrailBlock(
 
     const text = necVersion?.plaintext;
     if (!text || text.length < 20) {
-      console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=default doc_id=${necDoc.id} prefTier=2 maxTier=3 (text too short)`);
-      return NEC_DEFAULT_GUARDRAIL;
+      // NEC exists but has no readable content — fall back to genre-aware default
+      const { prefTier, maxTier } = await inferTierFromConceptBrief(supabaseClient, projectId);
+      console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=genre-fallback doc_id=${necDoc.id} prefTier=${prefTier} maxTier=${maxTier} (NEC text empty)`);
+      return `\nNEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier}
+NARRATIVE ENERGY CONTRACT (AUTO-DERIVED — project NEC is empty; concept_brief genre used instead):
+- Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
+- HARD RULES:
+  • Do NOT introduce events above Tier ${maxTier}.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
+  • Stay inside the tonal envelope established by the source material.
+HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
     }
 
     const prefTier = parseTier(text.match(PREF_TIER_RE), 2);
@@ -423,9 +497,18 @@ HARD RULES (derived from NEC — non-negotiable):
 • Stay inside the tonal envelope. Do NOT escalate beyond what the source material establishes.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
   } catch (e) {
-    console.warn('[dev-engine-v2] NEC load failed, using default guardrail:', e);
-    console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=default prefTier=2 maxTier=3`);
-    return NEC_DEFAULT_GUARDRAIL;
+    console.warn('[dev-engine-v2] NEC load failed, using genre-aware fallback:', e);
+    const { prefTier, maxTier } = await inferTierFromConceptBrief(supabaseClient, projectId);
+    console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier} (error fallback)`);
+    return `\nNEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier}
+NARRATIVE ENERGY CONTRACT (AUTO-DERIVED after load error — concept_brief genre used):
+- Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
+- HARD RULES:
+  • Do NOT introduce events above Tier ${maxTier}.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
+  • Stay inside the tonal envelope established by the source material.
+HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
   }
 }
 
@@ -5960,6 +6043,59 @@ ${docTextForScoring}`;
           };
         } catch (e) {
           console.warn("[dev-engine-v2] Fact ledger upsert failed (non-fatal):", e);
+        }
+      }
+
+      // ── POST-ANALYZE META_JSON STAMP ──
+      // Keep meta_json.ci/gp in sync with development_runs so the UI always shows consistent scores.
+      // Policy: stamp if higher. meta_json tracks the best-known score from the engine.
+      {
+        const ci = parsed.ci_score ?? parsed.scores?.ci_score ?? null;
+        const gp = parsed.gp_score ?? parsed.scores?.gp_score ?? null;
+
+        if (ci !== null || gp !== null) {
+          try {
+            const { data: versionRow } = await supabase
+              .from("project_document_versions")
+              .select("id, meta_json")
+              .eq("id", versionId)
+              .maybeSingle();
+
+            if (versionRow) {
+              const existingMeta = (versionRow.meta_json &&
+                typeof versionRow.meta_json === "object" &&
+                !Array.isArray(versionRow.meta_json))
+                ? versionRow.meta_json : {};
+
+              const shouldUpdateCi = ci !== null && (
+                typeof existingMeta.ci !== "number" || ci > existingMeta.ci
+              );
+              const shouldUpdateGp = gp !== null && (
+                typeof existingMeta.gp !== "number" || gp > existingMeta.gp
+              );
+
+              if (shouldUpdateCi || shouldUpdateGp) {
+                const updatedMeta = {
+                  ...existingMeta,
+                  ...(shouldUpdateCi ? { ci } : {}),
+                  ...(shouldUpdateGp ? { gp } : {}),
+                  _ci_gp_stamped_at: new Date().toISOString(),
+                  _ci_gp_stamped_by: "dev-engine-v2",
+                  _ci_gp_score_source: "development_runs",
+                };
+
+                await supabase
+                  .from("project_document_versions")
+                  .update({ meta_json: updatedMeta })
+                  .eq("id", versionId);
+
+                console.log(`[dev-engine-v2] meta_json stamp: version=${versionId} ci=${ci ?? "unchanged"} gp=${gp ?? "unchanged"}`);
+              }
+            }
+          } catch (stampErr) {
+            // Non-fatal: stamp failure should not fail the analyze response
+            console.warn("[dev-engine-v2] meta_json stamp failed (non-fatal):", stampErr);
+          }
         }
       }
 
@@ -27352,6 +27488,11 @@ CRITICAL:
         // Safety: if after both passes maxRewrittenScene > detectedCount,
         //         clamp substitution to detected scenes (log warning, no hard-fail).
         //         Prevents total assembly failure when one slugline is non-standard.
+        // Pass 1: broad slugline regex on plaintext
+        // Pass 2: if boundaries < 3, use rewrite_jobs as authoritative source
+        //         (enqueue already detected scene headings and stored them)
+        // Pass 3: if after passes 1+2 we still have fewer than the highest
+        //         rewritten scene number, fall back to line-position approximation
 
         const buildBoundaries = (text: string): number[] => {
           // Matches the overwhelming majority of script slugline formats:
@@ -27369,55 +27510,91 @@ CRITICAL:
 
         let boundaries = buildBoundaries(originalText);
 
+        // ── Pass 2: authoritative fallback via rewrite_jobs headings ────────
+        // If Pass 1 found < 3 boundaries, the plaintext sluglines may be
+        // non-standard or absent. Use the rewrite_jobs — which already hold
+        // the detected scene headings from enqueue — to build the map.
         if (boundaries.length < 3) {
-          const sample = originalText.slice(0, 1200);
-          throw new Error(
-            `Selective assemble failed: could not detect scene headings reliably (found ${boundaries.length}). ` +
-            `Refusing to assemble from rewritten outputs only (would truncate script). ` +
-            `Check slugline format in source version. Sample start:\n---\n${sample}\n---`
-          );
-        }
-
-        // ── Pass 2: augment with known sluglines from rewrite_jobs ────────
-        const expectedTotal: number = rewriteScopePlan?.total_scenes_in_script ?? 0;
-        if (expectedTotal > 0 && boundaries.length < expectedTotal) {
           try {
             const { data: allJobs } = await supabase.from("rewrite_jobs")
               .select("scene_number, scene_heading")
               .eq("source_version_id", sourceVersionId)
-              .not("scene_heading", "is", null);
+              .not("scene_heading", "is", null)
+              .order("scene_number", { ascending: true });
 
-            const lines = originalText.split("\n");
-            const lineOffsets: number[] = [];
-            let offset = 0;
-            for (const line of lines) {
-              lineOffsets.push(offset);
-              offset += line.length + 1; // +1 for \n
-            }
+            if (allJobs && allJobs.length > 0) {
+              const lines = originalText.split("\n");
+              const lineOffsets: number[] = [];
+              let offset = 0;
+              for (const line of lines) {
+                lineOffsets.push(offset);
+                offset += line.length + 1; // +1 for \n
+              }
 
-            const boundarySet = new Set<number>(boundaries);
-            for (const job of ((allJobs ?? []) as any[])) {
-              const heading = (job.scene_heading as string || "").trim();
-              if (!heading || heading.length < 4) continue;
-              // Escape for regex — search for this slugline at a line start
-              const esc = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-              const re = new RegExp(`^\\s{0,8}${esc}`, "mi");
-              const m = re.exec(originalText);
-              if (m && !boundarySet.has(m.index)) {
-                boundarySet.add(m.index);
+              const boundarySet = new Set<number>(boundaries);
+              for (const job of allJobs as any[]) {
+                const heading = (job.scene_heading as string || "").trim();
+                if (!heading || heading.length < 4) continue;
+                // Escape for regex — search for this slugline at a line start
+                const esc = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                const re = new RegExp(`^\\s{0,8}${esc}`, "mi");
+                const m = re.exec(originalText);
+                if (m) {
+                  boundarySet.add(m.index);
+                }
+              }
+
+              // If still < 3 from job headings, try prefix matching
+              if (boundarySet.size < 3) {
+                for (const job of allJobs as any[]) {
+                  const heading = (job.scene_heading as string || "").trim();
+                  if (!heading || heading.length < 4) continue;
+                  // Try shorter prefix (first 40 chars) to handle truncated headings
+                  const prefix = heading.substring(0, 40).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                  const re = new RegExp(`^\\s{0,8}${prefix}`, "mi");
+                  const m = re.exec(originalText);
+                  if (m) boundarySet.add(m.index);
+                }
+              }
+
+              const pass2Boundaries = [...boundarySet].sort((a, b) => a - b);
+              if (pass2Boundaries.length > boundaries.length) {
+                console.log(
+                  `[scene-rewrite] Boundary recovery (Pass 2): ${boundaries.length} → ${pass2Boundaries.length} ` +
+                  `via rewrite_jobs headings`
+                );
+                boundaries = pass2Boundaries;
               }
             }
-            const augmented = [...boundarySet].sort((a, b) => a - b);
-            if (augmented.length > boundaries.length) {
-              console.log(
-                `[scene-rewrite] Boundary augmentation: ${boundaries.length} → ${augmented.length} ` +
-                `(added ${augmented.length - boundaries.length} via slugline match)`
-              );
-              boundaries = augmented;
-            }
           } catch (_) {
-            // Pass 2 is non-fatal — continue with Pass 1 result
+            // Pass 2 is non-fatal — fall through to Pass 3
           }
+        }
+
+        // ── Pass 3: last-resort approximation via scene_number ─────────────
+        // If we still have < 3 boundaries, approximate using the scene count
+        // from the highest rewritten scene number. Divide plaintext into
+        // roughly equal segments per scene. Log as warning — not ideal.
+        if (boundaries.length < 3) {
+          const maxScene = Math.max(...outputs.map(o => o.scene_number));
+          if (maxScene >= 3) {
+            const approxLen = Math.floor(originalText.length / maxScene);
+            boundaries = Array.from({ length: maxScene }, (_, i) => i * approxLen);
+            console.warn(
+              `[scene-rewrite] Pass 3 approximation: split ${originalText.length}-char plaintext ` +
+              `into ${maxScene} equal segments (${approxLen} chars each)`
+            );
+          }
+        }
+
+        // ── Final safety: if still no boundaries, throw ────────────────────
+        if (boundaries.length < 1) {
+          const sample = originalText.slice(0, 600);
+          throw new Error(
+            `Selective assemble failed: could not detect any scene headings ` +
+            `(buildBoundaries=0, Pass 2 job-heading fallback also found nothing). ` +
+            `Cannot assemble. Sample:\n---\n${sample}\n---`
+          );
         }
 
         // ── Build scene segments ──────────────────────────────────────────

@@ -72,8 +72,20 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
   const metaGp = typeof versionMetaJson?.gp === 'number' ? versionMetaJson.gp : null;
   const analysisCi = latestAnalysis?.ci_score || latestAnalysis?.scores?.ci_score || 0;
   const analysisGp = latestAnalysis?.gp_score || latestAnalysis?.scores?.gp_score || 0;
-  const ci = metaCi ?? analysisCi;
-  const gp = metaGp ?? analysisGp;
+
+  // ── POST-OPTION-A CONSISTENCY CHECK ──
+  // After the CI/GP reconciliation (Option A), dev-engine-v2 stamps meta_json.ci/gp
+  // after every analyze, so metaCi/metaGp should match analysisCi/analysisGp.
+  // If they diverge, prefer the live analysis value (development_runs is authoritative)
+  // and flag the inconsistency for logging.
+  const ciDiverged = metaCi !== null && metaCi !== analysisCi;
+  const gpDiverged = metaGp !== null && metaGp !== analysisGp;
+  if (ciDiverged || gpDiverged) {
+    console.warn(`[ConvergencePanel] CI/GP divergence detected on version: ci meta=${metaCi} vs analysis=${analysisCi}, gp meta=${metaGp} vs analysis=${analysisGp}`);
+  }
+  // Prefer live analysis values when diverged (development_runs is authoritative)
+  const ci = ciDiverged ? analysisCi : (metaCi ?? analysisCi);
+  const gp = gpDiverged ? analysisGp : (metaGp ?? analysisGp);
 
   const isSelectiveRewrite = !!(versionLabel && /selective scene rewrite/i.test(versionLabel));
   const gap = Math.abs(ci - gp);

@@ -150,37 +150,31 @@ Deno.serve(async (req) => {
       }
 
       // ── WRITE: Set meta_json.ci and .gp on a specific version ──
+      // BLOCKED (Option A): ci/gp must be set by dev-engine-v2 analyze, not via direct write.
+      // Direct writes create divergence between meta_json and development_runs.
       case "set_version_scores": {
-        const { version_id, ci, gp } = params;
-        const { data, error } = await supabase.rpc("jsonb_set_ci_gp", { version_id, ci_val: ci, gp_val: gp }).maybeSingle()
-          .catch(() => ({ data: null, error: { message: "rpc not found, using update" } }));
-        
-        // Fallback to direct update
-        const { data: updData, error: updErr } = await supabase
-          .from("project_document_versions")
-          .update({
-            meta_json: supabase.rpc ? undefined : null, // handled below
-          })
-          .eq("id", version_id);
-
-        // Use jsonb_set via raw update
-        const { data: rawData, error: rawErr } = await supabase
-          .from("project_document_versions")
-          .update({ meta_json: { ci, gp } })
-          .eq("id", version_id)
-          .select("id, version_number, meta_json, approval_status")
-          .maybeSingle();
-        if (rawErr) throw rawErr;
-        result = rawData;
-        break;
+        return new Response(JSON.stringify({
+          error: "set_version_scores is deprecated. ci/gp must be set by dev-engine-v2 analyze. " +
+                 "Run: supabase.functions.invoke('dev-engine-v2', { action: 'analyze', versionId })",
+          code: "CI_GP_MUST_USE_ENGINE",
+        }), { status: 400, headers: { ...JSON_HEADERS } });
       }
 
       // ── WRITE: Set version scores via JSONB merge ──
+      // OPTION A: ci/gp blocked — only non-score metadata allowed.
+      // ci/gp must come from dev-engine-v2 analyze via development_runs.
       case "patch_version_meta": {
         const { version_id, meta_patch } = params;
-        const ALLOWED_META = ["ci", "gp", "gap", "score_source"];
+        const ALLOWED_META = ["gap", "score_source"]; // ci and gp REMOVED — use dev-engine-v2 only
+        if ("ci" in (meta_patch || {}) || "gp" in (meta_patch || {})) {
+          return new Response(JSON.stringify({
+            error: "ci and gp cannot be set via patch_version_meta. " +
+                   "Run dev-engine-v2 analyze to update scores.",
+            code: "CI_GP_MUST_USE_ENGINE",
+          }), { status: 400, headers: { ...JSON_HEADERS } });
+        }
         const safeMeta: Record<string, any> = {};
-        for (const [k, v] of Object.entries(meta_patch)) {
+        for (const [k, v] of Object.entries(meta_patch || {})) {
           if (ALLOWED_META.includes(k)) safeMeta[k] = v;
         }
         // Get current meta_json first, then merge
@@ -202,16 +196,43 @@ Deno.serve(async (req) => {
         break;
       }
 
-      // ── WRITE: Approve a version and write scores ──
+      // ── WRITE: Approve a version — ci/gp sourced from development_runs ──
+      // OPTION A: ci/gp come from the latest dev-engine-v2 ANALYZE run, not from params.
+      // This ensures meta_json stays in sync with development_runs.
       case "approve_version": {
-        const { version_id, ci, gp } = params;
+        const { version_id } = params;
+
+        // Resolve ci/gp from development_runs (authoritative source)
+        const { data: latestRun } = await supabase
+          .from("development_runs")
+          .select("output_json")
+          .eq("version_id", version_id)
+          .eq("run_type", "ANALYZE")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        let ci: number | null = null;
+        let gp: number | null = null;
+        if (latestRun?.output_json) {
+          const out = latestRun.output_json;
+          ci = out?.ci_score ?? out?.scores?.ci_score ?? out?.scores?.ci ?? out?.ci ?? null;
+          gp = out?.gp_score ?? out?.scores?.gp_score ?? out?.scores?.gp ?? out?.gp ?? null;
+        }
+
         const { data: current, error: fetchErr } = await supabase
           .from("project_document_versions")
           .select("meta_json")
           .eq("id", version_id)
           .maybeSingle();
         if (fetchErr) throw fetchErr;
-        const merged = { ...(current?.meta_json ?? {}), ci, gp, score_source: "lara_proxy_approve" };
+        const merged = {
+          ...(current?.meta_json ?? {}),
+          ...(ci !== null ? { ci } : {}),
+          ...(gp !== null ? { gp } : {}),
+          _ci_gp_score_source: "development_runs_approval",
+          _ci_gp_approved_at: new Date().toISOString(),
+        };
         const { data, error } = await supabase
           .from("project_document_versions")
           .update({ approval_status: "approved", is_current: true, meta_json: merged })
