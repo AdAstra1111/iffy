@@ -35,6 +35,7 @@ interface CriteriaData {
   audience_age_range?: string | null;
   comparable_titles?: string[] | null;
   market_positioning?: string | null;
+  platformTarget?: string | null;
 }
 
 interface FieldConfidence {
@@ -149,6 +150,7 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
       audience_age_range: quals.audience_age_range || criteriaJson.rating || null,
       comparable_titles: quals.comparable_titles || criteriaJson.prohibitedComps || null,
       market_positioning: quals.market_positioning || criteriaJson.differentiateBy || null,
+      platformTarget: quals.platformTarget || criteriaJson.platformTarget || null,
     };
     setCriteria(merged);
     setEditCriteria(merged);
@@ -469,6 +471,7 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
               {criteria.audience_age_range ? renderField('Audience Age Range', 'audience_age_range', criteria.audience_age_range) : null}
               {criteria.comparable_titles?.length ? renderField('Comparable Titles', 'comparable_titles', criteria.comparable_titles.join(', ')) : null}
               {criteria.market_positioning ? renderField('Market Positioning', 'market_positioning', criteria.market_positioning) : null}
+              {criteria.platformTarget ? renderField('Platform', 'platformTarget', criteria.platformTarget) : null}
             </div>
           )}
 

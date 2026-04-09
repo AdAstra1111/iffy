@@ -27,6 +27,7 @@ const JOB_STAGES = [
   { key: "synthesise",      label: "Synthesising analysis..." },
   { key: "beat_sheet",      label: "Building beat sheet..." },
   { key: "character_bible", label: "Building character bible..." },
+  { key: "infer_criteria", label: "Inferring criteria..." },
   { key: "storing_docs",   label: "Saving foundation documents..." },
 ];
 
@@ -352,6 +353,63 @@ ${allEvents.map(e => `- ${e}`).join("\n")}
 
 Respond with ONLY JSON.`, 12000);
 
+    // ── Stage 7: Infer remaining criteria from beats + market sheet + characters ─
+    updateStage(payload, "infer_criteria", "running");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    const beatsText = (call2.beats || []).map((b: any) =>
+      `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
+    ).join("\n");
+
+    const marketSheet = (call1 as any).market_sheet || {};
+    const characters = (call3 as any).characters || [];
+    const comparables = marketSheet.comparable_titles || [];
+
+    const callCriteria = await callLLM(`You are a film/TV production analyst. Infer all remaining pitch criteria fields from the document evidence below.
+
+EVIDENCE:
+- Genre: ${(call1 as any).genre || "unknown"}
+- Subgenre: ${(call1 as any).subgenre || "unknown"}
+- Comparable titles: ${comparables.join(", ") || "none"}
+- Market positioning: ${marketSheet.market_positioning || ""}
+- Audience: ${(call1 as any).target_audience || ""}
+
+BEAT SHEET (condensed):
+${beatsText.slice(0, 4000)}
+
+PRODUCTION TYPE: ${isTV ? "tv-series" : "film"}
+
+RULES:
+- Be CONCRETE and SPECIFIC — cite evidence from the beats when inferring
+- Do NOT invent numbers not supported by the evidence
+- Use the comparable titles and genre to infer platform, lane and budget
+- Infer tone from the BEAT emotional shifts (emotional_shift), not just the logline
+- Infer rating from violence, language and adult themes visible in the beat descriptions and character backstories
+
+Return ONLY valid JSON:
+{
+  "subgenre": "string — e.g. Monster Movie, Pulp Adventure, Period Action, etc.",
+  "toneAnchor": "string — comma-separated tone keywords matching the BEAT SHIFT energy",
+  "rating": "string — e.g. PG, PG-13, 12, 15, R",
+  "platformTarget": "string — primary distribution platform or theatrical",
+  "lane": "string — prestige | mainstream | independent-film | genre-market | micro-budget",
+  "budgetBand": "string — micro | low | medium | high | tent-pole",
+  "runtimeMin": number | null,
+  "runtimeMax": number | null,
+  "settingType": "string — Period/Historical | Contemporary | Near Future | etc.",
+  "locationVibe": "string — brief description of primary setting energy",
+  "confidence": {"subgenre": "high|med|low", "toneAnchor": "high|med|low", "rating": "high|med|low", "platformTarget": "high|med|low", "lane": "high|med|low", "budgetBand": "high|med|low", "runtimeMin": "high|med|low", "settingType": "high|med|low"},
+  "evidence": "brief justification for key inferences"
+}
+
+Respond with ONLY JSON.`, 3000);
+
+    let inferred: any = {};
+    try { inferred = JSON.parse(extractJSON(callCriteria)); } catch { console.warn("[reverse-engineer] criteria inference JSON parse failed:", callCriteria.slice(0, 200)); }
+
+    updateStage(payload, "infer_criteria", "done");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
     // ── Stage 6: Character bible (use synthesis + head for full cast) ────────
     updateStage(payload, "character_bible", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -429,38 +487,45 @@ Respond with ONLY JSON.`, 12000);
       else await sb.from("project_canon").insert({ project_id, canon_json: { voice_profile: call1.voice_profile, title: metadata.title } });
     } catch (_) {}
 
-    // ── Auto-populate pitch criteria from extracted metadata ──────────────────
+    // ── Auto-populate pitch criteria from extracted metadata + inferred fields ─────
     try {
       const marketSheet = (call2 as any)?.market_sheet || {};
+
+      // criteria_json — pitch-facing fields
       const criteriaFields: Record<string, any> = {};
-      if (metadata.genre)                      criteriaFields.genre             = metadata.genre;
-      if (metadata.subgenre)                   criteriaFields.subgenre          = metadata.subgenre;
-      if (metadata.tone)                       criteriaFields.toneAnchor        = metadata.tone;
-      if (metadata.target_audience)            criteriaFields.audience         = metadata.target_audience;
-      if (marketSheet.audience_age_range)      criteriaFields.rating           = marketSheet.audience_age_range;
-      if (marketSheet.comparable_titles?.length) criteriaFields.prohibitedComps = marketSheet.comparable_titles;
-      if (marketSheet.market_positioning)       criteriaFields.differentiateBy  = marketSheet.market_positioning;
+      if (metadata.genre)                               criteriaFields.genre             = metadata.genre;
+      if (inferred.subgenre)                            criteriaFields.subgenre          = inferred.subgenre;
+      if (inferred.toneAnchor)                          criteriaFields.toneAnchor        = inferred.toneAnchor;
+      if (metadata.target_audience)                      criteriaFields.audience         = metadata.target_audience;
+      if (inferred.rating)                              criteriaFields.rating           = inferred.rating;
+      if (marketSheet.comparable_titles?.length)         criteriaFields.prohibitedComps = marketSheet.comparable_titles;
+      if (marketSheet.market_positioning)                 criteriaFields.differentiateBy  = marketSheet.market_positioning;
+      if (inferred.settingType)                          criteriaFields.settingType      = inferred.settingType;
+      if (inferred.locationVibe)                          criteriaFields.locationVibe      = inferred.locationVibe;
+      if (inferred.runtimeMin)                           criteriaFields.runtimeMin       = String(inferred.runtimeMin);
+      if (inferred.runtimeMax)                           criteriaFields.runtimeMax       = String(inferred.runtimeMax);
 
-      // Build criteria_json with provenance flag
-      const criteriaJson = {
-        ...criteriaFields,
-        _auto_populated: true,
-        _source_doc_id: script_document_id,
-        _populated_at: new Date().toISOString(),
-      };
-
-      // Also seed guardrails qualifications — all pitch fields so CriteriaPanel can read them
+      // guardrails qualifications — all fields for pipeline + CriteriaPanel
       const fmtFromLLM = (metadata as any).format;
       const fmtSubtype = fmtFromLLM || (isTV ? 'tv-series' : 'film');
       const quals: Record<string, any> = {
         format_subtype: fmtSubtype,
         genre: metadata.genre || null,
-        subgenre: metadata.subgenre || null,
-        tone: metadata.tone || null,
+        subgenre: (inferred.subgenre || metadata.subgenre) || null,
+        tone: (inferred.toneAnchor || metadata.tone) || null,
         target_audience: metadata.target_audience || null,
-        audience_age_range: marketSheet.audience_age_range || null,
+        audience_age_range: inferred.rating || null,
         comparable_titles: marketSheet.comparable_titles?.length ? marketSheet.comparable_titles : null,
         market_positioning: marketSheet.market_positioning || null,
+        platformTarget: inferred.platformTarget || null,
+        assigned_lane: inferred.lane || null,
+        budget_range: inferred.budgetBand || null,
+        runtimeMin: inferred.runtimeMin || null,
+        runtimeMax: inferred.runtimeMax || null,
+        settingType: inferred.settingType || null,
+        locationVibe: inferred.locationVibe || null,
+        _inference_confidence: inferred.confidence || null,
+        _inference_evidence: inferred.evidence || null,
       };
 
       // Read current guardrails_config
