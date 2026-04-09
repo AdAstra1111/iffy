@@ -19,6 +19,26 @@ const CONVERGENCE_STAGES = [
   { at: 95, label: 'Finalizing executive guidance…' },
 ];
 
+interface CiSubScores {
+  originality_delta: number;
+  emotional_conviction: number;
+  thematic_coherence: number;
+  voice_strength: number;
+  directorial_magnetism: number;
+  scene_memorability: number;
+  risk_taking_value: number;
+  edge_retention: number;
+}
+
+interface GpSubScores {
+  packaging_probability: number;
+  finance_viability: number;
+  lane_clarity: number;
+  market_timing: number;
+  risk_exposure: number;
+  travelability?: number;
+}
+
 interface ConvergenceResult {
   executive_snapshot: string;
   creative_integrity_score: number;
@@ -40,8 +60,8 @@ interface ConvergenceResult {
     rationale?: string;
   } | null;
   executive_guidance: string;
-  creative_detail?: any;
-  greenlight_detail?: any;
+  creative_detail?: { score: number; sub_scores: CiSubScores; flags?: string[] } | null;
+  greenlight_detail?: { score: number; sub_scores: GpSubScores; detail?: string } | null;
 }
 
 interface Props {
@@ -212,6 +232,44 @@ export function ConvergencePanel({
               <Progress value={result.greenlight_probability} className="h-1.5 mt-2" />
             </div>
           </div>
+
+          {/* Sub-scores (0–10 per axis) */}
+          {result.creative_detail?.sub_scores && result.greenlight_detail?.sub_scores && (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="glass-card rounded-lg p-3">
+                <p className="text-[10px] text-purple-400 uppercase tracking-wider mb-2">CI Sub-scores</p>
+                <div className="space-y-1.5">
+                  {(Object.entries(result.creative_detail.sub_scores) as [string, number][]).map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground capitalize flex-1">{key.replace(/_/g, '\u00a0')}</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-purple-400 rounded-full" style={{ width: `${(val / 10) * 100}%` }} />
+                        </div>
+                        <span className="text-xs font-mono text-purple-400 w-5 text-right">{val}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="glass-card rounded-lg p-3">
+                <p className="text-[10px] text-emerald-400 uppercase tracking-wider mb-2">GP Sub-scores</p>
+                <div className="space-y-1.5">
+                  {(Object.entries(result.greenlight_detail.sub_scores) as [string, number][]).map(([key, val]) => (
+                    <div key={key} className="flex items-center justify-between gap-2">
+                      <span className="text-xs text-muted-foreground capitalize flex-1">{key.replace(/_/g, '\u00a0')}</span>
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${(val / 10) * 100}%` }} />
+                        </div>
+                        <span className="text-xs font-mono text-emerald-400 w-5 text-right">{val}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Convergence Status */}
           {sc && (
