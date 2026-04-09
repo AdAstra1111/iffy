@@ -141,7 +141,7 @@ export function useScriptIntake(projectId: string | undefined) {
         .insert({
           project_id: projectId,
           user_id: user.id,
-          doc_type: 'script_pdf',
+          doc_type: 'feature_script',
           title: file.name.replace('.pdf', ''),
           file_name: file.name,
           file_path: path,
@@ -161,8 +161,8 @@ export function useScriptIntake(projectId: string | undefined) {
           created_by: user.id,
           version_number: 1,
           plaintext: '',
-          label: 'Initial upload',
-          deliverable_type: 'script_pdf',
+          label: 'v1',
+          deliverable_type: 'feature_script',
         })
         .select('id')
         .single();
