@@ -488,7 +488,10 @@ Respond with ONLY JSON.`, 3000);
 
     let inferred: any = {};
     try { inferred = extractJSON(callCriteria); }
-    catch (e) { console.warn("[reverse-engineer] criteria inference JSON parse failed:", String(callCriteria).slice(0, 200)); }
+    catch (e) { console.warn("[reverse-engineer] criteria inference JSON parse failed:", String(callCriteria).slice(0, 500)); }
+    if (Object.keys(inferred).length === 0) {
+      console.warn("[reverse-engineer] criteria inference returned empty — raw output:", String(callCriteria).slice(0, 1000));
+    }
 
     updateStage(payload, "infer_criteria", "done");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -550,7 +553,7 @@ Respond with ONLY JSON.`, 3000);
       };
 
       await sb.from("projects").update({
-        criteria_json: criteriaJson,
+        criteria_json: criteriaFields,
         guardrails_config: gc,
       }).eq("id", project_id);
 
@@ -607,12 +610,13 @@ serve(async (req) => {
       scriptText = v?.plaintext || "";
     }
     if (!scriptText) {
-      const { data: doc } = await sb.from("project_documents").select("plaintext, latest_version_id").eq("id", script_document_id).maybeSingle();
+      const { data: doc } = await sb.from("project_documents").select("plaintext, extracted_text, latest_version_id").eq("id", script_document_id).maybeSingle();
       if (doc?.latest_version_id) {
         const { data: latestVer } = await sb.from("project_document_versions").select("plaintext").eq("id", doc.latest_version_id).maybeSingle();
         scriptText = latestVer?.plaintext || "";
       }
       if (!scriptText && doc?.plaintext) scriptText = doc.plaintext;
+      if (!scriptText && doc?.extracted_text) scriptText = doc.extracted_text;
     }
     if (!scriptText) {
       const { data: latestVer } = await sb.from("project_document_versions").select("plaintext").eq("document_id", script_document_id).order("version_number", { ascending: false }).limit(1).maybeSingle();
@@ -643,17 +647,24 @@ serve(async (req) => {
 
     const jobId = created.id;
 
-    // Dispatch background work — fire and forget so we return job_id immediately
-    // The background invocation does all LLM work and updates the job record as it goes
+    // Dispatch background work via EdgeRuntime.waitUntil so the worker stays alive
+    // after we return the foreground response. Plain fire-and-forget fetch() gets
+    // killed the moment the Response is sent — waitUntil prevents that.
     const bgPayload = JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text: scriptText, format });
     const bgHeaders = new Headers({ "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` });
 
-    // Do NOT await — return job_id to client immediately so polling can show real progress
-    fetch(`${SUPABASE_URL}/functions/v1/reverse-engineer-script`, {
+    const bgWork = fetch(`${SUPABASE_URL}/functions/v1/reverse-engineer-script`, {
       method: "POST",
       headers: bgHeaders,
       body: bgPayload,
+    }).then(r => {
+      if (!r.ok) console.error("[reverse-engineer] bg dispatch non-2xx:", r.status);
     }).catch(err => console.error("[reverse-engineer] bg dispatch error:", err));
+
+    // Keep worker alive until background job completes
+    if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+      (globalThis as any).EdgeRuntime.waitUntil(bgWork);
+    }
 
     return new Response(JSON.stringify({
       job_id: jobId,

@@ -70,19 +70,23 @@ export function useReverseEngineer(): UseReverseEngineerReturn {
         updated_at: new Date().toISOString(),
       });
 
-      // Start polling
+      // Start polling — resilient: network/function errors don't stop the poll
       const poll = async () => {
-        const { data: statusData, error: statusErr } = await supabase.functions.invoke('reverse-engineer-status', {
-          body: { job_id: jobId },
-        });
-        if (!statusErr && statusData) {
-          const job = statusData as ReverseEngineerJob;
-          setCurrentJob(job);
-          if (job.status === 'done' || job.status === 'error') {
-            setIsRunning(false);
-            if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
-            return;
+        try {
+          const { data: statusData, error: statusErr } = await supabase.functions.invoke('reverse-engineer-status', {
+            body: { job_id: jobId },
+          });
+          if (!statusErr && statusData) {
+            const job = statusData as ReverseEngineerJob;
+            setCurrentJob(job);
+            if (job.status === 'done' || job.status === 'error') {
+              setIsRunning(false);
+              if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+              return;
+            }
           }
+        } catch {
+          // transient error — keep polling
         }
         pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
       };
