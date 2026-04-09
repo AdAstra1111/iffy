@@ -27,6 +27,14 @@ interface CriteriaData {
   tone_tags?: string[] | null;
   audience_region?: string | null;
   language?: string | null;
+  // Pitch-level fields (auto-populated from reverse engineer)
+  genre?: string | null;
+  subgenre?: string | null;
+  tone?: string | null;
+  target_audience?: string | null;
+  audience_age_range?: string | null;
+  comparable_titles?: string[] | null;
+  market_positioning?: string | null;
 }
 
 interface FieldConfidence {
@@ -102,13 +110,14 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
 
   async function loadCriteria() {
     const { data } = await (supabase as any).from('projects')
-      .select('guardrails_config, assigned_lane, budget_range, format, episode_target_duration_seconds, episode_target_duration_min_seconds, episode_target_duration_max_seconds, season_episode_count, development_behavior')
+      .select('guardrails_config, assigned_lane, budget_range, format, episode_target_duration_seconds, episode_target_duration_min_seconds, episode_target_duration_max_seconds, season_episode_count, development_behavior, criteria_json')
       .eq('id', projectId).single();
     if (!data) return;
 
     const gc = data.guardrails_config || {};
     const quals = gc?.overrides?.qualifications || {};
-    const derived = gc?.derived_from_idea || null;
+    const criteriaJson = data.criteria_json || {};
+    const derived = gc?.derived_from_idea || gc?.derived_from_reverse_engineer || null;
 
     // Canonical keys — prefer new keys, fall back to legacy scalar for compat
     const legacyScalar = quals.episode_target_duration_seconds || data.episode_target_duration_seconds || null;
@@ -132,6 +141,14 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
       tone_tags: quals.tone_tags || null,
       audience_region: quals.audience_region || null,
       language: quals.language || null,
+      // Pitch-level fields (auto-populated from reverse engineer via criteria_json)
+      genre: quals.genre || criteriaJson.genre || null,
+      subgenre: quals.subgenre || criteriaJson.subgenre || null,
+      tone: quals.tone || criteriaJson.toneAnchor || null,
+      target_audience: quals.target_audience || criteriaJson.audience || null,
+      audience_age_range: quals.audience_age_range || criteriaJson.rating || null,
+      comparable_titles: quals.comparable_titles || criteriaJson.prohibitedComps || null,
+      market_positioning: quals.market_positioning || criteriaJson.differentiateBy || null,
     };
     setCriteria(merged);
     setEditCriteria(merged);
@@ -444,6 +461,14 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
               {renderField('Episodes/Season', 'season_episode_count', criteria.season_episode_count)}
               {renderField('Runtime', 'target_runtime_min_low', criteria.target_runtime_min_low && criteria.target_runtime_min_high ? `${criteria.target_runtime_min_low}–${criteria.target_runtime_min_high} min` : null)}
               {criteria.tone_tags?.length ? renderField('Tone', 'tone_tags', criteria.tone_tags.join(', ')) : null}
+              {/* Auto-populated pitch-level fields from reverse engineer */}
+              {criteria.genre ? renderField('Genre', 'genre', criteria.genre) : null}
+              {criteria.subgenre ? renderField('Subgenre', 'subgenre', criteria.subgenre) : null}
+              {criteria.tone ? renderField('Tone', 'tone', criteria.tone) : null}
+              {criteria.target_audience ? renderField('Target Audience', 'target_audience', criteria.target_audience) : null}
+              {criteria.audience_age_range ? renderField('Audience Age Range', 'audience_age_range', criteria.audience_age_range) : null}
+              {criteria.comparable_titles?.length ? renderField('Comparable Titles', 'comparable_titles', criteria.comparable_titles.join(', ')) : null}
+              {criteria.market_positioning ? renderField('Market Positioning', 'market_positioning', criteria.market_positioning) : null}
             </div>
           )}
 

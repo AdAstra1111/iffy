@@ -281,6 +281,7 @@ Return ONLY valid JSON:
   "metadata": {
     "title": "string",
     "logline": "string — 1-2 sentence hook",
+    "format": "string — must be one of: film, tv-series, limited-series, vertical-drama, documentary, documentary-series, short, animation",
     "genre": "string",
     "subgenre": "string or null",
     "tone": "string",
@@ -448,11 +449,19 @@ Respond with ONLY JSON.`, 12000);
         _populated_at: new Date().toISOString(),
       };
 
-      // Also seed guardrails qualifications from market sheet + metadata
-      const quals: Record<string, any> = {};
-      if (metadata.format)      quals.format_subtype     = metadata.format;
-      if (marketSheet.episode_target_duration_seconds) quals.episode_target_duration_seconds = marketSheet.episode_target_duration_seconds;
-      if (metadata.season_episode_count)             quals.season_episode_count              = metadata.season_episode_count;
+      // Also seed guardrails qualifications — all pitch fields so CriteriaPanel can read them
+      const fmtFromLLM = (metadata as any).format;
+      const fmtSubtype = fmtFromLLM || (isTV ? 'tv-series' : 'film');
+      const quals: Record<string, any> = {
+        format_subtype: fmtSubtype,
+        genre: metadata.genre || null,
+        subgenre: metadata.subgenre || null,
+        tone: metadata.tone || null,
+        target_audience: metadata.target_audience || null,
+        audience_age_range: marketSheet.audience_age_range || null,
+        comparable_titles: marketSheet.comparable_titles?.length ? marketSheet.comparable_titles : null,
+        market_positioning: marketSheet.market_positioning || null,
+      };
 
       // Read current guardrails_config
       const { data: projRow } = await sb.from("projects")
@@ -479,7 +488,7 @@ Respond with ONLY JSON.`, 12000);
       console.warn("[reverse-engineer] criteria population failed (non-fatal):", criteriaErr);
     }
 
-    await sb.from("projects").update({ title: metadata.title, lifecycle_stage: outlineType, format: isTV ? "tv-series" : "film" }).eq("id", project_id);
+    await sb.from("projects").update({ title: metadata.title, lifecycle_stage: outlineType }).eq("id", project_id);
 
     // Mark all stages done
     for (const s of JOB_STAGES) updateStage(payload, s.key, "done");
