@@ -279,6 +279,8 @@ serve(async (req) => {
       analysisMode = "DUAL",
       previousCreativeScore, previousGreenlightScore, previousGap,
       deliverableType,
+      documentId,     // optional — latest version will be looked up if not provided
+      versionId,      // optional — latest version will be looked up if not provided
     } = body;
 
     if (!projectTitle) {
@@ -398,7 +400,7 @@ serve(async (req) => {
     // Include purpose_class in the returned full_result for API consumers
     const fullResult = { ...result, purpose_class: purposeClass };
 
-    // Save to DB
+    // Save to DB — atomic write to development_runs + meta_json cache
     try {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -409,6 +411,83 @@ serve(async (req) => {
       const { data: { user } } = await supabase.auth.getUser(token);
 
       if (user && projectId) {
+        // Resolve document_id and version_id — look up latest version if not provided
+        let resolvedDocId = documentId;
+        let resolvedVersionId = versionId;
+
+        if (!resolvedVersionId) {
+          const { data: latestVer } = await supabase
+            .from("project_document_versions")
+            .select("id, document_id")
+            .eq("project_id", projectId)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestVer) {
+            resolvedVersionId = latestVer.id;
+            resolvedDocId = resolvedDocId || latestVer.document_id;
+          }
+        }
+
+        const outputJson = {
+          project_id: projectId,
+          creative_integrity_score: ciScore,
+          greenlight_probability: gpScore,
+          gap,
+          allowed_gap: allowedGap,
+          convergence_status: convergenceStatus,
+          trajectory,
+          strategic_priority: strategicPriority,
+          development_stage: developmentStage,
+          analysis_mode: analysisMode,
+          executive_snapshot: result.executive_snapshot,
+          primary_creative_risk: result.primary_creative_risk,
+          primary_commercial_risk: result.primary_commercial_risk,
+          leverage_moves: result.leverage_moves,
+          format_advisory: result.format_advisory,
+          executive_guidance: result.executive_guidance,
+          full_result: fullResult,
+          purpose_class: purposeClass,
+          deliverable_type: deliverableType || null,
+        };
+
+        // Authoritative write: development_runs + meta_json cache (atomic via RPC)
+        if (resolvedVersionId) {
+          try {
+            await supabase.rpc("convergence_atomic_write", {
+              p_project_id: projectId,
+              p_document_id: resolvedDocId || null,
+              p_version_id: resolvedVersionId,
+              p_user_id: user.id,
+              p_run_type: "CONVERGENCE",
+              p_production_type: productionType,
+              p_strategic_priority: strategicPriority,
+              p_development_stage: developmentStage,
+              p_analysis_mode: analysisMode,
+              p_output_json: outputJson,
+              p_creative_integrity_score: ciScore,
+              p_greenlight_probability: gpScore,
+              p_gap: gap,
+              p_allowed_gap: allowedGap,
+              p_convergence_status: convergenceStatus,
+              p_trajectory: trajectory,
+              p_primary_creative_risk: result.primary_creative_risk,
+              p_primary_commercial_risk: result.primary_commercial_risk,
+              p_leverage_moves: result.leverage_moves,
+              p_format_advisory: result.format_advisory,
+              p_executive_guidance: result.executive_guidance,
+              p_executive_snapshot: result.executive_snapshot,
+              p_full_result: fullResult,
+              p_creative_detail: result.creative_detail,
+              p_greenlight_detail: result.greenlight_detail,
+            });
+            console.log(`[convergence-engine] atomic write done: version=${resolvedVersionId}`);
+          } catch (rpcErr) {
+            console.error("[convergence-engine] atomic_write RPC failed:", rpcErr);
+          }
+        }
+
+        // Legacy: convergence_scores (kept for backward compat during rollout)
         await supabase.from("convergence_scores").insert({
           project_id: projectId,
           user_id: user.id,
@@ -428,11 +507,10 @@ serve(async (req) => {
           format_advisory: result.format_advisory,
           executive_guidance: result.executive_guidance,
           full_result: fullResult,
-        });
+        }).then(() => {}).catch(() => {});
       }
     } catch (dbErr) {
-      console.error("Failed to save convergence score:", dbErr);
-      // Non-fatal — still return result
+      console.error("[convergence-engine] DB save error:", dbErr);
     }
 
     return new Response(JSON.stringify(fullResult), {
