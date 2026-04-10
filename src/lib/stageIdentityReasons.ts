@@ -99,30 +99,31 @@ export function getConceptBriefCanonReasons(
   const ideaAudience = extractField(ideaPlaintext, 'TARGET AUDIENCE');
 
   if (cbLogline && ideaLogline && cbLogline !== ideaLogline) {
-    reasons.push(`Logline changed: Idea now reads “${ideaLogline.slice(0, 80)}”`);
+    reasons.push(`Logline: CB has “${cbLogline.slice(0, 80)}” → Idea now reads “${ideaLogline.slice(0, 80)}”`);
   }
   if (cbGenre && ideaGenre && cbGenre.toLowerCase() !== ideaGenre.toLowerCase()) {
-    reasons.push(`Genre changed: was “${cbGenre}” → now “${ideaGenre}”`);
+    reasons.push(`Genre: was “${cbGenre}” → now “${ideaGenre}”`);
   }
   if (cbSubgenre && ideaSubgenre && cbSubgenre.toLowerCase() !== ideaSubgenre.toLowerCase()) {
-    reasons.push(`Subgenre changed: was “${cbSubgenre}” → now “${ideaSubgenre}”`);
+    reasons.push(`Subgenre: was “${cbSubgenre}” → now “${ideaSubgenre}”`);
   }
   if (cbTone && ideaTone && cbTone.toLowerCase() !== ideaTone.toLowerCase()) {
-    reasons.push(`Tone changed: was “${cbTone}” → now “${ideaTone}”`);
+    reasons.push(`Tone: was “${cbTone}” → now “${ideaTone}”`);
   }
   if (cbAudience && ideaAudience && cbAudience !== ideaAudience) {
-    reasons.push(`Target audience changed: was “${cbAudience.slice(0, 60)}” → now “${ideaAudience.slice(0, 60)}”`);
+    reasons.push(`Target audience: was “${cbAudience.slice(0, 80)}” → now “${ideaAudience.slice(0, 80)}”`);
   }
 
   // Year/era conflict — only from core fields, not entity extraction
   const cbLoglineYear = (cbLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
   const ideaLoglineYear = (ideaLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
   if (cbLoglineYear && ideaLoglineYear && cbLoglineYear[0] !== ideaLoglineYear[0]) {
-    reasons.push(`Era mismatch: Concept Brief references ${cbLoglineYear[0]}, Idea now references ${ideaLoglineYear[0]}`);
+    reasons.push(`Era: CB references ${cbLoglineYear[0]}, Idea now references ${ideaLoglineYear[0]}`);
   }
 
+  // No narrative conflicts found — staleness is from a Canon configuration update, not a content change
   if (reasons.length === 0) {
-    reasons.push(`Concept Brief out of sync with current Idea — core identity fields differ`);
+    reasons.push(`Canon configuration updated since this was generated — no narrative conflicts detected`);
   }
 
   return reasons;
@@ -237,7 +238,7 @@ function getUpstreamEntityReasons(
   }
 
   if (reasons.length === 0) {
-    reasons.push(`${parentLabel} has changed — regenerate to absorb updates`);
+    reasons.push(`Canon configuration updated since this was generated — no narrative conflicts detected`);
   }
 
   return reasons;
