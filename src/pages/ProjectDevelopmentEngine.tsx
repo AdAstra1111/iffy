@@ -1905,21 +1905,27 @@ export default function ProjectDevelopmentEngine() {
                         : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash)
                     );
                     if (!shouldShow) return null;
+                    const cbReasons = isConceptBrief && ideaPlaintextForCanon
+                      ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
+                      : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext);
                     return (
-                      <StaleDocBanner
-                        docType={selectedDoc?.doc_type || 'document'}
-                        oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
-                        currentHash={isIdea ? (currentScriptVersionId || currentResolverHash) : currentResolverHash}
-                        staleReasons={
-                          isConceptBrief && ideaPlaintextForCanon
-                            ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
-                            : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext)
-                        }
-                        regenerationProgress={regenerationProgress}
-                        regenerationLabel={regenerationLabel}
-                        onRegenerate={handleStaleRegenerate}
-                        isRegenerating={isGeneratingDocument}
-                      />
+                      <>
+                        {isConceptBrief && ideaPlaintextForCanon && cbReasons.length === 0 && (
+                          <div className="text-xs text-red-400 p-2 bg-red-900/20 border border-red-500 rounded mb-2">
+                            DEBUG ideaPlaintext loaded, but cbReasons=[] — raw Idea: {(ideaPlaintextForCanon || 'NULL').slice(0, 200)}
+                          </div>
+                        )}
+                        <StaleDocBanner
+                          docType={selectedDoc?.doc_type || 'document'}
+                          oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
+                          currentHash={isIdea ? (currentScriptVersionId || currentResolverHash) : currentResolverHash}
+                          staleReasons={cbReasons}
+                          regenerationProgress={regenerationProgress}
+                          regenerationLabel={regenerationLabel}
+                          onRegenerate={handleStaleRegenerate}
+                          isRegenerating={isGeneratingDocument}
+                        />
+                      </>
                     );
                   })()}
 
