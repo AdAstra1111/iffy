@@ -17,6 +17,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { getDocFlowConfig } from '@/lib/docFlowMap';
 import { formatToLane, isOutputDocType } from '@/config/documentLadders';
 import { getLadderForFormat } from '@/lib/stages/registry';
+import { isSeriesFormat } from '@/lib/format-helpers';
 import { useReverseEngineer } from '@/hooks/useReverseEngineer';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -32,6 +33,21 @@ function sanitizeChangeSummary(summary: string | null | undefined): string | nul
 }
 
 const SYSTEM_DOC_TYPES = new Set(['project_overview', 'creative_brief', 'market_positioning', 'canon', 'nec']);
+
+// Doc types that only belong to TV/series/long-form — never shown for film projects
+const TV_ONLY_DOC_TYPES = new Set([
+  'series_framework',
+  'series_structure',
+  'episode_guide',
+  'episode_grid',
+  'vertical_episode_beats',
+  'season_script',
+  'season_master_script',
+  'episode_script',
+  'episodes_1_3_scripts',
+  'season_scripts_bundle',
+  'series_writer',
+]);
 
 const STORAGE_KEY = 'devEngine.leftTrayWidth';
 const MIN_WIDTH = 200;
@@ -248,14 +264,21 @@ export function DocumentSidebar({
               const effectiveLane = lane || 'unspecified';
 
               const isDocAllowed = (docType: string, doc?: any) => {
+                // Film projects: never show TV-only doc types
+                const isFilmProject = !!(format && (format === 'film' || format === 'feature'));
+                if (isFilmProject && TV_ONLY_DOC_TYPES.has(docType)) return false;
                 if (SYSTEM_DOC_TYPES.has(docType)) return true;
                 if (docType === 'source_script') return true;
                 if (doc?.doc_role === 'source_script') return true;
                 // Output docs are always allowed (they're non-ladder but canonical)
                 if (isOutputDocType(docType, effectiveLane)) return true;
                 if (hiddenSet.has(docType)) return false;
-                if (ladderSet && !ladderSet.has(docType) && docType !== 'series_writer' && docType !== 'topline_narrative') {
-                  console.warn(`[DocumentSidebar] doc_type "${docType}" not on ladder for format="${format}" — hiding`);
+                // series_writer and topline_narrative bypass ladder check — only allow for series formats
+                if (docType === 'series_writer' || docType === 'topline_narrative') {
+                  if (!format || !isSeriesFormat(format)) return false;
+                  return true;
+                }
+                if (ladderSet && !ladderSet.has(docType)) {
                   return false;
                 }
                 return true;

@@ -1963,8 +1963,8 @@ export default function ProjectDevelopmentEngine() {
                       </div>
                     )
                   )}
-                  {/* Scene-level rewrite panel — only for script-type documents */}
-                  {sceneRewrite.total > 0 && isScriptDocType(selectedDoc?.doc_type) && selectedDocId && selectedVersionId && (
+                  {/* Scene-level rewrite panel — fires for any doc type when scene scope is set */}
+                  {sceneRewrite.total > 0 && selectedDocId && selectedVersionId && (
                     <SceneRewritePanel
                       projectId={projectId!}
                       documentId={selectedDocId}
