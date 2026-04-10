@@ -928,6 +928,15 @@ export default function ProjectDevelopmentEngine() {
   const isConceptBriefStale = !!(
     selectedVersion && currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash) && isConceptBrief
   );
+  if (isConceptBrief && selectedVersion && currentResolverHash) {
+    console.error('[DEBUG canon]', {
+      docType: selectedDoc?.doc_type,
+      versionHash: (selectedVersion as any)?.depends_on_resolver_hash,
+      currentHash: currentResolverHash,
+      isStale: isDocStale(selectedVersion as any, currentResolverHash),
+      isConceptBriefStale,
+    });
+  }
   useEffect(() => {
     if (!isConceptBriefStale || !projectId) {
       setIdeaPlaintextForCanon(null);
@@ -944,18 +953,8 @@ export default function ProjectDevelopmentEngine() {
         .limit(1)
         .single();
       if (cancelled || !ideaDoc?.plaintext) return;
-      const text = ideaDoc.plaintext;
-      const titleMatch = text.match(/^TITLE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
-      const loglineMatch = text.match(/^LOGLINE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
-      const comparablesMatch = text.match(/^COMPARABLES?\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
-      const genreMatch = text.match(/^GENRE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
       if (!cancelled) {
-        setIdeaCanonFields({
-          title: titleMatch ? titleMatch[1].trim() : null,
-          logline: loglineMatch ? loglineMatch[1].trim() : null,
-          comparables: comparablesMatch ? comparablesMatch[1].trim() : null,
-          genre: genreMatch ? genreMatch[1].trim() : null,
-        });
+        setIdeaPlaintextForCanon(ideaDoc?.plaintext || null);
       }
     })();
     return () => { cancelled = true; };
@@ -1905,17 +1904,11 @@ export default function ProjectDevelopmentEngine() {
                         : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash)
                     );
                     if (!shouldShow) return null;
-                    const cbReasons = isConceptBrief && ideaPlaintextForCanon
+                    const cbReasons = (isConceptBrief && ideaPlaintextForCanon)
                       ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
                       : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext);
                     return (
-                      <>
-                        {isConceptBrief && ideaPlaintextForCanon && cbReasons.length === 0 && (
-                          <div className="text-xs text-red-400 p-2 bg-red-900/20 border border-red-500 rounded mb-2">
-                            DEBUG ideaPlaintext loaded, but cbReasons=[] — raw Idea: {(ideaPlaintextForCanon || 'NULL').slice(0, 200)}
-                          </div>
-                        )}
-                        <StaleDocBanner
+                      <StaleDocBanner
                           docType={selectedDoc?.doc_type || 'document'}
                           oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
                           currentHash={isIdea ? (currentScriptVersionId || currentResolverHash) : currentResolverHash}
@@ -1925,7 +1918,6 @@ export default function ProjectDevelopmentEngine() {
                           onRegenerate={handleStaleRegenerate}
                           isRegenerating={isGeneratingDocument}
                         />
-                      </>
                     );
                   })()}
 
