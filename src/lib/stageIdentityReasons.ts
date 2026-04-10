@@ -43,6 +43,8 @@ function extractField(text: string, fieldName: string): string | null {
   return match ? match[1].trim() : null;
 }
 
+const FACTOR_TERMS = new Set(['Nazi SS', 'Nazi', 'SS', 'MI6', 'OSS', 'CIA', 'Abwehr', 'British Secret Service']);
+
 /**
  * Returns all non-trivial named entities from a block of text:
  * CamelCase multi-word names, quoted strings, and known acronyms.
@@ -53,7 +55,8 @@ function extractNamedEntities(text: string): string[] {
   const acronyms = [...text.matchAll(/\b(MI6|OSS|SS|CIA|Abwehr|Nazi SS|British Secret Service)\b/g)].map(m => m[1]);
   const all = [...camelCase, ...quoted, ...acronyms];
   const unique = [...new Set(all)];
-  const stopWords = new Set(['The', 'This', 'That', 'These', 'Those', 'World', 'Story', 'Film', 'Series', 'Character', 'Chapter', 'Scene', 'Action', 'Adventure', 'Ancient', 'Modern', 'Hidden', 'Forgotten', 'Unknown', 'Mythology', 'Secret', 'Kingdom', 'Power', 'History', 'Underground', 'Global', 'Personal', 'Nature', 'Ancient Civilizations', 'Ancient Power', 'Forgotten History', 'Mythical Beasts', 'True Cost']);
+  const stopWords = new Set(['The', 'This', 'That', 'These', 'Those', 'World', 'Story', 'Film', 'Series', 'Character', 'Chapter', 'Scene', 'Action', 'Adventure', 'Ancient', 'Modern', 'Hidden', 'Forgotten', 'Unknown', 'Mythology', 'Secret', 'Power', 'History', 'Global', 'Personal', 'Nature', 'Ancient Civilizations', 'Ancient Power', 'Forgotten History', 'Mythical Beasts', 'True Cost', 'Ancient Civilization', 'Technologically Advanced', 'Advanced Ancient', 'Hidden Advanced', 'Primeval Creature', 'Ancient Mystery', 'Mythical Beast', 'Desperate Fight', 'Profound Personal', 'Cynical Government', 'Conspiracy Far', 'Treasonous', 'Ancient Power', 'Monstrous Power', 'Nazis From', 'Diverse Team', 'German Forces', 'Government Cover']);
+  // Factions to exclude from Character bucket
   return unique.filter(n => n.length >= 4 && n.length <= 40 && !stopWords.has(n) && !/^\d+$/.test(n));
 }
 
@@ -116,14 +119,12 @@ export function getConceptBriefCanonReasons(
   for (const entity of entities) {
     if (seen.has(entity)) continue;
     const entityLower = entity.toLowerCase();
-    // Skip very short or very common terms
     if (entity.length < 4) continue;
     if (!ideaLower.includes(entityLower)) {
-      // Categorise
-      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity);
-      const isFaction = /\b(MI6|OSS|SS|CIA|Abwehr|Nazi SS|British Secret Service)\b/.test(entity);
+      const isFaction = FACTOR_TERMS.has(entity);
       const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese)\b/i.test(entity);
-      const isArtifact = /Engine|Kingdom|Ancient Power|Lost Civilization|Underground/i.test(entity);
+      const isArtifact = /Engine|Kingdom|Lost Civilization/i.test(entity);
+      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity) && !isFaction && !isArtifact && !isLocation;
       if (isNamedChar) {
         reasons.push(`Character "${entity}" in Concept Brief — not in current Idea`);
         seen.add(entity);
@@ -152,8 +153,10 @@ export function getConceptBriefCanonReasons(
     { text: 'Hong Kong', label: 'location Hong Kong', type: 'Location' },
   ];
   for (const { text, label, type } of knownChecks) {
+    if (seen.has(text)) continue; // skip already found by entity extraction
     if (cbLower.includes(text.toLowerCase()) && !ideaLower.includes(text.toLowerCase())) {
       reasons.push(`${type} "${text}" in Concept Brief — not in current Idea`);
+      seen.add(text);
     }
   }
 
