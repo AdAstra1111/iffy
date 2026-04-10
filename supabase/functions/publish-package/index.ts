@@ -79,8 +79,78 @@ Deno.serve(async (req) => {
     const errors: string[] = [];
     const docsToPublish = docTypes || [];
 
+    // ── Reconciliation Flags Gate ────────────────────────────────────────────────────────
+    // Downstream doc types require reconciliation before they can be finalized.
+    // For each downstream doc being published, check for unresolved flags.
+    const DOWNSTREAM_TYPES = new Set(["beat_sheet", "character_bible", "treatment"]);
+    const unresolvedFlags: Record<string, any[]> = {};
+
+    for (const docType of docsToPublish) {
+      if (!DOWNSTREAM_TYPES.has(docType)) continue;
+      const { data: doc } = await supabase
+        .from("project_documents")
+        .select("id")
+        .eq("project_id", projectId)
+        .eq("doc_type", docType)
+        .single();
+      if (!doc) continue;
+      const { data: latestVersion } = await supabase
+        .from("project_document_versions")
+        .select("id")
+        .eq("document_id", doc.id)
+        .order("version_number", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!latestVersion) continue;
+      const { data: flags } = await supabase
+        .from("reconciliation_flags")
+        .select("id, reason, created_at, triggered_by_producer_note_id")
+        .eq("downstream_doc_version_id", latestVersion.id)
+        .is("cleared_at", null);
+      if (flags && flags.length > 0) {
+        // Fetch the producer notes that triggered these flags
+        const noteIds = flags.map((f: any) => f.triggered_by_producer_note_id).filter(Boolean);
+        let notes: any[] = [];
+        if (noteIds.length > 0) {
+          const { data } = await supabase
+            .from("producer_notes")
+            .select("id, source_doc_type, decision, note_text, entity_tag")
+            .in("id", noteIds);
+          notes = data || [];
+        }
+        unresolvedFlags[docType] = flags.map((f: any) => ({
+          ...f,
+          producer_note: notes.find((n: any) => n.id === f.triggered_by_producer_note_id) || null,
+        }));
+      }
+    }
+
+    // ── Phase 2 Gate: Reconciliation flags block downstream doc publication ─────────────────
+    const blockedByFlags: string[] = [];
+    for (const docType of docsToPublish) {
+      if (unresolvedFlags[docType]) {
+        const flagCount = unresolvedFlags[docType].length;
+        const upstreamNotes = unresolvedFlags[docType]
+          .map((f: any) => f.producer_note?.source_doc_type)
+          .filter(Boolean)
+          .filter((v: string, i: number, arr: string[]) => arr.indexOf(v) === i);
+        const noteList = upstreamNotes.length > 0
+          ? ` (upstream from: ${upstreamNotes.join(", ")})`
+          : "";
+        errors.push(
+          `${docType}: BLOCKED — ${flagCount} unresolved reconciliation flag(s)${noteList}. ` +
+          `Reconcile the flagged upstream producer notes before publishing ${docType}.`
+        );
+        blockedByFlags.push(docType);
+      }
+    }
+
     for (const docType of docsToPublish) {
       try {
+        // Skip if blocked by reconciliation flags
+        if (blockedByFlags.includes(docType)) {
+          continue;
+        }
         // Find the project_document for this doc_type
         const { data: doc } = await supabase
           .from("project_documents")

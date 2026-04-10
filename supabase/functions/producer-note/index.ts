@@ -178,7 +178,37 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ note: data as ProducerNote }), {
+    // ── Cascade: if accepted, trigger cascade engine automatically ──────────────
+    let cascadeResult: Record<string, unknown> | null = null;
+    if (decision === "accepted") {
+      try {
+        const cascadeResp = await fetch(
+          `${SUPABASE_URL}/functions/v1/cascade-engine`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+            },
+            body: JSON.stringify({
+              producer_note_id: (data as ProducerNote).id,
+              service_key: SUPABASE_SERVICE_KEY,
+            }),
+          },
+        );
+        cascadeResult = await cascadeResp.json().catch(() => null);
+        if (!cascadeResp.ok) {
+          console.error("[producer-note] cascade error:", cascadeResult);
+        }
+      } catch (e) {
+        console.error("[producer-note] cascade call failed:", e);
+      }
+    }
+
+    return new Response(JSON.stringify({
+      note: data as ProducerNote,
+      cascade: cascadeResult,
+    }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }

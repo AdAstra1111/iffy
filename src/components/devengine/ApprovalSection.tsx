@@ -1,11 +1,8 @@
 /**
- * ApprovalSection — Phase 1 Approval + Producer Notes UI.
+ * ApprovalSection — Approval + Producer Notes UI.
  *
- * Appears within ConvergencePanel when a foundation doc (concept_brief, etc.)
- * has divergences from stage-compare. Shows each divergence with Accept/Reject.
- * Creates locked producer_notes via the producer-note edge function.
- *
- * Phase 1 scope: concept_brief only. Extends to other doc types in later phases.
+ * Phase 1: concept_brief only — Accept/Reject divergences from stage-compare.
+ * Phase 2: Also shows reconciliation flags for downstream docs (beat_sheet, character_bible, treatment).
  */
 import { useState, useCallback } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -140,6 +137,60 @@ async function createProducerNote(params: {
     );
 
   if (error) throw new Error(error.message);
+}
+
+interface ReconciliationFlag {
+  id: string;
+  downstream_doc_type: string;
+  downstream_doc_version_id: string;
+  entity_tag: string | null;
+  reason: string;
+  created_at: string;
+  cleared_at: string | null;
+  producer_note: {
+    id: string;
+    source_doc_type: string;
+    decision: string;
+    note_text: string | null;
+    entity_tag: string | null;
+  } | null;
+}
+
+// ─── Fetch reconciliation flags for a downstream doc version ───────────────────
+async function fetchReconciliationFlags(
+  projectId: string,
+  downstreamDocVersionId: string,
+): Promise<ReconciliationFlag[]> {
+  const { data, error } = await supabase
+    .from("reconciliation_flags")
+    .select(
+      "id, downstream_doc_type, downstream_doc_version_id, entity_tag, reason, created_at, cleared_at,\n       producer_note:producer_notes(id, source_doc_type, decision, note_text, entity_tag)"
+    )
+    .eq("project_id", projectId)
+    .eq("downstream_doc_version_id", downstreamDocVersionId)
+    .is("cleared_at", null);
+
+  if (error) {
+    console.error("[ApprovalSection] fetchReconciliationFlags error:", error);
+    return [];
+  }
+  return (data as ReconciliationFlag[]) || [];
+}
+
+// ─── Clear reconciliation flags for a downstream doc version ───────────────────
+async function clearReconciliationFlags(
+  downstreamDocVersionId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("reconciliation_flags")
+    .update({ cleared_at: new Date().toISOString() })
+    .eq("downstream_doc_version_id", downstreamDocVersionId)
+    .is("cleared_at", null);
+
+  if (error) {
+    console.error("[ApprovalSection] clearReconciliationFlags error:", error);
+    throw new Error(error.message);
+  }
 }
 
 // ─── Single divergence row ──────────────────────────────────────────────────────
@@ -319,8 +370,44 @@ export function ApprovalSection({
   const pendingCount = totalDivergences - decidedCount;
   const allDecided = totalDivergences > 0 && pendingCount === 0;
 
-  // Phase 1 gate: only show for concept_brief
-  if (docType !== "concept_brief") return null;
+  // Phase 2: downstream docs (beat_sheet, character_bible, treatment) show reconciliation flags
+  const DOWNSTREAM_TYPES = new Set(["beat_sheet", "character_bible", "treatment"]);
+  const isDownstream = !!versionId && DOWNSTREAM_TYPES.has(docType);
+
+  const {
+    data: recFlags = [],
+    isLoading: flagsLoading,
+    refetch: refetchFlags,
+  } = useQuery({
+    queryKey: ["approval-rec-flags", projectId, versionId],
+    queryFn: () => fetchReconciliationFlags(projectId, versionId!),
+    enabled: open && isDownstream && !!versionId,
+  });
+
+  const hasFlags = recFlags.length > 0;
+
+  const handleFlagClear = async () => {
+    if (!versionId) return;
+    try {
+      await clearReconciliationFlags(versionId);
+      toast.success("Reconciliation flags cleared — doc can now advance");
+      refetchFlags();
+    } catch (e: any) {
+      toast.error(`Failed to clear flags: ${e.message}`);
+    }
+  };
+
+  // Button label
+  const isConceptBrief = docType === "concept_brief";
+  const buttonLabel = isConceptBrief
+    ? totalDivergences === 0
+      ? "No divergences"
+      : pendingCount === 0
+      ? `All decided (${decidedCount})`
+      : `${pendingCount} pending · ${decidedCount}/${totalDivergences} decided`
+    : hasFlags
+    ? `Reconciliation required (${recFlags.length})`
+    : "No flags — clear to advance";
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -328,14 +415,16 @@ export function ApprovalSection({
         <Button
           variant="outline"
           size="sm"
-          className="w-full gap-1.5 text-[10px] h-7 mt-1 border-primary/20 hover:border-primary/50"
+          className={`w-full gap-1.5 text-[10px] h-7 mt-1 ${
+            hasFlags
+              ? "border-amber-500/40 text-amber-400 hover:border-amber-500/60"
+              : isConceptBrief
+              ? "border-primary/20 hover:border-primary/50"
+              : "border-emerald-500/30 text-emerald-400 hover:border-emerald-500/50"
+          }`}
         >
-          <ShieldCheck className="h-3 w-3 text-primary" />
-          {totalDivergences === 0
-            ? "No divergences"
-            : pendingCount === 0
-            ? `All decided (${decidedCount})`
-            : `${pendingCount} pending · ${decidedCount}/${totalDivergences} decided`}
+          <ShieldCheck className="h-3 w-3" />
+          {buttonLabel}
         </Button>
       </DialogTrigger>
 
@@ -343,15 +432,20 @@ export function ApprovalSection({
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            Approval Gate — {docType.replace(/_/g, " ")}
+            {isConceptBrief ? "Approval Gate" : "Reconciliation Status"} — {docType.replace(/_/g, " ")}
           </DialogTitle>
           <p className="text-[11px] text-muted-foreground">
-            Review each divergence from the source screenplay. Accept to lock a producer note,
-            or reject to keep the original. Notes are immutable once locked.
+            {isConceptBrief
+              ? "Review each divergence from the source screenplay. Accept to lock a producer note, or reject to keep the original."
+              : hasFlags
+              ? `${recFlags.length} upstream producer note(s) need reconciliation before this doc can advance.`
+              : "No unresolved reconciliation flags. This doc can advance."
+            }
           </p>
         </DialogHeader>
 
-        {divergencesLoading || notesLoading ? (
+        {/* ── Phase 1: concept_brief divergences ── */}
+        {isConceptBrief && (divergencesLoading || notesLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
             Loading…
           </div>
@@ -379,10 +473,67 @@ export function ApprovalSection({
               ))}
             </div>
           </ScrollArea>
-        )}
+        ))}
+
+        {/* ── Phase 2: downstream reconciliation flags ── */}
+        {isDownstream && (flagsLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground text-xs">
+            Loading…
+          </div>
+        ) : recFlags.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-8 gap-2">
+            <Check className="h-8 w-8 text-emerald-400" />
+            <p className="text-sm font-medium">No reconciliation flags</p>
+            <p className="text-[11px] text-muted-foreground">
+              This document is clear to advance.
+            </p>
+          </div>
+        ) : (
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="space-y-2 pr-2">
+              {recFlags.map((flag) => (
+                <div
+                  key={flag.id}
+                  className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2.5 space-y-1.5"
+                >
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-amber-400 font-semibold uppercase tracking-wider">
+                        {flag.reason}
+                      </p>
+                      {flag.entity_tag && (
+                        <p className="text-[9px] text-muted-foreground mt-0.5">
+                          Entity: {flag.entity_tag}
+                        </p>
+                      )}
+                      {flag.producer_note && (
+                        <div className="mt-1.5 pt-1.5 border-t border-amber-500/20">
+                          <p className="text-[9px] text-muted-foreground">
+                            Triggered by {flag.producer_note.source_doc_type.replace(/_/g, " ")} —{" "}
+                            {flag.producer_note.decision === "accepted" ? (
+                              <span className="text-emerald-400">Accepted</span>
+                            ) : (
+                              <span className="text-muted-foreground">Rejected</span>
+                            )}
+                          </p>
+                          {flag.producer_note.note_text && (
+                            <p className="text-[9px] text-muted-foreground/80 italic mt-0.5">
+                              "{flag.producer_note.note_text}"
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        ))}
 
         {/* Footer status */}
-        {divergences.length > 0 && (
+        {isConceptBrief && divergences.length > 0 && (
           <div className="shrink-0 pt-3 border-t border-border flex items-center justify-between">
             <div className="flex items-center gap-2">
               {allDecided ? (
@@ -401,14 +552,77 @@ export function ApprovalSection({
                 </>
               )}
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 text-[10px]"
-              onClick={() => setOpen(false)}
-            >
-              Done
-            </Button>
+            <div className="flex gap-2">
+              {hasFlags && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-[10px] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                  onClick={handleFlagClear}
+                >
+                  <Check className="h-3 w-3 mr-1" />
+                  Clear flags
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-[10px]"
+                onClick={() => setOpen(false)}
+              >
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+        {isDownstream && (
+          <div className="shrink-0 pt-3 border-t border-border flex items-center justify-between">
+            {hasFlags ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="text-[10px] text-amber-500">
+                    {recFlags.length} flag(s) — must reconcile upstream first
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-[10px] border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                    onClick={handleFlagClear}
+                  >
+                    <Check className="h-3 w-3 mr-1" />
+                    Clear flags
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-7 text-[10px]"
+                    onClick={() => setOpen(false)}
+                  >
+                    Done
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-2">
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="text-[10px] text-emerald-400 font-semibold">
+                    All flags cleared — can advance
+                  </span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 text-[10px]"
+                  onClick={() => setOpen(false)}
+                >
+                  Done
+                </Button>
+              </>
+            )}
           </div>
         )}
       </DialogContent>
