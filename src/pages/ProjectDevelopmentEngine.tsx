@@ -942,6 +942,7 @@ export default function ProjectDevelopmentEngine() {
       setIdeaPlaintextForCanon(null);
       return;
     }
+    console.error('[canon-useEffect] running, isConceptBriefStale:', isConceptBriefStale, 'projectId:', projectId);
     let cancelled = false;
     (async () => {
       const { data: ideaDoc } = await supabase

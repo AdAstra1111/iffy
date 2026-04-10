@@ -120,6 +120,7 @@ export function getConceptBriefCanonReasons(
   }
 
   // 2. Named-entity cross-check: entities in Concept Brief PREMISE/WORLD_BUILDING that aren't in Idea
+  // Extract named entities from Concept Brief's own text
   const cbPremise = extractField(conceptBriefPlaintext, 'PREMISE') || '';
   const cbWorldBuilding = [
     extractField(conceptBriefPlaintext, 'WORLD BUILDING NOTES'),
@@ -128,6 +129,11 @@ export function getConceptBriefCanonReasons(
     extractField(conceptBriefPlaintext, 'WORLD BUILDING'),
   ].find(Boolean) || '';
 
+  // Use the Idea's LOGLINE (or full text) as the reference — the Idea may not have a PREMISE
+  const ideaReferenceText = extractField(ideaPlaintext, 'LOGLINE') || ideaPlaintext;
+  const ideaReferenceLower = ideaReferenceText.toLowerCase();
+
+  // Extract entities from the CB's own sections and check each against the Idea's text
   const cbSpecificText = cbPremise + ' ' + cbWorldBuilding;
   const missing = findMissingEntities(cbSpecificText, ideaPlaintext);
 
