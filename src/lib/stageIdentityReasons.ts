@@ -47,13 +47,12 @@ interface ConceptBriefFields {
 }
 
 function extractConceptBriefFields(text: string): ConceptBriefFields {
-  const titleMatch = text.match(/\*\*TITLE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/^#\s+(.+?)(?:\n|$)/mi);
-  const loglineMatch = text.match(/\*\*LOGLINE:\*\*\s*(.+?)(?:\n\n|\n\*\*|$)/i) || text.match(/LOGLINE:\s*(.+?)(?:\n\n|\n\*\*|$)/i);
-  const comparablesMatch = text.match(/\*\*COMPARABLES?:\*\*\s*(.+?)(?:\n\n|\n\*\*|$)/i);
-  const genreMatch = text.match(/\*\*GENRE:\*\*\s*(.+?)(?:\n\n|\n\*\*|$)/i) || text.match(/Genre:\s*(.+?)(?:\n\n|\n\*\*|$)/i);
-  const premiseMatch = text.match(/\*\*PREMISE:\*\*\s*(.+?)(?:\n\n|\n\*\*|$)/i) ||
-    text.match(/\*\*ONE-PAGE PITCH:\*\*\s*([\s\S]+?)(?:\n##|\n\*\*|$)/i) ||
-    text.match(/One-Page Pitch:\s*([\s\S]+?)(?:\n##|\n\*\*|$)/i);
+  // Plain "FIELD\nvalue" format (possibly multi-line, until blank line or next uppercase field)
+  const titleMatch = text.match(/^TITLE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const loglineMatch = text.match(/^LOGLINE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const comparablesMatch = text.match(/^COMPARABLES?\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const genreMatch = text.match(/^GENRE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const premiseMatch = text.match(/^PREMISE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
     logline: loglineMatch ? loglineMatch[1].trim() : null,
@@ -74,10 +73,11 @@ interface IdeaFields {
 }
 
 function extractIdeaFields(text: string): IdeaFields {
-  const titleMatch = text.match(/\*\*TITLE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/^#\s+(.+?)(?:\n|$)/mi);
-  const loglineMatch = text.match(/\*\*LOGLINE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Logline:\s*(.+?)(?:\n|$)/i);
-  const comparablesMatch = text.match(/\*\*COMPARABLES?:\*\*\s*(.+?)(?:\n|$)/i);
-  const genreMatch = text.match(/\*\*GENRE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Genre:\s*(.+?)(?:\n|$)/i);
+  // Plain "FIELD\nvalue" format (possibly multi-line, until blank line or next uppercase field)
+  const titleMatch = text.match(/^TITLE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const loglineMatch = text.match(/^LOGLINE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const comparablesMatch = text.match(/^COMPARABLES?\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+  const genreMatch = text.match(/^GENRE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
   return {
     title: titleMatch ? titleMatch[1].trim() : null,
     logline: loglineMatch ? loglineMatch[1].trim() : null,

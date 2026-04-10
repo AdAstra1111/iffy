@@ -949,10 +949,10 @@ export default function ProjectDevelopmentEngine() {
         .single();
       if (cancelled || !ideaDoc?.plaintext) return;
       const text = ideaDoc.plaintext;
-      const titleMatch = text.match(/\*\*TITLE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/^#\s+(.+?)(?:\n|$)/mi);
-      const loglineMatch = text.match(/\*\*LOGLINE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Logline:\s*(.+?)(?:\n|$)/i);
-      const comparablesMatch = text.match(/\*\*COMPARABLES?:\*\*\s*(.+?)(?:\n|$)/i);
-      const genreMatch = text.match(/\*\*GENRE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Genre:\s*(.+?)(?:\n|$)/i);
+      const titleMatch = text.match(/^TITLE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+      const loglineMatch = text.match(/^LOGLINE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+      const comparablesMatch = text.match(/^COMPARABLES?\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
+      const genreMatch = text.match(/^GENRE\n([^\n].*?)(?=\n\n|\n[A-Z]{2,}|\n#|$)/m);
       if (!cancelled) {
         setIdeaCanonFields({
           title: titleMatch ? titleMatch[1].trim() : null,
