@@ -493,6 +493,8 @@ Respond with ONLY JSON.`, 12000);
     updateStage(payload, "treatment", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
+    const { metadata } = call1;
+
     const premise      = (call1.concept_brief as any)?.premise || "";
     const worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
     const protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
@@ -532,7 +534,6 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
     updateStage(payload, "storing_docs", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const { metadata } = call1;
     const isTV = format === "tv-series";
 
     // ── Build source citations from line-range tracking ──────────────────────

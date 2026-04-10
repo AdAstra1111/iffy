@@ -936,18 +936,28 @@ export default function ProjectDevelopmentEngine() {
   };
 
   const handleStaleRegenerate = async () => {
-    if (!selectedDoc?.doc_type || !isValidUUID(projectId)) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    await supabase.functions.invoke('generate-document', {
-      body: {
-        projectId,
-        docType: selectedDoc.doc_type,
-        userId: user?.id,
-        mode: 'draft',
-      },
-    });
-    qc.invalidateQueries({ queryKey: ['versions', projectId, selectedDoc.doc_type] });
-    qc.invalidateQueries({ queryKey: ['documents', projectId] });
+    if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
+    setIsGeneratingDocument(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const { error } = await supabase.functions.invoke('generate-document', {
+        body: {
+          projectId,
+          docType: selectedDoc.doc_type,
+          userId: user?.id,
+          mode: 'draft',
+        },
+      });
+      if (error) throw new Error(error.message || error);
+      toast.success(`${selectedDoc.doc_type.replace(/_/g, ' ')} regenerated successfully`);
+      qc.invalidateQueries({ queryKey: ['versions', projectId, selectedDoc.doc_type] });
+      qc.invalidateQueries({ queryKey: ['documents', projectId] });
+    } catch (err: any) {
+      toast.error(`Regeneration failed: ${err?.message || 'Unknown error'}`);
+      console.error('[handleStaleRegenerate]', err);
+    } finally {
+      setIsGeneratingDocument(false);
+    }
   };
 
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
@@ -1793,7 +1803,7 @@ export default function ProjectDevelopmentEngine() {
                       currentHash={currentResolverHash}
                       seasonEpisodeCount={resolvedQuals?.season_episode_count || effectiveSeasonEpisodes || undefined}
                       onRegenerate={handleStaleRegenerate}
-                      isRegenerating={false}
+                      isRegenerating={isGeneratingDocument}
                     />
                   )}
 
