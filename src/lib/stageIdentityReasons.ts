@@ -188,18 +188,23 @@ export function getStaleDocReasons(
 }
 
 /**
- * Correct direction for beat_sheet / treatment / character_bible / long_synopsis:
+ * Full bidirectional conflict detection for expanding ladder docs.
  *
- * The child is an EXPANSION of the parent — it's allowed to have MORE.
+ * The child is an EXPANSION of the parent — it is allowed to have MORE.
  * Staleness means the PARENT changed after the child was generated.
  *
- * So: find named entities in the CURRENT PARENT that are NOT in the STALE DOC.
- * These are things the parent now defines that the child hasn't absorbed yet.
+ * TWO directions surfaced to give producers/writers full picture:
  *
- * Also flag: named entities in the stale doc that appear to CONTRADICT the parent
- * (e.g. stale doc says "Connor Blake" but parent says "Bill Blackstone" — same role, different name).
- * This is hard to detect automatically without LLM, so for now we flag structural field mismatches
- * and rely on the "parent has new entities not in child" signal as the primary indicator.
+ * → NEW IN PARENT: things the current parent defines that this doc hasn’t absorbed yet
+ *   e.g. “Concept Brief now has Dr Yashiro — not yet in your Beat Sheet”
+ *
+ * ← REMOVED FROM PARENT: things this doc references that the current parent no longer has
+ *   e.g. “Beat Sheet references Heinrich Klausman — no longer in current Concept Brief”
+ *   (Signals the parent renamed, removed, or replaced this element)
+ *
+ * Note: “removed” detection has false positives for pure expansions — entities added
+ * in the child that were never in the parent. These are filtered by requiring the entity
+ * to look like a named proper noun (CamelCase) so generic scene detail is excluded.
  */
 function getUpstreamEntityReasons(
   stalePlaintext: string,
@@ -208,32 +213,44 @@ function getUpstreamEntityReasons(
 ): string[] {
   const reasons: string[] = [];
   const staleLower = stalePlaintext.toLowerCase();
-  const parentEntities = extractNamedEntities(parentPlaintext);
-  const seen = new Set<string>();
+  const parentLower = parentPlaintext.toLowerCase();
+  const seenNew = new Set<string>();
+  const seenRemoved = new Set<string>();
 
+  function categorise(entity: string): string | null {
+    if (FACTOR_TERMS.has(entity)) return 'Faction';
+    if (/\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese|Berlin|London|Cairo|Tokyo|Paris|Rome|Vienna|Istanbul)\b/i.test(entity)) return 'Location';
+    if (/Engine|Kingdom|Lost Civilization|Device|Weapon|Artifact|Temple|Vault/i.test(entity)) return 'World element';
+    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity)) return 'Character';
+    return null;
+  }
+
+  // → NEW IN PARENT: current parent has this entity, stale child doesn’t
+  const parentEntities = extractNamedEntities(parentPlaintext);
   for (const entity of parentEntities) {
-    if (seen.has(entity)) continue;
-    if (entity.length < 4) continue;
-    const entityLower = entity.toLowerCase();
-    // Entity is defined in current parent but NOT reflected in the stale child
-    if (!staleLower.includes(entityLower)) {
-      const isFaction = FACTOR_TERMS.has(entity);
-      const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese|Berlin|London|Cairo)\b/i.test(entity);
-      const isArtifact = /Engine|Kingdom|Lost Civilization|Device|Weapon/i.test(entity);
-      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity) && !isFaction && !isArtifact && !isLocation;
-      if (isNamedChar) {
-        reasons.push(`Character "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
-        seen.add(entity);
-      } else if (isFaction) {
-        reasons.push(`Faction "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
-        seen.add(entity);
-      } else if (isLocation) {
-        reasons.push(`Location "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
-        seen.add(entity);
-      } else if (isArtifact) {
-        reasons.push(`World element "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
-        seen.add(entity);
-      }
+    if (seenNew.has(entity) || entity.length < 4) continue;
+    const cat = categorise(entity);
+    if (!cat) continue;
+    if (!staleLower.includes(entity.toLowerCase())) {
+      reasons.push(`→ ${cat} “${entity}” added to ${parentLabel} — not yet in this document`);
+      seenNew.add(entity);
+    }
+  }
+
+  // ← REMOVED FROM PARENT: stale child references this entity, current parent doesn’t
+  // Only flag named proper nouns (CamelCase) — reduces false positives from child-only expansions
+  const staleEntities = extractNamedEntities(stalePlaintext);
+  for (const entity of staleEntities) {
+    if (seenRemoved.has(entity) || seenNew.has(entity) || entity.length < 4) continue;
+    const cat = categorise(entity);
+    if (!cat) continue;
+    // Only flag if it looks like a named person/place/thing that should be in both
+    const isNamedChar = cat === 'Character';
+    const isHighValueEntity = cat === 'Faction' || cat === 'World element' || cat === 'Location';
+    if (!isNamedChar && !isHighValueEntity) continue;
+    if (!parentLower.includes(entity.toLowerCase())) {
+      reasons.push(`← ${cat} “${entity}” is in this document — no longer in current ${parentLabel} (removed or renamed?)`);
+      seenRemoved.add(entity);
     }
   }
 
