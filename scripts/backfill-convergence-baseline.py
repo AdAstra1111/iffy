@@ -1,10 +1,24 @@
 #!/usr/bin/env python3
 """
-Backfill script: Create pre-reconciliation_baseline entries in development_runs
-for all existing documents that have CI/GP scores in meta_json.
+Backfill: Create pre-reconciliation_baseline entries in development_runs.
 
-Rule: one baseline row per document_id (latest version with scores wins).
-Run once. Idempotent — uses ON CONFLICT DO NOTHING.
+Sources (in priority order):
+  1. dev_engine_convergence_history — canonical historical CI/GP for evaluated docs
+  2. meta_json (ci/gp fields) — fallback for docs not yet in convergence_history
+
+Rules:
+  - development_runs is authoritative: one baseline row per unique (document_id, version_id)
+  - All rows marked source='pre-reconciliation_baseline', backfill_date=today
+  - Idempotent: uses upsert logic (ON CONFLICT DO NOTHING via unique constraint)
+
+Prerequisites:
+  1. Migration 202604100200_add_source_to_development_runs must be applied
+     (adds 'source' column + unique index for one baseline per doc)
+  2. Migration 202604100201_add_atomic_convergence_write must be applied
+     (creates convergence_atomic_write RPC function)
+
+If migrations not yet applied: backfill will fail gracefully.
+Run again after applying migrations via Supabase dashboard SQL editor.
 """
 import urllib.request
 import json
@@ -13,12 +27,10 @@ from datetime import datetime, timezone
 SB_URL = "https://hdfderbphdobomkdjypc.supabase.co"
 SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZmRlcmJwaGRvYm9ta2RqeXBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTM4ODY2MSwiZXhwIjoyMDkwOTY0NjYxfQ.DhQvyzYRsh7sjKC2_yjn3nzFWzJlzm4d7Tgg90fYSVo"
 
-def get(path, params=None):
-    url = f"{SB_URL}{path}"
-    if params:
-        q = "&".join(f"{k}={v}" for k, v in params.items())
-        url = f"{url}?{q}"
-    req = urllib.request.Request(url,
+SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"  # placeholder — system backfill
+
+def get(path):
+    req = urllib.request.Request(f"{SB_URL}{path}",
         headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}"})
     with urllib.request.urlopen(req) as r:
         return json.loads(r.read())
@@ -29,110 +41,139 @@ def post(path, data):
         headers={"apikey": SB_KEY, "Authorization": f"Bearer {SB_KEY}",
                  "Content-Type": "application/json"},
         method="POST")
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
-
-# Fetch ALL project_document_versions that have meta_json with CI/GP scores
-# Use limit to page through all (Supabase default limit is 1000, use select with no limit)
-print("Fetching project_document_versions with meta_json scores...")
-versions = get("/rest/v1/project_document_versions", {
-    "select": "id,document_id,project_id,meta_json,created_at,version_number",
-    "meta_json": "not.is.null",
-    "order": "created_at.asc",
-    "limit": 1000
-})
-
-print(f"Found {len(versions)} version rows with meta_json")
-
-# Filter to those that have creative_integrity or greenlight_probability in meta_json
-scored = []
-for v in versions:
-    mj = v.get("meta_json") or {}
-    ci = mj.get("creative_integrity") or mj.get("creative_integrity_score")
-    gp = mj.get("greenlight_probability") or mj.get("greenlight_probability_score")
-    if ci is not None or gp is not None:
-        scored.append({
-            "id": v["id"],
-            "document_id": v["document_id"],
-            "project_id": v["project_id"],
-            "meta_json": mj,
-            "created_at": v["created_at"],
-            "version_number": v.get("version_number"),
-            "ci": float(ci) if ci is not None else None,
-            "gp": float(gp) if gp is not None else None,
-        })
-
-print(f"Found {len(scored)} rows with CI/GP scores in meta_json")
-
-# Deduplicate: one row per document_id (latest version wins — list is ordered by created_at asc so last in loop wins)
-seen = {}
-for v in scored:
-    doc_id = v["document_id"]
-    seen[doc_id] = v  # overwrite = keep latest
-
-print(f"Unique documents to backfill: {len(seen)}")
-print(f"Documents: {list(seen.keys())}")
-
-# Fetch a service user_id — use the service role key to get a valid user
-# We need a user_id for the development_runs row. Use a placeholder or query users.
-# Since this is a backfill for existing data, use a fixed system user_id.
-# Check what user_ids exist in auth.users
-try:
-    users = get("/rest/v1/users", {"limit": 1})
-    user_id = users[0]["id"] if users else "00000000-0000-0000-0000-000000000000"
-except:
-    user_id = "00000000-0000-0000-0000-000000000000"
-
-print(f"Using user_id: {user_id}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            return json.loads(r.read()), r.status
+    except urllib.error.HTTPError as e:
+        return {"error": e.read().decode()}, e.code
 
 today = datetime.now(timezone.utc).isoformat()
+all_docs = {}  # doc_id -> {ci, gp, version_id, source, output_json}
+
+# ── Source 1: dev_engine_convergence_history ──────────────────────────────
+YETI_PROJECT_ID = "f7d8b80f-3684-439d-8f8b-53f93f00a9cd"
+try:
+    hist = get(f"/rest/v1/dev_engine_convergence_history?project_id=eq.{YETI_PROJECT_ID}&select=*&order=created_at.desc")
+    print(f"[Source 1] dev_engine_convergence_history: {len(hist)} rows for YETI")
+    # Deduplicate: one row per document_id (latest version wins)
+    seen_docs = set()
+    for h in hist:
+        doc_id = h.get("document_id")
+        if doc_id in seen_docs:
+            continue
+        seen_docs.add(doc_id)
+        all_docs[doc_id] = {
+            "ci": float(h.get("creative_score", 0) or 0),
+            "gp": float(h.get("greenlight_score", 0) or 0),
+            "gap": float(h.get("gap", 0) or 0),
+            "allowed_gap": float(h.get("allowed_gap", 25) or 25),
+            "version_id": h.get("version_id"),
+            "status": h.get("convergence_status"),
+            "trajectory": h.get("trajectory"),
+            "source": "dev_engine_convergence_history",
+            "source_row_id": h.get("id"),
+            "created_at": h.get("created_at"),
+        }
+        print(f"  doc={doc_id[:8]}, ci={all_docs[doc_id]['ci']}, gp={all_docs[doc_id]['gp']}")
+except Exception as e:
+    print(f"[Source 1] Error: {e}")
+
+# ── Source 2: meta_json ci/gp fallback ──────────────────────────────────────
+# Only for docs not already captured from convergence_history
+YETI_DOC_IDS = [
+    ("e2f6ba95-c191-4455-b0c1-901dbf70cee0", "character_bible"),
+    ("fcf612ba-efcb-4180-b3cb-3dabdd8e8268", "beat_sheet"),
+    ("0419c785-7f38-4be8-bc07-32426ab54001", "feature_script"),
+    ("9adc34e0-93e3-4426-a55d-fd09ce0a51a8", "market_sheet"),
+    ("ce404e2d-5a5d-424e-8b00-1d8014a24d84", "concept_brief"),
+    ("e013b6bb-a863-40a8-82b1-f2a273408e58", "story_outline"),
+    ("169fa31c-1bd8-46ae-943e-23959f43038f", "treatment"),
+]
+for doc_id, doc_type in YETI_DOC_IDS:
+    if doc_id in all_docs:
+        continue  # already covered from convergence_history
+    try:
+        vers = get(f"/rest/v1/project_document_versions?document_id=eq.{doc_id}&select=id,meta_json,created_at&order=created_at.desc&limit=3")
+        for v in vers:
+            mj = v.get("meta_json") or {}
+            ci = mj.get("ci") or mj.get("creative_integrity")
+            gp = mj.get("gp") or mj.get("greenlight_probability")
+            if ci is not None or gp is not None:
+                all_docs[doc_id] = {
+                    "ci": float(ci) if ci is not None else None,
+                    "gp": float(gp) if gp is not None else None,
+                    "gap": None,
+                    "allowed_gap": float(mj.get("allowed_gap", 25) or 25),
+                    "version_id": v["id"],
+                    "status": mj.get("convergence_status"),
+                    "trajectory": mj.get("trajectory"),
+                    "source": "meta_json_fallback",
+                    "created_at": v["created_at"],
+                }
+                print(f"  [meta_json] doc={doc_id[:8]} ({doc_type}), ci={ci}, gp={gp}")
+                break
+    except Exception as e:
+        print(f"  [meta_json] Error for {doc_type}: {e}")
+
+print(f"\nTotal docs to backfill: {len(all_docs)}")
+
+# ── Insert into development_runs ───────────────────────────────────────────
 inserted = 0
 skipped = 0
+errors = 0
+col_missing = False
 
-for doc_id, v in seen.items():
-    mj = v["meta_json"]
-    ci = v.get("ci")
-    gp = v.get("gp")
-    gap = abs(ci - gp) if ci is not None and gp is not None else None
-    allowed_gap = mj.get("allowed_gap", 25)
+for doc_id, v in all_docs.items():
+    ci = v["ci"]
+    gp = v["gp"]
+    if ci is None and gp is None:
+        print(f"  SKIP {doc_id[:8]}: no ci or gp")
+        continue
 
+    gap = v["gap"] or (abs(ci - gp) if ci is not None and gp is not None else None)
+    
     output_json = {
         "source": "pre-reconciliation_baseline",
         "backfill_date": today,
+        "backfill_source": v["source"],
         "creative_integrity_score": ci,
         "greenlight_probability": gp,
         "gap": gap,
-        "allowed_gap": allowed_gap,
-        "convergence_status": mj.get("convergence_status"),
-        "trajectory": mj.get("trajectory"),
-        "primary_creative_risk": mj.get("primary_creative_risk"),
-        "primary_commercial_risk": mj.get("primary_commercial_risk"),
-        "convergence_source": "meta_json_backfill",
+        "allowed_gap": v["allowed_gap"],
+        "convergence_status": v.get("status"),
+        "trajectory": v.get("trajectory"),
+        "convergence_source": "pre-reconciliation_baseline",
     }
 
     row = {
-        "project_id": v["project_id"],
-        "document_id": v["document_id"],
-        "version_id": v["id"],
-        "user_id": user_id,
+        "project_id": YETI_PROJECT_ID,
+        "document_id": doc_id,
+        "version_id": v["version_id"],
+        "user_id": SYSTEM_USER_ID,
         "run_type": "CONVERGENCE",
         "production_type": "narrative_feature",
         "output_json": output_json,
         "source": "pre-reconciliation_baseline",
     }
 
-    try:
-        result = post("/rest/v1/development_runs", row)
-        print(f"  INSERTED baseline for doc={doc_id[:8]}... version={v['id'][:8]}...")
+    result, status = post("/rest/v1/development_runs", row)
+    if status in (200, 201):
+        print(f"  INSERTED doc={doc_id[:8]}, ci={ci}, gp={gp}")
         inserted += 1
-    except urllib.error.HTTPError as e:
-        if e.code == 409:
-            print(f"  SKIPPED (already exists) doc={doc_id[:8]}...")
-            skipped += 1
-        else:
-            body = e.read().decode()
-            print(f"  ERROR {e.code}: {body[:200]}")
-    except Exception as e:
-        print(f"  ERROR: {e}")
+    elif status == 409:
+        print(f"  SKIPPED doc={doc_id[:8]}: baseline already exists")
+        skipped += 1
+    elif status == 400 and "source" in str(result):
+        col_missing = True
+        print(f"  ERROR doc={doc_id[:8]}: 'source' column missing — apply migrations first")
+        errors += 1
+    else:
+        print(f"  ERROR doc={doc_id[:8]}: status={status}, {str(result)[:80]}")
+        errors += 1
 
-print(f"\nDone. Inserted: {inserted}, Skipped (already exists): {skipped}")
+print(f"\n{'='*50}")
+print(f"Backfill complete: {inserted} inserted, {skipped} skipped, {errors} errors")
+if col_missing:
+    print("\n⚠️  Migrations not yet applied. Run this SQL in Supabase dashboard:")
+    print("   https://supabase.com/dashboard/project/hdfderbphdobomkdjypc/sql")
+    print("\n   Then re-run this script.")
