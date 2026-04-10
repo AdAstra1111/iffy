@@ -1042,8 +1042,25 @@ export default function ProjectDevelopmentEngine() {
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
     } catch (err: any) {
-      toast.error(`Regeneration failed: ${err?.message || 'Unknown error'}`);
-      console.error('[handleStaleRegenerate]', err);
+      // Supabase functions.invoke returns FunctionsHttpError with .message + .context
+      const anyErr = err as Record<string, unknown>;
+      let msg = anyErr.message || 'Unknown error';
+      // Try to extract inner error from context
+      const ctx = anyErr.context;
+      let innerError = '';
+      if (ctx && typeof ctx === 'object') {
+        const ctxObj = ctx as Record<string, unknown>;
+        if (typeof ctxObj['json'] === 'function') {
+          try { innerError = JSON.stringify((ctxObj['json'] as Function)()); } catch {}
+        } else if (ctxObj['error']) {
+          innerError = String(ctxObj['error']);
+        } else if (ctxObj['message']) {
+          innerError = String(ctxObj['message']);
+        }
+      }
+      const fullMsg = innerError ? `${msg}: ${innerError}` : msg;
+      toast.error(`Regeneration failed: ${fullMsg}`);
+      console.error('[handleStaleRegenerate]', fullMsg, err);
     } finally {
       setIsGeneratingDocument(false);
     }
