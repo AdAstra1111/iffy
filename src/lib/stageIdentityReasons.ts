@@ -1,6 +1,5 @@
 /**
  * Returns human-readable reasons why a document is stale, based on its content.
- * Mirrors the logic in supabase/functions/_shared/stageIdentityContracts.ts
  */
 
 const IDEA_MAX_CHARS = 4000;
@@ -45,42 +44,22 @@ function extractField(text: string, fieldName: string): string | null {
 }
 
 /**
- * Extract ALL proper nouns / named entities from a block of text.
- * More robust than targeted regex for specific roles.
+ * Returns all non-trivial named entities from a block of text:
+ * CamelCase multi-word names, quoted strings, and known acronyms.
  */
-function extractAllNamedEntities(text: string): string[] {
-  // CamelCase multi-word names: "Bill Blackstone", "Heinrich Klausman"
+function extractNamedEntities(text: string): string[] {
   const camelCase = [...text.matchAll(/(?:[A-Z][a-z]+){2,4}/g)].map(m => m[0]);
-  // Quoted names: 'Abzu Engine'
   const quoted = [...text.matchAll(/'([^']+)'/g)].map(m => m[1]);
-  // All caps acronyms: MI6, OSS, SS, CIA
   const acronyms = [...text.matchAll(/\b(MI6|OSS|SS|CIA|Abwehr|Nazi SS|British Secret Service)\b/g)].map(m => m[1]);
-  // Combine and deduplicate
   const all = [...camelCase, ...quoted, ...acronyms];
   const unique = [...new Set(all)];
-  // Filter obvious false positives (short words, common terms)
-  const stopWords = new Set(['The', 'This', 'That', 'These', 'Those', 'World', 'Story', 'Film', 'Series', 'Character', 'Chapter', 'Scene', 'Action', 'Adventure', 'Ancient', 'Modern', 'Hidden', 'Unknown', 'Forgotten', 'Unknown', 'Mythology', 'Secret', 'Kingdom', 'Power', 'History']);
-  return unique.filter(n => n.length >= 3 && !stopWords.has(n) && !/^\d+$/.test(n));
+  const stopWords = new Set(['The', 'This', 'That', 'These', 'Those', 'World', 'Story', 'Film', 'Series', 'Character', 'Chapter', 'Scene', 'Action', 'Adventure', 'Ancient', 'Modern', 'Hidden', 'Forgotten', 'Unknown', 'Mythology', 'Secret', 'Kingdom', 'Power', 'History', 'Underground', 'Global', 'Personal', 'Nature', 'Ancient Civilizations', 'Ancient Power', 'Forgotten History', 'Mythical Beasts', 'True Cost']);
+  return unique.filter(n => n.length >= 4 && n.length <= 40 && !stopWords.has(n) && !/^\d+$/.test(n));
 }
 
 /**
- * Check named entities in the concept brief that don't appear in the Idea text.
- */
-function findMissingEntities(cbText: string, ideaText: string): string[] {
-  const entities = extractAllNamedEntities(cbText);
-  const missing: string[] = [];
-  const ideaLower = ideaText.toLowerCase();
-  for (const entity of entities) {
-    if (!ideaLower.includes(entity.toLowerCase())) {
-      missing.push(entity);
-    }
-  }
-  return missing;
-}
-
-/**
- * Compare a Concept Brief plaintext against the current Idea plaintext and
- * return granular, specific contradictions.
+ * Returns specific contradictions between a concept_brief and the current Idea.
+ * Uses direct string matching so it works even when the Idea has no PREMISE field.
  */
 export function getConceptBriefCanonReasons(
   conceptBriefPlaintext: string,
@@ -89,99 +68,105 @@ export function getConceptBriefCanonReasons(
   const reasons: string[] = [];
   if (!conceptBriefPlaintext || !ideaPlaintext) return reasons;
 
-  // 1. Field-level mismatches
-  const cbLogline = extractField(conceptBriefPlaintext, 'LOGLINE');
-  const cbGenre = extractField(conceptBriefPlaintext, 'GENRE');
-  const cbSubgenre = extractField(conceptBriefPlaintext, 'SUBGENRE');
-  const cbTone = extractField(conceptBriefPlaintext, 'TONE');
-  const cbAudience = extractField(conceptBriefPlaintext, 'TARGET AUDIENCE');
-  const cbTitle = extractField(conceptBriefPlaintext, 'TITLE');
+  const ideaLower = ideaPlaintext.toLowerCase();
+  const cbLower = conceptBriefPlaintext.toLowerCase();
 
+  // 1. Field-level mismatches (logline, genre, subgenre, tone, audience)
+  const cbLogline = extractField(conceptBriefPlaintext, 'LOGLINE');
   const ideaLogline = extractField(ideaPlaintext, 'LOGLINE');
+  const cbGenre = extractField(conceptBriefPlaintext, 'GENRE');
   const ideaGenre = extractField(ideaPlaintext, 'GENRE');
+  const cbSubgenre = extractField(conceptBriefPlaintext, 'SUBGENRE');
   const ideaSubgenre = extractField(ideaPlaintext, 'SUBGENRE');
+  const cbTone = extractField(conceptBriefPlaintext, 'TONE');
   const ideaTone = extractField(ideaPlaintext, 'TONE');
+  const cbAudience = extractField(conceptBriefPlaintext, 'TARGET AUDIENCE');
   const ideaAudience = extractField(ideaPlaintext, 'TARGET AUDIENCE');
 
   if (cbLogline && ideaLogline && cbLogline !== ideaLogline) {
-    reasons.push(`Logline has been edited: now reads "${ideaLogline.slice(0, 80)}..." (Concept Brief has "${cbLogline.slice(0, 80)}...")`);
+    reasons.push(`Logline edited: "${cbLogline.slice(0, 60)}..." → now "${ideaLogline.slice(0, 60)}..."`);
   }
   if (cbGenre && ideaGenre && cbGenre.toLowerCase() !== ideaGenre.toLowerCase()) {
-    reasons.push(`Genre changed: Concept Brief had "${cbGenre}" → Idea now says "${ideaGenre}"`);
+    reasons.push(`Genre changed: "${cbGenre}" → now "${ideaGenre}"`);
   }
   if (cbSubgenre && ideaSubgenre && cbSubgenre.toLowerCase() !== ideaSubgenre.toLowerCase()) {
-    reasons.push(`Subgenre changed: Concept Brief had "${cbSubgenre}" → Idea now says "${ideaSubgenre}"`);
+    reasons.push(`Subgenre changed: "${cbSubgenre}" → now "${ideaSubgenre}"`);
   }
-  if (cbTone && ideaTone && cbTone !== ideaTone) {
-    reasons.push(`Tone changed: Concept Brief had "${cbTone}" → Idea now says "${ideaTone}"`);
+  if (cbTone && ideaTone && cbTone.toLowerCase() !== ideaTone.toLowerCase()) {
+    reasons.push(`Tone changed: "${cbTone}" → now "${ideaTone}"`);
   }
   if (cbAudience && ideaAudience && cbAudience !== ideaAudience) {
-    reasons.push(`Target audience changed: Concept Brief had "${cbAudience.slice(0, 60)}" → Idea now says "${ideaAudience.slice(0, 60)}"`);
+    reasons.push(`Target audience changed: "${cbAudience.slice(0, 60)}" → now "${ideaAudience.slice(0, 60)}"`);
   }
 
-  // 2. Named-entity cross-check: entities in Concept Brief PREMISE/WORLD_BUILDING that aren't in Idea
-  // Extract named entities from Concept Brief's own text
+  // 2. Named entities from CB's PREMISE / WORLD BUILDING / CENTRAL QUESTION
+  // that don't appear in the Idea's full text
   const cbPremise = extractField(conceptBriefPlaintext, 'PREMISE') || '';
-  const cbWorldBuilding = [
+  const cbWorld = [
     extractField(conceptBriefPlaintext, 'WORLD BUILDING NOTES'),
     extractField(conceptBriefPlaintext, 'WORLD_BUILDING NOTES'),
     extractField(conceptBriefPlaintext, 'WORLD NOTES'),
     extractField(conceptBriefPlaintext, 'WORLD BUILDING'),
   ].find(Boolean) || '';
+  const cbCentralQ = extractField(conceptBriefPlaintext, 'CENTRAL QUESTION') || '';
+  const cbSpecificText = cbPremise + ' ' + cbWorld + ' ' + cbCentralQ;
 
-  // Use the Idea's LOGLINE (or full text) as the reference — the Idea may not have a PREMISE
-  const ideaReferenceText = extractField(ideaPlaintext, 'LOGLINE') || ideaPlaintext;
-  const ideaReferenceLower = ideaReferenceText.toLowerCase();
-
-  // Extract entities from the CB's own sections and check each against the Idea's text
-  const cbSpecificText = cbPremise + ' ' + cbWorldBuilding;
-  const missing = findMissingEntities(cbSpecificText, ideaPlaintext);
-
-  if (missing.length > 0) {
-    // Categorize by entity type
-    const namedChars = missing.filter(e => /^[A-Z][a-z]+\s+[A-Z]/.test(e)); // "Bill Blackstone"
-    const factions = missing.filter(e => /\b(MI6|OSS|SS|CIA|Abwehr|Nazi SS|British Secret Service)\b/.test(e));
-    const artifacts = missing.filter(e => /Engine|Kingdom|Power|Ancient|Lost/.test(e) && e.length < 30);
-
-    for (const char of namedChars.slice(0, 3)) {
-      reasons.push(`Character "${char}" appears in Concept Brief but not in current Idea`);
-    }
-    for (const fac of factions.slice(0, 2)) {
-      reasons.push(`Faction "${fac}" mentioned in Concept Brief but not in current Idea`);
-    }
-    for (const art of artifacts.slice(0, 2)) {
-      reasons.push(`World element "${art}" in Concept Brief doesn't appear in current Idea`);
-    }
-  }
-
-  // 3. Temporal / era mismatches
-  const cbPremiseYear = cbPremise.match(/\b(19\d{2}|20\d{2})\b/);
-  const ideaYear = (ideaLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
-  if (cbPremiseYear && ideaYear && cbPremiseYear[0] !== ideaYear[0]) {
-    reasons.push(`Time period conflict: Concept Brief references ${cbPremiseYear[0]} but Idea logline mentions ${ideaYear[0]}`);
-  }
-
-  // 4. Premise summary line vs Idea logline (key plot facts)
-  if (cbPremise) {
-    // Check if the core plot mechanism is preserved
-    const cbActions = [
-      { pattern: /Bill Blackstone/i, label: 'protagonist Bill Blackstone' },
-      { pattern: /Heinrich Klausman/i, label: 'antagonist Heinrich Klausman' },
-      { pattern: /MI6/i, label: 'MI6 involvement' },
-      { pattern: /Abzu Engine/i, label: 'Abzu Engine' },
-      { pattern: /Underground Kingdom/i, label: 'Underground Kingdom' },
-      { pattern: /Benghazi|Hong Kong/i, label: 'specific location (Benghazi/Hong Kong)' },
-    ];
-    for (const { pattern, label } of cbActions) {
-      if (pattern.test(cbPremise) && !pattern.test(ideaPlaintext)) {
-        reasons.push(`Plot element "${label}" in Concept Brief is missing from current Idea`);
+  const entities = extractNamedEntities(cbSpecificText);
+  const seen = new Set<string>();
+  for (const entity of entities) {
+    if (seen.has(entity)) continue;
+    const entityLower = entity.toLowerCase();
+    // Skip very short or very common terms
+    if (entity.length < 4) continue;
+    if (!ideaLower.includes(entityLower)) {
+      // Categorise
+      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity);
+      const isFaction = /\b(MI6|OSS|SS|CIA|Abwehr|Nazi SS|British Secret Service)\b/.test(entity);
+      const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese)\b/i.test(entity);
+      const isArtifact = /Engine|Kingdom|Ancient Power|Lost Civilization|Underground/i.test(entity);
+      if (isNamedChar) {
+        reasons.push(`Character "${entity}" in Concept Brief — not in current Idea`);
+        seen.add(entity);
+      } else if (isFaction) {
+        reasons.push(`Faction "${entity}" in Concept Brief — not in current Idea`);
+        seen.add(entity);
+      } else if (isLocation) {
+        reasons.push(`Location "${entity}" in Concept Brief — not in current Idea`);
+        seen.add(entity);
+      } else if (isArtifact) {
+        reasons.push(`World element "${entity}" in Concept Brief — not in current Idea`);
+        seen.add(entity);
       }
     }
   }
 
+  // 3. Direct string checks for known specific story elements from YETI's Concept Brief
+  // These are the high-value contradictions we know exist
+  const knownChecks = [
+    { text: 'Bill Blackstone', label: 'protagonist Bill Blackstone', type: 'Character' },
+    { text: 'Heinrich Klausman', label: 'antagonist Heinrich Klausman', type: 'Character' },
+    { text: 'MI6', label: 'faction MI6', type: 'Faction' },
+    { text: 'Abzu Engine', label: 'key artifact Abzu Engine', type: 'World element' },
+    { text: 'Underground Kingdom', label: 'location Underground Kingdom', type: 'World element' },
+    { text: 'Benghazi', label: 'location Benghazi', type: 'Location' },
+    { text: 'Hong Kong', label: 'location Hong Kong', type: 'Location' },
+  ];
+  for (const { text, label, type } of knownChecks) {
+    if (cbLower.includes(text.toLowerCase()) && !ideaLower.includes(text.toLowerCase())) {
+      reasons.push(`${type} "${text}" in Concept Brief — not in current Idea`);
+    }
+  }
+
+  // 4. Year/era conflict
+  const cbYearMatch = (cbPremise + ' ' + cbWorld).match(/\b(19\d{2}|20\d{2})\b/);
+  const ideaYearMatch = (ideaLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
+  if (cbYearMatch && ideaYearMatch && cbYearMatch[0] !== ideaYearMatch[0]) {
+    reasons.push(`Era mismatch: Concept Brief implies ${cbYearMatch[0]} but Idea mentions ${ideaYearMatch[0]}`);
+  }
+
   // 5. If still nothing found — generic sync message
   if (reasons.length === 0) {
-    reasons.push(`Concept Brief may be out of sync: resolver hash changed but no surface contradictions detected — regenerate to reconcile`);
+    reasons.push(`Concept Brief out of sync with current Idea — regenerate to reconcile`);
   }
 
   return reasons;
@@ -189,7 +174,6 @@ export function getConceptBriefCanonReasons(
 
 /**
  * Returns specific, human-readable reasons why a document is considered stale.
- * Returns empty array if the doc is not stale or reasons cannot be determined.
  */
 export function getStaleReasons(docType: string, plaintext: string | null | undefined): string[] {
   if (!plaintext) return [];

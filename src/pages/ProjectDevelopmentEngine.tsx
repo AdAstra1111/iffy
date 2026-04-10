@@ -928,21 +928,11 @@ export default function ProjectDevelopmentEngine() {
   const isConceptBriefStale = !!(
     selectedVersion && currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash) && isConceptBrief
   );
-  if (isConceptBrief && selectedVersion && currentResolverHash) {
-    console.error('[DEBUG canon]', {
-      docType: selectedDoc?.doc_type,
-      versionHash: (selectedVersion as any)?.depends_on_resolver_hash,
-      currentHash: currentResolverHash,
-      isStale: isDocStale(selectedVersion as any, currentResolverHash),
-      isConceptBriefStale,
-    });
-  }
   useEffect(() => {
     if (!isConceptBriefStale || !projectId) {
       setIdeaPlaintextForCanon(null);
       return;
     }
-    console.error('[canon-useEffect] running, isConceptBriefStale:', isConceptBriefStale, 'projectId:', projectId);
     let cancelled = false;
     (async () => {
       const { data: ideaDoc } = await supabase
@@ -1908,15 +1898,6 @@ export default function ProjectDevelopmentEngine() {
                     const cbReasons = (isConceptBrief && ideaPlaintextForCanon)
                       ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
                       : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext);
-                    // Debug visible block
-                    {isConceptBrief && (
-                      <div className="text-xs text-yellow-300 bg-yellow-900/30 border border-yellow-600 rounded p-2 mb-2 font-mono">
-                        <div className="font-bold text-yellow-200 mb-1">DEBUG canon-check</div>
-                        <div>cbReasons: {cbReasons.length} | cb.len: {(selectedVersion?.plaintext || '').length} | idea.len: {(ideaPlaintextForCanon || '').length}</div>
-                        <div className="truncate">cb snippet: {(selectedVersion?.plaintext || 'NULL').slice(0, 120)}</div>
-                        <div>reasons: {JSON.stringify(cbReasons.slice(0, 3))}</div>
-                      </div>
-                    )}
                     return (
                       <StaleDocBanner
                           docType={selectedDoc?.doc_type || 'document'}
