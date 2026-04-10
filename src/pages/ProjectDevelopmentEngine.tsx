@@ -920,12 +920,8 @@ export default function ProjectDevelopmentEngine() {
   const [regenerationProgress, setRegenerationProgress] = useState<number | undefined>(undefined);
   const [currentScriptVersionId, setCurrentScriptVersionId] = useState<string | null>(null);
   const [regenerationLabel, setRegenerationLabel] = useState<string>('');
-  const [ideaCanonFields, setIdeaCanonFields] = useState<{
-    title: string | null;
-    logline: string | null;
-    comparables: string | null;
-    genre: string | null;
-  } | null>(null);
+  // Full Idea plaintext for deep concept_brief contradiction checking
+  const [ideaPlaintextForCanon, setIdeaPlaintextForCanon] = useState<string | null>(null);
 
   // Fetch Idea canon fields when concept_brief is stale
   const isConceptBrief = selectedDoc?.doc_type === 'concept_brief';
@@ -934,7 +930,7 @@ export default function ProjectDevelopmentEngine() {
   );
   useEffect(() => {
     if (!isConceptBriefStale || !projectId) {
-      setIdeaCanonFields(null);
+      setIdeaPlaintextForCanon(null);
       return;
     }
     let cancelled = false;
@@ -1915,8 +1911,8 @@ export default function ProjectDevelopmentEngine() {
                         oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
                         currentHash={isIdea ? (currentScriptVersionId || currentResolverHash) : currentResolverHash}
                         staleReasons={
-                          isConceptBrief && ideaCanonFields
-                            ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaCanonFields)
+                          isConceptBrief && ideaPlaintextForCanon
+                            ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
                             : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext)
                         }
                         regenerationProgress={regenerationProgress}
