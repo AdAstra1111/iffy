@@ -8076,6 +8076,22 @@ MATERIAL TO REWRITE:\n${fullText}`;
       const { projectId, documentId, versionId, targetOutput, protectItems, assimilationContext } = body;
       if (!projectId || !documentId || !versionId || !targetOutput) throw new Error("projectId, documentId, versionId, targetOutput required");
 
+      // ── Reconciliation flag gate: block convert if unresolved flags exist for this version ──
+      const { data: unresolvedFlags } = await supabase
+        .from("reconciliation_flags")
+        .select("id, reason, entity_tag")
+        .eq("project_id", projectId)
+        .eq("downstream_doc_version_id", versionId)
+        .is("cleared_at", null);
+      if (unresolvedFlags && unresolvedFlags.length > 0) {
+        const flagSummary = unresolvedFlags.slice(0, 3).map((f: any) => f.reason).join("; ");
+        return new Response(JSON.stringify({
+          error: "reconciliation_required",
+          message: `This document has ${unresolvedFlags.length} unresolved reconciliation flag(s) from upstream changes. Resolve them before advancing. Issues: ${flagSummary}`,
+          flags: unresolvedFlags,
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       const { data: version } = await supabase.from("project_document_versions")
         .select("plaintext").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");

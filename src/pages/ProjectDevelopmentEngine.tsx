@@ -78,6 +78,7 @@ import { isDocStale } from '@/lib/stale-detection';
 import { getStaleReasons, getConceptBriefCanonReasons, getStaleDocReasons } from '@/lib/stageIdentityReasons';
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
 import { StaleDocBanner } from '@/components/devengine/StaleDocBanner';
+import { ApprovalGateModal } from '@/components/devengine/ApprovalGateModal';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
 import { CanonicalEditor } from '@/components/devengine/CanonicalEditor';
 import { ProvenancePanel } from '@/components/devengine/ProvenancePanel';
@@ -1492,12 +1493,14 @@ export default function ProjectDevelopmentEngine() {
   const seasonTemplate = useSeasonTemplate(projectId);
 
    // Approve version mutation
+  const [approvalGateOpen, setApprovalGateOpen] = useState(false);
   const [approvePending, setApprovePending] = useState(false);
-  const handleApproveVersion = async () => {
-    if (!projectId || !selectedVersionId) {
-      toast.error('Select a version first');
-      return;
-    }
+  // Foundation docs that trigger the approval gate
+  const FOUNDATION_DOC_TYPES = new Set(['concept_brief', 'beat_sheet', 'treatment', 'character_bible', 'long_synopsis']);
+  const isFoundationDoc = FOUNDATION_DOC_TYPES.has(selectedDoc?.doc_type || '');
+
+  const doApproveAndActivate = async () => {
+    if (!projectId || !selectedVersionId) throw new Error('No version selected');
     setApprovePending(true);
     try {
       await approveAndActivate({
@@ -1505,10 +1508,29 @@ export default function ProjectDevelopmentEngine() {
         documentVersionId: selectedVersionId,
         sourceFlow: 'dev_engine',
       });
-      toast.success('Version approved & activated in Active Folder');
       qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
+    } finally {
+      setApprovePending(false);
+    }
+  };
+
+  const handleApproveVersion = async () => {
+    if (!projectId || !selectedVersionId) {
+      toast.error('Select a version first');
+      return;
+    }
+    // Foundation docs go through the approval gate
+    if (isFoundationDoc) {
+      setApprovalGateOpen(true);
+      return;
+    }
+    // Non-foundation docs approve directly
+    setApprovePending(true);
+    try {
+      await doApproveAndActivate();
+      toast.success('Version approved & activated in Active Folder');
     } catch (err: any) {
       toast.error(err.message || 'Failed to approve');
     } finally {
@@ -2779,6 +2801,30 @@ export default function ProjectDevelopmentEngine() {
       )}
 
       {/* ═══ SHARED OVERLAYS (visible in both modes) ═══ */}
+
+      {/* Approval Gate Modal — foundation docs */}
+      {approvalGateOpen && selectedDoc && selectedVersionId && projectId && (() => {
+        const parentPlaintexts: Record<string, string> = {};
+        if (ideaPlaintextForCanon) parentPlaintexts['idea'] = ideaPlaintextForCanon;
+        if (conceptBriefPlaintextForCanon) parentPlaintexts['concept_brief'] = conceptBriefPlaintextForCanon;
+        const gateReasons = Object.keys(parentPlaintexts).length > 0
+          ? getStaleDocReasons(selectedDoc.doc_type || '', selectedVersion?.plaintext || '', parentPlaintexts)
+          : [];
+        return (
+          <ApprovalGateModal
+            open={approvalGateOpen}
+            onClose={() => setApprovalGateOpen(false)}
+            projectId={projectId}
+            docType={selectedDoc.doc_type || ''}
+            versionId={selectedVersionId}
+            staleReasons={gateReasons}
+            onApproveAndActivate={doApproveAndActivate}
+            onApproved={() => {
+              toast.success('Version approved & activated in Active Folder');
+            }}
+          />
+        );
+      })()}
 
       {/* Drift Override Dialog */}
       <Dialog open={driftOverrideOpen} onOpenChange={setDriftOverrideOpen}>
