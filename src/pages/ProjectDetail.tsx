@@ -651,7 +651,7 @@ export default function ProjectDetail() {
             onToggle={toggleSection}
           >
             <div className="space-y-3">
-              <ReverseEngineerCallout projectId={id!} documents={documents} projectFormat={project?.format} />
+              <ReverseEngineerCallout projectId={id!} documents={documents} />
               <div className="flex items-center gap-3">
                 <Link to={`/projects/${id}/development`} className="flex-1">
                   <Button variant="outline" className="w-full gap-2 h-11">

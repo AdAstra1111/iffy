@@ -7,11 +7,11 @@ export function useDeleteVersion() {
 
   return useMutation({
     mutationFn: async ({ versionId, documentId }: { versionId: string; documentId: string }) => {
-      const { data, error } = await (supabase as any).rpc('safe_delete_version', {
-        p_version_id: versionId,
+      const { error } = await supabase.functions.invoke('delete-version', {
+        body: { version_id: versionId },
       });
-      if (error) throw error;
-      return { ...data, documentId };
+      if (error) throw new Error(error.message || error);
+      return { versionId, documentId };
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['document-versions', variables.documentId] });

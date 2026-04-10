@@ -25,6 +25,7 @@ const JOB_STAGES = [
   { key: "structure_2",     label: "Analysing script — part 2 of 3..." },
   { key: "structure_3",     label: "Analysing script — part 3 of 3..." },
   { key: "synthesise",      label: "Synthesising analysis..." },
+  { key: "idea",            label: "Creating idea document..." },
   { key: "beat_sheet",      label: "Building beat sheet..." },
   { key: "character_bible", label: "Building character bible..." },
   { key: "treatment",       label: "Writing treatment..." },
@@ -149,7 +150,8 @@ function extractJSON(raw: string): any {
     try { return JSON.parse(s.slice(bestStart, bestEnd)); } catch (_) {}
   }
 
-  throw new Error("No valid JSON in LLM response");
+  console.warn("[extractJSON] All strategies exhausted — LLM returned unparseable content:", String(raw).slice(0, 300));
+  return null;
 }
 
 async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
@@ -190,7 +192,7 @@ async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
 }
 
 // ─── Doc storage ──────────────────────────────────────────────────────────────
-async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any, extraMeta?: Record<string, any>): Promise<void> {
+async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any, extraMeta?: Record<string, any>, dependsOnResolverHash?: string): Promise<void> {
   const content = JSON.stringify(data, null, 2);
   const plaintext = Object.entries(data).map(([k, v]) => {
     if (v === null || v === undefined) return "";
@@ -210,7 +212,7 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
   if (error || !doc) throw new Error(`Failed to upsert ${docType}: ${error?.message}`);
   try {
     const { createVersion } = await import("../_shared/doc-os.ts");
-    const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "approved", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
+    const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "draft", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, dependsOnResolverHash, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
     if (ver) await sb.from("project_documents").update({ latest_version_id: ver.id }).eq("id", doc.id);
   } catch (e) { console.warn("Version creation skipped:", e); }
 }
@@ -406,6 +408,42 @@ Respond with ONLY JSON.`, 12000);
     const ms = (call1 as any)?.market_sheet || {};
     console.log("[reverse-engineer] market_sheet: tagline =", ms.tagline, "| budget_range =", ms.budget_range, "| project_status =", ms.project_status, "| comparable_titles =", ms.comparable_titles, "| audience_age_range =", ms.audience_age_range);
 
+    // ── Stage 4.5: Idea document ─────────────────────────────────────────────
+    const { metadata } = call1;
+
+    // Build source citations here so all downstream stages can use them
+    const scriptTitle = metadata.title || "Script";
+    const allLinesStart = lineRanges[0]?.startLine ?? 1;
+    const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
+    const allChunksCitation = scriptTitle + ", lines " + allLinesStart + "–" + allLinesEnd;
+    const chunkCitations = lineRanges.map((r: any, i: number) => scriptTitle + ", lines " + r.startLine + "–" + r.endLine + " (part " + (i + 1) + ")");
+    const beatScriptLineEnd = script_text.slice(0, 80000).split("\n").length;
+    const partialCitation   = scriptTitle + ", lines 1–" + beatScriptLineEnd;
+
+    updateStage(payload, "idea", "running");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    // Fetch project resolver hash so Idea version stays in sync with project state
+    const { data: projRow } = await sb.from("projects").select("resolved_qualifications_hash").eq("id", project_id).single();
+    const ideaResolverHash = projRow?.resolved_qualifications_hash || undefined;
+    const ideaData = {
+      title: metadata.title || "Untitled",
+      logline: metadata.logline || "",
+      genre: metadata.genre || null,
+      subgenre: metadata.subgenre || null,
+      tone: metadata.tone || null,
+      themes: metadata.themes || [],
+      target_audience: metadata.target_audience || null,
+    };
+    await storeDoc(sb, project_id, script_document_id, user_id, "idea", "creative_primary",
+      (metadata.title || "Script") + " — Idea",
+      ideaData,
+      { source_citations: [allChunksCitation, ...chunkCitations] },
+      ideaResolverHash
+    );
+    updateStage(payload, "idea", "done");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
     // ── Stage 5: Beat sheet (use full script head + synthesis) ──────────────
     updateStage(payload, "beat_sheet", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -493,8 +531,6 @@ Respond with ONLY JSON.`, 12000);
     updateStage(payload, "treatment", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const { metadata } = call1;
-
     const premise      = (call1.concept_brief as any)?.premise || "";
     const worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
     const protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
@@ -535,16 +571,6 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
     const isTV = format === "tv-series";
-
-    // ── Build source citations from line-range tracking ──────────────────────
-    const scriptTitle = metadata.title || "Script";
-    const allLinesStart = lineRanges[0]?.startLine ?? 1;
-    const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
-    const allChunksCitation = `${scriptTitle}, lines ${allLinesStart}–${allLinesEnd}`;
-    const chunkCitations = lineRanges.map((r, i) => `${scriptTitle}, lines ${r.startLine}–${r.endLine} (part ${i + 1})`);
-    // beatScript / charScript use first 80 000 chars — compute which lines that covers
-    const beatScriptLineEnd = script_text.slice(0, 80000).split("\n").length;
-    const partialCitation   = `${scriptTitle}, lines 1–${beatScriptLineEnd}`;
 
     await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
       `${metadata.title} — Concept Brief`,
@@ -714,7 +740,7 @@ Respond with ONLY JSON.`, 3000);
     payload.status = "done";
     payload.current_stage = "done";
     payload.updated_at = new Date().toISOString();
-    payload.result = { title: metadata.title, documents_created: ["concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
+    payload.result = { title: metadata.title, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
 
   } catch (err: any) {
     console.error("[reverse-engineer] background error:", err?.message);

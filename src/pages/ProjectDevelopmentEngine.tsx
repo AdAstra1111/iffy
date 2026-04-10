@@ -75,6 +75,7 @@ import { SeriesWriterAutorunPanel } from '@/components/devengine/SeriesWriterAut
 import { useStageResolve } from '@/hooks/useStageResolve';
 import { useDecisionCommit } from '@/hooks/useDecisionCommit';
 import { isDocStale } from '@/lib/stale-detection';
+import { getStaleReasons, getConceptBriefCanonReasons } from '@/lib/stageIdentityReasons';
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
 import { StaleDocBanner } from '@/components/devengine/StaleDocBanner';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
@@ -916,6 +917,53 @@ export default function ProjectDevelopmentEngine() {
   };
 
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+  const [regenerationProgress, setRegenerationProgress] = useState<number | undefined>(undefined);
+  const [currentScriptVersionId, setCurrentScriptVersionId] = useState<string | null>(null);
+  const [regenerationLabel, setRegenerationLabel] = useState<string>('');
+  const [ideaCanonFields, setIdeaCanonFields] = useState<{
+    title: string | null;
+    logline: string | null;
+    comparables: string | null;
+    genre: string | null;
+  } | null>(null);
+
+  // Fetch Idea canon fields when concept_brief is stale
+  const isConceptBrief = selectedDoc?.doc_type === 'concept_brief';
+  const isConceptBriefStale = !!(
+    selectedVersion && currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash) && isConceptBrief
+  );
+  useEffect(() => {
+    if (!isConceptBriefStale || !projectId) {
+      setIdeaCanonFields(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: ideaDoc } = await supabase
+        .from('project_documents')
+        .select('plaintext')
+        .eq('project_id', projectId)
+        .eq('doc_type', 'idea')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      if (cancelled || !ideaDoc?.plaintext) return;
+      const text = ideaDoc.plaintext;
+      const titleMatch = text.match(/\*\*TITLE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/^#\s+(.+?)(?:\n|$)/mi);
+      const loglineMatch = text.match(/\*\*LOGLINE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Logline:\s*(.+?)(?:\n|$)/i);
+      const comparablesMatch = text.match(/\*\*COMPARABLES?:\*\*\s*(.+?)(?:\n|$)/i);
+      const genreMatch = text.match(/\*\*GENRE:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Genre:\s*(.+?)(?:\n|$)/i);
+      if (!cancelled) {
+        setIdeaCanonFields({
+          title: titleMatch ? titleMatch[1].trim() : null,
+          logline: loglineMatch ? loglineMatch[1].trim() : null,
+          comparables: comparablesMatch ? comparablesMatch[1].trim() : null,
+          genre: genreMatch ? genreMatch[1].trim() : null,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isConceptBriefStale, projectId]);
 
   const handleGenerateDocument = async () => {
     if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
@@ -926,7 +974,7 @@ export default function ProjectDevelopmentEngine() {
         body: { projectId, docType: selectedDoc.doc_type, userId: user?.id, mode: 'draft' },
       });
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-      qc.invalidateQueries({ queryKey: ['documents', projectId] });
+      qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
       if ((genResp as any)?.generating === true && (genResp as any)?.version_id) {
         setSelectedVersionId((genResp as any).version_id);
       }
@@ -940,18 +988,73 @@ export default function ProjectDevelopmentEngine() {
     setIsGeneratingDocument(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.functions.invoke('generate-document', {
-        body: {
-          projectId,
-          docType: selectedDoc.doc_type,
-          userId: user?.id,
-          mode: 'draft',
-        },
-      });
-      if (error) throw new Error(error.message || error);
-      toast.success(`${selectedDoc.doc_type.replace(/_/g, ' ')} regenerated successfully`);
-      qc.invalidateQueries({ queryKey: ['versions', projectId, selectedDoc.doc_type] });
-      qc.invalidateQueries({ queryKey: ['documents', projectId] });
+      if (selectedDoc.doc_type === 'idea') {
+        // Use lightweight regenerate-idea — no text extraction, no entity links, no pipeline
+        const { error: invokeErr } = await supabase.functions.invoke('regenerate-idea', {
+          body: { project_id: projectId },
+        });
+        if (invokeErr) throw new Error(invokeErr.message || invokeErr);
+        toast.success('Idea regenerated');
+        setRegenerationProgress(100);
+        setRegenerationLabel('Done!');
+        setTimeout(() => {
+          setRegenerationProgress(undefined);
+          setRegenerationLabel('');
+        }, 1500);
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
+        setIsGeneratingDocument(false);
+        return;
+        let pollCount = 0;
+        const pollJob = async () => {
+          const { data: job } = await supabase
+            .from('narrative_units')
+            .select('payload_json')
+            .eq('project_id', projectId)
+            .eq('payload_json->>job_type', 'reverse_engineer')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+          if (!job) return;
+          const payload = job.payload_json || {};
+          const stages = payload.stages || {};
+          const totalStages = Object.keys(stages).length;
+          const doneStages = Object.values(stages).filter((s: any) => s.status === 'done').length;
+          const progress = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : 5;
+          setRegenerationProgress(Math.max(5, Math.min(progress, 95)));
+          const current = payload.current_stage;
+          if (current && current !== 'done' && stages[current]?.label) {
+            setRegenerationLabel(stages[current].label);
+          }
+          if (payload.status === 'done' || payload.status === 'error') {
+            setRegenerationProgress(100);
+            setRegenerationLabel(payload.status === 'done' ? 'Complete!' : 'Failed');
+            setTimeout(() => {
+              setRegenerationProgress(undefined);
+              setRegenerationLabel('');
+              qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+              qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
+            }, 2000);
+            return;
+          }
+          pollCount++;
+          if (pollCount < 60) setTimeout(pollJob, 3000);
+        };
+        setTimeout(pollJob, 2000);
+      } else {
+        const { error: genErr } = await supabase.functions.invoke('generate-document', {
+          body: {
+            projectId,
+            docType: selectedDoc.doc_type,
+            userId: user?.id,
+            mode: 'draft',
+          },
+        });
+        if (genErr) throw new Error(genErr.message || genErr);
+        toast.success(`${selectedDoc.doc_type.replace(/_/g, ' ')} regenerated successfully`);
+      }
+      qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+      qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
     } catch (err: any) {
       toast.error(`Regeneration failed: ${err?.message || 'Unknown error'}`);
       console.error('[handleStaleRegenerate]', err);
@@ -1796,16 +1899,33 @@ export default function ProjectDevelopmentEngine() {
                   )}
 
                   {/* Stale document banner */}
-                  {selectedVersion && currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash) && (
-                    <StaleDocBanner
-                      docType={selectedDoc?.doc_type || 'document'}
-                      oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
-                      currentHash={currentResolverHash}
-                      seasonEpisodeCount={resolvedQuals?.season_episode_count || effectiveSeasonEpisodes || undefined}
-                      onRegenerate={handleStaleRegenerate}
-                      isRegenerating={isGeneratingDocument}
-                    />
-                  )}
+                  {(() => {
+                    const isIdea = selectedDoc?.doc_type === 'idea';
+                    const shouldShow = selectedVersion && (
+                      isIdea
+                        ? currentScriptVersionId
+                          ? (selectedVersion as any).depends_on_resolver_hash !== currentScriptVersionId
+                          : false
+                        : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash)
+                    );
+                    if (!shouldShow) return null;
+                    return (
+                      <StaleDocBanner
+                        docType={selectedDoc?.doc_type || 'document'}
+                        oldHash={(selectedVersion as any).depends_on_resolver_hash || ''}
+                        currentHash={isIdea ? (currentScriptVersionId || currentResolverHash) : currentResolverHash}
+                        staleReasons={
+                          isConceptBrief && ideaCanonFields
+                            ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaCanonFields)
+                            : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext)
+                        }
+                        regenerationProgress={regenerationProgress}
+                        regenerationLabel={regenerationLabel}
+                        onRegenerate={handleStaleRegenerate}
+                        isRegenerating={isGeneratingDocument}
+                      />
+                    );
+                  })()}
 
                   {/* Episode handoff banner */}
                   {activeHandoffForDoc && (
