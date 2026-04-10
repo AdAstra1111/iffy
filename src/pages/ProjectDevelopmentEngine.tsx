@@ -75,7 +75,7 @@ import { SeriesWriterAutorunPanel } from '@/components/devengine/SeriesWriterAut
 import { useStageResolve } from '@/hooks/useStageResolve';
 import { useDecisionCommit } from '@/hooks/useDecisionCommit';
 import { isDocStale } from '@/lib/stale-detection';
-import { getStaleReasons, getConceptBriefCanonReasons } from '@/lib/stageIdentityReasons';
+import { getStaleReasons, getConceptBriefCanonReasons, getStaleDocReasons } from '@/lib/stageIdentityReasons';
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
 import { StaleDocBanner } from '@/components/devengine/StaleDocBanner';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
@@ -920,36 +920,54 @@ export default function ProjectDevelopmentEngine() {
   const [regenerationProgress, setRegenerationProgress] = useState<number | undefined>(undefined);
   const [currentScriptVersionId, setCurrentScriptVersionId] = useState<string | null>(null);
   const [regenerationLabel, setRegenerationLabel] = useState<string>('');
-  // Full Idea plaintext for deep concept_brief contradiction checking
+  // Parent plaintexts for universal stale contradiction detection
   const [ideaPlaintextForCanon, setIdeaPlaintextForCanon] = useState<string | null>(null);
+  const [conceptBriefPlaintextForCanon, setConceptBriefPlaintextForCanon] = useState<string | null>(null);
 
-  // Fetch Idea canon fields when concept_brief is stale
   const isConceptBrief = selectedDoc?.doc_type === 'concept_brief';
-  const isConceptBriefStale = !!(
-    selectedVersion && currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash) && isConceptBrief
+  const currentDocType = selectedDoc?.doc_type || '';
+  const isFoundationDocStale = !!(
+    selectedVersion && currentResolverHash &&
+    isDocStale(selectedVersion as any, currentResolverHash) &&
+    ['concept_brief', 'beat_sheet', 'treatment', 'character_bible', 'long_synopsis'].includes(currentDocType)
   );
+
+  // Fetch parent plaintexts when a foundation doc is stale
   useEffect(() => {
-    if (!isConceptBriefStale || !projectId) {
+    if (!isFoundationDocStale || !projectId) {
       setIdeaPlaintextForCanon(null);
+      setConceptBriefPlaintextForCanon(null);
       return;
     }
     let cancelled = false;
     (async () => {
-      const { data: ideaDoc } = await supabase
-        .from('project_documents')
-        .select('plaintext')
-        .eq('project_id', projectId)
-        .eq('doc_type', 'idea')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      if (cancelled || !ideaDoc?.plaintext) return;
-      if (!cancelled) {
-        setIdeaPlaintextForCanon(ideaDoc?.plaintext || null);
+      // concept_brief and long_synopsis need the idea
+      if (['concept_brief', 'long_synopsis', 'character_bible'].includes(currentDocType)) {
+        const { data: ideaDoc } = await supabase
+          .from('project_documents')
+          .select('plaintext')
+          .eq('project_id', projectId)
+          .eq('doc_type', 'idea')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!cancelled) setIdeaPlaintextForCanon(ideaDoc?.plaintext || null);
+      }
+      // beat_sheet, treatment, character_bible need the concept_brief
+      if (['beat_sheet', 'treatment', 'character_bible'].includes(currentDocType)) {
+        const { data: cbDoc } = await supabase
+          .from('project_documents')
+          .select('plaintext')
+          .eq('project_id', projectId)
+          .eq('doc_type', 'concept_brief')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!cancelled) setConceptBriefPlaintextForCanon(cbDoc?.plaintext || null);
       }
     })();
     return () => { cancelled = true; };
-  }, [isConceptBriefStale, projectId]);
+  }, [isFoundationDocStale, currentDocType, projectId]);
 
   const handleGenerateDocument = async () => {
     if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
@@ -1912,8 +1930,11 @@ export default function ProjectDevelopmentEngine() {
                         : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash)
                     );
                     if (!shouldShow) return null;
-                    const cbReasons = (isConceptBrief && ideaPlaintextForCanon)
-                      ? getConceptBriefCanonReasons(selectedVersion?.plaintext || '', ideaPlaintextForCanon)
+                    const parentPlaintexts: Record<string, string> = {};
+                    if (ideaPlaintextForCanon) parentPlaintexts['idea'] = ideaPlaintextForCanon;
+                    if (conceptBriefPlaintextForCanon) parentPlaintexts['concept_brief'] = conceptBriefPlaintextForCanon;
+                    const cbReasons = Object.keys(parentPlaintexts).length > 0
+                      ? getStaleDocReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext || '', parentPlaintexts)
                       : getStaleReasons(selectedDoc?.doc_type || '', selectedVersion?.plaintext);
                     return (
                       <StaleDocBanner

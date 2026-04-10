@@ -176,7 +176,113 @@ export function getConceptBriefCanonReasons(
 }
 
 /**
+ * Universal stale reason detection for any foundation doc type.
+ * Compares named entities in the stale doc against its current parent doc(s).
+ *
+ * parentPlaintexts: map of doc_type -> current plaintext
+ *   e.g. { idea: '...', concept_brief: '...' }
+ *
+ * Dependency map:
+ *   concept_brief   → idea
+ *   beat_sheet      → concept_brief
+ *   treatment       → concept_brief
+ *   character_bible → concept_brief + idea
+ *   long_synopsis   → idea
+ */
+export function getStaleDocReasons(
+  docType: string,
+  stalePlaintext: string,
+  parentPlaintexts: Record<string, string>,
+): string[] {
+  if (!stalePlaintext) return [];
+
+  switch (docType) {
+    case 'concept_brief': {
+      const ideaText = parentPlaintexts['idea'] || '';
+      if (!ideaText) return [`Concept Brief out of sync — current Idea not loaded`];
+      return getConceptBriefCanonReasons(stalePlaintext, ideaText);
+    }
+
+    case 'beat_sheet':
+    case 'treatment': {
+      const cbText = parentPlaintexts['concept_brief'] || '';
+      if (!cbText) return [`${docType.replace('_', ' ')} out of sync — current Concept Brief not loaded`];
+      return getUpstreamEntityReasons(stalePlaintext, cbText, 'Concept Brief');
+    }
+
+    case 'character_bible': {
+      const cbText = parentPlaintexts['concept_brief'] || '';
+      const ideaText = parentPlaintexts['idea'] || '';
+      const parentText = cbText || ideaText;
+      const parentLabel = cbText ? 'Concept Brief' : 'Idea';
+      if (!parentText) return [`Character Bible out of sync — parent docs not loaded`];
+      return getUpstreamEntityReasons(stalePlaintext, parentText, parentLabel);
+    }
+
+    case 'long_synopsis': {
+      const ideaText = parentPlaintexts['idea'] || '';
+      if (!ideaText) return [`Long Synopsis out of sync — current Idea not loaded`];
+      return getUpstreamEntityReasons(stalePlaintext, ideaText, 'Idea');
+    }
+
+    case 'idea':
+      return getIdeaStaleReasons(stalePlaintext);
+
+    default:
+      return [];
+  }
+}
+
+/**
+ * Finds named entities in a stale doc that are NOT present in the parent doc.
+ * Used for beat_sheet, treatment, character_bible, long_synopsis.
+ */
+function getUpstreamEntityReasons(
+  stalePlaintext: string,
+  parentPlaintext: string,
+  parentLabel: string,
+): string[] {
+  const reasons: string[] = [];
+  const parentLower = parentPlaintext.toLowerCase();
+  const staleEntities = extractNamedEntities(stalePlaintext);
+  const seen = new Set<string>();
+
+  for (const entity of staleEntities) {
+    if (seen.has(entity)) continue;
+    if (entity.length < 4) continue;
+    const entityLower = entity.toLowerCase();
+    // Entity is in stale doc but NOT in parent — it was in an older version of parent
+    if (!parentLower.includes(entityLower)) {
+      const isFaction = FACTOR_TERMS.has(entity);
+      const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese|Berlin|London|Cairo)\b/i.test(entity);
+      const isArtifact = /Engine|Kingdom|Lost Civilization|Device|Weapon/i.test(entity);
+      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity) && !isFaction && !isArtifact && !isLocation;
+      if (isNamedChar) {
+        reasons.push(`Character "${entity}" referenced — not in current ${parentLabel}`);
+        seen.add(entity);
+      } else if (isFaction) {
+        reasons.push(`Faction "${entity}" referenced — not in current ${parentLabel}`);
+        seen.add(entity);
+      } else if (isLocation) {
+        reasons.push(`Location "${entity}" referenced — not in current ${parentLabel}`);
+        seen.add(entity);
+      } else if (isArtifact) {
+        reasons.push(`World element "${entity}" referenced — not in current ${parentLabel}`);
+        seen.add(entity);
+      }
+    }
+  }
+
+  if (reasons.length === 0) {
+    reasons.push(`${parentLabel.replace('_', ' ')} out of sync — regenerate to reconcile`);
+  }
+
+  return reasons;
+}
+
+/**
  * Returns specific, human-readable reasons why a document is considered stale.
+ * Legacy entry point — use getStaleDocReasons() for full universal detection.
  */
 export function getStaleReasons(docType: string, plaintext: string | null | undefined): string[] {
   if (!plaintext) return [];
