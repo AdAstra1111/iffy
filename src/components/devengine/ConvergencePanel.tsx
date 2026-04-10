@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { BarChart3, AlertTriangle, Info, CircleCheck, ShieldAlert, Lightbulb, Sparkles, Shield, Target } from 'lucide-react';
 import { computeManualDecisionState, type ManualDecisionInput, type ManualActionKey, recommendationToActionKey } from '@/lib/manualDecisionState';
+import { ApprovalSection } from './ApprovalSection';
 
 interface ConvergencePanelProps {
   latestAnalysis: any;
@@ -20,6 +21,11 @@ interface ConvergencePanelProps {
   /** Callback when operator clicks a recommended CTA */
   onAction?: (action: ManualActionKey) => void;
   isLoading?: boolean;
+  /** ApprovalSection props */
+  projectId?: string;
+  docType?: string;
+  versionId?: string;
+  documentId?: string;
 }
 
 function Sparkline({ history }: { history: any[] }) {
@@ -67,7 +73,7 @@ const CTA_VARIANT: Record<string, 'default' | 'destructive' | 'outline' | 'secon
   muted: 'secondary',
 };
 
-export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergenceStatus, tieredNotes, versionMetaJson, versionLabel, versionNumber, onAction, isLoading }: ConvergencePanelProps) {
+export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergenceStatus, tieredNotes, versionMetaJson, versionLabel, versionNumber, onAction, isLoading, projectId, docType, versionId, documentId }: ConvergencePanelProps) {
   const metaCi = typeof versionMetaJson?.ci === 'number' ? versionMetaJson.ci : null;
   const metaGp = typeof versionMetaJson?.gp === 'number' ? versionMetaJson.gp : null;
   const analysisCi = latestAnalysis?.ci_score || latestAnalysis?.scores?.ci_score || 0;
@@ -264,6 +270,16 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
               <p key={i} className="text-[9px] text-muted-foreground">• {s}</p>
             ))}
           </div>
+        )}
+
+        {/* ═══ Approval Section — Phase 1: concept_brief divergences ═══ */}
+        {projectId && docType && versionId && documentId && (
+          <ApprovalSection
+            projectId={projectId}
+            docType={docType}
+            versionId={versionId}
+            documentId={documentId}
+          />
         )}
       </CardContent>
     </Card>

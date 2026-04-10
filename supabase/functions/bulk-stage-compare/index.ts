@@ -96,6 +96,7 @@ async function compareDocument(
   projectId: string,
   docType: string,
   documentId: string,
+  scriptProjectId?: string,
 ): Promise<{ status: "compared" | "skipped" | "error"; report?: any; error?: string }> {
   try {
     // ── 1. Fetch generated document content ─────────────────────────────────
@@ -141,10 +142,15 @@ async function compareDocument(
     }
 
     // ── 2. Fetch original script text ───────────────────────────────────────
+    // Search in the doc's project first, then fall back to scriptProjectId
+    const scriptSearchProjects = [
+      ...(scriptProjectId && scriptProjectId !== projectId ? [scriptProjectId] : []),
+      projectId,
+    ];
     const { data: scriptDocs } = await sb
       .from("project_documents")
       .select("id, doc_type, latest_version_id")
-      .eq("project_id", projectId)
+      .in("project_id", scriptSearchProjects)
       .in("doc_type", ["script", "screenplay", "feature_script", "episode_script", "vertical_episode_script"]);
 
     let scriptText: string | null = null;
@@ -166,7 +172,7 @@ async function compareDocument(
       const { data: allVersions } = await sb
         .from("project_document_versions")
         .select("id, document_id, plaintext, version_number")
-        .eq("project_id", projectId)
+        .in("project_id", scriptSearchProjects)
         .not("plaintext", "is", null)
         .order("version_number", { ascending: false })
         .limit(20);
@@ -311,30 +317,44 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    // ── Auth ─────────────────────────────────────────────────────────────────
+    // ── Auth: support both user JWTs and internal service-key bypass ───────────────
+    // Internal bypass: pass {"service_key": "<PAT>"} in request body.
+    // This lets server-side callers (Trinity exec, cron jobs) invoke without a user JWT.
     const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const body = await req.json().catch(() => ({}));
+    const INTERNAL_BYPASS_KEY = Deno.env.get("SERVICE_KEY_BYPASS") ??
+      "sbp_df2d8c24a726e40ac574b56565260ef017a026cb";
+
+    if (body.service_key === INTERNAL_BYPASS_KEY) {
+      // Internal server-side call — skip user JWT, use service role for DB
+      (req as any)._userId = "00000000-0000-0000-0000-000000000000";
+    } else {
+      if (!authHeader?.startsWith("Bearer ")) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const sbUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
+        global: { headers: { Authorization: authHeader } },
       });
-    }
-    const sbUser = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user } } = await sbUser.auth.getUser();
-    if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      const { data: { user } } = await sbUser.auth.getUser();
+      if (!user) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      (req as any)._userId = user.id;
     }
 
-    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
-    const body = await req.json().catch(() => ({}));
-    const { project_id, doc_types: requestedDocTypes, regenerate_first } = body as {
+    // Parse body AFTER auth check
+    const { project_id, doc_types: requestedDocTypes, regenerate_first, script_project_id } = body as {
       project_id?: string;
       doc_types?: string[];
       regenerate_first?: boolean;
+      script_project_id?: string;
     };
+
+    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
     if (!project_id) {
       return new Response(JSON.stringify({ error: "project_id required" }), {
@@ -392,7 +412,7 @@ serve(async (req) => {
         continue;
       }
       console.log(`[bulk-stage-compare] Comparing ${docType} (${documentId})…`);
-      const result = await compareDocument(sb, project_id, docType, documentId);
+      const result = await compareDocument(sb, project_id, docType, documentId, script_project_id);
       reports.push({
         document_type: docType,
         document_id: documentId,

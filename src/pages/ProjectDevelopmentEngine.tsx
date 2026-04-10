@@ -2429,6 +2429,10 @@ export default function ProjectDevelopmentEngine() {
                   tieredNotes={tieredNotes}
                   versionMetaJson={(selectedVersion as any)?.meta_json ?? null}
                   versionLabel={(selectedVersion as any)?.label ?? null}
+                  projectId={projectId}
+                  docType={selectedDoc?.doc_type}
+                  versionId={selectedVersionId ?? undefined}
+                  documentId={selectedDocId ?? undefined}
                 />
                 <div className="space-y-3">
                   {/* Auto-Run Progress Panel */}
