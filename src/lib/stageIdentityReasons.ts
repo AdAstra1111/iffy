@@ -64,6 +64,21 @@ function extractNamedEntities(text: string): string[] {
  * Returns specific contradictions between a concept_brief and the current Idea.
  * Uses direct string matching so it works even when the Idea has no PREMISE field.
  */
+/**
+ * Compare Concept Brief against the current Idea.
+ *
+ * CORRECT DIRECTION: The CB is intentionally an EXPANSION of the Idea.
+ * CB is ALLOWED to have more characters, more world detail, more plot.
+ * Only flag where the Idea's CORE IDENTITY changed in a way the CB doesn't reflect:
+ *   - Logline changed
+ *   - Genre changed
+ *   - Subgenre changed
+ *   - Tone changed
+ *   - Target audience changed
+ *   - Year/era conflict in core fields
+ *
+ * Do NOT flag entities in CB that aren't in the Idea — that's expected expansion.
+ */
 export function getConceptBriefCanonReasons(
   conceptBriefPlaintext: string,
   ideaPlaintext: string
@@ -71,10 +86,7 @@ export function getConceptBriefCanonReasons(
   const reasons: string[] = [];
   if (!conceptBriefPlaintext || !ideaPlaintext) return reasons;
 
-  const ideaLower = ideaPlaintext.toLowerCase();
-  const cbLower = conceptBriefPlaintext.toLowerCase();
-
-  // 1. Field-level mismatches (logline, genre, subgenre, tone, audience)
+  // Field-level mismatches only — CB expanding beyond Idea is not a contradiction
   const cbLogline = extractField(conceptBriefPlaintext, 'LOGLINE');
   const ideaLogline = extractField(ideaPlaintext, 'LOGLINE');
   const cbGenre = extractField(conceptBriefPlaintext, 'GENRE');
@@ -87,89 +99,30 @@ export function getConceptBriefCanonReasons(
   const ideaAudience = extractField(ideaPlaintext, 'TARGET AUDIENCE');
 
   if (cbLogline && ideaLogline && cbLogline !== ideaLogline) {
-    reasons.push(`Logline edited: "${cbLogline.slice(0, 60)}..." → now "${ideaLogline.slice(0, 60)}..."`);
+    reasons.push(`Logline changed: Idea now reads “${ideaLogline.slice(0, 80)}”`);
   }
   if (cbGenre && ideaGenre && cbGenre.toLowerCase() !== ideaGenre.toLowerCase()) {
-    reasons.push(`Genre changed: "${cbGenre}" → now "${ideaGenre}"`);
+    reasons.push(`Genre changed: was “${cbGenre}” → now “${ideaGenre}”`);
   }
   if (cbSubgenre && ideaSubgenre && cbSubgenre.toLowerCase() !== ideaSubgenre.toLowerCase()) {
-    reasons.push(`Subgenre changed: "${cbSubgenre}" → now "${ideaSubgenre}"`);
+    reasons.push(`Subgenre changed: was “${cbSubgenre}” → now “${ideaSubgenre}”`);
   }
   if (cbTone && ideaTone && cbTone.toLowerCase() !== ideaTone.toLowerCase()) {
-    reasons.push(`Tone changed: "${cbTone}" → now "${ideaTone}"`);
+    reasons.push(`Tone changed: was “${cbTone}” → now “${ideaTone}”`);
   }
   if (cbAudience && ideaAudience && cbAudience !== ideaAudience) {
-    reasons.push(`Target audience changed: "${cbAudience.slice(0, 60)}" → now "${ideaAudience.slice(0, 60)}"`);
+    reasons.push(`Target audience changed: was “${cbAudience.slice(0, 60)}” → now “${ideaAudience.slice(0, 60)}”`);
   }
 
-  // 2. Named entities from CB's PREMISE / WORLD BUILDING / CENTRAL QUESTION
-  // that don't appear in the Idea's full text
-  const cbPremise = extractField(conceptBriefPlaintext, 'PREMISE') || '';
-  const cbWorld = [
-    extractField(conceptBriefPlaintext, 'WORLD BUILDING NOTES'),
-    extractField(conceptBriefPlaintext, 'WORLD_BUILDING NOTES'),
-    extractField(conceptBriefPlaintext, 'WORLD NOTES'),
-    extractField(conceptBriefPlaintext, 'WORLD BUILDING'),
-  ].find(Boolean) || '';
-  const cbCentralQ = extractField(conceptBriefPlaintext, 'CENTRAL QUESTION') || '';
-  const cbSpecificText = cbPremise + ' ' + cbWorld + ' ' + cbCentralQ;
-
-  const entities = extractNamedEntities(cbSpecificText);
-  const seen = new Set<string>();
-  for (const entity of entities) {
-    if (seen.has(entity)) continue;
-    const entityLower = entity.toLowerCase();
-    if (entity.length < 4) continue;
-    if (!ideaLower.includes(entityLower)) {
-      const isFaction = FACTOR_TERMS.has(entity);
-      const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese)\b/i.test(entity);
-      const isArtifact = /Engine|Kingdom|Lost Civilization/i.test(entity);
-      const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity) && !isFaction && !isArtifact && !isLocation;
-      if (isNamedChar) {
-        reasons.push(`Character "${entity}" in Concept Brief — not in current Idea`);
-        seen.add(entity);
-      } else if (isFaction) {
-        reasons.push(`Faction "${entity}" in Concept Brief — not in current Idea`);
-        seen.add(entity);
-      } else if (isLocation) {
-        reasons.push(`Location "${entity}" in Concept Brief — not in current Idea`);
-        seen.add(entity);
-      } else if (isArtifact) {
-        reasons.push(`World element "${entity}" in Concept Brief — not in current Idea`);
-        seen.add(entity);
-      }
-    }
+  // Year/era conflict — only from core fields, not entity extraction
+  const cbLoglineYear = (cbLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
+  const ideaLoglineYear = (ideaLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
+  if (cbLoglineYear && ideaLoglineYear && cbLoglineYear[0] !== ideaLoglineYear[0]) {
+    reasons.push(`Era mismatch: Concept Brief references ${cbLoglineYear[0]}, Idea now references ${ideaLoglineYear[0]}`);
   }
 
-  // 3. Direct string checks for known specific story elements from YETI's Concept Brief
-  // These are the high-value contradictions we know exist
-  const knownChecks = [
-    { text: 'Bill Blackstone', label: 'protagonist Bill Blackstone', type: 'Character' },
-    { text: 'Heinrich Klausman', label: 'antagonist Heinrich Klausman', type: 'Character' },
-    { text: 'MI6', label: 'faction MI6', type: 'Faction' },
-    { text: 'Abzu Engine', label: 'key artifact Abzu Engine', type: 'World element' },
-    { text: 'Underground Kingdom', label: 'location Underground Kingdom', type: 'World element' },
-    { text: 'Benghazi', label: 'location Benghazi', type: 'Location' },
-    { text: 'Hong Kong', label: 'location Hong Kong', type: 'Location' },
-  ];
-  for (const { text, label, type } of knownChecks) {
-    if (seen.has(text)) continue; // skip already found by entity extraction
-    if (cbLower.includes(text.toLowerCase()) && !ideaLower.includes(text.toLowerCase())) {
-      reasons.push(`${type} "${text}" in Concept Brief — not in current Idea`);
-      seen.add(text);
-    }
-  }
-
-  // 4. Year/era conflict
-  const cbYearMatch = (cbPremise + ' ' + cbWorld).match(/\b(19\d{2}|20\d{2})\b/);
-  const ideaYearMatch = (ideaLogline || '').match(/\b(19\d{2}|20\d{2})\b/);
-  if (cbYearMatch && ideaYearMatch && cbYearMatch[0] !== ideaYearMatch[0]) {
-    reasons.push(`Era mismatch: Concept Brief implies ${cbYearMatch[0]} but Idea mentions ${ideaYearMatch[0]}`);
-  }
-
-  // 5. If still nothing found — generic sync message
   if (reasons.length === 0) {
-    reasons.push(`Concept Brief out of sync with current Idea — regenerate to reconcile`);
+    reasons.push(`Concept Brief out of sync with current Idea — core identity fields differ`);
   }
 
   return reasons;
@@ -234,8 +187,18 @@ export function getStaleDocReasons(
 }
 
 /**
- * Finds named entities in a stale doc that are NOT present in the parent doc.
- * Used for beat_sheet, treatment, character_bible, long_synopsis.
+ * Correct direction for beat_sheet / treatment / character_bible / long_synopsis:
+ *
+ * The child is an EXPANSION of the parent — it's allowed to have MORE.
+ * Staleness means the PARENT changed after the child was generated.
+ *
+ * So: find named entities in the CURRENT PARENT that are NOT in the STALE DOC.
+ * These are things the parent now defines that the child hasn't absorbed yet.
+ *
+ * Also flag: named entities in the stale doc that appear to CONTRADICT the parent
+ * (e.g. stale doc says "Connor Blake" but parent says "Bill Blackstone" — same role, different name).
+ * This is hard to detect automatically without LLM, so for now we flag structural field mismatches
+ * and rely on the "parent has new entities not in child" signal as the primary indicator.
  */
 function getUpstreamEntityReasons(
   stalePlaintext: string,
@@ -243,38 +206,38 @@ function getUpstreamEntityReasons(
   parentLabel: string,
 ): string[] {
   const reasons: string[] = [];
-  const parentLower = parentPlaintext.toLowerCase();
-  const staleEntities = extractNamedEntities(stalePlaintext);
+  const staleLower = stalePlaintext.toLowerCase();
+  const parentEntities = extractNamedEntities(parentPlaintext);
   const seen = new Set<string>();
 
-  for (const entity of staleEntities) {
+  for (const entity of parentEntities) {
     if (seen.has(entity)) continue;
     if (entity.length < 4) continue;
     const entityLower = entity.toLowerCase();
-    // Entity is in stale doc but NOT in parent — it was in an older version of parent
-    if (!parentLower.includes(entityLower)) {
+    // Entity is defined in current parent but NOT reflected in the stale child
+    if (!staleLower.includes(entityLower)) {
       const isFaction = FACTOR_TERMS.has(entity);
       const isLocation = /\b(Himalayas|Benghazi|Hong Kong|Nepal|Tibet|Nepalese|Berlin|London|Cairo)\b/i.test(entity);
       const isArtifact = /Engine|Kingdom|Lost Civilization|Device|Weapon/i.test(entity);
       const isNamedChar = /^[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(entity) && !isFaction && !isArtifact && !isLocation;
       if (isNamedChar) {
-        reasons.push(`Character "${entity}" referenced — not in current ${parentLabel}`);
+        reasons.push(`Character "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
         seen.add(entity);
       } else if (isFaction) {
-        reasons.push(`Faction "${entity}" referenced — not in current ${parentLabel}`);
+        reasons.push(`Faction "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
         seen.add(entity);
       } else if (isLocation) {
-        reasons.push(`Location "${entity}" referenced — not in current ${parentLabel}`);
+        reasons.push(`Location "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
         seen.add(entity);
       } else if (isArtifact) {
-        reasons.push(`World element "${entity}" referenced — not in current ${parentLabel}`);
+        reasons.push(`World element "${entity}" now in ${parentLabel} — not yet reflected in this doc`);
         seen.add(entity);
       }
     }
   }
 
   if (reasons.length === 0) {
-    reasons.push(`${parentLabel.replace('_', ' ')} out of sync — regenerate to reconcile`);
+    reasons.push(`${parentLabel} has changed — regenerate to absorb updates`);
   }
 
   return reasons;

@@ -196,9 +196,24 @@ serve(async (req) => {
 
   const flagIds = (createdFlags as ReconciliationFlag[]).map((f) => f.id);
 
+  // ── 5. Unapprove affected downstream doc versions ────────────────────────────────────
+  // Any approved versions of the affected doc types must be unapproved
+  // so the document tray reflects the correct state.
+  const unapprovedVersionIds: string[] = [];
+  for (const { version_id } of downstreamVersions) {
+    const { error: unapproveErr } = await sb
+      .from("project_document_versions")
+      .update({ approval_status: "unapproved", is_current: false })
+      .eq("id", version_id)
+      .eq("approval_status", "approved"); // only touch approved versions
+    if (!unapproveErr) unapprovedVersionIds.push(version_id);
+    else console.warn(`[cascade-engine] Failed to unapprove version ${version_id}:`, unapproveErr.message);
+  }
+
   return new Response(JSON.stringify({
     created_flags: createdFlags,
-    message: `Cascade complete: ${flagIds.length} reconciliation flag(s) created.`,
+    unapproved_version_ids: unapprovedVersionIds,
+    message: `Cascade complete: ${flagIds.length} reconciliation flag(s) created, ${unapprovedVersionIds.length} version(s) unapproved.`,
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
