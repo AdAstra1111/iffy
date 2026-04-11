@@ -2,6 +2,9 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "functions": {
+    "api/supabase-proxy.ts": { "maxDuration": 300 }
+  },
   "rewrites": [
     { "source": "/api/llm", "destination": "/api/llm" },
     { "source": "/api/supabase-proxy/(.*)", "destination": "/api/supabase-proxy?path=$1" },

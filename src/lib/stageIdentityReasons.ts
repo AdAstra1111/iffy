@@ -123,7 +123,7 @@ export function getConceptBriefCanonReasons(
 
   // No narrative conflicts found — staleness is from a Canon configuration update, not a content change
   if (reasons.length === 0) {
-    reasons.push(`Canon configuration updated since this was generated — no narrative conflicts detected`);
+    reasons.push(`Canon config updated since generation — content is valid, regenerate to apply latest format`);
   }
 
   return reasons;
@@ -255,7 +255,7 @@ function getUpstreamEntityReasons(
   }
 
   if (reasons.length === 0) {
-    reasons.push(`Canon configuration updated since this was generated — no narrative conflicts detected`);
+    reasons.push(`Canon config updated since generation — content is valid, regenerate to apply latest format`);
   }
 
   return reasons;
