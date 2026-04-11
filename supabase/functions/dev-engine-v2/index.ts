@@ -487,13 +487,25 @@ HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
 
     console.log(`[dev-engine-v2] NEC_GUARDRAIL: source=nec doc_id=${necDoc.id} prefTier=${prefTier} maxTier=${maxTier}`);
 
+        // Extract permitted tension sources from NEC text's Tension Source Matrix
+    // If blackmail is listed in the tension source matrix, it is explicitly permitted
+    const tensionSourceMatch = text.match(/tension(?:\s+source(?:\s+matrix)?)[;:\s]+(.+?)(?:\n|$)/i);
+    let permittedTensionSources = "";
+    if (tensionSourceMatch) {
+      const tsText = tensionSourceMatch[1];
+      const isBlackmailPermitted = /blackmail/i.test(tsText);
+      if (isBlackmailPermitted) {
+        permittedTensionSources = "\n  • Blackmail is explicitly permitted — it is listed as an established tension source in the NEC Tension Source Matrix. This is an allowed premise element, not a violation.";
+      }
+    }
+
     return `\nNEC_GUARDRAIL: source=nec doc_id=${necDoc.id} prefTier=${prefTier} maxTier=${maxTier}
 NARRATIVE ENERGY CONTRACT (from project NEC — AUTHORITATIVE, overrides all other stakes guidance):
 ${clampText(text, NEC_MAX_CHARS)}
 
 HARD RULES (derived from NEC — non-negotiable):
 • Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
-• Do NOT introduce events above Tier ${maxTier}. No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, supernatural escalation, or blackmail unless NEC explicitly allows.
+• Do NOT introduce events above Tier ${maxTier}. No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or supernatural escalation unless the NEC Tension Source Matrix explicitly lists them.${permittedTensionSources}
 • No "major concert confession" or public-spectacle climaxes unless NEC explicitly calls for public spectacle.
 • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
 • Stay inside the tonal envelope. Do NOT escalate beyond what the source material establishes.
