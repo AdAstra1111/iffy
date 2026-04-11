@@ -154,7 +154,8 @@ REQUIRED JSON SCHEMA:
     "justification": "string",
     "override_applied": boolean
   },
-  "narrative_energy_contract": "STRING — concise structured text containing: Baseline Mode, Conflict Hierarchy (Tier 1-5), Preferred Operating Tier, Absolute Maximum Tier, Tension Source Matrix, Escalation Geometry, Tonal Envelope, Sustainability Check, Creative Elasticity. Must respect risk posture and restraint bias.",
+  "narrative_energy_contract": "STRING — concise structured text containing: Baseline Mode, Conflict Hierarchy (Tier 1-5), Preferred Operating Tier, Absolute Maximum Tier, Tension Source Matrix (use ✓ prefix for each tension source listed), Escalation Geometry, Tonal Envelope, Sustainability Check, Creative Elasticity. Must respect risk posture and restraint bias.",
+  "permitted_elements": "STRING — explicit bullet list of every tension type in the Tension Source Matrix. Each line must start with ✓ followed by the tension type and one sentence of specific story context from the pitch that justifies it. This is the authoritative permitted-elements list for this project. Example: '✓ Blackmail — the protagonist is trapped by the threat of exposure from the antagonist.',
   "final_seed_docs": {
     "project_overview": "STRING — Title, logline, format, genre, tone, target audience, comparable titles, development stage summary.",
     "creative_brief": "STRING — Creative vision, thematic core, visual tone, narrative approach, audience engagement strategy.",
@@ -545,6 +546,19 @@ Preserve the concept. Return the same JSON schema with structural elements stren
     if (typeof parsed.narrative_energy_contract !== "string") {
       return jsonRes({ error: "Missing narrative_energy_contract" }, 422);
     }
+    // permitted_elements is optional but strongly encouraged
+    if (typeof parsed.permitted_elements !== "string" || parsed.permitted_elements.trim().length < 5) {
+      // Auto-generate from TSM tension entries if LLM didn't produce it
+      const necText = parsed.narrative_energy_contract;
+      const tsmMatch = necText.match(/tension(?:\s+source(?:\s+matrix)?)[;:?\s]+(.+?)(?=\n\n|\n[A-Z]|$)/is);
+      if (tsmMatch) {
+        const tsmBody = tsmMatch[1];
+        const entries = tsmBody.split(/\n|,|;/).map((s: string) => s.replace(/^[\s\-–—•✓]+/, "").trim()).filter((s: string) => s.length > 2);
+        if (entries.length > 0) {
+          parsed.permitted_elements = entries.map((e: string) => `✓ ${e}`).join("\n");
+        }
+      }
+    }
 
     // Stamp provenance
     parsed.provenance = {
@@ -555,12 +569,17 @@ Preserve the concept. Return the same JSON schema with structural elements stren
     };
 
     // Build content map for document creation
+    // Prepend permitted_elements to the NEC plaintext for stored doc
+    const necPlaintext = parsed.permitted_elements?.trim()
+      ? `PERMITTED ELEMENTS (from NEC Tension Source Matrix — authoritative):\n${parsed.permitted_elements.trim()}\n\n[NARRATIVE ENERGY CONTRACT]\n${parsed.narrative_energy_contract}`
+      : parsed.narrative_energy_contract;
+
     const contentMap: Record<string, string> = {
       project_overview: parsed.final_seed_docs.project_overview,
       creative_brief: parsed.final_seed_docs.creative_brief,
       market_positioning: parsed.final_seed_docs.market_positioning,
       canon_constraints: parsed.final_seed_docs.canon_constraints,
-      narrative_energy_contract: parsed.narrative_energy_contract,
+      narrative_energy_contract: necPlaintext,
     };
 
     // Pre-fetch existing doc ids for insert/update counting

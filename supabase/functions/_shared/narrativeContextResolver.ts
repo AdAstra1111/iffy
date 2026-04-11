@@ -81,6 +81,30 @@ function parseTier(match: RegExpMatchArray | null, fallback: number): number {
   return (n >= 1 && n <= 5) ? n : fallback;
 }
 
+// Extract all tension types from the NEC Tension Source Matrix section
+function parseTensionSources(text: string): string[] {
+  const tsmMatch = text.match(
+    /tension(?:\s+source(?:\s+matrix)?)[;:?\s]+(.+?)(?=\n\n|\n[A-Z]|$)/is
+  );
+  if (!tsmMatch) return [];
+  const tsmBody = tsmMatch[1];
+  const rawEntries = tsmBody
+    .split(/\n|,|;/)
+    .map((s: string) => s.replace(/^[\s\-–—•]+/, "").trim())
+    .filter((s: string) => s.length > 2 && s.length < 80);
+  const seen = new Set<string>();
+  const results: string[] = [];
+  for (const entry of rawEntries) {
+    const core = entry.replace(/\s*\([^)]*\)/, "").trim();
+    if (seen.has(core.toLowerCase())) continue;
+    if (/^(the|and|or|for|with|from|by|to|of|on|in|at|is|are|tier|tiers?)$/i.test(core)) continue;
+    if (core.length < 3) continue;
+    seen.add(core.toLowerCase());
+    results.push(core);
+  }
+  return results;
+}
+
 function clamp(s: string, n: number): string {
   return s && s.length > n ? s.slice(0, n) + "\n[…truncated]" : (s || "");
 }
@@ -579,15 +603,24 @@ function buildWorldPopulationBlock(density: string): string {
 // ── Internal NEC block builders ──
 
 function buildNECBlock(text: string, prefTier: number, maxTier: number, docId: string): string {
+  // Extract permitted tension sources from the NEC Tension Source Matrix
+  const tensionSources = parseTensionSources(text);
+  const permittedTensionLines = tensionSources
+    .map(t => `  • ${t} is explicitly permitted — listed as an established tension source in the NEC Tension Source Matrix.`)
+    .join("\n");
+  const tensionPermissionsBlock = permittedTensionLines
+    ? `\nPERMITTED ELEMENTS (from NEC Tension Source Matrix):\n${permittedTensionLines}`
+    : "";
+
   return `\nNEC_GUARDRAIL: source=nec doc_id=${docId} prefTier=${prefTier} maxTier=${maxTier}
 NARRATIVE ENERGY CONTRACT (from project NEC — AUTHORITATIVE, overrides all other stakes guidance):
 ${clamp(text, NEC_MAX_CHARS)}
 
 HARD RULES (derived from NEC — non-negotiable):
 • Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
-• Do NOT introduce events above Tier ${maxTier}. No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, supernatural escalation, or blackmail unless NEC explicitly allows.
+• Do NOT introduce events above Tier ${maxTier}. No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or supernatural escalation unless the NEC Tension Source Matrix explicitly lists them.
 • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
-• Stay inside the tonal envelope. Do NOT escalate beyond what the source material establishes.
+• Stay inside the tonal envelope. Do NOT escalate beyond what the source material establishes.${tensionPermissionsBlock}
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
 }
 
@@ -598,7 +631,7 @@ NARRATIVE ENERGY CONTRACT (DEFAULT — no project NEC found):
 - Absolute Maximum Tier: 3 (career-ending revelations, major betrayals, institutional collapse).
 - HARD RULES:
   • Do NOT introduce events above Tier 3.
-  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, supernatural escalation, or blackmail unless the source material already contains them.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material (pitch, canon, or established story facts) already contains them.
   • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense.
   • Stay inside the tonal envelope established by the source material.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
