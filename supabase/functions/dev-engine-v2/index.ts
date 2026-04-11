@@ -449,9 +449,10 @@ NARRATIVE ENERGY CONTRACT (AUTO-DERIVED from concept_brief genre — no project 
 - Preferred Operating Tier: ${prefTier} (structural genre norms for escalation).
 - Absolute Maximum Tier: ${maxTier} (hard ceiling for this genre family).
 - Genre family tier ceiling: for action-adventure, horror, sci-fi, fantasy, thriller — Tier 4 content (supernatural escalation, mass-casualty set-pieces, global stakes) is structurally normal and permitted. For drama/comedy/romance — stay at Tier 3.
-- HARD RULES:
+- SOURCE MATERIAL EXEMPTION: The concept_brief (if one exists for this project) IS the authoritative source material. Its premise elements — including protagonist motivation, backstory, and core narrative engine — do NOT violate NEC rules. Only flag NEC violations in content generated AFTER the concept_brief.
+- HARD RULES (for downstream documents only — concept_brief is exempt):
   • Do NOT introduce events above Tier ${maxTier}.
-  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the concept_brief or source material already establishes them as premise elements.
   • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
   • Stay inside the tonal envelope established by the source material.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
@@ -472,9 +473,10 @@ HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
       return `\nNEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier}
 NARRATIVE ENERGY CONTRACT (AUTO-DERIVED — project NEC is empty; concept_brief genre used instead):
 - Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
-- HARD RULES:
+- SOURCE MATERIAL EXEMPTION: The concept_brief (if one exists for this project) IS the authoritative source material. Its premise elements — including protagonist motivation, backstory, and core narrative engine — do NOT violate NEC rules. Only flag NEC violations in content generated AFTER the concept_brief.
+- HARD RULES (for downstream documents only — concept_brief is exempt):
   • Do NOT introduce events above Tier ${maxTier}.
-  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the concept_brief or source material already establishes them as premise elements.
   • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
   • Stay inside the tonal envelope established by the source material.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
@@ -503,9 +505,10 @@ HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
     return `\nNEC_GUARDRAIL: source=genre-fallback prefTier=${prefTier} maxTier=${maxTier}
 NARRATIVE ENERGY CONTRACT (AUTO-DERIVED after load error — concept_brief genre used):
 - Preferred Operating Tier: ${prefTier}. Absolute Maximum Tier: ${maxTier}.
-- HARD RULES:
+- SOURCE MATERIAL EXEMPTION: The concept_brief (if one exists for this project) IS the authoritative source material. Its premise elements — including protagonist motivation, backstory, and core narrative engine — do NOT violate NEC rules. Only flag NEC violations in content generated AFTER the concept_brief.
+- HARD RULES (for downstream documents only — concept_brief is exempt):
   • Do NOT introduce events above Tier ${maxTier}.
-  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the source material already contains them.
+  • No assassinations, mass casualty events, catastrophic public scandal, "life-ruin" stakes, or blackmail unless the concept_brief or source material already establishes them as premise elements.
   • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense over spectacle.
   • Stay inside the tonal envelope established by the source material.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
