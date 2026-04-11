@@ -67,10 +67,10 @@ export function getDocTypeTemplate(docType: string, ctx: TemplateContext = {}): 
 
 ## TARGET AUDIENCE
 **Primary:** [Age range, platform behaviour, viewing context]
-**Secondary:** [Broader crossover audience]
+**Secondary:** [Broader crossover audience]${/film|feature|screenplay/i.test(format) ? '' : `
 
 ## SERIES POTENTIAL
-[For episodic formats: how does this premise sustain ${epCount} episodes? What is the escalation engine?]`;
+[For episodic formats: how does this premise sustain ${epCount} episodes? What is the escalation engine?]`}`;
 
     // ─────────────────────────────────────────────────────────────────────────────
     case "market_sheet":
