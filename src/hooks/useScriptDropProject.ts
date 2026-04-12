@@ -92,11 +92,13 @@ async function callFunction(
   body: Record<string, unknown>,
   token: string,
 ): Promise<any> {
-  const resp = await fetch(`${FUNC_BASE}/${name}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
-  });
+  // nit-sync uses service role key internally (verify_jwt: false).
+  // Route through server-side proxy to avoid gateway JWT validation failures
+  // when user token expires during long-running pipelines.
+  const url = name === 'nit-sync' ? '/api/nit-sync-proxy' : `${FUNC_BASE}/${name}`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (name !== 'nit-sync') headers['Authorization'] = `Bearer ${token}`;
+  const resp = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.error || `${name} failed: HTTP ${resp.status}`);
   if (json?.error) throw new Error(json.error);
