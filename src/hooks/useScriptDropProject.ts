@@ -10,11 +10,11 @@
  *   1. ingest          — script-intake:ingest_pdf → extracts text + title guess
  *   2. project_create  — creates projects row + project_scripts record
  *   3. scene_extract   — dev-engine-v2:scene_graph_extract → scene_graph_scenes
- *                        (also auto-runs syncSceneEntityLinksForProject internally)
- *   4. nit_dialogue    — nit-sync:sync_dialogue_characters → dialogue links + write-back
- *   5. role_classify   — dev-engine-v2:scene_graph_classify_roles_heuristic
- *   6. spine_sync      — dev-engine-v2:scene_graph_sync_spine_links
- *   7. binding_derive  — dev-engine-v2:scene_derive_blueprint_bindings
+ *   4. entity_extract — entity-links-engine → extracts characters/locations from scene content
+ *   5. nit_dialogue    — nit-sync:sync_dialogue_characters → dialogue links + write-back
+ *   6. role_classify   — dev-engine-v2:scene_graph_classify_roles_heuristic
+ *   7. spine_sync      — dev-engine-v2:scene_graph_sync_spine_links
+ *   8. binding_derive  — dev-engine-v2:scene_derive_blueprint_bindings
  *
  * Note: NIT name scan (syncSceneEntityLinksForProject) is run INSIDE
  * scene_graph_extract automatically; it is not a separate stage here.
@@ -71,8 +71,8 @@ export const STAGE_DEFINITIONS: StageDef[] = [
   { key: 'ingest',         label: 'Extracting text & detecting title…',   functionName: 'script-intake',      actionName: 'ingest_pdf',                          retryable: true  },
   { key: 'project_create', label: 'Creating project…',                    functionName: 'supabase:projects',  retryable: false },
   { key: 'scene_extract',  label: 'Extracting scene graph…',              functionName: 'dev-engine-v2',      actionName: 'scene_graph_extract',                 retryable: true  },
-  { key: 'nit_dialogue',   label: 'Linking characters (dialogue)…',       functionName: 'nit-sync',           actionName: 'sync_dialogue_characters',            retryable: true  },
   { key: 'entity_extract', label: 'Extracting entities & links…',         functionName: 'entity-links-engine',                                          retryable: true  },
+  { key: 'nit_dialogue',   label: 'Linking characters (dialogue)…',       functionName: 'nit-sync',           actionName: 'sync_dialogue_characters',            retryable: true  },
   { key: 'role_classify',  label: 'Classifying scene roles…',             functionName: 'dev-engine-v2',      actionName: 'scene_graph_classify_roles_heuristic',retryable: true  },
   { key: 'spine_sync',     label: 'Syncing spine links…',                 functionName: 'dev-engine-v2',      actionName: 'scene_graph_sync_spine_links',        retryable: true  },
   { key: 'binding_derive', label: 'Deriving blueprint bindings…',         functionName: 'dev-engine-v2',      actionName: 'scene_derive_blueprint_bindings',     retryable: true  },
@@ -441,9 +441,29 @@ export function useScriptDropProject() {
         // Without scenes, downstream stages will produce no output but won't error
       }
 
-      // Stage 4: nit_dialogue (sync_dialogue_characters)
-      // MUST run before entity_extract — populates characters_present on scene versions
-      // which entity-links-engine then uses to create character_present links.
+      // Stage 4: entity_extract
+      // Scans scene_graph_versions content for character and location names,
+      // creates narrative_entities + narrative_scene_entity_links.
+      // entity-links-engine self-extracts if no narrative_units exist.
+      // Idempotent — safe to re-run.
+      await markRunning('entity_extract');
+      try {
+        const entityResult = await callFunction('entity-links-engine', {
+          projectId: pid,
+        }, token);
+        await markDone('entity_extract', {
+          linked:     entityResult?.linked ?? 0,
+          byType:    entityResult?.byType ?? {},
+        });
+      } catch (e: any) {
+        await markFailed('entity_extract', e);
+      }
+
+      // Stage 5: nit_dialogue (sync_dialogue_characters)
+      // Supplementary character detection via screenplay dialogue heading analysis.
+      // Additive to entity_extract (exact name scan) — together they give
+      // complete coverage: entity-extracted names + dialogue headings.
+      await markRunning('nit_dialogue');
       try {
         const nitResult = await callFunction('nit-sync', {
           projectId: pid,
@@ -458,38 +478,7 @@ export function useScriptDropProject() {
         await markFailed('nit_dialogue', e);
       }
 
-      // Stage 5: entity_extract
-      // Runs text-extract-engine (populates narrative_units from scenes) then
-      // entity-links-engine (creates narrative_scene_entity_links).
-      // Runs AFTER nit_dialogue so characters_present is populated on scene versions.
-      // Both are idempotent — safe to re-run.
-      await markRunning('entity_extract');
-      try {
-        // Step 1: text-extract-engine — extract characters/locations/props/wardrobe into narrative_units
-        // Non-fatal if it fails: entity-links-engine has inline fallback extraction
-        try {
-          await callFunction('text-extract-engine', {
-            projectId: pid,
-          }, token);
-        } catch (textExtractErr: any) {
-          console.warn('[entity_extract] text-extract-engine failed (non-fatal, entity-links-engine will self-extract):', textExtractErr?.message);
-        }
-
-        // Step 2: entity-links-engine — link narrative_units entities to scenes
-        // Self-extracts inline if narrative_units is empty
-        const entityResult = await callFunction('entity-links-engine', {
-          projectId: pid,
-        }, token);
-        await markDone('entity_extract', {
-          linked: entityResult?.linked ?? 0,
-          by_type: entityResult?.byType ?? {},
-        });
-      } catch (e: any) {
-        // Non-fatal: entity extraction is best-effort; other stages can still proceed
-        await markFailed('entity_extract', e);
-      }
-
-      // Stage 5: role_classify
+      // Stage 6: role_classify
       await markRunning('role_classify');
       try {
         const roleResult = await callFunction('dev-engine-v2', {
@@ -505,7 +494,7 @@ export function useScriptDropProject() {
         await markFailed('role_classify', e);
       }
 
-      // Stage 6: spine_sync
+      // Stage 7: spine_sync
       await markRunning('spine_sync');
       try {
         const spineResult = await callFunction('dev-engine-v2', {
@@ -519,7 +508,7 @@ export function useScriptDropProject() {
         await markFailed('spine_sync', e);
       }
 
-      // Stage 7: binding_derive
+      // Stage 8: binding_derive
       await markRunning('binding_derive');
       try {
         const bindResult = await callFunction('dev-engine-v2', {
@@ -533,7 +522,7 @@ export function useScriptDropProject() {
         await markFailed('binding_derive', e);
       }
 
-      // Stage 8: scene_index_build (MUST run after NIT completes)
+      // Stage 9: scene_index_build (MUST run after NIT completes)
       // Reads canonical scene_graph_* data including characters_present
       // populated by NIT entity sync. Fail-closed if data is incomplete.
       await markRunning('scene_index');
