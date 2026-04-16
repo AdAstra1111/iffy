@@ -1356,27 +1356,34 @@ function computeRuntimePressure(estSeconds: number, targetHigh: number, targetLo
 // ═══════════════════════════════════════════════════════════════
 
 const DELIVERABLE_RUBRICS: Record<string, string> = {
-  idea: `Evaluate as an IDEA/LOGLINE. Score clarity, originality, market hook, audience identification. Do NOT evaluate dialogue, pacing, or scene structure.
+  idea: `Evaluate as an IDEA/LOGLINE. An idea document is the equivalent of a dev seed — a logline, premise statement, and genre/format declaration. It is NOT a concept brief, treatment, or character bible. Do NOT expect or demand the level of detail that belongs in downstream documents.
 
-NARRATIVE UNIT STRUCTURAL VALIDATION (NUE-INFORMED — MANDATORY for idea stage):
-You MUST evaluate ALL of the following at idea stage. Do NOT defer these to concept_brief — they are premise-level concerns:
+SCOPE OF AN IDEA DOCUMENT (what it must contain):
+- A clear protagonist with a basic want or goal (one sentence is enough)
+- An opposition source or antagonist force (implied is sufficient)
+- A premise engine — the core dramatic situation that generates the story
+- Genre and tone declaration
+- For series formats: evidence the premise can sustain multiple episodes
 
-1. PROTAGONIST OBJECTIVE: Does the idea identify a protagonist with a concrete, actionable objective? A vague "character explores feelings" is structurally weak. Flag as high_impact if the protagonist objective is unclear or passive.
-2. ANTAGONIST FORCE / OPPOSITION SOURCE: Does the idea contain a specific opposition source — person, system, force, or structural threat? "Internal conflict alone" is insufficient for commercial formats. Flag as a NOW blocker if no external opposition exists.
-3. STORY ENGINE VIABILITY: Does the premise contain a repeatable, scalable engine for generating conflict? For series/episodic formats, a single event or static situation is insufficient — there must be a renewable source of dramatic tension. Flag as a NOW blocker if missing.
-4. GENRE ALIGNMENT: Is the stated genre consistent with the premise's tone, setting, and dramatic DNA? If the premise describes grounded realism but the creative DNA implies supernatural/horror/mythological elements (or vice versa), flag the contradiction as a NOW blocker.
-5. EPISODIC SCALABILITY: For series formats, can this premise sustain the expected episode count? For vertical drama (30+ episodes), the engine must support high-frequency short-form episodes with rapid escalation. Flag as a NOW blocker if the premise is structurally a feature-length concept forced into episodic format.
-6. ESCALATION PATH: Does the premise contain an external propulsion mechanism (external antagonist, ticking clock, escalating stakes from outside the protagonist)? A purely internal/contemplative premise without external pressure is a structural risk for commercial formats. Flag as high_impact if weak — but ONLY if completely absent. If the idea implies or references an escalation mechanism (even briefly), mark as next_doc for full articulation in concept_brief.
-7. RELATIONSHIP TENSION POTENTIAL: Does the premise establish or imply at least one dramatic relationship axis between characters with opposing needs or values? Flag as high_impact if no relationship friction exists — but ONLY if completely absent. If any relationship tension is implied, mark as next_doc for expansion in concept_brief.
-8. MARKET HOOK CLARITY: Is there a clear, distinctive commercial angle — something that would make a buyer lean forward? Not just genre labels — the unique selling proposition. Flag as high_impact if the hook is vague or generic.
+That is ALL. Do not evaluate escalation path detail, relationship dynamics specifics, protagonist backstory, theme integration, or market positioning at this stage. Those belong in concept_brief, character_bible, and market_sheet respectively.
 
-These checks prevent downstream repair loops. Evaluate them NOW at idea stage.
+IDEA-STAGE NOW BLOCKERS (the ONLY things that warrant apply_timing="now"):
+1. PREMISE ENGINE ABSENT: No discernible story situation that generates dramatic conflict. A pure mood piece with no protagonist/antagonist dynamic is a blocker.
+2. ANTAGONIST / OPPOSITION ABSENT: No external opposition of any kind — person, system, force, or structural threat. Purely internal conflict with no external pressure is a blocker for commercial formats.
+3. GENRE CONTRADICTION: Stated genre is directly contradicted by the premise (e.g. claims to be action-adventure but premise is entirely contemplative with no conflict).
+4. SERIES FORMAT MISMATCH (series only): Premise is structurally a single-event feature forced into a series format with no renewable conflict engine.
 
-IDEA-STAGE CONVERGENCE RULE (CRITICAL): An idea document is NOT a concept brief. It must establish the premise engine, not fully develop it. Apply this rule strictly:
-- If a structural element (escalation path, protagonist backstory, relationship dynamics) is PRESENT but underdeveloped → apply_timing="next_doc", target_deliverable_type="concept_brief". Do NOT keep flagging it as "now" once it is acknowledged in the text.
-- Only flag as apply_timing="now" if the element is COMPLETELY ABSENT from the idea.
-- Do NOT generate the same note_id across consecutive runs if the text has already addressed the concern at idea level. If you are about to generate a note with an id that matches a previous concern and the idea now contains material addressing it (even briefly), change apply_timing to "next_doc".
-- An idea that clearly establishes protagonist, antagonist, premise engine, and genre alignment should have ZERO "now" blockers and may have 1-2 "next_doc" notes for concept_brief expansion.`,
+EVERYTHING ELSE IS DEFERRED — use apply_timing="next_doc" with the correct target:
+- Protagonist backstory detail → concept_brief
+- Escalation path specifics → concept_brief
+- Relationship tension detail → concept_brief or character_bible
+- Theme integration → concept_brief
+- Market hook sharpening → market_sheet
+- Character arc detail → character_bible
+- Structural detail (act breaks, turning points) → beat_sheet
+- Tone consistency, prose quality, pacing → treatment
+
+CONVERGENCE RULE: An idea that has a clear protagonist, an opposition force, and a working premise engine should have ZERO "now" blockers. If you are generating more than 2 "now" blockers for an idea doc that contains those three elements, you are over-evaluating. Pull back. An idea converges fast — its job is to prove the engine works, not to solve every downstream problem.`,
   topline_narrative: `Evaluate as a TOPLINE NARRATIVE (logline + short synopsis + long synopsis + story pillars). Score logline clarity, synopsis coherence, story pillar completeness, theme/stakes articulation, and market positioning. Do NOT evaluate scene construction or dialogue. For series, also evaluate the series promise/engine and season arc snapshot.`,
   concept_brief: `Evaluate as a CONCEPT BRIEF. Score premise strength, theme clarity, genre positioning, tonal consistency. Do NOT evaluate scene-level craft or dialogue.`,
   market_sheet: `Evaluate as a MARKET SHEET. This is a COMMERCIAL VIABILITY document, not a narrative document — GP (Green Potential / commercial viability) is the primary scoring axis; CI (Creative Integrity) should be kept low unless narrative elements are explicitly present. Score on: (1) Audience targeting clarity and specificity — is the target demographic precisely defined? (2) Comparable titles — are comps current (last 5 years), genuinely comparable in format/tone/budget, and used to make a real positioning argument? (3) Market gap / unique angle — does the sheet articulate why THIS project fills a gap? (4) Budget alignment — is the budget band realistic for the format and scale? (5) Distribution and platform strategy — are distribution channels named and plausible? (6) Revenue model — does the sheet address how this makes money (streaming, licensing, presales, tax credits)? A market sheet with strong commercial logic, precise comps, and a compelling market gap argument should score GP:75+. Do NOT evaluate narrative craft, dialogue, or creative vision. Do NOT penalise a market sheet for lacking character development or thematic depth.`,
