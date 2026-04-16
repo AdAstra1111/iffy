@@ -436,7 +436,7 @@ export function DocumentSidebar({
                       )}
                     </span>
                     <div className="flex items-center gap-1">
-                      <span className="text-[8px]">{new Date(v.created_at).toLocaleDateString()}</span>
+                      <span className="text-[8px]">{new Date(v.created_at).toLocaleString()}</span>
                       {deleteVersion && versions.length > 1 && (
                         <div onClick={e => e.stopPropagation()}>
                           <ConfirmDialog

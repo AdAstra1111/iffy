@@ -1,0 +1,318 @@
+/**
+ * derive-seed-docs
+ *
+ * Derives the 5 foundation seed documents from existing extracted content
+ * (concept_brief, beat_sheet, character_bible, treatment).
+ *
+ * Input:  { projectId: string }
+ * Output: { success: true, created: string[] }
+ */
+
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+// ─── Seed doc type → derivation prompt ────────────────────────────────────────
+const SEED_DOCS = [
+  {
+    docType: "project_overview",
+    label: "Project Overview",
+    system: `You are an IFFY development engineer. Given the project materials, produce a JSON project_overview document.
+Return ONLY valid JSON like: { "sections": [{ "title": "...", "content": "..." }] }
+Write 4-6 substantial paragraphs covering: genre, logline, USP, target audience, comparable titles.`,
+    userTemplate: (ctx: string) => `Create the project_overview for this film using the materials below:\n\n${ctx}`,
+  },
+  {
+    docType: "creative_brief",
+    label: "Creative Brief",
+    system: `You are an IFFY development engineer. Given the project materials, produce a JSON creative_brief document.
+Return ONLY valid JSON like: { "sections": [{ "title": "...", "content": "..." }] }
+Write 3-5 substantial paragraphs covering: creative vision, tone, themes, narrative approach, what makes this version unique.`,
+    userTemplate: (ctx: string) => `Create the creative_brief for this film using the materials below:\n\n${ctx}`,
+  },
+  {
+    docType: "market_positioning",
+    label: "Market Positioning",
+    system: `You are an IFFY development engineer. Given the project materials, produce a JSON market_positioning document.
+Return ONLY valid JSON like: { "sections": [{ "title": "...", "content": "..." }] }
+Write 4-6 paragraphs covering: market context, genre positioning, competitive landscape, audience pull, distribution path, why it sells.`,
+    userTemplate: (ctx: string) => `Create the market_positioning document for this film:\n\n${ctx}`,
+  },
+  {
+    docType: "canon",
+    label: "Canon & Constraints",
+    system: `You are an IFFY development engineer. Given the project materials, produce a JSON canon document.
+Return ONLY valid JSON like: { "sections": [{ "title": "...", "content": "..." }] }
+Write 4-6 paragraphs covering: world rules, factual canon, character rules, tone boundaries, what CANNOT change, what IS flexible.`,
+    userTemplate: (ctx: string) => `Create the canon document for this film:\n\n${ctx}`,
+  },
+  {
+    docType: "nec",
+    label: "Narrative Energy Contract",
+    system: `You are an IFFY development engineer. Given the project materials, produce a JSON nec document.
+Return ONLY valid JSON like: { "sections": [{ "title": "...", "content": "..." }] }
+Write 3-5 paragraphs covering: the emotional promise, the genre contract, what the audience expects and must receive, the tone of the experience, key emotional beats.`,
+    userTemplate: (ctx: string) => `Create the narrative_energy_contract (NEC) for this film:\n\n${ctx}`,
+  },
+];
+
+// ─── LLM ──────────────────────────────────────────────────────────────────────
+function resolveGatewayKey(): { key: string; baseUrl: string; model: string } {
+  const lovable = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+  if (lovable) return { key: lovable, baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-2.5-flash" };
+  const openai = Deno.env.get("OPENAI_API_KEY");
+  if (openai) return { key: openai, baseUrl: "https://api.openai.com/v1", model: "gpt-4o" };
+  throw new Error("No AI gateway key configured");
+}
+
+function extractJSON(raw: string): any {
+  let s = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<thinking>[\s\S]*?<\/thinking>/gi, "").trim();
+  s = s.replace(/^```json\s*/im, "").replace(/^```\s*/im, "").replace(/\s*```$/im, "").trim();
+  try { return JSON.parse(s); } catch (_) {}
+  const open = s.indexOf("{");
+  const close = s.lastIndexOf("}");
+  if (open !== -1 && close > open) {
+    try { return JSON.parse(s.slice(open, close + 1)); } catch (_) {}
+  }
+  const match = s.match(/\{[\s\S]*\}/);
+  if (match) {
+    try { return JSON.parse(match[0]); } catch (_) {}
+  }
+  return null;
+}
+
+async function callLLM(prompt: string, maxTokens = 6000): Promise<string> {
+  const { key, baseUrl, model } = resolveGatewayKey();
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: "You are a JSON-only API. Return ONLY valid JSON — no markdown, no explanation, no code fences. Start your response with { and end with }." },
+            { role: "user", content: prompt }
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.4,
+        }),
+      });
+      if (!res.ok) throw new Error(`LLM error: ${res.status}`);
+      const json = await res.json();
+      return json.choices?.[0]?.message?.content || "";
+    } catch (e: any) {
+      if (attempt === 2) throw e;
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  return "";
+}
+
+// ─── Fetch existing docs ──────────────────────────────────────────────────────
+async function fetchExistingDocs(supabase: any, projectId: string) {
+  const { data: docs, error } = await supabase
+    .from("project_documents")
+    .select("id, doc_type, title")
+    .eq("project_id", projectId);
+
+  if (error || !docs?.length) return {};
+
+  const docMap: Record<string, { id: string; title: string }> = {};
+  for (const d of docs) docMap[d.doc_type] = { id: d.id, title: d.title };
+
+  // Fetch current plaintext for each relevant doc type
+  const neededTypes = ["concept_brief", "beat_sheet", "character_bible", "treatment"];
+  for (const dt of neededTypes) {
+    if (!docMap[dt]) continue;
+    const { data: v } = await supabase
+      .from("project_document_versions")
+      .select("plaintext")
+      .eq("document_id", docMap[dt].id)
+      .eq("is_current", true)
+      .single();
+    (docMap[dt] as any).plaintext = v?.plaintext || "";
+  }
+
+  return docMap;
+}
+
+// ─── Derive a single seed doc ────────────────────────────────────────────────
+async function deriveDoc(
+  supabase: any,
+  projectId: string,
+  userId: string,
+  spec: typeof SEED_DOCS[0],
+  context: string,
+): Promise<string> {
+  const prompt = spec.userTemplate(context);
+  const raw = await callLLM(prompt);
+  const parsed = extractJSON(raw);
+
+  // Build readable plaintext from parsed structure
+  let plaintext: string;
+  if (parsed && typeof parsed === "object") {
+    const sections = parsed.sections || parsed.content || [];
+    plaintext = (sections as any[])
+      .map((s: any) => `## ${s.title || "Section"}\n\n${s.content || JSON.stringify(s)}`)
+      .join("\n\n");
+  } else {
+    plaintext = typeof parsed === "string" ? parsed : JSON.stringify(parsed, null, 2);
+  }
+
+  if (!plaintext?.trim()) throw new Error(`Empty output for ${spec.docType}`);
+
+  // Upsert: check if doc already exists
+  const { data: existing } = await supabase
+    .from("project_documents")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("doc_type", spec.docType)
+    .single();
+
+  let docId: string;
+
+  if (existing) {
+    docId = existing.id;
+    // Update existing doc title
+    await supabase
+      .from("project_documents")
+      .update({ title: spec.label, updated_at: new Date().toISOString() })
+      .eq("id", docId);
+  } else {
+    const { data: newDoc } = await supabase
+      .from("project_documents")
+      .insert({
+        project_id: projectId,
+        user_id: userId,
+        doc_type: spec.docType,
+        title: spec.label,
+        doc_role: "creative_primary",
+        ingestion_source: "derive-seed-docs",
+      })
+      .select("id")
+      .single();
+    if (!newDoc) throw new Error(`Failed to create ${spec.docType}`);
+    docId = newDoc.id;
+  }
+
+  // Create new version (set all others to not current)
+  await supabase
+    .from("project_document_versions")
+    .update({ is_current: false })
+    .eq("document_id", docId);
+
+  const meta = { derived_from: ["concept_brief", "beat_sheet", "character_bible"], llm_model: "gemini-2.5-flash" };
+
+  const { error: versionError } = await supabase
+    .from("project_document_versions")
+    .insert({
+      document_id: docId,
+      is_current: true,
+      approval_status: "draft",
+      plaintext,
+      meta_json: meta,
+      resolver_hash: "derive-seed",
+    });
+
+  if (versionError) throw new Error(`Failed to create version for ${spec.docType}: ${versionError.message}`);
+
+  return spec.label;
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  let body: any;
+  try { body = await req.json(); } catch { return new Response(JSON.stringify({ error: "Invalid JSON" }), { status: 400, headers: corsHeaders }); }
+
+  const { projectId } = body;
+  if (!projectId) return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: corsHeaders });
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, { auth: { persistSession: false } });
+
+  // Get project owner
+  const { data: project, error: projError } = await supabase
+    .from("projects")
+    .select("user_id")
+    .eq("id", projectId)
+    .single();
+
+  if (projError || !project) return new Response(JSON.stringify({ error: "Project not found" }), { status: 404, headers: corsHeaders });
+  const userId = project.user_id;
+
+  // Build context from existing docs
+  const existing = await fetchExistingDocs(supabase, projectId);
+  const ctxParts: string[] = [];
+
+  if (existing.concept_brief) {
+    ctxParts.push(`=== CONCEPT BRIEF ===\n${(existing.concept_brief as any).plaintext || ""}`);
+  }
+  if (existing.beat_sheet) {
+    const bs = (existing.beat_sheet as any).plaintext || "";
+    // Truncate beat sheet to avoid token overflow — first 3000 chars
+    ctxParts.push(`=== BEAT SHEET (excerpt) ===\n${bs.slice(0, 3000)}`);
+  }
+  if (existing.character_bible) {
+    const cb = (existing.character_bible as any).plaintext || "";
+    ctxParts.push(`=== CHARACTER BIBLE (excerpt) ===\n${cb.slice(0, 3000)}`);
+  }
+  if (existing.treatment) {
+    const tr = (existing.treatment as any).plaintext || "";
+    ctxParts.push(`=== TREATMENT (excerpt) ===\n${tr.slice(0, 2000)}`);
+  }
+
+  if (ctxParts.length === 0) {
+    return new Response(JSON.stringify({ error: "No source documents found. Run reverse-engineer first." }), { status: 400, headers: corsHeaders });
+  }
+
+  const context = ctxParts.join("\n\n");
+  const created: string[] = [];
+  const errors: string[] = [];
+
+  for (const spec of SEED_DOCS) {
+    try {
+      const label = await deriveDoc(supabase, projectId, userId, spec, context);
+      created.push(label);
+    } catch (e: any) {
+      errors.push(`${spec.label}: ${e.message}`);
+    }
+  }
+
+  return new Response(JSON.stringify({
+    success: errors.length === 0,
+    created,
+    errors: errors.length ? errors : undefined,
+  }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+});
+
+// DEBUG helper — remove after testing
+async function debugLLM(): Promise<void> {
+  const key = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("LOVABLE_API_KEY");
+  console.log("KEY present:", !!key, key ? key.slice(0, 10) + "..." : "none");
+  try {
+    const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "google/gemini-2.5-flash",
+        messages: [{ role: "user", content: "Return JSON: {hello: 'world'}" }],
+        max_tokens: 100,
+        temperature: 0.3,
+      }),
+    });
+    console.log("Response status:", res.status);
+    const text = await res.text();
+    console.log("Response body:", text.slice(0, 300));
+  } catch(e: any) {
+    console.error("LLM error:", e.message);
+  }
+}

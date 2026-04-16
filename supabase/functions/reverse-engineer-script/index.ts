@@ -210,11 +210,39 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
 
   const { data: doc, error } = await sb.from("project_documents").upsert({ project_id: projectId, doc_type: docType, doc_role: docRole, title, plaintext, user_id: effectiveUserId }, { onConflict: "project_id,doc_type" }).select("id").single();
   if (error || !doc) throw new Error(`Failed to upsert ${docType}: ${error?.message}`);
-  try {
-    const { createVersion } = await import("../_shared/doc-os.ts");
-    const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "draft", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, dependsOnResolverHash, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
-    if (ver) await sb.from("project_documents").update({ latest_version_id: ver.id }).eq("id", doc.id);
-  } catch (e) { console.warn("Version creation skipped:", e); }
+
+  // Check for existing versions — if a seed version exists (label: initial_baseline_seed),
+  // UPDATE it in-place so it stays as v1 rather than creating a new v2 on top.
+  const { data: existingVersions } = await sb
+    .from("project_document_versions")
+    .select("id, version_number")
+    .eq("document_id", doc.id)
+    .order("version_number", { ascending: false });
+
+  if (existingVersions && existingVersions.length > 0) {
+    // Update the most recent version in place (replaces seed content + metadata, keeps v1)
+    const latestId = existingVersions[0].id;
+    await sb.from("project_document_versions").update({
+      plaintext: content,
+      label: "v1 (reverse-engineered)",
+      status: "draft",
+      approval_status: "draft",
+      generator_id: "reverse-engineer-script",
+      is_stale: false,
+      inputs_used: { extracted_from: scriptDocId },
+      depends_on_resolver_hash: dependsOnResolverHash || null,
+      meta_json: { reverse_engineered: true, ...(extraMeta || {}) },
+    }).eq("id", latestId);
+    await sb.from("project_documents").update({ latest_version_id: latestId }).eq("id", doc.id);
+    console.log(`[storeDoc] ${docType}: updated existing v${existingVersions[0].version_number} in place (id: ${latestId})`);
+  } else {
+    // No existing versions — create fresh (this is a truly new doc)
+    try {
+      const { createVersion } = await import("../_shared/doc-os.ts");
+      const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "draft", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, dependsOnResolverHash, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
+      if (ver) await sb.from("project_documents").update({ latest_version_id: ver.id }).eq("id", doc.id);
+    } catch (e) { console.warn("Version creation skipped:", e); }
+  }
 }
 
 // ─── Job helpers ──────────────────────────────────────────────────────────────
@@ -602,13 +630,65 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
       `${metadata.title} — Story Outline`,
       { title: metadata.title, format, entries: (call2.beats || []).slice(0, 20).map((b: any, i: number) => ({ number: i + 1, title: b.name, description: b.description })) });
 
+    // Write all extracted canonical fields back to canon_json so downstream drift detection is accurate
     try {
-      const { data: canon } = await sb.from("project_canon").select("id, canon_json").eq("project_id", project_id).single();
-      if (canon) await sb.from("project_canon").update({ canon_json: { ...(canon.canon_json || {}), voice_profile: call1.voice_profile, title: metadata.title } }).eq("id", canon.id);
-      else await sb.from("project_canon").insert({ project_id, canon_json: { voice_profile: call1.voice_profile, title: metadata.title } });
-    } catch (_) {}
+      const canonUpdate = {
+        title: metadata.title,
+        logline: (call1 as any)?.metadata?.logline || null,
+        format: (call1 as any)?.metadata?.format || format,
+        genre: (call1 as any)?.metadata?.genre || null,
+        subgenre: (call1 as any)?.metadata?.subgenre || null,
+        tone: (call1 as any)?.metadata?.tone || null,
+        themes: (call1 as any)?.metadata?.themes || [],
+        target_audience: (call1 as any)?.metadata?.target_audience || null,
+        premise: (call1 as any)?.concept_brief?.premise || null,
+        voice_profile: (call1 as any)?.voice_profile || null,
+        characters: (call3 as any)?.characters || [],
+      };
+      const { data: canon } = await sb.from("project_canon").select("project_id, canon_json").eq("project_id", project_id).maybeSingle();
+      if (canon) {
+        await sb.from("project_canon").update({ canon_json: { ...(canon.canon_json || {}), ...canonUpdate } }).eq("project_id", project_id);
+      } else {
+        await sb.from("project_canon").insert({ project_id, canon_json: canonUpdate });
+      }
+    } catch (canonErr) {
+      console.warn("[reverse-engineer] canon_json write failed (non-fatal):", canonErr);
+    }
 
     // ── Stage 7: Infer remaining criteria from beats + characters ─────────────────────
+
+    // ── Cleanup: delete seed versions so user only sees reverse-engineered content ──
+    try {
+      const { data: seedVersions } = await sb
+        .from("project_document_versions")
+        .select("id, document_id")
+        .eq("label", "initial_baseline_seed")
+        .in("document_id", await sb.from("project_documents").select("id").eq("project_id", project_id).then((r: any) => r.data.map((d: any) => d.id)));
+      if (seedVersions?.length) {
+        const seedIds = seedVersions.map((v: any) => v.id);
+        // Clear latest_version_id refs pointing to deleted seed versions
+        await sb.from("project_documents")
+          .update({ latest_version_id: null })
+          .in("id", seedVersions.map((v: any) => v.document_id));
+        // Delete the seed versions
+        await sb.from("project_document_versions").delete().in("id", seedIds);
+        // Point each doc back to its remaining (reverse-engineered) version
+        const { data: remaining } = await sb
+          .from("project_document_versions")
+          .select("id, document_id")
+          .eq("label", "v1 (reverse-engineered)")
+          .in("document_id", seedVersions.map((v: any) => v.document_id));
+        if (remaining?.length) {
+          for (const v of remaining) {
+            await sb.from("project_documents").update({ latest_version_id: v.id }).eq("id", v.document_id);
+          }
+        }
+        console.log(`[reverse-engineer] cleaned up ${seedVersions.length} seed versions`);
+      }
+    } catch (cleanupErr) {
+      console.warn("[reverse-engineer] seed version cleanup failed (non-fatal):", cleanupErr);
+    }
+
     updateStage(payload, "infer_criteria", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 

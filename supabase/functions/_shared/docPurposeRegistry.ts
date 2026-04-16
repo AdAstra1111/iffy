@@ -94,50 +94,145 @@ export function getDocPurposeClass(docType: string): DocPurposeClass {
 
 export const PURPOSE_SCORING_RUBRICS: Record<DocPurposeClass, string> = {
 
-  DEVELOPMENT_ARCHITECTURE: `SCORING RUBRIC (PURPOSE: DEVELOPMENT_ARCHITECTURE):
-This document is an internal creative architecture tool. Its job is to improve story quality,
-structural completeness, and development readiness. It is NOT evaluated as a market product.
+  DEVELOPMENT_ARCHITECTURE: `SCORING RUBRIC (PURPOSE: DEVELOPMENT_ARCHITECTURE)
 
-CI (Creative Integrity) evaluates — for this purpose class:
-- Depth and specificity of the creative material (characters, structure, beats, arcs)
-- Internal coherence and thematic integration
-- Structural completeness appropriate to the document type
-- Craft quality relative to what this document needs to do in the development pipeline
+This document is an internal creative architecture tool. CI scores the quality of the document's internal craft. GP scores whether it unblocks the next development stage.
 
-GP (Development Readiness) evaluates — for this purpose class:
-- Does this document unblock the next development stage?
-- Is the material specific and actionable enough to generate the next doc?
-- Are the critical architecture decisions in place (arcs, beats, relationships, turning points)?
-- Completeness: are there gaps that would force the next document to invent rather than develop?
+== CI: CREATIVE INTEGRITY (50 points max) ==
+
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
+
+Criterion CI-1: Creative Depth and Specificity (10 pts)
+  YES (10): Named characters with defined roles/goals/conflicts, OR named beats with specific content and stakes, OR explicit structural divisions with clear purpose
+  PARTIAL (5): General descriptions of characters/beats/structure present, but lacks specific names or detailed content
+  NO (0): Vague, generic, or core content missing entirely
+
+Criterion CI-2: Internal Coherence (10 pts)
+  YES (10): No internal contradictions; all elements work together toward a unified story direction
+  PARTIAL (5): Minor inconsistencies present, but overall story direction is clear
+  NO (0): Major contradictions, or no identifiable story direction
+
+Criterion CI-3: Thematic Integration (10 pts)
+  YES (10): Theme is explicitly stated or clearly embedded in the narrative content
+  PARTIAL (5): Theme is present but not consistently woven through
+  NO (0): No identifiable theme, or theme disconnected from story
+
+Criterion CI-4: Structural Completeness (10 pts)
+  YES (10): All structural elements expected for this document type are present and fully developed
+  PARTIAL (5): Most elements present but some are underdeveloped or missing
+  NO (0): Structural elements missing, incomplete, or structurally incoherent
+
+Criterion CI-5: Craft Quality (10 pts)
+  YES (10): Writing quality, narrative logic, and prose are clear, purposeful, and appropriate for an internal development document
+  PARTIAL (5): Adequate craft with some muddled passages or logic gaps
+  NO (0): Poor craft: unclear writing, logical contradictions, or content that impedes understanding
+
+CI SCORE = sum of CI-1 through CI-5 (max 50, multiply by 2 for 0-100 scale)
+
+== GP: DEVELOPMENT READINESS (50 points max) ==
+
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
+
+Criterion GP-1: Next-Stage Unblocking (13 pts)
+  YES (13): This document provides everything the next stage needs to begin immediately with no ambiguity
+  PARTIAL (7): Next stage can begin but some ambiguity or gaps exist about what exactly to do next
+  NO (0): Next stage cannot proceed without major creative decisions being reopened
+
+Criterion GP-2: Specificity and Actionability (12 pts)
+  YES (12): All material is specific and actionable; a writer could take this directly into the next document without invention
+  PARTIAL (6): Material is usable but requires the next-stage writer to fill gaps or make creative choices
+  NO (0): Material too general or ambiguous to serve as a clear development brief
+
+Criterion GP-3: Critical Architecture Decisions in Place (13 pts)
+  YES (13): All critical architecture decisions are resolved and mutually consistent
+  PARTIAL (7): Most decisions resolved, but 1-2 significant decisions remain open or ambiguous
+  NO (0): Significant decisions open, contradicted, or missing
+
+Criterion GP-4: Gap Identification (12 pts)
+  YES (12): Document explicitly acknowledges what is NOT yet resolved and flags what needs addressing in subsequent stages
+  PARTIAL (6): Some awareness of open questions, but gaps are not clearly called out
+  NO (0): No gap awareness; document implies everything is resolved when it is not
+
+GP SCORE = sum of GP-1 through GP-4 (max 50, multiply by 2 for 0-100 scale)
+
+== FINAL SCORES ==
+ci_score [0-100] = CI SCORE multiplied by 2
+gp_score [0-100] = GP SCORE multiplied by 2
 
 CRITICAL SCORING RULES for DEVELOPMENT_ARCHITECTURE:
-- Do NOT score packaging magnetism, castability, or talkability for these documents.
-- Do NOT score market positioning or commercial viability.
-- Do NOT penalise a character bible or beat sheet for lacking audience hook language.
-- GP here means "development readiness" — how ready is this doc to drive the next stage.
-- A character bible with deep, specific characters and clear arcs should score CI:80+ and GP:75+
-  even if it reads like an internal working document rather than a pitch-facing asset.
-- A beat sheet with structural completeness, clear turning points, and Act 3 fully developed
-  should score CI:78+ and GP:75+ regardless of commercial language.`,
+- Do NOT score packaging, castability, talkability, or commercial framing.
+- Do NOT penalize for lacking audience hook language or pitch-facing polish.
+- A character bible with named characters, defined roles/goals/conflicts, and complete profiles scores ci_score 80+ and gp_score 75+ regardless of commercial language.
+- A beat sheet with all acts, clearly labeled turning points, midpoint, climax, and mutually consistent story logic scores ci_score 78+ and gp_score 75+.
+- CI and GP are independent: a document can score high on one and lower on the other.`,
 
-  PREMISE_POSITIONING: `SCORING RUBRIC (PURPOSE: PREMISE_POSITIONING):
-This document bridges creative vision and commercial viability.
+  PREMISE_POSITIONING: `SCORING RUBRIC (PURPOSE: PREMISE_POSITIONING)
 
-CI (Creative Integrity) evaluates:
-- Originality and distinctiveness of the premise
-- Emotional conviction and character truth at premise level
-- Thematic coherence and genre clarity
-- Structural integrity of the concept
+This document bridges creative vision and commercial viability. CI scores the creative integrity of the concept. GP scores its market legibility and development viability.
 
-GP (Greenlight Probability) evaluates:
-- Audience clarity and hook strength
-- Market positioning within declared lane
-- Concept legibility (can a buyer understand what this is in one read?)
-- Development viability (does this premise generate enough story?)
-- Alignment with monetisation lane expectations
+== CI: CREATIVE INTEGRITY (50 points max) ==
+
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
+
+Criterion CI-1: Originality and Distinctiveness (12 pts)
+  YES (12): Concept offers a fresh angle, unexpected combination, or distinctive voice
+  PARTIAL (6): Competent but familiar; recognizable genre/trope without strong differentiation
+  NO (0): Highly generic, fully derivative, or indistinguishable from existing material
+
+Criterion CI-2: Emotional Conviction and Character Truth (13 pts)
+  YES (13): The core human experience is clear, emotionally grounded, and character-driven
+  PARTIAL (7): Emotional element present but underdeveloped or subordinate to plot
+  NO (0): No clear emotional core; characters serve plot rather than the reverse
+
+Criterion CI-3: Thematic Coherence and Genre Clarity (12 pts)
+  YES (12): Theme is identifiable and consistently explored; genre is clear, specific, and explicitly declared
+  PARTIAL (6): Theme or genre present but vague or inconsistently applied
+  NO (0): No identifiable theme; genre unclear or absent
+
+Criterion CI-4: Structural Integrity of Concept (13 pts)
+  YES (13): The concept contains a complete dramatic engine; beginning, middle, and end are structurally implicit and mutually dependent
+  PARTIAL (7): Basic structure present but incomplete
+  NO (0): No identifiable story structure; premise does not generate a narrative
+
+CI SCORE = sum of CI-1 through CI-4 (max 50, multiply by 2 for 0-100 scale)
+
+== GP: GREENLIGHT PROBABILITY (50 points max) ==
+
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
+
+Criterion GP-1: Audience Clarity and Hook Strength (10 pts)
+  YES (10): Target audience is precisely defined; the hook is immediately legible and compelling
+  PARTIAL (5): Audience or hook present but vague or generic
+  NO (0): No clear target audience; hook absent or illegible
+
+Criterion GP-2: Market Positioning Within Declared Lane (10 pts)
+  YES (10): Lane explicitly named; project clearly differentiated from direct competitors within it
+  PARTIAL (5): Lane named but positioning vague or undifferentiated
+  NO (0): No clear lane identified; no differentiation argument
+
+Criterion GP-3: Concept Legibility (10 pts)
+  YES (10): A reader or buyer can understand exactly what this project is in one read
+  PARTIAL (5): General sense conveyed but specifics unclear or confusing
+  NO (0): Concept is confusing, misleading, or requires extensive explanation
+
+Criterion GP-4: Development Viability (10 pts)
+  YES (10): Premise generates sufficient story material; natural escalation and resolution are evident
+  PARTIAL (5): Some story potential visible but limited or unclear
+  NO (0): Premise too thin to sustain a full story; no clear narrative engine
+
+Criterion GP-5: Alignment with Monetisation Lane (10 pts)
+  YES (10): Format, tone, budget, and platform explicitly declared and mutually consistent
+  PARTIAL (5): Partial alignment; 1-2 elements missing or misaligned
+  NO (0): No explicit format/platform/budget alignment; viability unclear
+
+GP SCORE = sum of GP-1 through GP-5 (max 50, multiply by 2 for 0-100 scale)
+
+== FINAL SCORES ==
+ci_score [0-100] = CI SCORE multiplied by 2
+gp_score [0-100] = GP SCORE multiplied by 2
 
 Both CI and GP matter equally for this purpose class.
-Do NOT penalise for lacking scene-level craft detail — this is a concept/framing document.`,
+Do NOT penalize for lacking scene-level craft detail; this is a concept/framing document.`,
 
   PACKAGING_COMMERCIAL: `SCORING RUBRIC (PURPOSE: PACKAGING_COMMERCIAL):
 This document is a commercial-facing output. Its job is to communicate market promise,

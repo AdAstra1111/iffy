@@ -1,11 +1,13 @@
 /**
  * FormattedDocContent — renders document content intelligently.
  * Detects JSON and renders structured documents (character bibles, etc.)
- * as readable prose instead of raw JSON.
+ * as readable prose instead of raw JSON. Falls back to markdown rendering
+ * for plain-text documents (concept briefs, treatments, etc.).
  */
 import { useState } from 'react';
 import { Code, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import ReactMarkdown from 'react-markdown';
 
 interface Props {
   text: string;
@@ -394,22 +396,38 @@ function renderJSON(parsed: any) {
   );
 }
 
+function isLikelyMarkdown(text: string): boolean {
+  const trimmed = text.trim();
+  // Markdown headers, bold, italic, bullet lists, or section-like formatting
+  return /^#{1,6}\s|\*{1,2}[^*]+\*{1,2}|^\*[\s\*]|^[a-zA-Z][\s_][a-zA-Z]/.test(trimmed);
+}
+
 export function FormattedDocContent({ text, editable, onChange, className }: Props) {
-  const [showRaw, setShowRaw] = useState(false);
+  const [viewMode, setViewMode] = useState<'formatted' | 'raw' | 'editing'>(
+    editable ? 'editing' : 'formatted'
+  );
   const parsed = tryParseJSON(text);
   const isJSON = parsed !== null;
+  const isMarkdown = !isJSON && isLikelyMarkdown(text);
 
-  if (!isJSON || showRaw) {
+  // ── RAW TEXTAREA ──────────────────────────────────────────────────────────
+  if (viewMode === 'raw') {
     return (
       <div>
-        {isJSON && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.5rem', gap: '0.5rem' }}>
+          {isMarkdown && (
             <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
-              onClick={() => setShowRaw(false)}>
+              onClick={() => setViewMode(editable ? 'editing' : 'formatted')}>
+              <Eye className="h-3 w-3" /> Formatted
+            </Button>
+          )}
+          {isJSON && (
+            <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
+              onClick={() => setViewMode('formatted')}>
               <Eye className="h-3 w-3" /> Formatted view
             </Button>
-          </div>
-        )}
+          )}
+        </div>
         <textarea
           className={className || "w-full min-h-[300px] max-h-[70vh] overflow-y-auto text-sm text-foreground whitespace-pre-wrap font-body leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0"}
           value={text}
@@ -421,17 +439,73 @@ export function FormattedDocContent({ text, editable, onChange, className }: Pro
     );
   }
 
+  // ── JSON — formatted JSON ─────────────────────────────────────────────────
+  if (isJSON) {
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
+          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
+            onClick={() => setViewMode('raw')}>
+            <Code className="h-3 w-3" /> Raw
+          </Button>
+        </div>
+        <div style={{ minHeight: 300, maxHeight: '70vh', overflowY: 'auto' }}>
+          {renderJSON(parsed)}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MARKDOWN — rendered markdown ────────────────────────────────────────
+  if (isMarkdown) {
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem', gap: '0.5rem' }}>
+          {editable && (
+            <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
+              onClick={() => setViewMode('editing')}>
+              <Code className="h-3 w-3" /> Edit
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
+            onClick={() => setViewMode('raw')}>
+            <Code className="h-3 w-3" /> Raw
+          </Button>
+        </div>
+        <div
+          className="markdown-body"
+          style={{ minHeight: 300, maxHeight: '70vh', overflowY: 'auto', fontSize: '0.85rem', lineHeight: 1.75, color: 'rgba(226,224,220,0.9)' }}
+        >
+          <ReactMarkdown>{text}</ReactMarkdown>
+        </div>
+      </div>
+    );
+  }
+
+  // ── FALLBACK: plain text ────────────────────────────────────────────────
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '0.75rem' }}>
-        <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
-          onClick={() => setShowRaw(true)}>
-          <Code className="h-3 w-3" /> Raw
-        </Button>
+        {editable && (
+          <Button variant="ghost" size="sm" className="h-6 text-xs gap-1 text-muted-foreground"
+            onClick={() => setViewMode('editing')}>
+            <Code className="h-3 w-3" /> Edit
+          </Button>
+        )}
       </div>
-      <div style={{ minHeight: 300, maxHeight: '70vh', overflowY: 'auto' }}>
-        {renderJSON(parsed)}
-      </div>
+      {viewMode === 'editing' || editable ? (
+        <textarea
+          className={className || "w-full min-h-[300px] max-h-[70vh] overflow-y-auto text-sm text-foreground whitespace-pre-wrap font-body leading-relaxed bg-transparent border-none outline-none resize-none focus:ring-0"}
+          value={text}
+          onChange={e => onChange?.(e.target.value)}
+          readOnly={!editable}
+          placeholder="Start writing here…"
+        />
+      ) : (
+        <pre className="whitespace-pre-wrap text-sm text-foreground font-body leading-relaxed">
+          {text}
+        </pre>
+      )}
     </div>
   );
 }

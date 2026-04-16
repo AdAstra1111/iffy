@@ -7406,7 +7406,7 @@ Deno.serve(async (req) => {
             const { data: sidVer } = await supabase.from("project_document_versions")
               .select("id, plaintext, meta_json").eq("document_id", sidDoc.id).eq("is_current", true).maybeSingle();
             if (sidVer?.plaintext) {
-              const sidResult = validateStageIdentity(currentDoc, sidVer.plaintext);
+              const sidResult = validateStageIdentity(currentDoc, sidVer.plaintext, sidVer.meta_json as Record<string, any> | undefined);
               if (sidResult && !sidResult.pass) {
                 const diag = buildDiagnostic(sidResult);
                 console.error(`[auto-run][IEL] STAGE_IDENTITY_BLOCKED ${JSON.stringify({ job_id: jobId, ...diag })}`);

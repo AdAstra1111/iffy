@@ -3,20 +3,38 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/supabase-proxy.ts": { "maxDuration": 300 },
-    "api/supabase-proxy/[...path]/route.ts": { "maxDuration": 300 },
-    "api/nit-sync-proxy.ts": { "maxDuration": 300 }
+    "api/supabase-proxy.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/[...path]/route.ts": {
+      "maxDuration": 300
+    },
+    "api/nit-sync-proxy.ts": {
+      "maxDuration": 300
+    }
   },
   "rewrites": [
-    { "source": "/api/llm", "destination": "/api/llm" },
-    { "source": "/api/nit-sync-proxy", "destination": "/api/nit-sync-proxy" },
-    { "source": "/api/supabase-proxy/(.*)", "destination": "/api/supabase-proxy?path=$1" },
-    { "source": "/((?!assets|favicon|og-image|robots|api).*)", "destination": "/index.html" }
+    {
+      "source": "/api/llm",
+      "destination": "/api/llm"
+    },
+    {
+      "source": "/api/nit-sync-proxy",
+      "destination": "/api/nit-sync-proxy"
+    },
+    {
+      "source": "/api/supabase-proxy/(.*)",
+      "destination": "/api/supabase-proxy?path=$1"
+    },
+    {
+      "source": "/((?!assets|favicon|og-image|robots|api).*)",
+      "destination": "/index.html"
+    }
   ],
   "env": {
     "VITE_SUPABASE_URL": "https://hdfderbphdobomkdjypc.supabase.co",
     "VITE_SUPABASE_PUBLISHABLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZmRlcmJwaGRvYm9ta2RqeXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzODg2NjEsImV4cCI6MjA5MDk2NDY2MX0.wLiw8PxIZ_ABt-y6ORhlZlHk1LOJujb-OqurX8wP_N1c",
     "VITE_SUPABASE_PROJECT_ID": "hdfderbphdobomkdjypc",
-    "SUPABASE_SERVICE_ROLE_KEY": "@supabase-service-role-key"
+    "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZmRlcmJwaGRvYm9ta2RqeXBjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NTM4ODY2MSwiZXhwIjoyMDkwOTY0NjYxfQ.DhQvyzYRsh7sjKC2_yjn3nzFWzJlzm4d7Tgg90fYSVo"
   }
 }

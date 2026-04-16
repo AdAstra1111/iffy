@@ -240,6 +240,7 @@ async function writeVersionSafe(
       opts.plaintext,
       opts.deliverableType || "other",
       `dev-engine-v2:${generatorId}`,
+      opts.metaJson?.reverse_engineered === true,
     );
     cceMeta = cceResult.metaPatch;
   }
@@ -296,7 +297,15 @@ async function runCCEPostGeneration(
   generatedText: string,
   docType: string,
   tag: string,
+  reverseEngineered?: boolean,
 ): Promise<{ driftResult: DriftResult; metaPatch: Record<string, any> }> {
+  // Reverse-engineered docs bypass drift detection — they ARE the canonical source
+  if (reverseEngineered) {
+    return {
+      driftResult: { passed: true, findings: [], constraintsUsed: false, checkedAt: new Date().toISOString(), domains_checked: [] },
+      metaPatch: { canon_drift: { passed: true, violations: 0, warnings: 0, domains_checked: [], checked_at: new Date().toISOString(), findings: [] } },
+    };
+  }
   try {
     // Load canon_json
     const { data: canonRow } = await supabaseClient
@@ -716,6 +725,7 @@ const corsHeaders = {
 
 const PRO_MODEL = "google/gemini-2.5-pro";
 const FAST_MODEL = "google/gemini-2.5-flash";
+const ANALYZE_MODEL = "openai/o4-mini"; // deterministic — for scoring/analysis only
 const BALANCED_MODEL = "google/gemini-2.5-flash";
 
 const SCHEMA_VERSION = "v3";
@@ -731,7 +741,7 @@ function extractJSON(raw: string): string {
   return c.trim();
 }
 
-async function callAI(apiKey: string, model: string, system: string, user: string, temperature = 0.3, maxTokens = 32000): Promise<string> {
+async function callAI(apiKey: string, model: string, system: string, user: string, temperature = 0.3, maxTokens = 32000, seed?: number): Promise<string> {
   const MAX_RETRIES = 3;
   // Resolve gateway dynamically — prefer Lovable AI Gateway over OpenRouter
   const gw = (() => { try { return resolveGateway(); } catch { return { url: "https://openrouter.ai/api/v1/chat/completions", apiKey }; } })();
@@ -748,6 +758,7 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
           messages: [{ role: "system", content: system }, { role: "user", content: user }],
           temperature,
           max_tokens: maxTokens,
+          ...(seed !== undefined ? { seed } : {}),
         }),
       });
     } catch (fetchErr: any) {
@@ -5086,7 +5097,7 @@ serve(async (req) => {
 
       // ── STAGE IDENTITY GATE — block analyze/review on malformed stage artifacts ──
       if (deliverableType && ["idea", "concept_brief"].includes(deliverableType)) {
-        const sidResult = validateStageIdentity(deliverableType, version.plaintext);
+        const sidResult = validateStageIdentity(deliverableType, version.plaintext, version.meta_json as Record<string, any> | undefined);
         if (sidResult && !sidResult.pass) {
           console.error(`[dev-engine-v2][IEL] STAGE_IDENTITY_BLOCKED { action: "analyze", deliverable: "${deliverableType}", violation: "${sidResult.violation}" }`);
           return new Response(JSON.stringify({
@@ -5232,17 +5243,8 @@ serve(async (req) => {
       const systemPrompt = composeSystem({ baseSystem: baseSystemPrompt, guardrailsBlock: guardrails.textBlock });
       console.log(`[dev-engine-v2] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}, mode=${guardrails.policy.engineMode}`);
 
-      let prevContext = "";
-      if (previousVersionId) {
-        const { data: prevRun } = await supabase.from("development_runs")
-          .select("output_json").eq("version_id", previousVersionId).eq("run_type", "ANALYZE")
-          .order("created_at", { ascending: false }).limit(1).single();
-        if (prevRun?.output_json) {
-          const pj = prevRun.output_json as any;
-          const scores = pj.scores || pj;
-          prevContext = `\nPREVIOUS SCORES: CI=${scores.ci_score}, GP=${scores.gp_score}, Gap=${scores.gap}`;
-        }
-      }
+            const prevContext = ""; // score anchoring removed — causes LLM variance on re-analysis
+
 
       let seasonContext = "";
       if (seasonArchitecture) {
@@ -5282,9 +5284,10 @@ Format: ${rq.format}.${episodeLengthBlock}`;
         } else if (applyConfig.dev) {
           const { data: matches } = await supabase
             .from("project_signal_matches")
-            .select("relevance_score, impact_score, rationale, cluster:cluster_id(name, category, strength, velocity, saturation_risk, explanation)")
+            .select("id, relevance_score, impact_score, rationale, cluster:cluster_id(name, category, strength, velocity, saturation_risk, explanation)")
             .eq("project_id", projectId)
             .order("impact_score", { ascending: false })
+            .order("id", { ascending: true })
             .limit(3);
           if (matches && matches.length > 0) {
             const fmt = effectiveFormat === "vertical-drama" ? "vertical_drama" : effectiveFormat === "documentary" ? "documentary" : "film";
@@ -5310,7 +5313,7 @@ Format: ${rq.format}.${episodeLengthBlock}`;
           .select("decision_key, title, decision_text")
           .eq("project_id", projectId)
           .eq("status", "active")
-          .order("created_at", { ascending: false })
+          .order("decision_key", { ascending: true })
           .limit(20);
         if (decisions && decisions.length > 0) {
           const bullets = decisions.map((d: any) => `- [${d.decision_key}] ${d.decision_text}`).join("\n");
@@ -5339,6 +5342,7 @@ Format: ${rq.format}.${episodeLengthBlock}`;
         if (Array.isArray(canonJson.characters) && canonJson.characters.length > 0) {
           const charLines = canonJson.characters
             .filter((c: any) => c.name && c.name.trim())
+            .sort((a: any, b: any) => (a.name || "").localeCompare(b.name || ""))
             .map((c: any) => {
               const details = [c.role, c.goals, c.traits].filter(Boolean).join("; ");
               return `  - ${c.name}${details ? `: ${details}` : ""}`;
@@ -5393,6 +5397,38 @@ Format: ${rq.format}.${episodeLengthBlock}`;
           supportingContext = await loadSupportingDocPack(supabase, projectId, body.includeDocumentIds, documentId);
         } catch (e: any) {
           console.warn("[dev-engine-v2] loadSupportingDocPack failed (non-fatal):", e?.message);
+        }
+      }
+
+      // ── Cross-rung canonical enforcement: auto-inject locked upstream docs ──
+      // When analyzing treatment/story_outline/character_bible, fetch docs that sit
+      // below it in the ladder (beat_sheet, concept_brief) and inject as canonical
+      // reference so the rubric doesn't penalise cross-rung consistency issues.
+      // Only runs when caller has NOT provided includeDocumentIds (no double-injection).
+      let crossRungCanonBlock = "";
+      const CROSS_RUNG_TARGETS: Record<string, string[]> = {
+        treatment: ["beat_sheet", "concept_brief"],
+        story_outline: ["beat_sheet", "treatment", "concept_brief"],
+        character_bible: ["beat_sheet", "treatment", "concept_brief"],
+      };
+      const crossRungTypes = CROSS_RUNG_TARGETS[docType];
+      if (crossRungTypes && !(body.includeDocumentIds && body.includeDocumentIds.length > 0)) {
+        try {
+          const { data: crossDocs } = await supabase
+            .from("project_documents")
+            .select("id, doc_type, title")
+            .eq("project_id", projectId)
+            .in("doc_type", crossRungTypes);
+          if (crossDocs && crossDocs.length > 0) {
+            const crossIds = crossDocs.map((d: any) => d.id);
+            const crossPack = await loadSupportingDocPack(supabase, projectId, crossIds, documentId);
+            if (crossPack) {
+              crossRungCanonBlock = `\n\n=== CANONICAL REFERENCE (LOCKED UPSTREAM DOCS — DO NOT CONTRADICT) ===\nThe following documents sit below this deliverable in the development ladder and are treated as LOCKED CANON for scoring purposes. When evaluating CI criterion CI-4 (Structural Integrity) and GP criterion GP-4 (Development Viability), assess whether this document is CONSISTENT WITH and BUILDING ON these canonical references. Penalise inconsistencies — notes that fix surface quality but break cross-rung consistency should be flagged as HIGH_IMPACT.\n${crossPack}\n=== END CANONICAL REFERENCE ===`;
+              console.log(`[dev-engine-v2] cross-rung-canonical injected { docType: "${docType}", sources: ${JSON.stringify(crossDocs.map((d: any) => d.doc_type))} }`);
+            }
+          }
+        } catch (e: any) {
+          console.warn("[dev-engine-v2] cross-rung canonical load failed (non-fatal):", e?.message);
         }
       }
       // ── NEC Guardrail injection for analyze (NEC-first) ──
@@ -5628,7 +5664,7 @@ STRATEGIC PRIORITY: ${strategicPriority || "BALANCED"}
 DEVELOPMENT STAGE: ${developmentStage || "IDEA"}
 PROJECT: ${project?.title || "Unknown"}
 LANE: ${analyzeLane} | BUDGET: ${project?.budget_range || "Unknown"}
-${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
+${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
 
 MATERIAL (${version.plaintext.length} chars total${episodeGridStructuralBlock || seasonScriptStructuralBlock ? " — sampled for scoring stability" : ""}):
 ${docTextForScoring}`;
@@ -5646,17 +5682,17 @@ ${docTextForScoring}`;
         } catch { return null; }
       })();
       const useProForAnalyze = body.forceProModel === true || (previousCI !== null && previousCI >= 80);
-      const analyzeModel = useProForAnalyze ? PRO_MODEL : BALANCED_MODEL;
+      const analyzeModel = ANALYZE_MODEL; // scoring uses o4-mini for deterministic output
       console.log("[dev-engine-v2] analyze model selected", { analyzeModel, previousCI, forceProModel: body.forceProModel });
 
-      const raw = await callAI(LOVABLE_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.2, 6000);
+      const raw = await callAI(LOVABLE_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.0, 6000, 42);
       let parsed = await parseAIJson(LOVABLE_API_KEY, raw);
 
       // ── Strict JSON retry: one deterministic recovery attempt ──
       if (!parsed || !looksLikeAnalyzeShape(parsed)) {
         console.log("[dev-engine-v2] analyze json invalid -> strict retry", { projectId, documentId, versionId: version.id });
         try {
-          const raw2 = await callAI(LOVABLE_API_KEY, analyzeModel, `${STRICT_JSON_RULES}\n\n${systemPrompt}`, userPrompt, 0.1, 6000);
+          const raw2 = await callAI(LOVABLE_API_KEY, analyzeModel, `${STRICT_JSON_RULES}\n\n${systemPrompt}`, userPrompt, 0.0, 6000, 42);
           const parsed2 = await parseAIJson(LOVABLE_API_KEY, raw2);
           if (parsed2 && looksLikeAnalyzeShape(parsed2)) {
             console.log("[dev-engine-v2] analyze strict retry succeeded", { projectId });
@@ -6135,12 +6171,14 @@ ${docTextForScoring}`;
       }
 
       const { data: version } = await supabase.from("project_document_versions")
-        .select("plaintext").eq("id", versionId).single();
+        .select("plaintext, meta_json").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
 
       // ── STAGE IDENTITY GATE — block notes on malformed stage artifacts ──
       if (deliverableType && ["idea", "concept_brief"].includes(deliverableType) && version.plaintext) {
-        const sidResult = validateStageIdentity(deliverableType, version.plaintext);
+        const sidMetaJson = version.meta_json as Record<string, any> | undefined;
+        console.log(`[dev-engine-v2][notes] stage_check: deliverableType=${deliverableType} versionId=${versionId} meta_json=${JSON.stringify(sidMetaJson)}`);
+        const sidResult = validateStageIdentity(deliverableType, version.plaintext, sidMetaJson);
         if (sidResult && !sidResult.pass) {
           console.error(`[dev-engine-v2][IEL] STAGE_IDENTITY_BLOCKED { action: "notes", deliverable: "${deliverableType}", violation: "${sidResult.violation}" }`);
           return new Response(JSON.stringify({
@@ -7063,9 +7101,9 @@ MATERIAL:\n${version.plaintext}`;
         const effectiveDocType = deliverableType || targetDocType;
         if (effectiveDocType && ["idea", "concept_brief"].includes(effectiveDocType)) {
           const { data: rwVer } = await supabase.from("project_document_versions")
-            .select("plaintext").eq("id", versionId).maybeSingle();
+            .select("plaintext, meta_json").eq("id", versionId).maybeSingle();
           if (rwVer?.plaintext) {
-            const sidResult = validateStageIdentity(effectiveDocType, rwVer.plaintext);
+            const sidResult = validateStageIdentity(effectiveDocType, rwVer.plaintext, rwVer.meta_json as Record<string, any> | undefined);
             if (sidResult && !sidResult.pass) {
               console.error(`[dev-engine-v2][IEL] STAGE_IDENTITY_BLOCKED { action: "rewrite", deliverable: "${effectiveDocType}", violation: "${sidResult.violation}" }`);
               return new Response(JSON.stringify({

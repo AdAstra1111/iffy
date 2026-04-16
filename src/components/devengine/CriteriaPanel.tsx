@@ -373,8 +373,7 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
                   <SelectContent>{BUDGET_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              {editCriteria.format_subtype !== 'film' && (
-              <>
+              {editCriteria.format_subtype !== 'film' && (<>
               {/* ─── Episode Length (canonical) ─── */}
               <div className="col-span-2">
                 <Label className="text-[9px] font-semibold">Episode Length (canonical — single source of truth)</Label>
@@ -457,6 +456,8 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
               {renderField('Format', 'format_subtype', criteria.format_subtype)}
               {renderField('Lane', 'assigned_lane', criteria.assigned_lane)}
               {renderField('Budget', 'budget_range', criteria.budget_range)}
+              {criteria.format_subtype !== 'film' && (
+              <>
               {/* Canonical episode length display */}
               {(criteria.episode_duration_min_seconds || criteria.episode_duration_max_seconds) ? (
                 renderField('Episode Length',
@@ -467,6 +468,8 @@ export function CriteriaPanel({ projectId, documents, onCriteriaUpdated }: Props
                 )
               ) : renderField('Episode Duration', 'episode_target_duration_seconds', criteria.episode_target_duration_seconds ? `${criteria.episode_target_duration_seconds}s` : null)}
               {renderField('Episodes/Season', 'season_episode_count', criteria.season_episode_count)}
+              </>
+              )}
               {renderField('Runtime', 'target_runtime_min_low', criteria.target_runtime_min_low && criteria.target_runtime_min_high ? `${criteria.target_runtime_min_low}–${criteria.target_runtime_min_high} min` : null)}
               {criteria.tone_tags?.length ? renderField('Tone', 'tone_tags', criteria.tone_tags.join(', ')) : null}
               {/* Auto-populated pitch-level fields from reverse engineer */}

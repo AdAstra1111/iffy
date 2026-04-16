@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import { BgGenBanner } from '@/components/devengine/BgGenBanner';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -96,7 +97,7 @@ import { NoteWritersRoomDrawer } from '@/components/notes/NoteWritersRoomDrawer'
 import { NextActionsPanel } from '@/components/notes/NextActionsPanel';
 import { NoteDrawer } from '@/components/notes/NoteDrawer';
 import { useProjectNotes } from '@/lib/notes/useProjectNotes';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, MapPin, User, Package, Shirt, Car, PawPrint } from 'lucide-react';
 import { isProductionActivationDoc, canActivateVisualProduction, readProductionFlags, activateVisualProduction } from '@/lib/production-activation';
 import { VisualProductionActivatedCard } from '@/components/devengine/VisualProductionActivatedCard';
 import { scrollTextareaToHeading } from '@/lib/visual/vpbRefinementResolver';
@@ -107,6 +108,32 @@ import { SeedAppliedBanner } from '@/components/devengine/SeedAppliedBanner';
 import { StyleSourcesPanel } from '@/components/devengine/StyleSourcesPanel';
 import { StyleScoreBadge, StyleEvalPanel } from '@/components/devengine/StyleEvalPanel';
 import { CanonDriftBadge } from '@/components/devengine/CanonDriftBadge';
+import { CharacterAtomGrid } from '@/components/devengine/CharacterAtomGrid';
+import { LocationAtomGrid } from '@/components/devengine/LocationAtomGrid';
+import { PropAtomGrid } from '@/components/devengine/PropAtomGrid';
+import { CostumeAtomGrid } from '@/components/devengine/CostumeAtomGrid';
+import { VehicleAtomGrid } from '@/components/devengine/VehicleAtomGrid';
+import { CreatureAtomGrid } from '@/components/devengine/CreatureAtomGrid';
+import { ThemeAtomGrid } from '@/components/devengine/ThemeAtomGrid';
+import { GenreAtomGrid } from '@/components/devengine/GenreAtomGrid';
+import { ToneAtomGrid } from '@/components/devengine/ToneAtomGrid';
+import { StructureAtomGrid } from '@/components/devengine/StructureAtomGrid';
+import { NarrativebeatAtomGrid } from '@/components/devengine/NarrativebeatAtomGrid';
+import { SoundtrackAtomGrid } from '@/components/devengine/SoundtrackAtomGrid';
+import { DialogueAtomGrid } from '@/components/devengine/DialogueAtomGrid';
+import { useCharacterAtoms } from '@/hooks/useCharacterAtoms';
+import { useLocationAtoms } from '@/hooks/useLocationAtoms';
+import { usePropAtoms } from '@/hooks/usePropAtoms';
+import { useCostumeAtoms } from '@/hooks/useCostumeAtoms';
+import { useVehicleAtoms } from '@/hooks/useVehicleAtoms';
+import { useCreatureAtoms } from '@/hooks/useCreatureAtoms';
+import { useThemeAtoms } from '@/hooks/useThemeAtoms';
+import { useGenreAtoms } from '@/hooks/useGenreAtoms';
+import { useToneAtoms } from '@/hooks/useToneAtoms';
+import { useStructureAtoms } from '@/hooks/useStructureAtoms';
+import { useNarrativebeatAtoms } from '@/hooks/useNarrativebeatAtoms';
+import { useSoundtrackAtoms } from '@/hooks/useSoundtrackAtoms';
+import { useDialogueAtoms } from '@/hooks/useDialogueAtoms';
 import { StageIdentityBlocker } from '@/components/devengine/StageIdentityBlocker';
 import { StageIdentityBadge } from '@/components/devengine/StageIdentityBadge';
 import { AutopilotPanel } from '@/components/dev/AutopilotPanel';
@@ -155,7 +182,27 @@ export default function ProjectDevelopmentEngine() {
   // Execution mode preference (persists to job when one exists, otherwise local)
   const [localExecutionMode, setLocalExecutionMode] = useState<ExecutionMode>('full_autopilot');
   const qc = useQueryClient();
-  const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline']);
+
+  // Generate decision options mutation (used by Rewrite Plan card fallback)
+  const generateOptionsMutation = useMutation({
+    mutationFn: async () => {
+      const { data: { session } } = await import('@/integrations/supabase/client').then(m => m.supabase.auth.getSession());
+      if (!session) throw new Error('Not authenticated');
+      if (!selectedDocId || !selectedVersionId) throw new Error('No document or version selected');
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action: 'options', projectId, documentId: selectedDocId, versionId: selectedVersionId }),
+      });
+      const result = await resp.json();
+      if (!resp.ok) throw new Error(result.error || 'Options generation failed');
+      return result;
+    },
+    onSuccess: () => {
+      invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
+    },
+  });
+  const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual']);
   const initialTab = (() => { const t = searchParams.get('tab'); return t && VALID_TABS.has(t) ? t : 'notes'; })();
   const [intelligenceTab, setIntelligenceTab] = useState(initialTab);
 
@@ -447,6 +494,22 @@ export default function ProjectDevelopmentEngine() {
     enabled: !!projectId,
     staleTime: 30_000,
   });
+
+  // Visual atoms — character + location
+  const characterAtoms = useCharacterAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const locationAtoms = useLocationAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const propAtoms = usePropAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const costumeAtoms = useCostumeAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const vehicleAtoms = useVehicleAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const creatureAtoms = useCreatureAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const themeAtoms = useThemeAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const genreAtoms = useGenreAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const toneAtoms = useToneAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const structureAtoms = useStructureAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const narrativebeatAtoms = useNarrativebeatAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const soundtrackAtoms = useSoundtrackAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const dialogueAtoms = useDialogueAtoms({ projectId: projectId || '', enabled: !!projectId });
+  const [atomTab, setAtomTab] = useState('characters');
 
   // Find active handoff for the currently selected document
   const activeHandoffForDoc = useMemo(() => {
@@ -2335,6 +2398,10 @@ export default function ProjectDevelopmentEngine() {
                {convergenceHistory.length > 0 && (
                  <TabsTrigger value="timeline" className="text-xs">Timeline ({convergenceHistory.length})</TabsTrigger>
                )}
+               <TabsTrigger value="atoms" className="text-xs flex items-center gap-1">
+                 <Sparkles className="h-3 w-3" />
+                 Atomised Elements
+               </TabsTrigger>
              </TabsList>
 
             <TabsContent value="notes" className="mt-3 space-y-3">
@@ -2448,7 +2515,6 @@ export default function ProjectDevelopmentEngine() {
                     resolutionSummary={resolutionSummary}
                     stabilityStatus={stabilityStatus}
                     globalDirections={latestNotes?.global_directions || []}
-                    hideApplyButton
                     onDecisionsChange={setNotesDecisions}
                     onCustomDirectionsChange={setNotesCustomDirections}
                     deferredNotes={deferredNotes}
@@ -2467,6 +2533,14 @@ export default function ProjectDevelopmentEngine() {
                     projectId={projectId}
                     documentId={selectedDocId || undefined}
                     onDecisionApplied={() => {
+                      invalidateDevEngine(qc, {
+                        projectId,
+                        docId: selectedDocId,
+                        versionId: selectedVersionId,
+                        deep: true,
+                      });
+                    }}
+                    onBundleApplied={() => {
                       invalidateDevEngine(qc, {
                         projectId,
                         docId: selectedDocId,
@@ -2515,8 +2589,27 @@ export default function ProjectDevelopmentEngine() {
               {/* Rewrite Plan + Guardrails — below the notes/decisions grid */}
               {(latestAnalysis?.rewrite_plan || latestNotes?.rewrite_plan) && (
                 <Card>
-                  <CardHeader className="py-2 px-3">
+                  <CardHeader className="py-2 px-3 flex flex-row items-center justify-between">
                     <CardTitle className="text-xs">Rewrite Plan</CardTitle>
+                    {(() => {
+                      const hasNoteDecisions = tieredNotes.blockers.some((n: any) => n.decisions?.length > 0) || tieredNotes.high.some((n: any) => n.decisions?.length > 0);
+                      const hasBlockers = tieredNotes.blockers.length > 0 || tieredNotes.high.length > 0;
+                      if (!hasBlockers) return null;
+                      return (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-5 text-[9px] gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                          disabled={generateOptionsMutation.isPending || !selectedDocId || !selectedVersionId}
+                          onClick={() => generateOptionsMutation.mutate()}
+                        >
+                          {generateOptionsMutation.isPending
+                            ? <Loader2 className="h-3 w-3 animate-spin" />
+                            : <Sparkles className="h-3 w-3" />}
+                          {hasNoteDecisions ? 'Regenerate Options' : 'Generate Options'}
+                        </Button>
+                      );
+                    })()}
                   </CardHeader>
                   <CardContent className="px-3 pb-3">
                     <div className="space-y-0.5">
@@ -2796,6 +2889,250 @@ export default function ProjectDevelopmentEngine() {
                 </Card>
               </TabsContent>
             )}
+
+            <TabsContent value="atoms" className="mt-3">
+              {projectId ? (
+                <Tabs value={atomTab} onValueChange={setAtomTab} className="space-y-4">
+                  <TabsList className="flex flex-wrap gap-1 h-auto py-1 bg-muted/30 border border-border/50 rounded-md w-fit">
+                    <TabsTrigger value="characters" className="text-xs data-[state=active]:bg-primary/20">
+                      <User className="h-3 w-3 mr-1" />
+                      Characters
+                    </TabsTrigger>
+                    <TabsTrigger value="locations" className="text-xs data-[state=active]:bg-primary/20">
+                      <MapPin className="h-3 w-3 mr-1" />
+                      Locations
+                    </TabsTrigger>
+                    <TabsTrigger value="props" className="text-xs data-[state=active]:bg-primary/20">
+                      <Package className="h-3 w-3 mr-1" />
+                      Props
+                    </TabsTrigger>
+                    <TabsTrigger value="costumes" className="text-xs data-[state=active]:bg-primary/20">
+                      <Shirt className="h-3 w-3 mr-1" />
+                      Costumes
+                    </TabsTrigger>
+                    <TabsTrigger value="vehicles" className="text-xs data-[state=active]:bg-primary/20">
+                      <Car className="h-3 w-3 mr-1" />
+                      Vehicles
+                    </TabsTrigger>
+                    <TabsTrigger value="creatures" className="text-xs data-[state=active]:bg-primary/20">
+                      <PawPrint className="h-3 w-3 mr-1" />
+                      Creatures
+                    </TabsTrigger>
+                    <TabsTrigger value="themes" className="text-xs data-[state=active]:bg-primary/20">
+                      Themes
+                    </TabsTrigger>
+                    <TabsTrigger value="narrativebeats" className="text-xs data-[state=active]:bg-primary/20">
+                      Narrative Beats
+                    </TabsTrigger>
+                    <TabsTrigger value="genre" className="text-xs data-[state=active]:bg-primary/20">
+                      Genre
+                    </TabsTrigger>
+                    <TabsTrigger value="tone" className="text-xs data-[state=active]:bg-primary/20">
+                      Tone
+                    </TabsTrigger>
+                    <TabsTrigger value="structure" className="text-xs data-[state=active]:bg-primary/20">
+                      Structure
+                    </TabsTrigger>
+                    <TabsTrigger value="soundtrack" className="text-xs data-[state=active]:bg-primary/20">
+                      Soundtrack
+                    </TabsTrigger>
+                    <TabsTrigger value="dialogue" className="text-xs data-[state=active]:bg-primary/20">
+                      Dialogue
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="characters" className="space-y-6">
+                    <CharacterAtomGrid
+                      atoms={characterAtoms.atoms}
+                      isLoading={characterAtoms.isLoading}
+                      isRefreshing={characterAtoms.isRefreshing}
+                      isExtracting={characterAtoms.isExtracting}
+                      isGenerating={characterAtoms.isGenerating}
+                      lastUpdated={characterAtoms.lastUpdated}
+                      error={characterAtoms.error}
+                      onExtract={characterAtoms.extract}
+                      onGenerate={characterAtoms.generate}
+                      onResetFailed={characterAtoms.resetFailed}
+                      onRefresh={characterAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="locations" className="space-y-6">
+                    <LocationAtomGrid
+                      atoms={locationAtoms.atoms}
+                      isLoading={locationAtoms.isLoading}
+                      isRefreshing={locationAtoms.isRefreshing}
+                      lastUpdated={locationAtoms.lastUpdated}
+                      error={locationAtoms.error}
+                      onExtract={locationAtoms.extract}
+                      onGenerate={locationAtoms.generate}
+                      onResetFailed={locationAtoms.resetFailed}
+                      onRefresh={locationAtoms.refetch}
+                      projectId={projectId}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="props" className="space-y-6">
+                    <PropAtomGrid
+                      atoms={propAtoms.atoms}
+                      isLoading={propAtoms.isLoading}
+                      isRefreshing={propAtoms.isRefreshing}
+                      lastUpdated={propAtoms.lastUpdated}
+                      error={propAtoms.error}
+                      onExtract={propAtoms.extract}
+                      onGenerate={propAtoms.generate}
+                      onResetFailed={propAtoms.resetFailed}
+                      onRefresh={propAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="costumes" className="space-y-6">
+                    <CostumeAtomGrid
+                      atoms={costumeAtoms.atoms}
+                      isLoading={costumeAtoms.isLoading}
+                      isRefreshing={costumeAtoms.isRefreshing}
+                      lastUpdated={costumeAtoms.lastUpdated}
+                      error={costumeAtoms.error}
+                      characterAtomsReady={characterAtoms.atoms.some(
+                        (a) => a.generation_status === 'completed' || a.generation_status === 'complete'
+                      )}
+                      onExtract={costumeAtoms.extract}
+                      onGenerate={costumeAtoms.generate}
+                      onResetFailed={costumeAtoms.resetFailed}
+                      onRefresh={costumeAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="vehicles" className="space-y-6">
+                    <VehicleAtomGrid
+                      atoms={vehicleAtoms.atoms}
+                      isLoading={vehicleAtoms.isLoading}
+                      isRefreshing={vehicleAtoms.isRefreshing}
+                      lastUpdated={vehicleAtoms.lastUpdated}
+                      error={vehicleAtoms.error}
+                      onExtract={vehicleAtoms.extract}
+                      onGenerate={vehicleAtoms.generate}
+                      onResetFailed={vehicleAtoms.resetFailed}
+                      onRefresh={vehicleAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="creatures" className="space-y-6">
+                    <CreatureAtomGrid
+                      atoms={creatureAtoms.atoms}
+                      isLoading={creatureAtoms.isLoading}
+                      isRefreshing={creatureAtoms.isRefreshing}
+                      lastUpdated={creatureAtoms.lastUpdated}
+                      error={creatureAtoms.error}
+                      onExtract={creatureAtoms.extract}
+                      onGenerate={creatureAtoms.generate}
+                      onResetFailed={creatureAtoms.resetFailed}
+                      onRefresh={creatureAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="themes" className="space-y-6">
+                    <ThemeAtomGrid
+                      atoms={themeAtoms.atoms}
+                      isLoading={themeAtoms.isLoading}
+                      isRefreshing={themeAtoms.isRefreshing}
+                      lastUpdated={themeAtoms.lastUpdated}
+                      error={themeAtoms.error}
+                      onExtract={themeAtoms.extract}
+                      onGenerate={themeAtoms.generate}
+                      onResetFailed={themeAtoms.resetFailed}
+                      onRefresh={themeAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="narrativebeats" className="space-y-6">
+                    <NarrativebeatAtomGrid
+                      atoms={narrativebeatAtoms.atoms}
+                      isLoading={narrativebeatAtoms.isLoading}
+                      isRefreshing={narrativebeatAtoms.isRefreshing}
+                      lastUpdated={narrativebeatAtoms.lastUpdated}
+                      error={narrativebeatAtoms.error}
+                      onExtract={narrativebeatAtoms.extract}
+                      onGenerate={narrativebeatAtoms.generate}
+                      onResetFailed={narrativebeatAtoms.resetFailed}
+                      onRefresh={narrativebeatAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="genre" className="space-y-6">
+                    <GenreAtomGrid
+                      atoms={genreAtoms.atoms}
+                      isLoading={genreAtoms.isLoading}
+                      isRefreshing={genreAtoms.isRefreshing}
+                      lastUpdated={genreAtoms.lastUpdated}
+                      error={genreAtoms.error}
+                      onExtract={genreAtoms.extract}
+                      onGenerate={genreAtoms.generate}
+                      onResetFailed={genreAtoms.resetFailed}
+                      onRefresh={genreAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="tone" className="space-y-6">
+                    <ToneAtomGrid
+                      atoms={toneAtoms.atoms}
+                      isLoading={toneAtoms.isLoading}
+                      isRefreshing={toneAtoms.isRefreshing}
+                      lastUpdated={toneAtoms.lastUpdated}
+                      error={toneAtoms.error}
+                      onExtract={toneAtoms.extract}
+                      onGenerate={toneAtoms.generate}
+                      onResetFailed={toneAtoms.resetFailed}
+                      onRefresh={toneAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="structure" className="space-y-6">
+                    <StructureAtomGrid
+                      atoms={structureAtoms.atoms}
+                      isLoading={structureAtoms.isLoading}
+                      isRefreshing={structureAtoms.isRefreshing}
+                      lastUpdated={structureAtoms.lastUpdated}
+                      error={structureAtoms.error}
+                      onExtract={structureAtoms.extract}
+                      onGenerate={structureAtoms.generate}
+                      onResetFailed={structureAtoms.resetFailed}
+                      onRefresh={structureAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="soundtrack" className="space-y-6">
+                    <SoundtrackAtomGrid
+                      atoms={soundtrackAtoms.atoms}
+                      isLoading={soundtrackAtoms.isLoading}
+                      isRefreshing={soundtrackAtoms.isRefreshing}
+                      lastUpdated={soundtrackAtoms.lastUpdated}
+                      error={soundtrackAtoms.error}
+                      onExtract={soundtrackAtoms.extract}
+                      onGenerate={soundtrackAtoms.generate}
+                      onResetFailed={soundtrackAtoms.resetFailed}
+                      onRefresh={soundtrackAtoms.refetch}
+                    />
+                  </TabsContent>
+
+                  <TabsContent value="dialogue" className="space-y-6">
+                    <DialogueAtomGrid
+                      atoms={dialogueAtoms.atoms}
+                      isLoading={dialogueAtoms.isLoading}
+                      isRefreshing={dialogueAtoms.isRefreshing}
+                      lastUpdated={dialogueAtoms.lastUpdated}
+                      error={dialogueAtoms.error}
+                      onExtract={dialogueAtoms.extract}
+                      onGenerate={dialogueAtoms.generate}
+                      onResetFailed={dialogueAtoms.resetFailed}
+                      onRefresh={dialogueAtoms.refetch}
+                    />
+                  </TabsContent>
+                </Tabs>
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">Select a project to view visual atoms.</p>
+              )}
+            </TabsContent>
           </Tabs>
         </div>
       )}

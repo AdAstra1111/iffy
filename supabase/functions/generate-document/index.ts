@@ -2316,8 +2316,20 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
     });
   } catch (e: any) {
     console.error("[generate-document] error:", e);
+    // Extract the most useful error message for the caller
+    let errorMsg = e?.message || "Internal error";
+    // If it's a fetch/network error (no response at all)
+    if (errorMsg.includes('fetch') || errorMsg.includes('network') || errorMsg.includes('URL') || errorMsg.includes('TypeError')) {
+      errorMsg = `Network error generating document: ${errorMsg}`;
+    }
+    // If it's a FunctionsHttpError from Supabase (non-2xx wrapped)
+    if (e?.context?.error) {
+      errorMsg = `Supabase function error: ${e.context.error}`;
+    } else if (e?.context?.message) {
+      errorMsg = `Supabase function error: ${e.context.message}`;
+    }
     return jsonRes({
-      error: e?.message || "Internal error",
+      error: errorMsg,
       detail: e?.stack ? String(e.stack).split("\n").slice(0, 2).join(" | ") : undefined,
     }, 500);
   }

@@ -198,3 +198,66 @@
     animation: cast-pulse-subtle 2.5s ease-in-out infinite;
   }
 }
+
+/* Markdown body — concept brief / document rendering */
+.markdown-body h1 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--foreground);
+  margin: 0 0 0.75rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  padding-bottom: 0.4rem;
+}
+.markdown-body h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 1.25rem 0 0.5rem 0;
+}
+.markdown-body h3 {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: rgba(226,224,220,0.85);
+  margin: 1rem 0 0.4rem 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.markdown-body p {
+  margin: 0 0 0.75rem 0;
+  color: rgba(226,224,220,0.88);
+  line-height: 1.7;
+}
+.markdown-body ul {
+  padding-left: 1.25rem;
+  margin: 0 0 0.75rem 0;
+  color: rgba(226,224,220,0.85);
+}
+.markdown-body ul li {
+  margin-bottom: 0.3rem;
+  line-height: 1.6;
+}
+.markdown-body ul li::marker {
+  color: rgba(196,154,61,0.8);
+}
+.markdown-body strong {
+  color: rgba(226,224,220,0.95);
+  font-weight: 600;
+}
+.markdown-body em {
+  font-style: italic;
+  color: rgba(226,224,220,0.8);
+}
+.markdown-body blockquote {
+  border-left: 3px solid rgba(196,154,61,0.5);
+  padding-left: 1rem;
+  margin: 0.75rem 0;
+  color: rgba(226,224,220,0.7);
+  font-style: italic;
+}
+.markdown-body code {
+  background: rgba(255,255,255,0.06);
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  font-size: 0.85em;
+  font-family: monospace;
+}

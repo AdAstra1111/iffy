@@ -32,7 +32,7 @@ import { type LaneKey, LANE_DOC_LADDERS } from "./documentLadders.ts";
 
 export type DependencyKind = "canon" | "structure" | "market" | "style" | "advisory";
 export type DependencyStrength = "hard" | "soft";
-export type InvalidationPolicy = "stale" | "review_only" | "none";
+export type InvalidationPolicy = "stale" | "review_only" | "none" | "advisory";
 export type RevalidationPolicy = "must_reanalyze" | "optional_review" | "none";
 
 export interface DependencyEdge {
@@ -65,6 +65,31 @@ export interface InvalidationPlan {
 
 const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
   feature_film: [
+    // Annotations for Gap A and B
+    // scene_graph → narrative_units: scene content drives entity extraction
+    { from_doc_type: "scene_graph",    to_doc_type: "narrative_units",               kind: "canon", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // scene_graph → narrative_scene_entity_links: scene changes invalidate which entity appears in which scene
+    { from_doc_type: "scene_graph",    to_doc_type: "narrative_scene_entity_links",   kind: "canon", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // scene_graph → beat_sheet: scene structure changes (new scene, deleted scene, reordered act) invalidate beat sheet
+    { from_doc_type: "scene_graph",    to_doc_type: "beat_sheet",                     kind: "canon", strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // scene_graph → feature_script: scene content is the raw material for script generation
+    { from_doc_type: "scene_graph",    to_doc_type: "feature_script",                 kind: "canon", strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // narrative_units → character_bible: new/removed/renamed entity triggers character bible review
+    { from_doc_type: "narrative_units", to_doc_type: "character_bible",                kind: "canon", strength: "soft", invalidation_policy: "review_only", revalidation_policy: "optional_review" },
+
+    // narrative_scene_entity_links → character_bible: link changes affect character arc moments
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "character_bible",   kind: "canon", strength: "soft", invalidation_policy: "review_only", revalidation_policy: "optional_review" },
+
+    // narrative_entities → production_draft: ADVISORY ONLY — entity changes don't hard-invalidate production drafts
+    // scene_count on narrative_entities drives cast_scheduling advisory in production draft
+    // Propagation chain: entity change → character_bible review → production advisory flag
+    // Not a hard chain; production impact is signalled, not forced
+    { from_doc_type: "narrative_entities", to_doc_type: "production_draft",            kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+
     // idea → concept_brief
     { from_doc_type: "idea",           to_doc_type: "concept_brief",    kind: "canon",     strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     // concept_brief → market_sheet, treatment
@@ -86,6 +111,30 @@ const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
     { from_doc_type: "feature_script", to_doc_type: "production_draft", kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     // production_draft → deck (advisory)
     { from_doc_type: "production_draft", to_doc_type: "deck",           kind: "advisory",  strength: "soft", invalidation_policy: "none",        revalidation_policy: "none" },
+
+    // Gap F+G: Production surface propagation — advisory signals from entity/scene data
+    // scene_graph → market_sheet: INT/EXT ratio, location count, time-of-day distribution
+    { from_doc_type: "scene_graph",              to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    // scene_graph → production_draft: shoot schedule complexity, night shoot ratio
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    // scene_graph → deck: key locations from scene_graph location list
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    // narrative_entities → market_sheet: cast size, unique characters, location count
+    { from_doc_type: "narrative_entities",         to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    // narrative_entities → deck: wardrobe items, set dressing, production design flags
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    // narrative_scene_entity_links → production_draft: cast scheduling (scene_count per character)
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+
+    // Phase 3: scene_enrichment — narrative enrichment for Phase 4 character agents
+    // scene_graph → scene_enrichment: scene content drives tension, emotional register, thematic weight
+    { from_doc_type: "scene_graph",                   to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    // narrative_scene_entity_links → scene_enrichment: character presence drives relationship context
+    { from_doc_type: "narrative_scene_entity_links",  to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    // narrative_entity_relations → scene_enrichment: relationship types feed relationship_context
+    { from_doc_type: "narrative_entity_relations",    to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    // beat_sheet → scene_enrichment: beat attribution drives narrative_beat field
+    { from_doc_type: "beat_sheet",                  to_doc_type: "scene_enrichment",  kind: "structure", strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
   ],
 
   series: [
@@ -101,6 +150,20 @@ const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
     { from_doc_type: "episode_beats",    to_doc_type: "episode_script",       kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "episode_script",   to_doc_type: "season_master_script", kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "season_master_script", to_doc_type: "production_draft", kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // Gap F+G: Production surface propagation — advisory signals
+    { from_doc_type: "scene_graph",              to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+
+    // Phase 3: scene_enrichment
+    { from_doc_type: "scene_graph",                   to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    { from_doc_type: "narrative_scene_entity_links",  to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    { from_doc_type: "narrative_entity_relations",    to_doc_type: "scene_enrichment",  kind: "canon",     strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+    { from_doc_type: "beat_sheet",                  to_doc_type: "scene_enrichment",  kind: "structure", strength: "soft", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
   ],
 
   vertical_drama: [
@@ -115,6 +178,14 @@ const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
     { from_doc_type: "season_arc",              to_doc_type: "episode_grid",            kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "episode_grid",            to_doc_type: "vertical_episode_beats",  kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "vertical_episode_beats",  to_doc_type: "season_script",           kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // Gap F+G: Production surface propagation — advisory signals
+    { from_doc_type: "scene_graph",              to_doc_type: "vertical_market_sheet", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "vertical_market_sheet", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
   ],
 
   documentary: [
@@ -123,6 +194,14 @@ const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
     { from_doc_type: "concept_brief",       to_doc_type: "documentary_outline", kind: "canon",     strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "market_sheet",        to_doc_type: "deck",                kind: "market",    strength: "soft", invalidation_policy: "review_only", revalidation_policy: "optional_review" },
     { from_doc_type: "documentary_outline", to_doc_type: "deck",                kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // Gap F+G: Production surface propagation — advisory signals
+    { from_doc_type: "scene_graph",              to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
   ],
 
   animation: [
@@ -133,11 +212,27 @@ const REGISTRY: Record<LaneKey, DependencyEdge[]> = {
     { from_doc_type: "character_bible",  to_doc_type: "beat_sheet",       kind: "canon",     strength: "soft", invalidation_policy: "review_only", revalidation_policy: "optional_review" },
     { from_doc_type: "character_bible",  to_doc_type: "feature_script",   kind: "canon",     strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "beat_sheet",       to_doc_type: "feature_script",   kind: "structure", strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // Gap F+G: Production surface propagation — advisory signals
+    { from_doc_type: "scene_graph",              to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
   ],
 
   short: [
     { from_doc_type: "idea",           to_doc_type: "concept_brief",    kind: "canon",     strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
     { from_doc_type: "concept_brief",  to_doc_type: "feature_script",   kind: "canon",     strength: "hard", invalidation_policy: "stale",       revalidation_policy: "must_reanalyze" },
+
+    // Gap F+G: Production surface propagation — advisory signals
+    { from_doc_type: "scene_graph",              to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "production_draft",   kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "scene_graph",              to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "market_sheet",      kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_entities",         to_doc_type: "deck",              kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
+    { from_doc_type: "narrative_scene_entity_links", to_doc_type: "production_draft", kind: "production", strength: "soft", invalidation_policy: "advisory",   revalidation_policy: "optional_review" },
   ],
 
   unspecified: [

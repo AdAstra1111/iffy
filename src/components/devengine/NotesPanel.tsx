@@ -123,6 +123,8 @@ interface NotesPanelProps {
   onClearOldNotes?: () => void;
   /** Called after a decision is successfully applied — parent should invalidate + refresh */
   onDecisionApplied?: () => void;
+  /** Called after a bundle fix is applied — parent should invalidate dev-engine cache */
+  onBundleApplied?: () => void;
   /** Called when a note is locally resolved/applied so parent can update counts */
   onNoteResolvedLocally?: (noteId: string) => void;
 }
@@ -452,8 +454,21 @@ function BundlesSection({ bundles, projectId, documentId, versionId, currentDocT
           plan_text: bundle.recommended_patch_plan,
         }),
       });
-      if (res.ok) { toast.success(`Bundle fix applied — new version created`); onBundleApplied?.(); }
-      else toast.error('Bundle fix failed');
+      let result: any = {};
+      try { result = await res.json(); } catch {}
+      // Check response body for structured errors (dev-engine-v2 may return HTTP 200 with ok:false)
+      if (res.ok && result && (result.ok === false || result.error)) {
+        const errMsg = result.stale_version
+          ? 'The selected version no longer exists. Please re-select the document and try again.'
+          : result.error || 'Bundle fix failed — please try again.';
+        toast.error(errMsg);
+      } else if (res.ok) {
+        toast.success(`Bundle fix applied — new version created`);
+        onBundleApplied?.();
+      } else {
+        const errMsg = result?.error || `Bundle fix failed (HTTP ${res.status})`;
+        toast.error(errMsg);
+      }
     } catch { toast.error('Bundle fix failed'); }
     finally { setApplying(null); }
   }
@@ -551,8 +566,20 @@ function DecisionSetsSection({ decisionSets, projectId, documentId, versionId, o
         }),
       });
       if (applyTokenRef.current !== token) return; // superseded by newer apply
-      if (res.ok) { toast.success('Decision applied — new version created'); onDecisionApplied?.(); }
-      else toast.error('Decision apply failed');
+      let result: any = {};
+      try { result = await res.json(); } catch {}
+      if (res.ok && result && (result.ok === false || result.error)) {
+        const errMsg = result.stale_version
+          ? 'The selected version no longer exists. Please re-select the document and try again.'
+          : result.error || 'Decision apply failed — please try again.';
+        toast.error(errMsg);
+      } else if (res.ok) {
+        toast.success('Decision applied — new version created');
+        onDecisionApplied?.();
+      } else {
+        const errMsg = result?.error || `Decision apply failed (HTTP ${res.status})`;
+        toast.error(errMsg);
+      }
     } catch { if (applyTokenRef.current === token) toast.error('Decision apply failed'); }
     finally { if (applyTokenRef.current === token) setApplying(null); }
   }
@@ -1070,7 +1097,7 @@ export function NotesPanel({
           {/* Bundles section */}
           {hasAnyBundles && (
             <BundlesSection bundles={bundles!} projectId={projectId} documentId={documentId} versionId={currentVersionId}
-              currentDocType={currentDocType} onBundleApplied={() => setStatusVersion(v => v + 1)} allNotes={allNotes} />
+              currentDocType={currentDocType} onBundleApplied={() => { onBundleApplied?.(); setStatusVersion(v => v + 1); }} allNotes={allNotes} />
           )}
 
           <GlobalDirectionsBar directions={globalDirections || []} />

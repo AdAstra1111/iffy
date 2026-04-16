@@ -13,6 +13,16 @@ const corsHeaders = {
 
 // ─── Production-type Blueprint Prompts ───
 function getBlueprintPrompt(productionType: string, project: any, conceptDocs: any[], calibration?: any) {
+
+function versionTs(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const da = String(d.getDate()).padStart(2, '0');
+  const h = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${da} ${h}:${mi}`;
+}
   const conceptContext = conceptDocs.map(d => `[${d.doc_type}]\n${d.content?.substring(0, 3000)}`).join("\n\n");
 
   let corpusBlock = "";
@@ -772,7 +782,7 @@ The episode should be self-contained but fit within the larger series arc.
         const { data: newScript } = await supabase.from("scripts").insert({
           project_id: projectId, created_by: user.id, owner_id: user.id,
           version: nextVersion, status: "BLUEPRINT", draft_number: 0,
-          version_label: `Engine Draft v${nextVersion}`,
+          version_label: `Engine Draft v${nextVersion} — ${versionTs()}`,
           is_current: true,
         }).select().single();
         sid = newScript?.id;
@@ -1124,7 +1134,7 @@ Do NOT generate architecture for the entire series. Keep it focused and compact.
           const { error: psErr } = await supabase.from("project_scripts").insert({
             project_id: projectId,
             user_id: user.id,
-            version_label: `${project.title || "Untitled"} - Draft ${newDraftNum} (Engine)`,
+            version_label: `${project.title || "Untitled"} - Draft ${newDraftNum} (Engine) — ${versionTs()}`,
             status: "current",
             file_path: docPath,
             notes: `Engine-generated draft ${newDraftNum}`,
@@ -1340,7 +1350,7 @@ Do NOT generate architecture for the entire series. Keep it focused and compact.
 
         await supabase.from("project_scripts").insert({
           project_id: projectId, user_id: user.id,
-          version_label: `${project.title || "Untitled"} - Draft ${newDraft} (${pass} rewrite, Engine)`,
+          version_label: `${project.title || "Untitled"} - Draft ${newDraft} (${pass} rewrite, Engine) — ${versionTs()}`,
           status: "current", file_path: docPath,
           notes: `Engine rewrite pass: ${pass}`,
         });
@@ -1891,7 +1901,7 @@ Do NOT generate architecture for the entire series. Keep it focused and compact.
 
       await supabase.from("project_scripts").insert({
         project_id: projectId, user_id: user.id,
-        version_label: `${project.title || "Untitled"} - Draft ${draftNum} (Engine)`,
+        version_label: `${project.title || "Untitled"} - Draft ${draftNum} (Engine) — ${versionTs()}`,
         status: "current", file_path: docPath,
         notes: `Imported from Script Engine draft ${draftNum}`,
       });

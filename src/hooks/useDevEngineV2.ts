@@ -363,6 +363,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     },
     onSuccess: (data) => {
       toast.success('Rewrite complete — new version created');
+      toast.info('Rebuilding bibles in background...', { id: 'propagation-bg' });
       if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       invalidateAll();
     },

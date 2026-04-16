@@ -2,15 +2,12 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-  || import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
+  || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-  throw new Error('Supabase environment not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY.');
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  throw new Error('Supabase environment not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
 }
-
-// Vercel proxy route — routes all /functions/v1/* calls through our Vercel proxy
-const PROXY_BASE = ''; // empty means same origin — we intercept below
 
 function createProxiedClient(url: string, key: string) {
   const client = createClient<Database>(url, key, {
@@ -61,4 +58,4 @@ function createProxiedClient(url: string, key: string) {
   return client;
 }
 
-export const supabase: SupabaseClient = createProxiedClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const supabase: SupabaseClient = createProxiedClient(SUPABASE_URL, SUPABASE_ANON_KEY);

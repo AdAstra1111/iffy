@@ -1341,9 +1341,14 @@ Do NOT summarize or compress any part of the script. Maintain the original lengt
         verification.warnings.push("Rewritten text is suspiciously short or empty");
       }
 
+      // Shrink guard: exempt idea/concept_brief — these are development prose docs where shrinking is
+      // expected and the 30% threshold fires incorrectly on short docs (e.g. 841-char idea doc).
+      const SHRINK_GUARD_EXEMPT = new Set(["idea", "concept_brief"]);
+      const bypassShrinkGuard = SHRINK_GUARD_EXEMPT.has(docType);
+
       const shrinkResult = computeScopedShrink(scriptText, rewrittenText, scopeResult.allowedScenes);
 
-      if (shrinkResult.shrinkFraction > SHRINK_GUARD_THRESHOLD) {
+      if (!bypassShrinkGuard && shrinkResult.shrinkFraction > SHRINK_GUARD_THRESHOLD) {
         const hasDeletions = enabledChanges.some((c: any) =>
           (c.type === 'structure' && /delet|remov/i.test(c.instructions)) ||
           /cut scene|remove scene/i.test(c.instructions)

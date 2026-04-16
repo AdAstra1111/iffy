@@ -76,7 +76,7 @@ import { emitTransition, TRANSITION_EVENTS } from "./transitionLedger.ts";
 
 // ── Change Source Types ──
 
-export type ChangeSourceKind = "canon_unit" | "locked_decision" | "doc_type_repair" | "unit_relation";
+export type ChangeSourceKind = "canon_unit" | "locked_decision" | "doc_type_repair" | "unit_relation" | "scene_graph";
 
 export interface ChangeSource {
   kind: ChangeSourceKind;
@@ -102,7 +102,7 @@ export interface AffectedDocument {
   /** Authoritative version bound for this document */
   authoritativeVersionId: string | null;
   /** How this document is affected */
-  impactKind: "direct_reference" | "transitive_dependency" | "decision_constraint";
+  impactKind: "direct_reference" | "transitive_dependency" | "decision_constraint" | "canon_propagation";
   /** Dependency edge that connects to this doc (if from doc-to-doc graph) */
   edge: DependencyEdge | null;
   /** Invalidation policy from the dependency registry */
@@ -111,6 +111,8 @@ export interface AffectedDocument {
   repairEligible: boolean;
   /** Reason if repair is blocked */
   blockReason: string | null;
+  /** Gap C: for narrative_scene_entity_links — IDs of specifically stale links (entity-staleness-engine result) */
+  staleLinkIds?: string[];
 }
 
 // ── Section Scope ──
@@ -242,6 +244,71 @@ export async function computeImpact(
 
         if (!repairEligible && blockReason) {
           result.blockedDocuments.push({ docType: affected.docType, reason: blockReason });
+        }
+      }
+    }
+
+    // ── Step 3b: Gap C — verify narrative link staleness before repair planning ──
+    // For narrative_scene_entity_links: check if any links are actually stale.
+    // entity-staleness-engine compares stored inputs_used.parent_plaintext vs current content hash.
+    // Non-stale links: no re-extraction needed → block repair.
+    // Stale links: re-extraction needed → proceed with repair plan.
+    {
+      const nselEntry = result.affectedDocuments.find(a => a.docType === "narrative_scene_entity_links");
+      if (nselEntry) {
+        try {
+          const stalenessUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/entity-staleness-engine`;
+          const stalenessRes = await fetch(stalenessUrl, {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              projectId: changeSource.projectId,
+              sceneIds: changeSource.changedSceneIds,  // undefined = check all if not specified
+            }),
+          });
+
+          if (stalenessRes.ok) {
+            const stalenessData = await stalenessRes.json();
+            const staleLinks = (stalenessData.results || []).filter((r: any) => r.is_stale) as any[];
+
+            if (staleLinks.length === 0) {
+              // All links non-stale — no re-extraction needed
+              nselEntry.repairEligible = false;
+              nselEntry.blockReason = "gap_c_all_links_current";
+              result.blockedDocuments.push({
+                docType: "narrative_scene_entity_links",
+                reason: "gap_c_all_links_current",
+              });
+              // Remove from affected since no repair needed
+              result.affectedDocuments = result.affectedDocuments.filter(a => a.docType !== "narrative_scene_entity_links");
+            } else {
+              // Some links are stale — proceed with repair for only those links
+              nselEntry.staleLinkIds = staleLinks.map(l => l.entity_id);
+              nselEntry.blockReason = null;
+              console.log(`[impact-engine] Gap C staleness: ${staleLinks.length}/${stalenessData.totalChecked} links stale for narrative_scene_entity_links`);
+            }
+          } else {
+            // Staleness check failed — fail closed: block repair to avoid stale re-extraction
+            const errText = await stalenessRes.text();
+            console.error(`[impact-engine] Gap C staleness check failed: ${errText}`);
+            nselEntry.repairEligible = false;
+            nselEntry.blockReason = "gap_c_staleness_check_failed";
+            result.blockedDocuments.push({
+              docType: "narrative_scene_entity_links",
+              reason: "gap_c_staleness_check_failed",
+            });
+          }
+        } catch (stalenessErr) {
+          console.error(`[impact-engine] Gap C staleness check exception: ${(stalenessErr as Error).message}`);
+          nselEntry.repairEligible = false;
+          nselEntry.blockReason = "gap_c_staleness_check_failed";
+          result.blockedDocuments.push({
+            docType: "narrative_scene_entity_links",
+            reason: "gap_c_staleness_check_failed",
+          });
         }
       }
     }
@@ -432,6 +499,23 @@ async function resolveAffectedDocTypes(
             });
           }
         }
+      }
+      break;
+    }
+
+    case "scene_graph": {
+      // Scene content change: use dependency registry to find downstream doc types.
+      // Gap C: for narrative_scene_entity_links, staleness is verified by entity-staleness-engine.
+      // For now, include all registry downstream targets — callers will use entity-staleness-engine
+      // to filter to specifically stale links before triggering re-extraction.
+      const plan = getInvalidationPlan(changeSource.lane, "scene_graph");
+      for (const entry of plan.entries) {
+        affected.push({
+          docType: entry.doc_type,
+          impactKind: "canon_propagation",
+          edge: entry.edge,
+          invalidationPolicy: entry.invalidation_policy,
+        });
       }
       break;
     }

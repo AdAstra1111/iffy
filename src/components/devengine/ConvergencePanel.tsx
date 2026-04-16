@@ -213,9 +213,26 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
               <p className="text-[9px] font-bold text-destructive uppercase tracking-wider">
                 Must Fix · {tieredNotes.blockers.length} Blocker{tieredNotes.blockers.length !== 1 ? 's' : ''}
               </p>
+              {tieredNotes.blockers.some((n: any) => n.estimated_gp_impact) && (
+                <span className="ml-auto text-[9px] text-destructive/60 font-mono">
+                  +{tieredNotes.blockers.reduce((s: number, n: any) => s + (n.estimated_gp_impact || 0), 0).toFixed(2)} GP
+                </span>
+              )}
             </div>
-            {tieredNotes.blockers.map((b: any, i: number) => (
-              <p key={i} className="text-[9px] text-destructive/80 pl-4">• {b.description || b}</p>
+            {tieredNotes.blockers.map((n: any, i: number) => (
+              <div key={i} className="pl-4 space-y-0.5">
+                {n.scene_prescription ? (
+                  <p className="text-[9px] text-destructive/90 leading-tight">{n.scene_prescription}</p>
+                ) : (
+                  <p className="text-[9px] text-destructive/80">• {n.description || n}</p>
+                )}
+                {n.estimated_gp_impact && (
+                  <span className="text-[8px] text-destructive/50 font-mono ml-1">+{n.estimated_gp_impact.toFixed(2)} GP</span>
+                )}
+                {n.scene_prescription && n.description && (
+                  <p className="text-[8px] text-destructive/30 italic">Fallback: {n.description}</p>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -228,9 +245,26 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
               <p className="text-[9px] font-bold text-amber-400 uppercase tracking-wider">
                 Strategic · {tieredNotes.high.length} Note{tieredNotes.high.length !== 1 ? 's' : ''}
               </p>
+              {tieredNotes.high.some((n: any) => n.estimated_gp_impact) && (
+                <span className="ml-auto text-[9px] text-amber-400/60 font-mono">
+                  +{tieredNotes.high.reduce((s: number, n: any) => s + (n.estimated_gp_impact || 0), 0).toFixed(2)} GP
+                </span>
+              )}
             </div>
             {tieredNotes.high.map((n: any, i: number) => (
-              <p key={i} className="text-[9px] text-amber-400/80 pl-4">• {n.description || n}</p>
+              <div key={i} className="pl-4 space-y-0.5">
+                {n.scene_prescription ? (
+                  <p className="text-[9px] text-amber-300/90 leading-tight">{n.scene_prescription}</p>
+                ) : (
+                  <p className="text-[9px] text-amber-400/80">• {n.description || n}</p>
+                )}
+                {n.estimated_gp_impact && (
+                  <span className="text-[8px] text-amber-400/50 font-mono ml-1">+{n.estimated_gp_impact.toFixed(2)} GP</span>
+                )}
+                {n.scene_prescription && n.description && (
+                  <p className="text-[8px] text-amber-600/40 italic">Fallback: {n.description}</p>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -243,9 +277,23 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
                 Optional Polish · {tieredNotes.polish.length} Note{tieredNotes.polish.length !== 1 ? 's' : ''}
               </p>
+              {tieredNotes.polish.some((n: any) => n.estimated_gp_impact) && (
+                <span className="ml-auto text-[9px] text-muted-foreground/60 font-mono">
+                  +{tieredNotes.polish.reduce((s: number, n: any) => s + (n.estimated_gp_impact || 0), 0).toFixed(2)} GP
+                </span>
+              )}
             </div>
             {tieredNotes.polish.map((n: any, i: number) => (
-              <p key={i} className="text-[9px] text-muted-foreground/80 pl-4">• {n.description || n}</p>
+              <div key={i} className="pl-4 space-y-0.5">
+                {n.scene_prescription ? (
+                  <p className="text-[9px] text-muted-foreground/80 leading-tight">{n.scene_prescription}</p>
+                ) : (
+                  <p className="text-[9px] text-muted-foreground/80">• {n.description || n}</p>
+                )}
+                {n.estimated_gp_impact && (
+                  <span className="text-[8px] text-muted-foreground/50 font-mono ml-1">+{n.estimated_gp_impact.toFixed(2)} GP</span>
+                )}
+              </div>
             ))}
           </div>
         )}
