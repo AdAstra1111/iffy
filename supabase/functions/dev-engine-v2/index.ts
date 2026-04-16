@@ -6257,6 +6257,9 @@ Return ONLY valid JSON:
     {
       "id": "stable_key", "category": "structural|character|escalation|lane|packaging|risk|pacing|hook|cliffhanger",
       "description": "...", "why_it_matters": "...", "severity": "blocker",
+      "apply_timing": "now|next_doc|later",
+      "target_deliverable_type": "deliverable type if next_doc or later, null if now",
+      "defer_reason": "why deferred, if not now",
       "decisions": [
         {
           "option_id": "B1-A",
@@ -6272,6 +6275,9 @@ Return ONLY valid JSON:
   "high_impact_notes": [
     {
       "id": "stable_key", "category": "...", "description": "...", "why_it_matters": "...", "severity": "high",
+      "apply_timing": "now|next_doc|later",
+      "target_deliverable_type": "deliverable type if next_doc or later, null if now",
+      "defer_reason": "why deferred, if not now",
       "decisions": [
         {
           "option_id": "H1-A",
@@ -6285,7 +6291,7 @@ Return ONLY valid JSON:
     }
   ],
   "polish_notes": [
-    {"id": "stable_key", "category": "...", "description": "...", "why_it_matters": "...", "severity": "polish"}
+    {"id": "stable_key", "category": "...", "description": "...", "why_it_matters": "...", "severity": "polish", "apply_timing": "now|next_doc|later", "target_deliverable_type": null}
   ],
   "global_directions": [
     {"id": "G1", "direction": "overarching creative direction", "why": "rationale"}
@@ -6340,8 +6346,14 @@ ${(() => {
 - Evaluate premise strength, theme clarity, genre positioning, tonal consistency, and logline impact.
 - Valid note categories: "premise_strength|theme_clarity|genre_positioning|tonal_consistency|logline_impact|hook_strength"`,
     idea: `DOCUMENT TYPE: IDEA
-- Evaluate concept originality, core hook, commercial potential, and development viability.
-- Valid note categories: "concept_originality|hook_strength|commercial_potential|development_clarity"`,
+- An idea is a logline + premise engine + genre declaration. It is NOT a concept brief or treatment.
+- Valid note categories: "concept_originality|hook_strength|commercial_potential|development_clarity|premise_engine|antagonist_force"
+- apply_timing="now" ONLY for: premise engine completely absent, antagonist/opposition completely absent, genre directly contradicted by premise, series format mismatch.
+- apply_timing="next_doc" + target_deliverable_type="concept_brief" for: escalation path detail, protagonist backstory, relationship dynamics, theme integration, market hook sharpening.
+- apply_timing="next_doc" + target_deliverable_type="character_bible" for: character depth, arc detail, voice.
+- apply_timing="next_doc" + target_deliverable_type="market_sheet" for: commercial positioning, comps, revenue model.
+- apply_timing="next_doc" + target_deliverable_type="beat_sheet" for: structural detail, act breaks, turning points.
+- Do NOT generate more than 2 now-blockers for an idea that has a protagonist, an opposition force, and a working premise engine. If those three exist, it should have ZERO now-blockers.`,
   };
   return docTypeNoteScopes[deliverableType as string] || `DOCUMENT TYPE: ${(deliverableType || "unknown").toUpperCase()}
 - Evaluate relative to the document's stated purpose. Use appropriate categories for this document type.
@@ -6405,10 +6417,16 @@ ${(() => {
       }
 
       // Backward compat: build actionable_notes from tiered notes
+      // Default apply_timing to "now" if missing (backward compat), then normalise
+      const normaliseNotesTiming = (notes: any[], severity: string) => notes.map((n: any) => {
+        if (!n.apply_timing) n.apply_timing = "now";
+        if (n.apply_timing !== "now" && n.apply_timing !== "next_doc" && n.apply_timing !== "later") n.apply_timing = "now";
+        return n;
+      });
       const allTieredNotes = [
-        ...(parsed.blocking_issues || []).map((n: any) => ({ ...n, impact: "high", convergence_lift: 10, severity: "blocker" })),
-        ...(parsed.high_impact_notes || []).map((n: any) => ({ ...n, impact: "high", convergence_lift: 5, severity: "high" })),
-        ...(parsed.polish_notes || []).map((n: any) => ({ ...n, impact: "low", convergence_lift: 1, severity: "polish" })),
+        ...normaliseNotesTiming(parsed.blocking_issues || [], "blocker").map((n: any) => ({ ...n, impact: "high", convergence_lift: 10, severity: "blocker" })),
+        ...normaliseNotesTiming(parsed.high_impact_notes || [], "high").map((n: any) => ({ ...n, impact: "high", convergence_lift: 5, severity: "high" })),
+        ...normaliseNotesTiming(parsed.polish_notes || [], "polish").map((n: any) => ({ ...n, impact: "low", convergence_lift: 1, severity: "polish" })),
       ];
       parsed.actionable_notes = allTieredNotes.map(n => ({
         category: n.category,
@@ -6479,6 +6497,8 @@ ${(() => {
             description: n.description,
             why_it_matters: n.why_it_matters,
             note_source: noteSource,
+            apply_timing: n.apply_timing || "now",
+            target_deliverable_type: n.target_deliverable_type || null,
           };
         });
       if (noteInserts.length > 0) {
