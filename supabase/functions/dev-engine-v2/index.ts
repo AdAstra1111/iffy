@@ -7699,6 +7699,25 @@ MATERIAL TO REWRITE:\n${fullText}`;
         schema_version: SCHEMA_VERSION,
       }).select().single();
 
+      // ── Mark approved notes as resolved immediately after rewrite ──
+      // Without this, approved notes are never marked resolved in development_notes,
+      // so the next notes run sees them as still-open and re-raises them indefinitely.
+      if (approvedNotes && approvedNotes.length > 0) {
+        const approvedNoteIds = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+        if (approvedNoteIds.length > 0) {
+          try {
+            await supabase.from("development_notes")
+              .update({ resolved: true, resolved_in_version: newVersion.id })
+              .eq("document_id", documentId)
+              .eq("resolved", false)
+              .in("note_key", approvedNoteIds);
+            console.log(`[dev-engine-v2] rewrite: marked ${approvedNoteIds.length} approved notes resolved`, approvedNoteIds);
+          } catch (resolveErr: any) {
+            console.warn("[dev-engine-v2] rewrite: mark-resolved failed (non-fatal):", resolveErr?.message);
+          }
+        }
+      }
+
       return new Response(JSON.stringify({ run, rewrite: { ...parsed, rewritten_text: `[${rewrittenText.length} chars — stored in version]` }, newVersion }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
