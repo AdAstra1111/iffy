@@ -851,7 +851,7 @@ export default function ProjectDevelopmentEngine() {
   // Carried-forward notes (from earlier deliverables targeting current doc)
   const carriedNotes = useMemo(() => {
     const src = latestNotes || latestAnalysis;
-    return src?.carried_deferred_notes || [];
+    return src?.carried_forward || src?.carried_deferred_notes || [];
   }, [latestNotes, latestAnalysis]);
 
   // Track locally resolved/applied notes to filter from counts
@@ -2525,6 +2525,7 @@ export default function ProjectDevelopmentEngine() {
                     dismissedDeferredNotes={deferred.dismissedNotes}
                     onRepinDeferred={(id) => deferred.repinNote.mutate(id)}
                     carriedNotes={carriedNotes}
+                    carriedForwardSummary={latestNotes?.carried_forward || []}
                     currentDocType={selectedDoc?.doc_type}
                     currentVersionId={selectedVersionId || undefined}
                     bundles={latestNotes?.bundles || latestAnalysis?.bundles || []}

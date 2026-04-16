@@ -112,6 +112,7 @@ interface NotesPanelProps {
   onDismissDeferred?: (noteId: string) => void;
   onRepinDeferred?: (noteId: string) => void;
   carriedNotes?: any[];
+  carriedForwardSummary?: Array<{ target: string; count: number; summary: string }>;
   currentDocType?: string;
   currentVersionId?: string;
   onResolveCarriedNote?: (noteId: string, action: 'mark_resolved' | 'dismiss' | 'ai_patch' | 'apply_patch', extra?: any, noteSnapshot?: any) => Promise<any>;
@@ -812,7 +813,7 @@ export function NotesPanel({
   resolutionSummary, stabilityStatus, globalDirections,
   hideApplyButton, onDecisionsChange, onCustomDirectionsChange, externalDecisions,
   deferredNotes, persistedDeferredNotes, dismissedDeferredNotes, onPinDeferred, onUnpinDeferred, onDismissDeferred, onRepinDeferred,
-  carriedNotes, currentDocType, currentVersionId, onResolveCarriedNote,
+  carriedNotes, carriedForwardSummary, currentDocType, currentVersionId, onResolveCarriedNote,
   bundles, decisionSets, mutedByDecision, projectId, documentId, onDecisionApplied,
   onClearOldNotes, onNoteResolvedLocally,
 }: NotesPanelProps) {
@@ -1021,7 +1022,33 @@ export function NotesPanel({
   const filteredHigh = applyMutingAndFilter(tieredNotes.high);
   const filteredPolish = applyMutingAndFilter(tieredNotes.polish);
 
-  if (allNotes.length === 0 && visibleCarriedNotes.length === 0) return null;
+  // No now-notes but has carried_forward — show the "nothing left here" state
+  if (allNotes.length === 0 && visibleCarriedNotes.length === 0) {
+    if (carriedForwardSummary && carriedForwardSummary.length > 0) {
+      return (
+        <Card className="border-emerald-500/20 bg-emerald-500/5">
+          <CardHeader className="py-2 px-3">
+            <CardTitle className="text-xs flex items-center gap-1.5 text-emerald-400">
+              <Zap className="h-3 w-3" />This document is complete
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="py-2 px-3">
+            <p className="text-[10px] text-muted-foreground mb-2">No more notes to apply here. The following have been carried forward to the right documents:</p>
+            <div className="space-y-1">
+              {carriedForwardSummary.map((cf) => (
+                <div key={cf.target} className="flex items-start gap-2 text-[10px]">
+                  <span className="text-muted-foreground shrink-0">{cf.count} →</span>
+                  <span className="font-medium capitalize text-foreground/80">{cf.target.replace(/_/g, ' ')}</span>
+                  <span className="text-muted-foreground truncate">{cf.summary}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      );
+    }
+    return null;
+  }
 
   const blockerCount = filteredBlockers.length;
   const highCount = filteredHigh.length;

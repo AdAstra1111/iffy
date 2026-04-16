@@ -6239,6 +6239,121 @@ ${docTextForScoring}`;
         antiRepeatRule += `\nPREVIOUS ROUND HAD ZERO BLOCKERS. Do NOT invent new blockers unless drift/regression occurred. Only generate high/polish notes.`;
       }
 
+      // ── Universal doc scope + deferral map ──
+      // Defines what each doc TYPE owns (can fix now) and what it must defer downstream.
+      // This is the single source of truth for note routing across all ladders.
+      const DOC_SCOPE: Record<string, { owns: string; defers: { target: string; covers: string }[] }> = {
+        idea: {
+          owns: "premise engine viability, antagonist/opposition presence, genre declaration, format match for series",
+          defers: [
+            { target: "concept_brief", covers: "premise depth, logline sharpening, theme, hook clarity, tonal consistency, escalation path detail, protagonist backstory, relationship dynamics" },
+            { target: "character_bible", covers: "character arc detail, character voice, relationship specifics, backstory depth" },
+            { target: "market_sheet", covers: "commercial positioning, comp titles, audience targeting, revenue model, platform strategy" },
+          ]
+        },
+        concept_brief: {
+          owns: "premise depth, logline impact, theme clarity, genre positioning, tonal consistency, hook strength, escalation logic at concept level",
+          defers: [
+            { target: "character_bible", covers: "character arc design, voice distinctiveness, relationship dynamics, backstory specifics" },
+            { target: "beat_sheet", covers: "structural beats, act breaks, turning points, pacing architecture" },
+            { target: "treatment", covers: "prose quality, scene texture, atmosphere, present-tense narrative flow" },
+            { target: "market_sheet", covers: "comp titles, audience demographics, revenue model, distribution strategy" },
+          ]
+        },
+        treatment: {
+          owns: "prose narrative quality, scene texture, atmosphere, pacing, present-tense flow, character interiority at scene level",
+          defers: [
+            { target: "character_bible", covers: "character arc design, backstory depth, relationship dynamics beyond what's in the treatment scenes" },
+            { target: "beat_sheet", covers: "formal act structure, beat-by-beat architecture, structural completeness" },
+            { target: "market_sheet", covers: "commercial positioning, comps, revenue model" },
+            { target: "feature_script", covers: "dialogue craft, scene-level dramatic action, visual storytelling" },
+          ]
+        },
+        story_outline: {
+          owns: "scene-by-scene structural plan, act balance, page allocation, narrative throughline, sequence logic",
+          defers: [
+            { target: "character_bible", covers: "character voice, arc depth beyond outline-level" },
+            { target: "feature_script", covers: "dialogue, scene dynamics, visual storytelling, prose" },
+          ]
+        },
+        character_bible: {
+          owns: "character depth, arc design, relationship dynamics, thematic integration, voice distinctiveness, pressure patterns",
+          defers: [
+            { target: "beat_sheet", covers: "structural beat execution, act architecture" },
+            { target: "feature_script", covers: "dialogue craft, scene-level character expression" },
+          ]
+        },
+        beat_sheet: {
+          owns: "beat progression, dramatic escalation, turning points, structural completeness, act architecture, pacing blueprint",
+          defers: [
+            { target: "feature_script", covers: "dialogue quality, scene dynamics, visual storytelling, prose" },
+            { target: "production_draft", covers: "production feasibility, department notes" },
+          ]
+        },
+        feature_script: {
+          owns: "dialogue craft, scene dynamics, pacing, character voice, visual storytelling, structural integrity at scene level",
+          defers: [
+            { target: "production_draft", covers: "production notes, department feasibility, scheduling implications" },
+          ]
+        },
+        episode_script: {
+          owns: "dialogue craft, scene dynamics, pacing, character voice, visual storytelling",
+          defers: [
+            { target: "production_draft", covers: "production notes, department feasibility" },
+          ]
+        },
+        market_sheet: {
+          owns: "audience targeting, comp titles, market gap, platform strategy, revenue model, budget alignment",
+          defers: []
+        },
+        season_arc: {
+          owns: "arc architecture, escalation logic, turning-point placement, thematic spine, character arc integration across the season",
+          defers: [
+            { target: "episode_grid", covers: "episode-level specifics, hook/cliffhanger design, individual episode beats" },
+            { target: "character_bible", covers: "character voice, backstory depth" },
+          ]
+        },
+        episode_grid: {
+          owns: "episode-level hook quality, cliffhanger design, escalation curve across episodes, arc position accuracy",
+          defers: [
+            { target: "vertical_episode_beats", covers: "within-episode beat detail, moment-by-moment construction" },
+          ]
+        },
+        vertical_episode_beats: {
+          owns: "beat specificity within episodes, hook-first mandate, cliffhanger quality, retention mechanics",
+          defers: [
+            { target: "season_script", covers: "dialogue, scene dynamics, prose" },
+          ]
+        },
+      };
+
+      const scope = DOC_SCOPE[deliverableType as string];
+      const scopeBlock = scope
+        ? `DOC SCOPE — WHAT THIS DOCUMENT OWNS:\n${scope.owns}\n\nDEFERRAL RULES — do NOT raise notes for these in this doc, set apply_timing accordingly:\n${scope.defers.map(d => `- apply_timing="next_doc", target_deliverable_type="${d.target}": ${d.covers}`).join("\n")}\n${scope.defers.length === 0 ? "- This is a terminal document — no deferral. All notes are now." : ""}`
+        : `DOC SCOPE: Evaluate relative to the document's stated purpose. Use apply_timing="now" only for issues resolvable in this document.`;
+
+      // ── Load upstream deferred notes (carried forward from previous docs) ──
+      // When a doc opens, check if upstream docs in the same project deferred notes to this type.
+      // Inject as context so this doc's notes engine knows what's expected and doesn't re-raise
+      // them as surprises — they're planned work, not new findings.
+      let upstreamDeferredBlock = "";
+      try {
+        const { data: upstreamDeferred } = await supabase
+          .from("development_notes")
+          .select("note_key, description, severity, target_deliverable_type, why_it_matters")
+          .eq("project_id", projectId)
+          .eq("target_deliverable_type", deliverableType)
+          .eq("resolved", false);
+        if (upstreamDeferred && upstreamDeferred.length > 0) {
+          const deferredLines = upstreamDeferred.map((n: any) =>
+            `- [${n.severity}] ${n.note_key}: ${n.description}`
+          ).join("\n");
+          upstreamDeferredBlock = `\n\nNOTES CARRIED FORWARD FROM UPSTREAM DOCUMENTS (these were deferred here by earlier stages — they are EXPECTED work for this document, not new findings):\n${deferredLines}\nTreat these as pre-known issues. If this document has addressed them, mark resolved. If not, raise them as now-blockers with the same note_key.`;
+        }
+      } catch (e) {
+        console.warn("[dev-engine-v2] upstream deferred notes load failed (non-fatal):", e);
+      }
+
       const notesSystem = `You are IFFY. Generate structured development notes in three tiers, with DECISION OPTIONS for blockers and high-impact notes.
 
 PRODUCTION TYPE: ${notesProductionType}
@@ -6250,6 +6365,8 @@ EDITORIAL SCOPE LOCK: You are operating in EDITORIAL MODE for a ${notesEffective
 - Score and note relative to the declared format and its ladder.
 - Valid document types for this format: ${notesLadderStr}
 - Do NOT reference document types outside this ladder.
+
+${scopeBlock}
 Return ONLY valid JSON:
 {
   "protect": ["non-negotiable items to preserve"],
@@ -6296,8 +6413,18 @@ Return ONLY valid JSON:
   "global_directions": [
     {"id": "G1", "direction": "overarching creative direction", "why": "rationale"}
   ],
-  "rewrite_plan": ["what will change in next rewrite — max 5 items"]
+  "rewrite_plan": ["what will change in next rewrite — max 5 items"],
+  "carried_forward": [
+    {"target": "concept_brief", "count": 2, "summary": "Protagonist backstory depth, escalation path specifics"},
+    {"target": "character_bible", "count": 1, "summary": "Character arc design for secondary cast"}
+  ]
 }
+
+carried_forward RULES:
+- List every doc type that has deferred notes, with a count and one-sentence summary of what's being deferred.
+- Only include targets that actually have deferred notes from this run.
+- If nothing is deferred, return carried_forward as an empty array.
+- This is shown to the user as: "X notes carried forward to [doc]" — so make the summary useful and specific.
 
 DECISION RULES:
 - Every blocker MUST have exactly 2-3 decisions (resolution options). Each option represents a different creative strategy.
@@ -6406,7 +6533,7 @@ ${(() => {
       // ── NEC Guardrail injection for notes ──
       const notesNecBlock = await loadNECGuardrailBlock(supabase, projectId);
 
-      const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
+      const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
       const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
       const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
       if (!parsed) {
@@ -6428,6 +6555,30 @@ ${(() => {
         ...normaliseNotesTiming(parsed.high_impact_notes || [], "high").map((n: any) => ({ ...n, impact: "high", convergence_lift: 5, severity: "high" })),
         ...normaliseNotesTiming(parsed.polish_notes || [], "polish").map((n: any) => ({ ...n, impact: "low", convergence_lift: 1, severity: "polish" })),
       ];
+      // ── Compute carried_forward authoritatively from actual note timing ──
+      // Group all next_doc/later notes by target and compute summary.
+      // This overrides/supplements whatever the LLM returned in carried_forward.
+      const deferredByTarget = new Map<string, any[]>();
+      for (const note of allTieredNotes) {
+        if (note.apply_timing === "next_doc" || note.apply_timing === "later") {
+          const target = note.target_deliverable_type || "unspecified";
+          if (!deferredByTarget.has(target)) deferredByTarget.set(target, []);
+          deferredByTarget.get(target)!.push(note);
+        }
+      }
+      const carriedForward = Array.from(deferredByTarget.entries()).map(([target, notes]) => ({
+        target,
+        count: notes.length,
+        summary: notes.map((n: any) => n.description?.split(".")[0] || n.id).slice(0, 3).join("; "),
+        note_keys: notes.map((n: any) => n.id).filter(Boolean),
+      }));
+      parsed.carried_forward = carriedForward;
+
+      // now_notes: only notes with apply_timing="now" (what user should actually apply)
+      const nowNotes = allTieredNotes.filter(n => n.apply_timing === "now");
+      parsed.now_notes_count = nowNotes.length;
+      parsed.has_now_notes = nowNotes.length > 0;
+
       parsed.actionable_notes = allTieredNotes.map(n => ({
         category: n.category,
         note: n.description,
@@ -6436,6 +6587,8 @@ ${(() => {
         severity: n.severity,
         id: n.id,
         why_it_matters: n.why_it_matters,
+        apply_timing: n.apply_timing,
+        target_deliverable_type: n.target_deliverable_type || null,
       }));
       parsed.prioritized_moves = parsed.actionable_notes;
 
