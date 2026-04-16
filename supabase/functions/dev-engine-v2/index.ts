@@ -5411,7 +5411,7 @@ Format: ${rq.format}.${episodeLengthBlock}`;
         story_outline: ["beat_sheet", "treatment", "concept_brief"],
         character_bible: ["beat_sheet", "treatment", "concept_brief"],
       };
-      const crossRungTypes = CROSS_RUNG_TARGETS[docType];
+      const crossRungTypes = CROSS_RUNG_TARGETS[deliverableType];
       if (crossRungTypes && !(body.includeDocumentIds && body.includeDocumentIds.length > 0)) {
         try {
           const { data: crossDocs } = await supabase
@@ -5424,7 +5424,7 @@ Format: ${rq.format}.${episodeLengthBlock}`;
             const crossPack = await loadSupportingDocPack(supabase, projectId, crossIds, documentId);
             if (crossPack) {
               crossRungCanonBlock = `\n\n=== CANONICAL REFERENCE (LOCKED UPSTREAM DOCS — DO NOT CONTRADICT) ===\nThe following documents sit below this deliverable in the development ladder and are treated as LOCKED CANON for scoring purposes. When evaluating CI criterion CI-4 (Structural Integrity) and GP criterion GP-4 (Development Viability), assess whether this document is CONSISTENT WITH and BUILDING ON these canonical references. Penalise inconsistencies — notes that fix surface quality but break cross-rung consistency should be flagged as HIGH_IMPACT.\n${crossPack}\n=== END CANONICAL REFERENCE ===`;
-              console.log(`[dev-engine-v2] cross-rung-canonical injected { docType: "${docType}", sources: ${JSON.stringify(crossDocs.map((d: any) => d.doc_type))} }`);
+              console.log(`[dev-engine-v2] cross-rung-canonical injected { docType: "${deliverableType}", sources: ${JSON.stringify(crossDocs.map((d: any) => d.doc_type))} }`);
             }
           }
         } catch (e: any) {
