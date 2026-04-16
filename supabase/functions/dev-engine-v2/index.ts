@@ -725,7 +725,7 @@ const corsHeaders = {
 
 const PRO_MODEL = "google/gemini-2.5-pro";
 const FAST_MODEL = "google/gemini-2.5-flash";
-const ANALYZE_MODEL = "openai/o4-mini"; // deterministic — for scoring/analysis only
+const ANALYZE_MODEL = "openai/gpt-4.1-mini"; // deterministic at temp=0+seed — reasoning models (o4-mini) ignore both
 const BALANCED_MODEL = "google/gemini-2.5-flash";
 
 const SCHEMA_VERSION = "v3";
