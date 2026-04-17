@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+
 import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -324,8 +324,7 @@ export default function ProjectDevelopmentEngine() {
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
-  const [pendingRewriteWithBlockers, setPendingRewriteWithBlockers] = useState(false);
-  const [pendingRewriteArgs, setPendingRewriteArgs] = useState<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
+
   const lastPromotionGateVersionRef = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
@@ -1154,9 +1153,10 @@ export default function ProjectDevelopmentEngine() {
   const handleRewriteWithBlockerCheck = useCallback((decisions?: Record<string, string>, globalDirections?: any[]) => {
     const blockerCount = tieredNotes.blockers.length;
     if (blockerCount > 0) {
-      setPendingRewriteWithBlockers(true);
-      setPendingRewriteArgs({ decisions, globalDirections });
-      return;
+      const proceed = window.confirm(
+        `You have ${blockerCount} open blocker${blockerCount !== 1 ? 's' : ''} on this document.\n\nA generic rewrite will NOT resolve them — they will remain open after the rewrite.\n\nUse Apply Fix in the Notes panel to resolve specific blockers.\n\nRewrite anyway?`
+      );
+      if (!proceed) return;
     }
     handleRewrite(decisions, globalDirections);
   }, [tieredNotes.blockers.length, handleRewrite]);
@@ -3284,33 +3284,7 @@ export default function ProjectDevelopmentEngine() {
         }}
       />
 
-      {/* Blocker warning dialog on Rewrite */}
-      {pendingRewriteWithBlockers && (
-        <AlertDialog open={pendingRewriteWithBlockers} onOpenChange={setPendingRewriteWithBlockers}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Open blockers will not be resolved</AlertDialogTitle>
-              <AlertDialogDescription>
-                You have {tieredNotes.blockers.length} open blocker{tieredNotes.blockers.length !== 1 ? 's' : ''} on this document.
-                A generic rewrite will not resolve them — they will remain open after the rewrite.
-                Use <strong>Apply Fix</strong> in the Notes panel to resolve specific blockers.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel onClick={() => { setPendingRewriteWithBlockers(false); setPendingRewriteArgs(null); }}>
-                Cancel — Go to Notes
-              </AlertDialogCancel>
-              <AlertDialogAction onClick={() => {
-                setPendingRewriteWithBlockers(false);
-                handleRewrite(pendingRewriteArgs?.decisions, pendingRewriteArgs?.globalDirections);
-                setPendingRewriteArgs(null);
-              }}>
-                Rewrite Anyway
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
+
 
     </div>
     </>
