@@ -21,10 +21,23 @@ export default defineConfig(({ mode }) => ({
     },
   },
   define: {
+    'import.meta.env.VITE_BUILD_TIME': JSON.stringify(new Date().toISOString()),
     __COMMIT_HASH__: JSON.stringify(commitHash),
     __BUILD_TIME__: JSON.stringify(buildTime),
   },
-  plugins: [react()].filter(Boolean),
+  plugins: [
+    react(),
+    // Cache-bust index.html so browsers always load fresh entry point
+    {
+      name: 'cache-bust-index',
+      transformIndexHtml(html) {
+        return html.replace(
+          '<script type="module" src="/src/main.tsx"></script>',
+          `<script type="module" src="/src/main.tsx?v=${Date.now()}"></script>`
+        );
+      },
+    },
+  ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
