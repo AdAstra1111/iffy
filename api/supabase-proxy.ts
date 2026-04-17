@@ -76,6 +76,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const pathParts = (req.query.path as string | string[]) || '';
   const pathStr = Array.isArray(pathParts) ? pathParts.join('/') : pathParts;
   
+  // DEBUG
+  console.log('[supabase-proxy] pathStr:', pathStr, 'pathParts:', JSON.stringify(req.query.path));
+  
   if (pathStr === 'reverse-engineer-status' || pathStr.startsWith('functions/v1/reverse-engineer-status')) {
     try {
       const body = req.body ?? {};
