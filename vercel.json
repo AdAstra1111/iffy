@@ -12,15 +12,11 @@
     "api/reverse-engineer-status-proxy.ts": {
       "maxDuration": 300
     },
-    "api/re-status.ts": {
+    "api/re_status.ts": {
       "maxDuration": 300
     }
   },
   "rewrites": [
-    {
-      "source": "/api/supabase-proxy/reverse-engineer-status",
-      "destination": "/api/re-status"
-    },
     {
       "source": "/api/llm",
       "destination": "/api/llm"
