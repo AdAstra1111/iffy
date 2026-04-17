@@ -267,7 +267,6 @@ export function VehicleAtomGrid({
   ).length;
   const failedCount = atoms.filter((a) => a.generation_status === 'failed').length;
   const totalCount = atoms.length;
-  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const pendingCount = atoms.filter(
     (a) =>
       a.generation_status === 'pending' ||
@@ -298,7 +297,7 @@ export function VehicleAtomGrid({
               {isExtracting
                 ? 'Extracting vehicle atoms from script...'
                 : isGenerating
-                ? `Generating vehicle atoms (${completedCount}/${totalCount})...`
+                ? `Generating vehicle atoms ({completedCount}/{totalCount})...`
                 : ''}
             </span>
           </div>
@@ -307,7 +306,7 @@ export function VehicleAtomGrid({
             {isExtracting
               ? `Found {totalCount} vehicle atoms in script — building atoms...`
               : isGenerating
-              ? `${completedCount} of ${totalCount} atoms complete`
+              ? `{completedCount} of {totalCount} atoms complete`
               : ''}
           </div>
         </div>

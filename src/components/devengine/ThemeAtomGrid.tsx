@@ -91,13 +91,12 @@ interface ThemeAtomGridProps {
   onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>;
 }
 
-export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, isExtracting = false, isGenerating = false, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ThemeAtomGridProps) {
+export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ThemeAtomGridProps) {
   const [selected, setSelected] = useState<ThemeAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const completedCount = atoms.filter((a) => a.generation_status === 'completed' || a.generation_status === 'complete').length;
   const failedCount = atoms.filter((a) => a.generation_status === 'failed').length;
   const totalCount = atoms.length;
-  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const handleExtract = async () => {
     const result = await onExtract();
@@ -115,7 +114,7 @@ export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, isExtracting = f
               {isExtracting
                 ? 'Extracting theme atoms from script...'
                 : isGenerating
-                ? `Generating theme atoms (${completedCount}/${totalCount})...`
+                ? `Generating theme atoms ({completedCount}/{totalCount})...`
                 : ''}
             </span>
           </div>
@@ -124,7 +123,7 @@ export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, isExtracting = f
             {isExtracting
               ? `Found {totalCount} theme atoms in script — building atoms...`
               : isGenerating
-              ? `${completedCount} of ${totalCount} atoms complete`
+              ? `{completedCount} of {totalCount} atoms complete`
               : ''}
           </div>
         </div>

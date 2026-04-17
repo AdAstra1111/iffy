@@ -23,7 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Progress } from '@/components/ui/progress';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -111,7 +111,6 @@ import { CanonDriftBadge } from '@/components/devengine/CanonDriftBadge';
 import { CharacterAtomGrid } from '@/components/devengine/CharacterAtomGrid';
 import { LocationAtomGrid } from '@/components/devengine/LocationAtomGrid';
 import { PropAtomGrid } from '@/components/devengine/PropAtomGrid';
-
 import { CostumeAtomGrid } from '@/components/devengine/CostumeAtomGrid';
 import { VehicleAtomGrid } from '@/components/devengine/VehicleAtomGrid';
 import { CreatureAtomGrid } from '@/components/devengine/CreatureAtomGrid';
@@ -324,7 +323,6 @@ export default function ProjectDevelopmentEngine() {
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
-
   const lastPromotionGateVersionRef = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
@@ -1150,7 +1148,7 @@ export default function ProjectDevelopmentEngine() {
     }
   };
 
-  const handleRewriteWithBlockerCheck = useCallback((decisions?: Record<string, string>, globalDirections?: any[]) => {
+  const handleRewriteWithBlockerCheck = (decisions?: Record<string, string>, globalDirections?: any[]) => {
     const blockerCount = tieredNotes.blockers.length;
     if (blockerCount > 0) {
       const proceed = window.confirm(
@@ -1159,7 +1157,7 @@ export default function ProjectDevelopmentEngine() {
       if (!proceed) return;
     }
     handleRewrite(decisions, globalDirections);
-  }, [tieredNotes.blockers.length, handleRewrite]);
+  };
 
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
     const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
@@ -2976,8 +2974,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={locationAtoms.atoms}
                       isLoading={locationAtoms.isLoading}
                       isRefreshing={locationAtoms.isRefreshing}
-                      isExtracting={locationAtoms.isExtracting}
-                      isGenerating={locationAtoms.isGenerating}
                       lastUpdated={locationAtoms.lastUpdated}
                       error={locationAtoms.error}
                       onExtract={locationAtoms.extract}
@@ -2993,8 +2989,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={propAtoms.atoms}
                       isLoading={propAtoms.isLoading}
                       isRefreshing={propAtoms.isRefreshing}
-                      isExtracting={propAtoms.isExtracting}
-                      isGenerating={propAtoms.isGenerating}
                       lastUpdated={propAtoms.lastUpdated}
                       error={propAtoms.error}
                       onExtract={propAtoms.extract}
@@ -3009,8 +3003,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={costumeAtoms.atoms}
                       isLoading={costumeAtoms.isLoading}
                       isRefreshing={costumeAtoms.isRefreshing}
-                      isExtracting={costumeAtoms.isExtracting}
-                      isGenerating={costumeAtoms.isGenerating}
                       lastUpdated={costumeAtoms.lastUpdated}
                       error={costumeAtoms.error}
                       characterAtomsReady={characterAtoms.atoms.some(
@@ -3028,8 +3020,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={vehicleAtoms.atoms}
                       isLoading={vehicleAtoms.isLoading}
                       isRefreshing={vehicleAtoms.isRefreshing}
-                      isExtracting={vehicleAtoms.isExtracting}
-                      isGenerating={vehicleAtoms.isGenerating}
                       lastUpdated={vehicleAtoms.lastUpdated}
                       error={vehicleAtoms.error}
                       onExtract={vehicleAtoms.extract}
@@ -3044,8 +3034,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={creatureAtoms.atoms}
                       isLoading={creatureAtoms.isLoading}
                       isRefreshing={creatureAtoms.isRefreshing}
-                      isExtracting={creatureAtoms.isExtracting}
-                      isGenerating={creatureAtoms.isGenerating}
                       lastUpdated={creatureAtoms.lastUpdated}
                       error={creatureAtoms.error}
                       onExtract={creatureAtoms.extract}
@@ -3074,8 +3062,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={narrativebeatAtoms.atoms}
                       isLoading={narrativebeatAtoms.isLoading}
                       isRefreshing={narrativebeatAtoms.isRefreshing}
-                      isExtracting={narrativebeatAtoms.isExtracting}
-                      isGenerating={narrativebeatAtoms.isGenerating}
                       lastUpdated={narrativebeatAtoms.lastUpdated}
                       error={narrativebeatAtoms.error}
                       onExtract={narrativebeatAtoms.extract}
@@ -3090,8 +3076,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={genreAtoms.atoms}
                       isLoading={genreAtoms.isLoading}
                       isRefreshing={genreAtoms.isRefreshing}
-                      isExtracting={genreAtoms.isExtracting}
-                      isGenerating={genreAtoms.isGenerating}
                       lastUpdated={genreAtoms.lastUpdated}
                       error={genreAtoms.error}
                       onExtract={genreAtoms.extract}
@@ -3134,8 +3118,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={soundtrackAtoms.atoms}
                       isLoading={soundtrackAtoms.isLoading}
                       isRefreshing={soundtrackAtoms.isRefreshing}
-                      isExtracting={soundtrackAtoms.isExtracting}
-                      isGenerating={soundtrackAtoms.isGenerating}
                       lastUpdated={soundtrackAtoms.lastUpdated}
                       error={soundtrackAtoms.error}
                       onExtract={soundtrackAtoms.extract}
@@ -3150,8 +3132,6 @@ export default function ProjectDevelopmentEngine() {
                       atoms={dialogueAtoms.atoms}
                       isLoading={dialogueAtoms.isLoading}
                       isRefreshing={dialogueAtoms.isRefreshing}
-                      isExtracting={dialogueAtoms.isExtracting}
-                      isGenerating={dialogueAtoms.isGenerating}
                       lastUpdated={dialogueAtoms.lastUpdated}
                       error={dialogueAtoms.error}
                       onExtract={dialogueAtoms.extract}
@@ -3280,8 +3260,6 @@ export default function ProjectDevelopmentEngine() {
           setNextActionNoteId(null);
         }}
       />
-
-
 
     </div>
     </>

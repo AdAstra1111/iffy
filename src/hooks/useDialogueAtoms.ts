@@ -52,12 +52,12 @@ export function useDialogueAtoms({ projectId, enabled = true }: UseDialogueAtoms
   const stopPoll = useCallback(() => { if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; } }, []);
   const startPoll = useCallback((delayMs = 5000) => {
     stopPoll();
-    const tick = async () => { setIsRefreshing(true); const current = await fetchStatus(); setIsRefreshing(false); if (current.some((a: DialogueAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) { pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); } };
+    const tick = async () => { setIsRefreshing(true); const current = await fetchStatus(); setIsRefreshing(false); if (current.some((a: DialogueAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) pollTimer.current = setTimeout(tick, delayMs); };
     pollTimer.current = setTimeout(tick, delayMs);
   }, [fetchStatus, stopPoll]);
   useEffect(() => { if (!enabled || !projectId) return; setIsLoading(true); fetchStatus().then(current => { setIsLoading(false); if (current.some((a: DialogueAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) startPoll(5000); }); return () => stopPoll(); }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
-  const extract = useCallback(async () => { setIsExtracting(true); setError(null); try { const data = await call('extract', projectId); await fetchStatus(); setIsExtracting(false); return data; } catch (err: any) { setError(err.message); setIsExtracting(false); return null; } }, [projectId, fetchStatus]);
-  const generate = useCallback(async () => { setIsGenerating(true); setError(null); try { const data = await call('generate', projectId); startPoll(5000); return data; } catch (err: any) { setError(err.message); setIsGenerating(false); return null; } }, [projectId, startPoll]);
+  const extract = useCallback(async () => { setIsLoading(true); setError(null); try { const data = await call('extract', projectId); await fetchStatus(); return data; } catch (err: any) { setError(err.message); setIsLoading(false); return null; } }, [projectId, fetchStatus]);
+  const generate = useCallback(async () => { setIsLoading(true); setError(null); try { const data = await call('generate', projectId); startPoll(5000); return data; } catch (err: any) { setError(err.message); setIsLoading(false); return null; } }, [projectId, startPoll]);
   const resetFailed = useCallback(async () => { setError(null); try { const data = await call('reset_failed', projectId); await fetchStatus(); return data; } catch (err: any) { setError(err.message); return null; } }, [projectId, fetchStatus]);
   const refetch = useCallback(async () => { setIsRefreshing(true); await fetchStatus(); setIsRefreshing(false); }, [fetchStatus]);
   return { atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, extract, generate, resetFailed, refetch };

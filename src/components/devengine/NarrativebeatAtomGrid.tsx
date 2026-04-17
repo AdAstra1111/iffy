@@ -24,16 +24,15 @@ function TimeAgo({ date }: { date: Date }) {
   useEffect(() => { const i = setInterval(() => setLabel(`${Math.floor((Date.now() - date.getTime()) / 60000)}m ago`), 30000); return () => clearInterval(i); }, [date]);
   return <span className="text-xs text-muted-foreground">{label}</span>;
 }
-interface NarrativebeatAtomGridProps { atoms: NarrativebeatAtom[]; isLoading: boolean; isRefreshing: boolean; isExtracting?: boolean; isGenerating?: boolean; lastUpdated: Date | null; error: string | null; onExtract: () => Promise<any>; onGenerate: () => Promise<any>; onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>; }
+interface NarrativebeatAtomGridProps { atoms: NarrativebeatAtom[]; isLoading: boolean; isRefreshing: boolean; lastUpdated: Date | null; error: string | null; onExtract: () => Promise<any>; onGenerate: () => Promise<any>; onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>; }
 function AttrRow({ label, value }: { label: string; value: React.ReactNode }) { if (!value) return null; return <div className="grid grid-cols-[140px_1fr] gap-2 py-2 border-b border-border/50 last:border-0"><dt className="text-xs text-muted-foreground font-medium">{label}</dt><dd className="text-sm">{value}</dd></div>; }
 
-export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, isExtracting = false, isGenerating = false, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: NarrativebeatAtomGridProps) {
+export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: NarrativebeatAtomGridProps) {
   const [selected, setSelected] = useState<NarrativebeatAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;
   const completedCount = atoms.filter(a => a.generation_status === 'completed' || a.generation_status === 'complete').length;
   const failedCount = atoms.filter(a => a.generation_status === 'failed').length;
-  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const handleExtract = async () => { const result = await onExtract(); if (result?.created != null) await onGenerate(); };
 
   return (
@@ -47,16 +46,16 @@ export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, isExtrac
               {isExtracting
                 ? 'Extracting narrative beat atoms from script...'
                 : isGenerating
-                ? `Generating narrative beat atoms (${completedCount}/${totalCount})...`
+                ? `Generating narrative beat atoms ({completedCount}/{totalCount})...`
                 : ''}
             </span>
           </div>
           <Progress value={isExtracting ? 25 : generationProgress} className="h-1.5" />
           <div className="text-[10px] text-blue-300/70">
             {isExtracting
-              ? `Found ${totalCount} narrative beat atoms in script — building atoms...`
+              ? `Found {totalCount} narrative beat atoms in script — building atoms...`
               : isGenerating
-              ? `${completedCount} of ${totalCount} atoms complete`
+              ? `{completedCount} of {totalCount} atoms complete`
               : ''}
           </div>
         </div>
@@ -112,7 +111,7 @@ export function NarrativebeatAtomDetailDrawer({ atom, open, onOpenChange }: { at
           <div className="flex items-center justify-between"><DrawerTitle className="flex items-center gap-2"><Zap className="h-4 w-4" />{atom?.canonical_name || 'Narrative Beat'}</DrawerTitle><DrawerClose className="p-1 rounded hover:bg-muted"><X className="h-4 w-4" /></DrawerClose></div>
           {atom && <DrawerDescription><StatusBadge status={atom.generation_status} /></DrawerDescription>}
         </DrawerHeader>
-        <div className="overflow-y-auto max-h-[70vh] px-6 py-4">
+        <div class="overflow-y-auto max-h-[70vh] px-6 py-4" className="overflow-y-auto max-h-[70vh] px-6">
           {a ? (
             <dl className="text-sm">
               <AttrRow label="Beat Type" value={a.beatType} />

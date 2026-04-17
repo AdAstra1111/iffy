@@ -56,7 +56,6 @@ export function GenreAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, err
   const totalCount = atoms.length;
   const completedCount = atoms.filter((a) => a.generation_status === 'completed' || a.generation_status === 'complete').length;
   const failedCount = atoms.filter((a) => a.generation_status === 'failed').length;
-  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   const handleExtract = async () => {
     const result = await onExtract();
@@ -74,16 +73,16 @@ export function GenreAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, err
               {isExtracting
                 ? 'Extracting genre atoms from script...'
                 : isGenerating
-                ? `Generating genre atoms (${completedCount}/${totalCount})...`
+                ? `Generating genre atoms ({completedCount}/{totalCount})...`
                 : ''}
             </span>
           </div>
           <Progress value={isExtracting ? 25 : generationProgress} className="h-1.5" />
           <div className="text-[10px] text-blue-300/70">
             {isExtracting
-              ? `Found ${totalCount} genre atoms in script — building atoms...`
+              ? `Found {totalCount} genre atoms in script — building atoms...`
               : isGenerating
-              ? `${completedCount} of ${totalCount} atoms complete`
+              ? `{completedCount} of {totalCount} atoms complete`
               : ''}
           </div>
         </div>
@@ -159,7 +158,7 @@ export function GenreAtomDetailDrawer({ atom, open, onOpenChange }: { atom: Genr
           </div>
           {atom && <DrawerDescription><StatusBadge status={atom.generation_status} /></DrawerDescription>}
         </DrawerHeader>
-        <div className="overflow-y-auto max-h-[70vh] px-6 py-4">
+        <div class="overflow-y-auto max-h-[70vh] px-6 py-4" className="overflow-y-auto max-h-[70vh] px-6">
           {a ? (
             <dl className="text-sm">
               <AttrRow label="Primary Genre" value={a.primaryGenre} />
