@@ -111,7 +111,7 @@ import { CanonDriftBadge } from '@/components/devengine/CanonDriftBadge';
 import { CharacterAtomGrid } from '@/components/devengine/CharacterAtomGrid';
 import { LocationAtomGrid } from '@/components/devengine/LocationAtomGrid';
 import { PropAtomGrid } from '@/components/devengine/PropAtomGrid';
-import { CanonicalEntityRoster } from '@/components/devengine/CanonicalEntityRoster';
+
 import { CostumeAtomGrid } from '@/components/devengine/CostumeAtomGrid';
 import { VehicleAtomGrid } from '@/components/devengine/VehicleAtomGrid';
 import { CreatureAtomGrid } from '@/components/devengine/CreatureAtomGrid';
@@ -2956,7 +2956,6 @@ export default function ProjectDevelopmentEngine() {
                   </TabsList>
 
                   <TabsContent value="characters" className="space-y-6">
-                    <CanonicalEntityRoster projectId={projectId} entityType="character" />
                     <CharacterAtomGrid
                       atoms={characterAtoms.atoms}
                       isLoading={characterAtoms.isLoading}
@@ -2973,7 +2972,6 @@ export default function ProjectDevelopmentEngine() {
                   </TabsContent>
 
                   <TabsContent value="locations" className="space-y-6">
-                    <CanonicalEntityRoster projectId={projectId} entityType="location" />
                     <LocationAtomGrid
                       atoms={locationAtoms.atoms}
                       isLoading={locationAtoms.isLoading}
@@ -2991,7 +2989,6 @@ export default function ProjectDevelopmentEngine() {
                   </TabsContent>
 
                   <TabsContent value="props" className="space-y-6">
-                    <CanonicalEntityRoster projectId={projectId} entityType="prop" />
                     <PropAtomGrid
                       atoms={propAtoms.atoms}
                       isLoading={propAtoms.isLoading}
