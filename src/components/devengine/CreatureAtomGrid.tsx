@@ -196,6 +196,7 @@ export function CreatureAtomGrid({
   ).length;
   const failedCount = atoms.filter((a) => a.generation_status === 'failed').length;
   const totalCount = atoms.length;
+  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
   const pendingCount = atoms.filter(
     (a) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running'
   ).length;
@@ -223,7 +224,7 @@ export function CreatureAtomGrid({
               {isExtracting
                 ? 'Extracting creature atoms from script...'
                 : isGenerating
-                ? `Generating creature atoms ({completedCount}/{totalCount})...`
+                ? `Generating creature atoms (${completedCount}/${totalCount})...`
                 : ''}
             </span>
           </div>
@@ -232,7 +233,7 @@ export function CreatureAtomGrid({
             {isExtracting
               ? `Found {totalCount} creature atoms in script — building atoms...`
               : isGenerating
-              ? `{completedCount} of {totalCount} atoms complete`
+              ? `${completedCount} of ${totalCount} atoms complete`
               : ''}
           </div>
         </div>

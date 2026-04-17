@@ -33,6 +33,18 @@ const JOB_STAGES = [
   { key: "storing_docs",   label: "Saving foundation documents..." },
 ];
 
+// ─── Regex character extraction helper ───────────────────────────────────────
+function extractRegexCharacters(scriptText: string): string[] {
+  const regex = /\b[A-Z][A-Z\s]{2,}\b/g;
+  const found = scriptText.match(regex) || [];
+  const noise = new Set([
+    "INT.", "EXT.", "INT/EXT.", "EXT/INT.", "CUT TO", "FADE IN", "FADE OUT",
+    "DISSOLVE TO", "SMASH CUT", "MONTAGE", "CONTINUED", "THE END",
+    "OVER BLACK", "TITLE CARD", "INTERCUT", "SUPER", "BACK TO", "LATER",
+  ]);
+  return [...new Set(found.map(n => n.trim()))].filter(n => !noise.has(n) && n.length >= 2 && n.length <= 40);
+}
+
 // ─── Chunking helper ──────────────────────────────────────────────────────────
 function chunkScript(text: string, numChunks = 3): string[] {
   // Split on scene headings when possible to avoid mid-scene cuts
@@ -154,8 +166,10 @@ function extractJSON(raw: string): any {
   return null;
 }
 
-async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
+async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Promise<any> {
   const { key, baseUrl, model } = resolveGatewayKey();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -171,6 +185,7 @@ async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
           temperature: 0.2,
           response_format: { type: "json_object" },
         }),
+        signal: controller.signal as any,
       });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
@@ -182,12 +197,18 @@ async function callLLM(prompt: string, maxTokens = 8000): Promise<any> {
       }
       const raw = (await res.json()).choices[0].message.content as string;
       console.log(`[reverse-engineer] LLM raw (first 500):`, raw?.slice(0, 500));
+      clearTimeout(timeout);
       return extractJSON(raw);
     } catch (err: any) {
+      if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+        clearTimeout(timeout);
+        throw new Error(`LLM call timed out after ${timeoutMs}ms`);
+      }
       if (attempt < 2) await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
-      else throw err;
+      else { clearTimeout(timeout); throw err; }
     }
   }
+  clearTimeout(timeout);
   throw new Error("LLM call failed");
 }
 
@@ -267,11 +288,17 @@ function updateStage(payload: any, stageKey: string, status: string) {
 
 // ─── Background worker ───────────────────────────────────────────────────────
 async function runBackgroundJob(body: any) {
+  console.log("[reverse-engineer] runBackgroundJob start", new Date().toISOString());
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+  console.log("[reverse-engineer] Supabase client created", new Date().toISOString());
   const { _job_id: jobId, project_id, script_document_id, user_id, script_text, format } = body;
+  console.log("[reverse-engineer] body parsed, jobId:", jobId, new Date().toISOString());
 
   // Load existing job record
+  console.log("[reverse-engineer] loading job record...", new Date().toISOString());
   const { data: job } = await sb.from("narrative_units").select("id, payload_json").eq("id", jobId).single();
+  console.log("[reverse-engineer] job loaded:", job?.id, new Date().toISOString());
+  if (!job) { console.error("[reverse-engineer] job not found:", jobId); return; }
   if (!job) { console.error("[reverse-engineer] job not found:", jobId); return; }
 
   // Deep clone payload so we can modify safely
@@ -326,7 +353,51 @@ Respond with ONLY JSON.`, 8000);
     const allThemes     = [...new Set(chunkAnalyses.flatMap(c => c.themes || []))];
     const toneNotes     = chunkAnalyses.map((c, i) => `Part ${i+1}: ${c.tone_notes || ""}`).join(" | ");
 
-    const synthSummary = `CHARACTERS: ${allCharacters.join(", ")}\nLOCATIONS: ${allLocations.join(", ")}\nKEY EVENTS:\n${allEvents.map(e => `- ${e}`).join("\n")}\nTHEMES: ${allThemes.join(", ")}\nTONE: ${toneNotes}`;
+    // ── Regex pre-pass: merge ALL-CAPS names into allCharacters ──────────────
+    const regexNames = extractRegexCharacters(script_text);
+    const allCharactersSet = new Set(allCharacters);
+    for (const name of regexNames) {
+      const lc = name.toLowerCase();
+      const alreadyPresent = [...allCharactersSet].some(c => c.toLowerCase().includes(lc) || lc.includes(c.toLowerCase()));
+      if (!alreadyPresent && name.length >= 3) allCharactersSet.add(name);
+    }
+    const mergedCharacters = [...allCharactersSet];
+
+    // Check against narrative_entities canonical roster
+    let regexOrphans: string[] = [];
+    try {
+      const { data: canonEntities } = await sb
+        .from("narrative_entities")
+        .select("id, name, variant_names")
+        .eq("project_id", project_id)
+        .eq("entity_type", "character");
+
+      if (canonEntities && canonEntities.length > 0) {
+        const canonNames = new Set(
+          canonEntities.flatMap((e: any) => [e.name, ...(e.variant_names || [])]).map((n: string) => n.toLowerCase())
+        );
+        regexOrphans = regexNames.filter(n => !canonNames.has(n.toLowerCase()));
+        console.log(`[reverse-engineer] regex: ${regexNames.length} names found, ${regexOrphans.length} not in canonical`);
+
+        if (regexOrphans.length > 0) {
+          try {
+            await sb.from("reverse_engineer_context").upsert({
+              project_id,
+              regex_found_names: regexOrphans,
+              locked_entity_ids: canonEntities.map((e: any) => e.id),
+              locked_scene_ids: [],
+              created_by: user_id || "system",
+            }, { onConflict: "project_id" });
+          } catch (rceErr) {
+            console.warn("[reverse-engineer] reverse_engineer_context write failed (non-fatal):", rceErr);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[reverse-engineer] canonical check failed (non-fatal):", e);
+    }
+
+    const synthSummary = `CHARACTERS: ${mergedCharacters.join(", ")}\nLOCATIONS: ${allLocations.join(", ")}\nKEY EVENTS:\n${allEvents.map(e => `- ${e}`).join("\n")}\nTHEMES: ${allThemes.join(", ")}\nTONE: ${toneNotes}`;
 
     // Use beginning of script for title/logline + synthesis summary for full picture
     const scriptHead = script_text.slice(0, 8000);
@@ -487,7 +558,7 @@ IMPORTANT — beat naming:
 - Bad names: "Character 1 Arrives", "Protagonist meets someone", "MC does something"
 
 CHARACTER NAMES (use these in beat names and descriptions):
-${allCharacters.map(c => `- ${c}`).join("\n")}
+${mergedCharacters.map(c => `- ${c}`).join("\n")}
 
 Return ONLY valid JSON:
 {
@@ -523,7 +594,7 @@ Respond with ONLY JSON.`, 12000);
 
     const charScript = script_text.slice(0, 80000);
     const call3 = await callLLM(`Write a complete character bible for this ${format} script.
-Known characters from full script analysis: ${allCharacters.join(", ")}.
+Known characters from full script analysis: ${mergedCharacters.join(", ")}.
 
 Return ONLY valid JSON:
 {
@@ -833,13 +904,14 @@ Respond with ONLY JSON.`, 3000);
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
+console.log("[reverse-engineer] HANDLER START", new Date().toISOString());
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
   const body = await req.json().catch(() => ({}));
 
-  // ── Background trigger ───────────────────────────────────────────────────
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+
+  // ── Background trigger (from cron or self-dispatch) ──────────────────────
   if (body._bg && body._job_id) {
     await runBackgroundJob(body);
     return new Response(JSON.stringify({ ok: true, job_id: body._job_id }), {
@@ -847,10 +919,9 @@ serve(async (req) => {
     });
   }
 
-  // ── Foreground: create job, dispatch background, return immediately ────────
+  // ── UI trigger: create job, dispatch via BG, return immediately ─────────────
   try {
     const { project_id, script_document_id, script_version_id, user_id } = body;
-    console.log("[reverse-engineer] foreground body:", JSON.stringify({ project_id, script_document_id, script_version_id, user_id: user_id ? '[present]' : '[missing]' }));
     if (!project_id || !script_document_id)
       return new Response(JSON.stringify({ error: "project_id and script_document_id required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -874,12 +945,12 @@ serve(async (req) => {
       const { data: latestVer } = await sb.from("project_document_versions").select("plaintext").eq("document_id", script_document_id).order("version_number", { ascending: false }).limit(1).maybeSingle();
       scriptText = latestVer?.plaintext || "";
     }
-    const isTV = /\b(episode\s*\d|ep\.?\s*\d|season\s*\d|series\s*\d)\b/i.test(scriptText.slice(0, 3000));
-    const format = isTV ? "tv-series" : "film";
-    console.log(`[reverse-engineer] scriptText length: ${scriptText.length}, format: ${format}`);
     if (!scriptText || scriptText.length < 100)
       return new Response(JSON.stringify({ error: "Script text not found — ensure the script has been uploaded and saved." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+    const isTV = /\b(episode\s*\d|ep\.?\s*\d|season\s*\d|series\s*\d)\b/i.test(scriptText.slice(0, 3000));
+    const format = isTV ? "tv-series" : "film";
 
     // Create job record
     const jobKey = `reverse_job_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -891,30 +962,18 @@ serve(async (req) => {
       payload_json: makePayload(null, true),
       status: "active",
     };
-
     const { data: created, error: jobErr } = await sb.from("narrative_units").insert(jobRecord).select("id").single();
-    console.log(`[reverse-engineer] job insert: created=${!!created}, err=${jobErr?.message}`);
     if (jobErr || !created)
       return new Response(JSON.stringify({ error: `Failed to create job: ${jobErr?.message}` }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
     const jobId = created.id;
 
-    // Dispatch background work via EdgeRuntime.waitUntil so the worker stays alive
-    // after we return the foreground response. Plain fire-and-forget fetch() gets
-    // killed the moment the Response is sent — waitUntil prevents that.
+    // Dispatch to background via EdgeRuntime.waitUntil so the response returns immediately
     const bgPayload = JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text: scriptText, format });
     const bgHeaders = new Headers({ "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` });
-
     const bgWork = fetch(`${SUPABASE_URL}/functions/v1/reverse-engineer-script`, {
-      method: "POST",
-      headers: bgHeaders,
-      body: bgPayload,
-    }).then(r => {
-      if (!r.ok) console.error("[reverse-engineer] bg dispatch non-2xx:", r.status);
+      method: "POST", headers: bgHeaders, body: bgPayload,
     }).catch(err => console.error("[reverse-engineer] bg dispatch error:", err));
-
-    // Keep worker alive until background job completes
     if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
       (globalThis as any).EdgeRuntime.waitUntil(bgWork);
     }

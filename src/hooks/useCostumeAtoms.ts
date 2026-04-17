@@ -157,6 +157,8 @@ export function useCostumeAtoms({
         );
         if (hasRunning) {
           pollTimer.current = setTimeout(tick, delayMs);
+        } else {
+          setIsGenerating(false);
         }
       };
       pollTimer.current = setTimeout(tick, delayMs);
@@ -179,11 +181,12 @@ export function useCostumeAtoms({
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
 
   const extract = useCallback(async () => {
-    setIsLoading(true);
+    setIsExtracting(true);
     setError(null);
     try {
       const data = await callCostumeAtomiser('extract', projectId);
       await fetchStatus();
+      setIsExtracting(false);
       return data;
     } catch (err: any) {
       setError(err.message);
@@ -193,7 +196,7 @@ export function useCostumeAtoms({
   }, [projectId, fetchStatus]);
 
   const generate = useCallback(async () => {
-    setIsLoading(true);
+    setIsGenerating(true);
     setError(null);
     try {
       const data = await callCostumeAtomiser('generate', projectId);

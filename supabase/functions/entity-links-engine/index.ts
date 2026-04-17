@@ -20,6 +20,193 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 /* ─────────────────────────────────────────────────────────────────
+   NameCanonicalizer — Tier 1 (auto-merge) + Tier 2 (review flags)
+   Runs AFTER extractRawFromScenes builds charMap, BEFORE existing
+   dedup loop, so fragments/nicknames are pre-resolved.
+   ───────────────────────────────────────────────────────────────── */
+
+const NICKNAME_MAP: Record<string, string[]> = {
+  "BILL": ["WILLIAM", "BILLY"],
+  "WILLIAM": ["BILL", "BILLY"],
+  "ELIZABETH": ["LIZ", "BETH", "ELIZA", "BETTY"],
+  "LIZ": ["ELIZABETH"],
+  "MICHAEL": ["MIKE", "MICK"],
+  "ROBERT": ["ROB", "BOB", "ROBBIE"],
+  "CHARLES": ["CHARLIE", "CHUCK"],
+  "JAMES": ["JIM", "JIMMY", "JAMIE"],
+  "RICHARD": ["RICK", "DICK"],
+  "THOMAS": ["TOM", "TOMMY"],
+  "JACK": ["JOHN"],
+  "MOUSE": ["MICHAEL"],
+};
+
+// Reverse lookup: nickname → canonical
+const NICKNAME_REVERSE: Record<string, string> = {};
+for (const [canonical, variants] of Object.entries(NICKNAME_MAP)) {
+  for (const v of variants) NICKNAME_REVERSE[v] = canonical;
+}
+
+interface CanonicalizeResult {
+  canonical: string;
+  aliases: string[];
+  confidence: 'high' | 'medium' | 'low';
+  action: 'merge' | 'flag' | 'new_entity';
+  reason: string;
+  matchedName?: string;
+}
+
+function levenshteinRatio(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n === 0 ? 0 : 1;
+  if (n === 0) return 1;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n] / Math.max(m, n);
+}
+
+/**
+ * Canonicalize a batch of extracted names.
+ * - Process in length-descending order (longer names are most likely canonical)
+ * - Track confirmedCanonicals from this batch to self-dedup fragments
+ * - Check against both existing DB entities AND confirmedCanonicals from this batch
+ */
+function canonicalizeNames(
+  extractedNames: string[],
+  existingEntityNames: string[],
+): Map<string, CanonicalizeResult> {
+  const results = new Map<string, CanonicalizeResult>();
+
+  // Pass 1: Sort by length descending — longer names are most likely canonical
+  const sortedByLength = [...extractedNames].sort((a, b) => b.length - a.length);
+
+  // Confirmed canonicals from this batch (sorted longest-first as processing order)
+  const confirmedCanonicals: string[] = [];
+
+  for (const name of sortedByLength) {
+    const upper = name.toUpperCase().trim();
+
+    // ── Tier 0: Fragment detection (too short or clearly partial) ─────────────
+    if (upper.length < 3 || (upper.length <= 4 && !/[AEIOU]/.test(upper))) {
+      results.set(name, {
+        canonical: name,
+        aliases: [],
+        confidence: 'high',
+        action: 'flag',
+        reason: 'Fragment artefact — too short or no vowels',
+      });
+      continue;
+    }
+
+    // ── Tier 1: Nickname resolution (check against existing + batch) ─────────
+    const nicknameCanonical = NICKNAME_REVERSE[upper];
+    if (nicknameCanonical) {
+      const existingMatch = existingEntityNames.find(e => e.toUpperCase() === nicknameCanonical);
+      const batchMatch = confirmedCanonicals.find(c => c.toUpperCase() === nicknameCanonical);
+      const matchedName = existingMatch || batchMatch || null;
+      if (matchedName) {
+        results.set(name, {
+          canonical: matchedName,
+          aliases: [name],
+          confidence: 'high',
+          action: 'merge',
+          reason: `Nickname: ${name} → ${matchedName} (NICKNAME_MAP)`,
+          matchedName,
+        });
+        continue;
+      }
+    }
+
+    // ── Tier 2: Substring match against existing + batch confirmed ──────────
+    const allCandidates = [...existingEntityNames, ...confirmedCanonicals];
+    const substringMatch = allCandidates.find(e =>
+      e.toUpperCase().includes(upper) || upper.includes(e.toUpperCase())
+    );
+    if (substringMatch) {
+      const longer = substringMatch.length > name.length ? substringMatch : name;
+      results.set(name, {
+        canonical: longer,
+        aliases: [longer === substringMatch ? name : substringMatch],
+        confidence: 'high',
+        action: 'merge',
+        reason: `Substring match: "${name}" ↔ "${substringMatch}"`,
+        matchedName: substringMatch,
+      });
+      continue;
+    }
+
+    // ── Tier 3: Surname-only check ───────────────────────────────────────────
+    // "BLACKSTONE" → matches last word of "BILL BLACKSTONE" in confirmedCanonicals
+    const surnameMatch = confirmedCanonicals.find(c => {
+      const parts = c.split(/\s+/);
+      return parts.length > 1 && parts[parts.length - 1] === upper;
+    });
+    if (surnameMatch) {
+      results.set(name, {
+        canonical: surnameMatch,
+        aliases: [name],
+        confidence: 'high',
+        action: 'merge',
+        reason: `Surname-only fragment: "${name}" → "${surnameMatch}"`,
+        matchedName: surnameMatch,
+      });
+      continue;
+    }
+
+    // ── Tier 4: Levenshtein fuzzy match against existing + batch ───────────
+    let bestMatch: string | null = null;
+    let bestRatio = 1.0;
+    for (const candidate of allCandidates) {
+      const ratio = levenshteinRatio(upper, candidate.toUpperCase());
+      if (ratio < bestRatio) {
+        bestRatio = ratio;
+        bestMatch = candidate;
+      }
+    }
+
+    if (bestMatch && bestRatio < 0.35) {
+      // Auto-merge: ratio < 0.35 (very confident — near-identical)
+      results.set(name, {
+        canonical: bestMatch,
+        aliases: [name],
+        confidence: 'high',
+        action: 'merge',
+        reason: `Levenshtein merge: ratio ${bestRatio.toFixed(2)} vs "${bestMatch}"`,
+        matchedName: bestMatch,
+      });
+    } else if (bestMatch && bestRatio < 0.65) {
+      // Flag for review: ratio 0.35–0.65 (possible OCR variant or partial)
+      results.set(name, {
+        canonical: name,
+        aliases: [],
+        confidence: 'medium',
+        action: 'flag',
+        reason: `Levenshtein uncertain: ratio ${bestRatio.toFixed(2)} vs "${bestMatch}" — possible OCR variant`,
+        matchedName: bestMatch,
+      });
+    } else {
+      // New entity — add to confirmedCanonicals for subsequent shorter names to match
+      results.set(name, {
+        canonical: name,
+        aliases: [],
+        confidence: 'high',
+        action: 'new_entity',
+        reason: 'No match found — new entity',
+      });
+      confirmedCanonicals.push(upper);
+    }
+  }
+
+  return results;
+}
+
+/* ─────────────────────────────────────────────────────────────────
    Content hash utility (Gap C — staleness detection)
    SHA-256 of deterministic scene content fields.
    Must be deterministic: same content always produces the same hash.
@@ -220,9 +407,27 @@ const NOISE_WORDS = new Set([
   "TURNING","COMING","GOING","LEANING","SLUMPING","RISING",
 ]);
 
+/** Role/rank words that appear as ALL-CAPS in slugs but are NOT character names */
+const ROLE_NOISE = new Set([
+  "SOLDIER","SOLDIERS","OFFICER","OFFICERS","GUARD","GUARDS",
+  "COP","COPS","NURSE","NURSES","DOCTOR","DOCTORS","AGENT","AGENTS",
+  "MAN","MEN","WOMAN","WOMEN","BOY","GIRL","CHILD","CHILDREN",
+  "CROWD","VOICE","VOICES","NARRATOR","HOST","ANNOUNCER",
+  "REPORTER","DETECTIVE","SERGEANT","CAPTAIN","GENERAL","COLONEL",
+  "LIEUTENANT","PRIVATE","CORPORAL","TROOPER","DEPUTY","SHERIFF",
+  "WAITER","WAITRESS","BARTENDER","DRIVER","PILOT","PASSENGER",
+  "SUSPECT","VICTIM","WITNESS","BYSTANDER","TECHNICIAN","SCIENTIST",
+]);
+
 function isNoiseName(name: string): boolean {
   const words = name.split(/\s+/);
   return words.some(w => w.length > 2 && NOISE_WORDS.has(w));
+}
+
+/** Check if name is a role/rank noise word (not a character) */
+function isRoleNoise(name: string): boolean {
+  const words = name.split(/\s+/);
+  return words.some(w => w.length > 2 && ROLE_NOISE.has(w));
 }
 
 /** Strip screenplay voice-convention suffixes before entity name matching (Gap D follow-on) */
@@ -284,6 +489,7 @@ function extractRawFromScenes(
       if (/^(CONT'D|CONTINUED|THE END|FADE (IN|OUT)|CUT TO|DISSOLVE TO|MATCH CUT|SWISH PAN|SMASH CUT|PAGE|BOOKING|COPYRIGHT|DEMO|PRODUCED BY|WRITTEN BY|SCENE|INTRODUCING|RELEASE)/i.test(name)) continue;
       if (/^\d+$/.test(name)) continue;
       if (isNoiseName(name)) continue;
+      if (isRoleNoise(name)) continue;  // Filter role/rank words (SOLDIER, COP, etc.)
       const key = makeEntityKey(name, "char");
       if (!charMap.has(name)) charMap.set(name, key);
     }
@@ -352,6 +558,7 @@ function extractCoOccurrences(
       if (/^(CONT'D|CONTINUED|THE END|FADE (IN|OUT)|CUT TO|DISSOLVE TO|MATCH CUT|SWISH PAN|SMASH CUT|PAGE|BOOKING|COPYRIGHT|DEMO|PRODUCED BY|WRITTEN BY|SCENE|INTRODUCING|RELEASE)/i.test(name)) continue;
       if (/^\d+$/.test(name)) continue;
       if (isNoiseName(name)) continue;
+      if (isRoleNoise(name)) continue;
       if (entityNameToId.has(name)) charsInScene.push(name);
     }
 
@@ -510,11 +717,133 @@ serve(async (req) => {
     // ── Step 4: Extract raw entities from scenes ───────────────────────────────
     const { charMap, locMap } = extractRawFromScenes(scenes, latestVersionByScene);
 
-    // ── Step 4: Deduplicate + upsert to narrative_entities (canonical) ───────
+    // Pre-declare dedup accumulators so Step 4d can populate them
     type RawEntity = { entityKey: string; unitType: string; canonicalName: string; variants: string[] };
     const toUpsertCanonical: RawEntity[] = [];
-    const newNameToEntity: Map<string, any> = new Map(); // temp map for new canonicals
+    const newNameToEntity: Map<string, any> = new Map();
 
+    // ── Step 4b: NameCanonicalizer — pre-dedup pass ───────────────────────────
+    // Resolve fragments (BI→BILL), nicknames (LIZ→ELIZABETH), OCR variants
+    // BEFORE the existing layered dedup runs.
+    const existingCharNames = existingEntitiesList
+      .filter((e: any) => e.entity_type === 'character')
+      .map((e: any) => (e.canonical_name || '').toUpperCase().trim())
+      .filter(Boolean);
+
+    const extractedCharNames = [...charMap.keys()];
+    const canonicalizeResults = canonicalizeNames(extractedCharNames, existingCharNames);
+
+    // Apply canonicalization: update charMap keys and collect review suggestions
+    const canonicalizedCharMap = new Map<string, string>(); // canonicalName → entityKey
+    const reviewSuggestions: any[] = [];
+    const highConfidenceMerges: Map<string, { canonical: string; aliases: string[] }> = new Map();
+
+    for (const [rawName, result] of canonicalizeResults) {
+      if (result.action === 'merge' && result.confidence === 'high') {
+        // Redirect to the canonical entity key
+        const canonicalEntity = existingEntitiesList.find(
+          (e: any) => (e.canonical_name || '').toUpperCase().trim() === result.matchedName
+        );
+        if (canonicalEntity) {
+          canonicalizedCharMap.set(result.canonical, canonicalEntity.entity_key);
+          highConfidenceMerges.set(rawName, { canonical: result.canonical, aliases: result.aliases });
+        }
+      } else if (result.action === 'flag' && result.confidence === 'medium') {
+        // Queue for name_review_suggestions
+        const matchedEntity = result.matchedName
+          ? existingEntitiesList.find((e: any) => (e.canonical_name || '').toUpperCase().trim() === result.matchedName)
+          : null;
+        reviewSuggestions.push({
+          project_id: projectId,
+          extracted_name: rawName,
+          matched_entity_id: matchedEntity?.id || null,
+          suggested_canonical: result.matchedName || result.canonical,
+          confidence: result.confidence,
+          reason: result.reason,
+          action: result.action,
+        });
+      }
+      // Fragment artefacts (high confidence flag) — skip entirely, don't add to charMap
+    }
+
+    // Insert name_review_suggestions in batch
+    if (reviewSuggestions.length > 0) {
+      try {
+        await adminClient
+          .from('name_review_suggestions')
+          .upsert(reviewSuggestions, { onConflict: 'project_id,extracted_name' });
+      } catch (err) {
+        console.error('[entity-links-engine] name_review_suggestions insert failed:', (err as Error).message);
+      }
+    }
+
+    // ── Step 4c: Apply high-confidence canonical merges to existing entities ───
+    // Update variant_names on canonical entities for high-confidence merges
+    for (const [_, merge] of highConfidenceMerges) {
+      const canonicalEntity = existingEntitiesList.find(
+        (e: any) => (e.canonical_name || '').toUpperCase().trim() === merge.canonical.toUpperCase()
+      );
+      if (!canonicalEntity) continue;
+      const meta = (canonicalEntity.meta_json || {}) as Record<string, any>;
+      const variants: string[] = meta.variant_names || [];
+      let changed = false;
+      for (const alias of merge.aliases) {
+        const upperAlias = alias.toUpperCase().trim();
+        if (!variants.includes(upperAlias)) {
+          variants.push(upperAlias);
+          changed = true;
+        }
+      }
+      if (changed) {
+        meta.variant_names = variants;
+        const mergedCanonical = pickCanonical([canonicalEntity.canonical_name, ...variants]);
+        const hashes = entitySceneHashes.get(mergedCanonical.toUpperCase()) || [];
+        await adminClient
+          .from('narrative_entities')
+          .update({ meta_json: meta, canonical_name: mergedCanonical, inputs_used: buildInputsUsed(hashes) })
+          .eq('id', canonicalEntity.id);
+        canonicalEntity.meta_json = meta;
+        canonicalEntity.canonical_name = mergedCanonical;
+
+        // ── Write aliases to narrative_entity_aliases ──────────────────
+        for (const alias of merge.aliases) {
+          const aliasKey = alias.toUpperCase().trim();
+          if (!aliasKey) continue;
+          const aliasType: 'nickname' | 'ocr_variant' | 'fragment' =
+            result.reason.includes('Nickname') ? 'nickname' :
+            result.reason.includes('OCR') ? 'ocr_variant' : 'fragment';
+          await adminClient
+            .from('narrative_entity_aliases')
+            .upsert({
+              project_id: projectId,
+              canonical_entity_id: canonicalEntity.id,
+              alias_name: aliasKey,
+              alias_type: aliasType,
+              source: 'canonicalizer',
+              confidence: result.confidence === 'high' ? 0.95 : 0.75,
+              reason: result.reason,
+            }, {
+              onConflict: 'project_id,canonical_entity_id,alias_name',
+              ignoreDuplicates: true,
+            }).catch((err: any) => console.error(`[entity-links-engine] alias upsert failed: ${err.message}`));
+        }
+      }
+    }
+
+    // ── Step 4d: Mark canonicalizer new-entities so dedup loop skips them ─────
+    // canonicalizeNames found new entities in this batch (e.g. BILL BLACKSTONE from LL BLACKSTONE)
+    // that weren't in existingEntitiesList. Add them to charMap so the dedup loop below creates
+    // them as proper entities. Track in skipSet so dedup loop doesn't also try to dedup them.
+    const canonicalizerNewEntities = new Set<string>();
+    for (const [rawName, result] of canonicalizeResults) {
+      if (result.action === 'new_entity' && result.confidence === 'high') {
+        const key = makeEntityKey(rawName, "char");
+        if (!charMap.has(rawName)) charMap.set(rawName, key);
+        canonicalizerNewEntities.add(rawName);
+      }
+    }
+
+    // ── Step 5: Deduplicate + upsert to narrative_entities (canonical) ───────
     // Process characters
     for (const [rawName, entityKey] of charMap) {
       const upperName = rawName.toUpperCase().trim();
@@ -540,6 +869,64 @@ serve(async (req) => {
             .eq("id", existing.id);
         }
         newNameToEntity.set(upperName, existing);
+        continue;
+      }
+
+      // Skip if canonicalizer already resolved this name as a high-confidence merge
+      // (merge → add to newNameToEntity, don't create a separate entity)
+      if (highConfidenceMerges.has(rawName)) {
+        const canonical = highConfidenceMerges.get(rawName)!.canonical;
+        const canonicalEntity = existingEntitiesList.find(
+          (e: any) => (e.canonical_name || '').toUpperCase().trim() === canonical.toUpperCase()
+        );
+        if (canonicalEntity) newNameToEntity.set(upperName, canonicalEntity);
+        continue;
+      }
+
+      // For canonicalizer new-entities (names the canonicalizer flagged as new in this batch),
+      // first try to find a match via dedup BEFORE adding as separate entity. This catches cases
+      // where a shorter name (e.g. LL BLACKSTONE) is a canonicalizer new-entity but a longer
+      // name (BILL BLACKSTONE) was already added to the lookup maps in this run — we want
+      // LL BLACKSTONE to merge into BILL BLACKSTONE rather than creating a duplicate entity.
+      if (canonicalizerNewEntities.has(rawName)) {
+        const matchedCanonical = findDuplicateEntity(rawName, entityKey, entityKeyToEntity, canonicalNameToEntity);
+        if (matchedCanonical) {
+          // Merge: update variant_names on existing canonical
+          const existingMeta = (matchedCanonical.meta_json || {}) as Record<string, any>;
+          const existingVariants: string[] = existingMeta.variant_names || [];
+          if (!existingVariants.includes(upperName)) {
+            existingVariants.push(upperName);
+            existingMeta.variant_names = existingVariants;
+            const mergedCanonical = pickCanonical([matchedCanonical.canonical_name, upperName, ...existingVariants]);
+            const hashes = entitySceneHashes.get(mergedCanonical.toUpperCase()) || [];
+            await adminClient
+              .from("narrative_entities")
+              .update({
+                meta_json: existingMeta,
+                canonical_name: mergedCanonical,
+                inputs_used: buildInputsUsed(hashes),
+              })
+              .eq("id", matchedCanonical.id);
+            matchedCanonical.meta_json = existingMeta;
+            matchedCanonical.canonical_name = mergedCanonical;
+          }
+          newNameToEntity.set(upperName, matchedCanonical);
+          // Update lookup maps so subsequent names can find this canonical
+          entityKeyToEntity.set(entityKey, matchedCanonical);
+          canonicalNameToEntity.set(upperName, matchedCanonical);
+        } else {
+          // No match — add as new entity
+          toUpsertCanonical.push({
+            entityKey,
+            unitType: "character",
+            canonicalName: upperName,
+            variants: [upperName],
+          });
+          const pendingRecord = { entity_key: entityKey, canonical_name: upperName, entity_type: "character", meta_json: {} };
+          entityKeyToEntity.set(entityKey, pendingRecord);
+          canonicalNameToEntity.set(upperName, pendingRecord); // needed for same-run suffix matching
+          newNameToEntity.set(upperName, { entity_key: entityKey, _pending: true, _canonicalName: upperName, _variants: [upperName] });
+        }
         continue;
       }
 
@@ -569,13 +956,17 @@ serve(async (req) => {
         }
         newNameToEntity.set(upperName, matchedCanonical);
       } else {
-        // New entity
+        // New non-canonicalizer entity — add to canonicalNameToEntity immediately so
+        // same-run suffix matching works (e.g. BLACKSTONE finding BILL BLACKSTONE).
         toUpsertCanonical.push({
           entityKey,
           unitType: "character",
           canonicalName: upperName,
           variants: [upperName],
         });
+        const newEntityRecord = { entity_key: entityKey, canonical_name: upperName, entity_type: "character", meta_json: {} };
+        entityKeyToEntity.set(entityKey, newEntityRecord);
+        canonicalNameToEntity.set(upperName, newEntityRecord);
         newNameToEntity.set(upperName, { entity_key: entityKey, _pending: true, _canonicalName: upperName, _variants: [upperName] });
       }
     }
@@ -624,6 +1015,10 @@ serve(async (req) => {
           canonicalName: upperName,
           variants: [upperName],
         });
+        // Add to lookup maps immediately so subsequent names can find this new entity
+        const locRecord = { entity_key: entityKey, canonical_name: upperName, entity_type: "location", meta_json: {} };
+        entityKeyToEntity.set(entityKey, locRecord);
+        canonicalNameToEntity.set(upperName, locRecord);
         newNameToEntity.set(upperName, { entity_key: entityKey, _pending: true, _canonicalName: upperName, _variants: [upperName] });
       }
     }
@@ -650,6 +1045,21 @@ serve(async (req) => {
         .upsert(upsertRecords, { onConflict: "project_id,entity_key" });
 
       if (upsertErr) throw new Error(`Canonical entity upsert failed: ${upsertErr.message}`);
+
+      // FIX: Add newly upserted entities to lookup maps immediately so subsequent
+      // names (e.g. "BLACKSTONE" → "BILL BLACKSTONE" created in this same run)
+      // can find them via findDuplicateEntity / layered dedup
+      for (const record of upsertRecords) {
+        const entityRecord = {
+          id: undefined as any, // id not available from upsert response, but key lookups use entity_key/canonical_name
+          entity_key: record.entity_key,
+          canonical_name: record.canonical_name,
+          entity_type: record.entity_type,
+          meta_json: record.meta_json,
+        };
+        entityKeyToEntity.set(record.entity_key, entityRecord);
+        canonicalNameToEntity.set((record.canonical_name || "").toUpperCase().trim(), entityRecord);
+      }
     }
 
     // ── Step 5: Re-fetch all entities (now canonical + new) ────────────────────
@@ -662,6 +1072,7 @@ serve(async (req) => {
     const entityList = allEntities || [];
 
     // Build name→entity map (uppercase canonical + all variants)
+    // Also merge in canonicalizer high-confidence merges so alias resolution uses the canonical map
     const nameToEntity = new Map<string, any>();
     for (const e of entityList) {
       const meta = (e.meta_json || {}) as Record<string, any>;
@@ -669,6 +1080,18 @@ serve(async (req) => {
       nameToEntity.set((e.canonical_name || "").toUpperCase().trim(), e);
       for (const v of variants) {
         nameToEntity.set(v.toUpperCase().trim(), e);
+      }
+    }
+    // Inject canonicalizer results: merge targets get alias entries pointing to them
+    // e.g. "LACKSTONE" → entity for "BILL BLACKSTONE"
+    for (const [rawName, result] of canonicalizeResults) {
+      if (result.action === 'merge' && result.confidence === 'high' && result.matchedName) {
+        const canonicalEntity = entityList.find(
+          (e: any) => (e.canonical_name || '').toUpperCase().trim() === result.matchedName!.toUpperCase()
+        );
+        if (canonicalEntity) {
+          nameToEntity.set(rawName.toUpperCase().trim(), canonicalEntity);
+        }
       }
     }
 
@@ -938,6 +1361,7 @@ serve(async (req) => {
               project_id: projectId,
               canonical_entity_id: longer.id,
               alias_name: aliasKey,
+              alias_type: "auto",
               source: "co_occurrence",
               confidence: Math.min(0.95, counts.co / Math.max(totalA, totalB)),
               reason: `Auto: co-occurs ${counts.co}x (>70% of both entities' ${Math.min(totalA, totalB)} scenes)`,
@@ -948,7 +1372,7 @@ serve(async (req) => {
         if (newAliases.length > 0) {
           await adminClient
             .from("narrative_entity_aliases")
-            .upsert(newAliases, { onConflict: "project_id,alias_name" });
+            .upsert(newAliases, { onConflict: "project_id,canonical_entity_id,alias_name", ignoreDuplicates: true });
         }
       }
     } catch (aliasErr) {

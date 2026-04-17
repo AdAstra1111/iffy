@@ -111,6 +111,7 @@ import { CanonDriftBadge } from '@/components/devengine/CanonDriftBadge';
 import { CharacterAtomGrid } from '@/components/devengine/CharacterAtomGrid';
 import { LocationAtomGrid } from '@/components/devengine/LocationAtomGrid';
 import { PropAtomGrid } from '@/components/devengine/PropAtomGrid';
+import { CanonicalEntityRoster } from '@/components/devengine/CanonicalEntityRoster';
 import { CostumeAtomGrid } from '@/components/devengine/CostumeAtomGrid';
 import { VehicleAtomGrid } from '@/components/devengine/VehicleAtomGrid';
 import { CreatureAtomGrid } from '@/components/devengine/CreatureAtomGrid';
@@ -323,6 +324,8 @@ export default function ProjectDevelopmentEngine() {
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
+  const [pendingRewriteWithBlockers, setPendingRewriteWithBlockers] = useState(false);
+  const [pendingRewriteArgs, setPendingRewriteArgs] = useState<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
   const lastPromotionGateVersionRef = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
@@ -1147,6 +1150,16 @@ export default function ProjectDevelopmentEngine() {
       setIsGeneratingDocument(false);
     }
   };
+
+  const handleRewriteWithBlockerCheck = useCallback((decisions?: Record<string, string>, globalDirections?: any[]) => {
+    const blockerCount = tieredNotes.blockers.length;
+    if (blockerCount > 0) {
+      setPendingRewriteWithBlockers(true);
+      setPendingRewriteArgs({ decisions, globalDirections });
+      return;
+    }
+    handleRewrite(decisions, globalDirections);
+  }, [tieredNotes.blockers.length, handleRewrite]);
 
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
     const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
@@ -2075,7 +2088,7 @@ export default function ProjectDevelopmentEngine() {
                     isConverged={isAnalysisConverged}
                     isLoading={isLoading}
                     onRunReview={handleRunEngine}
-                    onApplyRewrite={handleRewrite}
+                    onApplyRewrite={handleRewriteWithBlockerCheck}
                     onPromote={handlePromote}
                     onSkipStage={handleSkipStage}
                     onConvert={() => convert.mutate({ targetOutput: selectedDeliverableType.toUpperCase(), protectItems: latestAnalysis?.protect })}
@@ -2509,7 +2522,7 @@ export default function ProjectDevelopmentEngine() {
                     tieredNotes={filteredTiered}
                     selectedNotes={selectedNotes}
                     setSelectedNotes={setSelectedNotes}
-                    onApplyRewrite={handleRewrite}
+                    onApplyRewrite={handleRewriteWithBlockerCheck}
                     isRewriting={rewrite.isPending || rewritePipeline.status !== 'idle'}
                     isLoading={isLoading}
                     resolutionSummary={resolutionSummary}
@@ -2943,6 +2956,7 @@ export default function ProjectDevelopmentEngine() {
                   </TabsList>
 
                   <TabsContent value="characters" className="space-y-6">
+                    <CanonicalEntityRoster projectId={projectId} entityType="character" />
                     <CharacterAtomGrid
                       atoms={characterAtoms.atoms}
                       isLoading={characterAtoms.isLoading}
@@ -2959,10 +2973,13 @@ export default function ProjectDevelopmentEngine() {
                   </TabsContent>
 
                   <TabsContent value="locations" className="space-y-6">
+                    <CanonicalEntityRoster projectId={projectId} entityType="location" />
                     <LocationAtomGrid
                       atoms={locationAtoms.atoms}
                       isLoading={locationAtoms.isLoading}
                       isRefreshing={locationAtoms.isRefreshing}
+                      isExtracting={locationAtoms.isExtracting}
+                      isGenerating={locationAtoms.isGenerating}
                       lastUpdated={locationAtoms.lastUpdated}
                       error={locationAtoms.error}
                       onExtract={locationAtoms.extract}
@@ -2974,10 +2991,13 @@ export default function ProjectDevelopmentEngine() {
                   </TabsContent>
 
                   <TabsContent value="props" className="space-y-6">
+                    <CanonicalEntityRoster projectId={projectId} entityType="prop" />
                     <PropAtomGrid
                       atoms={propAtoms.atoms}
                       isLoading={propAtoms.isLoading}
                       isRefreshing={propAtoms.isRefreshing}
+                      isExtracting={propAtoms.isExtracting}
+                      isGenerating={propAtoms.isGenerating}
                       lastUpdated={propAtoms.lastUpdated}
                       error={propAtoms.error}
                       onExtract={propAtoms.extract}
@@ -2992,6 +3012,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={costumeAtoms.atoms}
                       isLoading={costumeAtoms.isLoading}
                       isRefreshing={costumeAtoms.isRefreshing}
+                      isExtracting={costumeAtoms.isExtracting}
+                      isGenerating={costumeAtoms.isGenerating}
                       lastUpdated={costumeAtoms.lastUpdated}
                       error={costumeAtoms.error}
                       characterAtomsReady={characterAtoms.atoms.some(
@@ -3009,6 +3031,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={vehicleAtoms.atoms}
                       isLoading={vehicleAtoms.isLoading}
                       isRefreshing={vehicleAtoms.isRefreshing}
+                      isExtracting={vehicleAtoms.isExtracting}
+                      isGenerating={vehicleAtoms.isGenerating}
                       lastUpdated={vehicleAtoms.lastUpdated}
                       error={vehicleAtoms.error}
                       onExtract={vehicleAtoms.extract}
@@ -3023,6 +3047,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={creatureAtoms.atoms}
                       isLoading={creatureAtoms.isLoading}
                       isRefreshing={creatureAtoms.isRefreshing}
+                      isExtracting={creatureAtoms.isExtracting}
+                      isGenerating={creatureAtoms.isGenerating}
                       lastUpdated={creatureAtoms.lastUpdated}
                       error={creatureAtoms.error}
                       onExtract={creatureAtoms.extract}
@@ -3051,6 +3077,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={narrativebeatAtoms.atoms}
                       isLoading={narrativebeatAtoms.isLoading}
                       isRefreshing={narrativebeatAtoms.isRefreshing}
+                      isExtracting={narrativebeatAtoms.isExtracting}
+                      isGenerating={narrativebeatAtoms.isGenerating}
                       lastUpdated={narrativebeatAtoms.lastUpdated}
                       error={narrativebeatAtoms.error}
                       onExtract={narrativebeatAtoms.extract}
@@ -3065,6 +3093,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={genreAtoms.atoms}
                       isLoading={genreAtoms.isLoading}
                       isRefreshing={genreAtoms.isRefreshing}
+                      isExtracting={genreAtoms.isExtracting}
+                      isGenerating={genreAtoms.isGenerating}
                       lastUpdated={genreAtoms.lastUpdated}
                       error={genreAtoms.error}
                       onExtract={genreAtoms.extract}
@@ -3107,6 +3137,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={soundtrackAtoms.atoms}
                       isLoading={soundtrackAtoms.isLoading}
                       isRefreshing={soundtrackAtoms.isRefreshing}
+                      isExtracting={soundtrackAtoms.isExtracting}
+                      isGenerating={soundtrackAtoms.isGenerating}
                       lastUpdated={soundtrackAtoms.lastUpdated}
                       error={soundtrackAtoms.error}
                       onExtract={soundtrackAtoms.extract}
@@ -3121,6 +3153,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={dialogueAtoms.atoms}
                       isLoading={dialogueAtoms.isLoading}
                       isRefreshing={dialogueAtoms.isRefreshing}
+                      isExtracting={dialogueAtoms.isExtracting}
+                      isGenerating={dialogueAtoms.isGenerating}
                       lastUpdated={dialogueAtoms.lastUpdated}
                       error={dialogueAtoms.error}
                       onExtract={dialogueAtoms.extract}
@@ -3249,6 +3283,34 @@ export default function ProjectDevelopmentEngine() {
           setNextActionNoteId(null);
         }}
       />
+
+      {/* Blocker warning dialog on Rewrite */}
+      {pendingRewriteWithBlockers && (
+        <AlertDialog open={pendingRewriteWithBlockers} onOpenChange={setPendingRewriteWithBlockers}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Open blockers will not be resolved</AlertDialogTitle>
+              <AlertDialogDescription>
+                You have {tieredNotes.blockers.length} open blocker{tieredNotes.blockers.length !== 1 ? 's' : ''} on this document.
+                A generic rewrite will not resolve them — they will remain open after the rewrite.
+                Use <strong>Apply Fix</strong> in the Notes panel to resolve specific blockers.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel onClick={() => { setPendingRewriteWithBlockers(false); setPendingRewriteArgs(null); }}>
+                Cancel — Go to Notes
+              </AlertDialogCancel>
+              <AlertDialogAction onClick={() => {
+                setPendingRewriteWithBlockers(false);
+                handleRewrite(pendingRewriteArgs?.decisions, pendingRewriteArgs?.globalDirections);
+                setPendingRewriteArgs(null);
+              }}>
+                Rewrite Anyway
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
 
     </div>
     </>

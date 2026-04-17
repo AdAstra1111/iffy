@@ -2,38 +2,29 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 export const maxDuration = 300;
 
+const SUPABASE_URL = 'https://hdfderbphdobomkdjypc.supabase.co';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+const POSTGREST_HEADERS = {
+  'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+  'apikey': SUPABASE_SERVICE_KEY,
+  'Content-Type': 'application/json',
+};
+
 async function handleReverseEngineerStatus(body: { job_id?: string; project_id?: string }) {
-  const mgmtPat = SUPABASE_SERVICE_KEY;
-  const projectRef = 'hdfderbphdobomkdjypc';
-  
-  let query: string;
-  if (body.job_id) {
-    query = `SELECT id, project_id, payload_json FROM narrative_units WHERE id = '${body.job_id}' AND unit_type = 'async_job' LIMIT 1;`;
-  } else if (body.project_id) {
-    query = `SELECT id, project_id, payload_json FROM narrative_units WHERE project_id = '${body.project_id}' AND unit_type = 'async_job' ORDER BY created_at DESC LIMIT 20;`;
-  } else {
+  if (!body.job_id && !body.project_id) {
     throw new Error('job_id or project_id required');
   }
 
-  const apiRes = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${mgmtPat}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!apiRes.ok) {
-    const text = await apiRes.text();
-    throw new Error(`Management API ${apiRes.status}: ${text}`);
-  }
-
-  const rows: any[] = await apiRes.json();
-  
   if (body.job_id) {
+    // Fetch single job by id via PostgREST
+    const url = `${SUPABASE_URL}/rest/v1/narrative_units?id=eq.${encodeURIComponent(body.job_id)}&unit_type=eq.async_job&select=id,project_id,payload_json&limit=1`;
+    const apiRes = await fetch(url, { headers: POSTGREST_HEADERS });
+    if (!apiRes.ok) {
+      const text = await apiRes.text();
+      throw new Error(`PostgREST ${apiRes.status}: ${text.slice(0, 200)}`);
+    }
+    const rows: any[] = await apiRes.json();
     if (!rows.length) throw new Error('Job not found');
     const d = rows[0];
     const p = d.payload_json || {};
@@ -49,6 +40,15 @@ async function handleReverseEngineerStatus(body: { job_id?: string; project_id?:
       updated_at: p.updated_at,
     };
   }
+
+  // Fetch all async_job units for a project
+  const url = `${SUPABASE_URL}/rest/v1/narrative_units?project_id=eq.${encodeURIComponent(body.project_id!)}&unit_type=eq.async_job&select=id,project_id,payload_json&order=created_at.desc&limit=20`;
+  const apiRes = await fetch(url, { headers: POSTGREST_HEADERS });
+  if (!apiRes.ok) {
+    const text = await apiRes.text();
+    throw new Error(`PostgREST ${apiRes.status}: ${text.slice(0, 200)}`);
+  }
+  const rows: any[] = await apiRes.json();
 
   const allJobs = rows.filter((d: any) => d.payload_json?.job_type === 'reverse_engineer');
   const jobs = allJobs.map((d: any) => {

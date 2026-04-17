@@ -18,7 +18,7 @@ import { getDocFlowConfig } from '@/lib/docFlowMap';
 import { formatToLane, isOutputDocType } from '@/config/documentLadders';
 import { getLadderForFormat } from '@/lib/stages/registry';
 import { isSeriesFormat } from '@/lib/format-helpers';
-import { useReverseEngineer } from '@/hooks/useReverseEngineer';
+import { useReverseEngineerContext } from '@/contexts/ReverseEngineerContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -96,7 +96,7 @@ export function DocumentSidebar({
   const [pasteTitle, setPasteTitle] = useState('');
   const [pasteType, setPasteType] = useState('idea');
   const [pasteText, setPasteText] = useState('');
-  const { reverseEngineerFromScript, isRunning: isReverseEngineering } = useReverseEngineer();
+  const { reverseEngineerFromScript, isRunning: isReverseEngineering } = useReverseEngineerContext();
   const queryClient = useQueryClient();
 
   // Find a script document for reverse engineering — permissive detection

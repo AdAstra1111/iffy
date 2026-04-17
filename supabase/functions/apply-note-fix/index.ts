@@ -10,11 +10,35 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callLLM, MODELS } from "../_shared/llm.ts";
 import { surgicalEpisodeRewrite, SURGICAL_EPISODE_DOC_TYPES } from "../_shared/surgicalEpisodeRewrite.ts";
+import { resolveNarrativeContext, buildNarrativeContextBlock } from "../_shared/narrativeContextResolver.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+const BREAK_SIGNALS = [
+  "change the protagonist name", "rename the main character",
+  "add a new character", "introduce a new location",
+  "move the setting to", "remove the character",
+  "change the genre", "change the tone",
+];
+
+function isCanonBreaking(noteDescription: string): boolean {
+  const lower = noteDescription.toLowerCase();
+  return BREAK_SIGNALS.some(signal => lower.includes(signal));
+}
+
+const DOWNSTREAM_DOCS: Record<string, string[]> = {
+  idea: ["concept_brief", "beat_sheet", "character_bible", "treatment", "story_outline"],
+  concept_brief: ["beat_sheet", "character_bible", "treatment", "story_outline"],
+  beat_sheet: ["character_bible", "treatment", "story_outline", "market_sheet"],
+  character_bible: ["beat_sheet", "treatment", "story_outline"],
+  treatment: ["story_outline"],
+  market_sheet: [],
+  story_outline: [],
+  feature_script: [],
 };
 
 function json(data: unknown, status = 200) {
@@ -140,6 +164,54 @@ Generate fix options for this note.`;
       const noteText = note_data?.description || note_data?.note || note_data?.summary || "";
       const noteDetail = note_data?.detail || note_data?.why_it_matters || "";
 
+      // Fetch canonical context
+      let narrativeContextBlock = "";
+      let canonDocsBlock = "";
+      try {
+        const narrativeCtx = await resolveNarrativeContext(db, project_id, {
+          docType: docType,
+          includeCanon: true,
+          includeSignals: false,
+          includeLockedDecisions: true,
+        });
+        narrativeContextBlock = buildNarrativeContextBlock(narrativeCtx);
+
+        // Also fetch concept_brief + treatment plaintext as canonDocsBlock
+        const canonDocTypes = ["concept_brief", "treatment"];
+        const canonParts: string[] = [];
+        for (const dt of canonDocTypes) {
+          if (dt === docType) continue;
+          const { data: doc } = await db
+            .from("project_documents")
+            .select("id")
+            .eq("project_id", project_id)
+            .eq("doc_type", dt)
+            .maybeSingle();
+          if (doc) {
+            const { data: ver } = await db
+              .from("project_document_versions")
+              .select("plaintext")
+              .eq("document_id", doc.id)
+              .eq("is_current", true)
+              .maybeSingle();
+            if (ver?.plaintext) {
+              canonParts.push(`--- ${dt.toUpperCase()} (CANONICAL — do not contradict) ---\n${ver.plaintext.slice(0, 6000)}`);
+            }
+          }
+        }
+        if (canonParts.length > 0) {
+          canonDocsBlock = `\n\nCANONICAL SOURCE DOCUMENTS:\n${canonParts.join("\n\n")}`;
+        }
+      } catch (e) {
+        console.warn("[apply-note-fix] canonical context fetch failed (non-fatal):", e);
+      }
+
+      // Detect canon-breaking note
+      const canonBreaking = isCanonBreaking(noteText) || isCanonBreaking(fix.instructions || "");
+      const canonBreakWarning = canonBreaking
+        ? "\n\nCANON BREAK NOTE DETECTED: This note may invalidate upstream canonical facts. After applying, related documents will be marked stale and require re-validation."
+        : "";
+
       // ── Surgical episode rewrite for large episode docs ──
       // Episode beats, grids, and scripts are split into episode blocks.
       // Only affected episodes are rewritten — everything else is preserved.
@@ -180,14 +252,10 @@ Generate fix options for this note.`;
 
       // ── Standard full-doc rewrite (non-episode docs, or global-change fallback) ──
       if (!newText) {
-        const systemPrompt = `You are a professional script/story editor performing a targeted fix.
-Apply ONLY the specified fix to the document.
-RULES:
-1. Preserve all content not mentioned in the fix instructions
-2. Apply the fix precisely
-3. Do not add new characters, subplots, or scenes unless explicitly instructed
-4. Maintain the original voice, tone, and style
-5. Return the COMPLETE revised document text, no commentary`;
+        const systemPrompt = `You are applying a note to a screenplay development document. The note has been submitted by the author and must be implemented as specified.
+${narrativeContextBlock ? `\nCANONICAL CONTEXT (locked upstream — preserve unless the note explicitly directs otherwise):\n${narrativeContextBlock}` : ""}${canonDocsBlock}${canonBreakWarning}
+
+Apply ONLY the specified fix. Preserve all other content exactly as written. Do not add, remove, or alter any content beyond what the note requires.`;
 
         const userPrompt = `ORIGINAL DOCUMENT:
 ${baseText}
@@ -277,6 +345,48 @@ Apply the fix above. Return ONLY the complete revised document text.`;
         }).eq("id", note_id);
       }
 
+      // Mark downstream docs as stale
+      const staleDocs: string[] = [];
+      const downstream = DOWNSTREAM_DOCS[docType] || [];
+      if (downstream.length > 0) {
+        try {
+          for (const downstreamDocType of downstream) {
+            const { data: downDoc } = await db
+              .from("project_documents")
+              .select("id")
+              .eq("project_id", project_id)
+              .eq("doc_type", downstreamDocType)
+              .maybeSingle();
+            if (!downDoc) continue;
+            const { data: updated } = await db
+              .from("project_document_versions")
+              .update({ is_stale: true, stale_reason: `Note applied to ${docType} — re-validate downstream` })
+              .eq("document_id", downDoc.id)
+              .eq("is_current", true)
+              .select("id");
+            if (updated?.length) staleDocs.push(downstreamDocType);
+          }
+        } catch (staleErr) {
+          console.warn("[apply-note-fix] stale marking failed (non-fatal):", staleErr);
+        }
+      }
+
+      // Write canon_break record if detected
+      if (canonBreaking) {
+        try {
+          await db.from("locked_decisions").insert({
+            project_id,
+            decision_type: "canon_break",
+            description: `Note ${note_id || "unknown"} broke canon on ${docType}`,
+            source_note_id: note_id,
+            affected_docs: downstream,
+            created_at: new Date().toISOString(),
+          }).throwOnError();
+        } catch (cdErr) {
+          console.warn("[apply-note-fix] locked_decisions write failed (non-fatal):", cdErr);
+        }
+      }
+
       return json({
         ok: true,
         new_version_id: (newVersion as any).id,
@@ -285,6 +395,7 @@ Apply the fix above. Return ONLY the complete revised document text.`;
         target_document_id: documentId,
         approved: !!approve_after_apply,
         ...(surgicalMeta.surgical ? { surgical_rewrite: surgicalMeta } : {}),
+        stale_docs: staleDocs,
       });
     }
 

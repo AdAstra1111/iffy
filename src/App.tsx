@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { DeployBadge } from "@/components/ui/DeployBadge";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -13,6 +14,7 @@ import { ThemeProvider } from "@/hooks/useTheme";
 import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner";
 import { UIModeProvider } from "@/hooks/useUIMode";
 import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
+import { ReverseEngineerProvider } from "@/contexts/ReverseEngineerContext";
 
 // Eagerly load landing + auth (first paint)
 import Index from "./pages/Index";
@@ -265,10 +267,12 @@ const App = () => (
     <AuthProvider>
     <UIModeProvider>
     <ProcessingProvider>
+    <ReverseEngineerProvider>
     <ThemeProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <DeployBadge />
       {/* Build stamp — fixed bottom-left, only visible in dev/staging awareness */}
       <div style={{ position: 'fixed', bottom: 4, left: 6, zIndex: 9999, fontSize: '9px', color: 'rgba(255,255,255,0.18)', pointerEvents: 'none', fontFamily: 'monospace', letterSpacing: '0.05em' }}>
         {__COMMIT_HASH__} · {new Date(__BUILD_TIME__).toISOString().slice(0,16).replace('T',' ')}Z
@@ -281,6 +285,7 @@ const App = () => (
       </BrowserRouter>
     </TooltipProvider>
     </ThemeProvider>
+    </ReverseEngineerProvider>
     </ProcessingProvider>
     </UIModeProvider>
     </AuthProvider>
