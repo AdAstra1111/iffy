@@ -3,10 +3,9 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 export const maxDuration = 300;
 
 const SUPABASE_URL = process.env.SUPABASE_URL || 'https://hdfderbphdobomkdjypc.supabase.co';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkZmRlcmJwaGRvYm9ta2RqeXBjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzODg2NjEsImV4cCI6MjA5MDk2NDY2MX0.wLiw8PxIZ_ABt-y6ORhlZlHk1LOJujb-OqurX8wP_N1c';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
-// Special handler: reverse-engineer-status via Management API (bypasses broken Edge Function RLS)
 async function handleReverseEngineerStatus(body: { job_id?: string; project_id?: string }) {
   const mgmtPat = SUPABASE_SERVICE_KEY;
   const projectRef = 'hdfderbphdobomkdjypc';
@@ -72,39 +71,36 @@ async function handleReverseEngineerStatus(body: { job_id?: string; project_id?:
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Extract the path after /api/supabase-proxy/
   const pathParts = (req.params as any)?.path;
-  if (!pathParts) {
-    return res.status(400).json({ error: 'No path provided' });
-  }
   const path = Array.isArray(pathParts) ? pathParts.join('/') : pathParts;
 
-  // Bypass: handle reverse-engineer-status via Management API
+  console.log('[proxy] path:', path, 'params:', JSON.stringify(req.params));
+
+  // Bypass: reverse-engineer-status via Management API
   if (path === 'reverse-engineer-status') {
     try {
       const body = req.body ?? {};
       const result = await handleReverseEngineerStatus(body);
       return res.status(200).json(result);
     } catch (err: any) {
-      console.error('[reverse-engineer-status]', err?.message);
+      console.error('[proxy] reverse-engineer-status error:', err?.message);
       return res.status(500).json({ error: err?.message });
     }
   }
 
+  // Default: forward to Supabase REST API
   const targetUrl = `${SUPABASE_URL}/${path}`;
-  const apikey = req.headers['x-supabase-key'] || SUPABASE_ANON_KEY;
-  const authorization = req.headers['authorization'] || `Bearer ${SUPABASE_ANON_KEY}`;
-  const cronSecret = req.headers['x-iffy-cron-secret'] as string | undefined;
+  const apikey = req.headers['x-supabase-key'] as string || SUPABASE_ANON_KEY;
+  const authorization = req.headers['authorization'] as string || `Bearer ${SUPABASE_ANON_KEY}`;
 
   try {
     const response = await fetch(targetUrl, {
       method: req.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': apikey as string,
-        'Authorization': authorization as string,
+        'apikey': apikey,
+        'Authorization': authorization,
         'x-supabase-client-platform': 'web',
-        ...(cronSecret ? { 'x-iffy-cron-secret': cronSecret } : {}),
       },
       body: ['POST', 'PUT', 'PATCH'].includes(req.method || '')
         ? JSON.stringify(req.body)
