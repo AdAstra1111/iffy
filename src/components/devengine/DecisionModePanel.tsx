@@ -116,8 +116,16 @@ export function DecisionModePanel({
   }, [externalDirections]);
 
   // Sync selectedOptions up to parent so Apply All Notes & Decisions picks them up
+  // Use a ref to avoid triggering PDE re-renders that would pass new decisions prop,
+  // which would re-trigger the external-decisions sync and reset selectedOptions (loop).
+  const lastSyncedRef = React.useRef<Record<string, string>>({});
   useEffect(() => {
-    onDecisionsChange?.(selectedOptions);
+    const current = JSON.stringify(selectedOptions);
+    const last = JSON.stringify(lastSyncedRef.current);
+    if (current !== last) {
+      lastSyncedRef.current = selectedOptions;
+      onDecisionsChange?.(selectedOptions);
+    }
   }, [selectedOptions, onDecisionsChange]);
 
   const handleGenerateOptions = useCallback(async () => {
