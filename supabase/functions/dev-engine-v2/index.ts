@@ -5808,9 +5808,33 @@ ${docTextForScoring}`;
         return { now: nowNotes, deferred: deferredNotes };
       }
 
-      const blockersResult = filterAndTimingNotes(parsed.blocking_issues || []);
-      const highResult = filterAndTimingNotes(parsed.high_impact_notes || []);
-      const polishResult = filterAndTimingNotes(parsed.polish_notes || []);
+      // ── Exclude already-resolved notes from analysis output ──
+      let resolvedNoteIds = new Set<string>();
+      if (projectId) {
+        try {
+          const { data: resolved } = await supabase
+            .from("resolved_notes")
+            .select("note_id, note_key")
+            .eq("project_id", projectId)
+            .eq("status", "active");
+          if (resolved) {
+            for (const r of resolved) {
+              if (r.note_id) resolvedNoteIds.add(r.note_id);
+              if (r.note_key) resolvedNoteIds.add(r.note_key);
+            }
+          }
+        } catch (e) {
+          console.warn("[dev-engine-v2] resolved_notes query failed:", e);
+        }
+      }
+
+      // Filter out resolved notes before timing filter so they don't appear as open blockers
+      const resolvedFilter = (notes: any[]) =>
+        (notes || []).filter((n: any) => !resolvedNoteIds.has(n.id) && !resolvedNoteIds.has(n.note_key) && !resolvedNoteIds.has(n.note_id));
+
+      const blockersResult = filterAndTimingNotes(resolvedFilter(parsed.blocking_issues));
+      const highResult = filterAndTimingNotes(resolvedFilter(parsed.high_impact_notes));
+      const polishResult = filterAndTimingNotes(resolvedFilter(parsed.polish_notes));
 
       // Keep only NOW notes in the main arrays
       parsed.blocking_issues = blockersResult.now;

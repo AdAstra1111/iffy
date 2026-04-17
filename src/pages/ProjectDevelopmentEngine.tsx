@@ -1777,6 +1777,7 @@ export default function ProjectDevelopmentEngine() {
                 invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
               }}
               onAutoRunContinue={(opts, gd) => autoRun.applyDecisionsAndContinue?.(opts, gd)}
+              onDecisionsChange={setNotesDecisions}
               availableVersions={versions?.map((v: any) => ({ id: v.id, version_number: v.version_number, label: v.label }))}
               hideApplyButton={!autoRun.job?.id}
             />
@@ -2488,6 +2489,7 @@ export default function ProjectDevelopmentEngine() {
                       invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
                     }}
                     onAutoRunContinue={(opts, gd) => autoRun.applyDecisionsAndContinue?.(opts, gd)}
+                    onDecisionsChange={setNotesDecisions}
                     availableVersions={versions?.map((v: any) => ({ id: v.id, version_number: v.version_number, label: v.label }))}
                     hideApplyButton={!autoRun.job?.id}
                   />

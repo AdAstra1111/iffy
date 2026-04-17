@@ -115,6 +115,11 @@ export function DecisionModePanel({
     if (externalDirections) setGlobalDirections(externalDirections);
   }, [externalDirections]);
 
+  // Sync selectedOptions up to parent so Apply All Notes & Decisions picks them up
+  useEffect(() => {
+    onDecisionsChange?.(selectedOptions);
+  }, [selectedOptions, onDecisionsChange]);
+
   const handleGenerateOptions = useCallback(async () => {
     if (onGenerateOptions) { onGenerateOptions(); return; }
     if (!documentId || !versionId) return;
