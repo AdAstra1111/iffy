@@ -11,6 +11,9 @@
     },
     "api/nit-sync-proxy.ts": {
       "maxDuration": 300
+    },
+    "api/reverse-engineer-status-proxy.ts": {
+      "maxDuration": 300
     }
   },
   "rewrites": [
@@ -25,6 +28,10 @@
     {
       "source": "/api/supabase-proxy/(.*)",
       "destination": "/api/supabase-proxy?path=$1"
+    },
+    {
+      "source": "/api/reverse-engineer-status-proxy",
+      "destination": "/api/reverse-engineer-status-proxy"
     },
     {
       "source": "/((?!assets|favicon|og-image|robots|api).*)",

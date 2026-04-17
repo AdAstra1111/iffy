@@ -33,6 +33,23 @@ interface UseReverseEngineerReturn {
 
 const POLL_INTERVAL_MS = 2000;
 
+// Vercel proxy URL — bypasses Supabase Edge Function RLS issue
+const STATUS_PROXY_URL = '/api/reverse-engineer-status-proxy';
+
+async function pollViaProxy(body: { job_id?: string; project_id?: string }): Promise<ReverseEngineerJob | { jobs: ReverseEngineerJob[] } | null> {
+  try {
+    const res = await fetch(STATUS_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
 export function useReverseEngineer(): UseReverseEngineerReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [currentJob, setCurrentJob] = useState<ReverseEngineerJob | null>(null);
@@ -70,14 +87,12 @@ export function useReverseEngineer(): UseReverseEngineerReturn {
         updated_at: new Date().toISOString(),
       });
 
-      // Start polling — resilient: network/function errors don't stop the poll
+      // Start polling via Vercel proxy (bypasses RLS issue in Supabase Edge Function)
       const poll = async () => {
         try {
-          const { data: statusData, error: statusErr } = await supabase.functions.invoke('reverse-engineer-status', {
-            body: { job_id: jobId },
-          });
-          if (!statusErr && statusData) {
-            const job = statusData as ReverseEngineerJob;
+          const result = await pollViaProxy({ job_id: jobId });
+          if (result && !('jobs' in result)) {
+            const job = result as ReverseEngineerJob;
             setCurrentJob(job);
             if (job.status === 'done' || job.status === 'error') {
               setIsRunning(false);
@@ -101,20 +116,16 @@ export function useReverseEngineer(): UseReverseEngineerReturn {
 
   /** Poll a specific job's status (for external use) */
   const pollJobStatus = useCallback(async (jobId: string): Promise<ReverseEngineerJob | null> => {
-    const { data, error } = await supabase.functions.invoke('reverse-engineer-status', {
-      body: { job_id: jobId },
-    });
-    if (error || !data) return null;
-    return data as ReverseEngineerJob;
+    const result = await pollViaProxy({ job_id: jobId });
+    if (!result || ('jobs' in result)) return null;
+    return result as ReverseEngineerJob;
   }, []);
 
   /** Get all reverse-engineer jobs for a project */
   const getProjectJobs = useCallback(async (projectId: string): Promise<ReverseEngineerJob[]> => {
-    const { data, error } = await supabase.functions.invoke('reverse-engineer-status', {
-      body: { project_id: projectId },
-    });
-    if (error || !data) return [];
-    return (data.jobs || []) as ReverseEngineerJob[];
+    const result = await pollViaProxy({ project_id: projectId });
+    if (!result || !('jobs' in result)) return [];
+    return result.jobs;
   }, []);
 
   return { reverseEngineerFromScript, pollJobStatus, getProjectJobs, isRunning, currentJob };
