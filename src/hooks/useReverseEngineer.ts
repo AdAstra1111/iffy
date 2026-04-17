@@ -34,7 +34,7 @@ interface UseReverseEngineerReturn {
 const POLL_INTERVAL_MS = 2000;
 
 // Vercel proxy URL — bypasses Supabase Edge Function RLS issue
-const STATUS_PROXY_URL = '/api/reverse-engineer-status-proxy';
+const STATUS_PROXY_URL = '/api/supabase-proxy/reverse-engineer-status';
 
 async function pollViaProxy(body: { job_id?: string; project_id?: string }): Promise<ReverseEngineerJob | { jobs: ReverseEngineerJob[] } | null> {
   try {
