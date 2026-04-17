@@ -520,7 +520,11 @@ export function useDevEngineV2(projectId: string | undefined) {
 
   // Latest analysis for selected version
   const latestAnalysis = runs.filter(r => r.run_type === 'ANALYZE').pop()?.output_json || null;
-  const latestNotes = runs.filter(r => r.run_type === 'NOTES').pop()?.output_json || null;
+  // Notes: use allDocRuns filtered by version_id to get notes scoped to the selected version.
+  // Without version_id filter, notes from other versions incorrectly appear/disappear.
+  const latestNotes = allDocRuns.filter(r =>
+    r.run_type === 'NOTES' && r.version_id === selectedVersionId
+  ).pop()?.output_json || null;
 
   const isLoading = analyze.isPending || generateNotes.isPending || rewrite.isPending || convert.isPending || createPaste.isPending || beatSheetToScript.isPending;
 

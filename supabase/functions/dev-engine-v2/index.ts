@@ -1967,6 +1967,23 @@ CRITICAL:
 
 Output ONLY the rewritten screenplay text. No JSON, no commentary, no markdown.`;
 
+const REWRITE_CHUNK_SYSTEM_SECTIONED = `You are rewriting a section of a structured development document (e.g. character bible, beat sheet, treatment, or story outline).
+
+This document uses ## section headers to organise its content. You are rewriting ONE CHUNK of that document — a set of consecutive sections.
+
+GOALS:
+- Apply the approved notes to the relevant sections in this chunk.
+- Preserve sections not affected by the notes exactly as they are.
+- Maintain the ## section header format for every section.
+- Do NOT merge, rename, or reorder sections.
+- Do NOT convert to screenplay format (no INT./EXT. sluglines, no dialogue cues).
+- Do NOT summarise or collapse sections.
+
+CRITICAL:
+- Output ONLY the rewritten section content. No JSON, no commentary.
+- Preserve each section's ## header exactly as it appears in the source.
+- Maintain continuity with the previous chunk context provided.`;
+
 const REWRITE_CHUNK_SYSTEM_GRID = `You are rewriting an EPISODE GRID for a vertical drama series.
 
 An episode grid is a STRUCTURED PLANNING DOCUMENT — not a screenplay, not prose narrative.
@@ -6223,10 +6240,11 @@ ${docTextForScoring}`;
       }
       if (!analysis) throw new Error("No analysis found. Run Analyze first.");
 
-      // Check previous note keys to prevent endless repetition
+      // Check previous note keys to prevent endless repetition (scoped to this version)
       const { data: prevNotes } = await supabase.from("development_notes")
         .select("note_key, severity, resolved")
-        .eq("document_id", documentId);
+        .eq("document_id", documentId)
+        .eq("document_version_id", versionId);
       const previouslyResolved = new Set((prevNotes || []).filter(n => n.resolved).map(n => n.note_key));
       const existingUnresolved = (prevNotes || []).filter(n => !n.resolved);
       const previousBlockerCount = existingUnresolved.filter(n => n.severity === 'blocker').length;
@@ -6609,6 +6627,7 @@ ${(() => {
             .update({ resolved: true, resolved_in_version: versionId })
             .eq("note_key", prev.note_key)
             .eq("document_id", documentId)
+            .eq("document_version_id", versionId)
             .eq("resolved", false);
         }
       }
@@ -6621,16 +6640,25 @@ ${(() => {
             .update({ regressed: true })
             .eq("note_key", note.id)
             .eq("document_id", documentId)
+            .eq("document_version_id", versionId)
             .eq("resolved", true);
         }
       }
 
-      // Insert new note records
+      // Insert new note records (deduplicated by note_key within this version)
       // FIX 5: Normalize note_source — only valid spine provenance survives
       const VALID_SPINE_SOURCES = new Set(["spine_alignment", "spine_drift"]);
       const SPINE_COMPATIBLE_CATEGORIES = new Set(["spine_alignment", "spine_drift"]);
+
+      // Deduplicate by note_key within this version — only keep first occurrence
+      const seenNoteKeys = new Set<string>();
       const noteInserts = allTieredNotes
         .filter((n: any) => n.id)
+        .filter((n: any) => {
+          if (seenNoteKeys.has(n.id)) return false;
+          seenNoteKeys.add(n.id);
+          return true;
+        })
         .map((n: any) => {
           let noteSource = n.note_source || null;
           // Strip invalid spine provenance
@@ -7513,6 +7541,43 @@ MATERIAL:\n${version.plaintext}`;
         }
       }
 
+      // ── CANONICAL DOCUMENT INJECTION ──
+      // Fetch approved concept_brief + treatment and inject their full text into the
+      // rewrite prompt. This is the fix for: every rewrite iteration "drifting" from
+      // canon because the LLM only had structural metadata (title/logline) from
+      // project_canon — not the actual narrative content from approved docs.
+      // story_outline is the canonical alignment doc for feature films: it must stay
+      // aligned with concept_brief + treatment on every rewrite.
+      let canonDocsBlock = "";
+      try {
+        const canonDocTypes = ["concept_brief", "treatment"];
+        const canonParts: string[] = [];
+        for (const cdt of canonDocTypes) {
+          const { data: cDoc } = await supabase
+            .from("project_documents")
+            .select("id")
+            .eq("project_id", projectId)
+            .eq("doc_type", cdt)
+            .maybeSingle();
+          if (!cDoc) continue;
+          const { data: cVer } = await supabase
+            .from("project_document_versions")
+            .select("plaintext")
+            .eq("document_id", cDoc.id)
+            .eq("is_current", true)
+            .maybeSingle();
+          const cText = cVer?.plaintext;
+          if (cText && cText.trim().length > 50) {
+            canonParts.push(`\n=== ${cdt.toUpperCase()} (APPROVED CANON) ===\n${cText}\n=== END ${cdt.toUpperCase()} ===`);
+          }
+        }
+        if (canonParts.length > 0) {
+          canonDocsBlock = `\n\nCANONICAL SOURCE DOCUMENTS (align story outline to these):\n${canonParts.join("\n")}\n`;
+        }
+      } catch (e) {
+        console.warn("[dev-engine-v2] rewrite: canonical doc injection failed:", e);
+      }
+
       // Format reminder injected just before material — model weights recent context more heavily
       const episodeGridFormatReminder = (effectiveDeliverable === "episode_grid" || effectiveDeliverable === "vertical_episode_grid")
         ? `\nOUTPUT FORMAT REQUIRED: Episode grid — each episode as ## EPISODE N: block with all 8 fields: PREMISE / HOOK / CORE MOVE / CHARACTER COST / CLIFFHANGER / ARC POSITION / TONE. No prose. No summaries.\n`
@@ -7520,7 +7585,7 @@ MATERIAL:\n${version.plaintext}`;
         ? `\nOUTPUT FORMAT REQUIRED: Episode beats — each episode as ## EPISODE N: block with numbered beats. Beat format: N. [BEAT_TYPE] description. Beat 1 = HOOK, final beat = CLIFFHANGER. No prose. No screenplay.\n`
         : "";
 
-      const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}
+      const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}
@@ -7777,14 +7842,37 @@ MATERIAL TO REWRITE:\n${fullText}`;
         return blocks;
       };
 
-      let chunkTexts = buildLegacySluglineChunks(fullText);
+      // ── SECTIONED DEV TYPES (character_bible, beat_sheet, treatment, story_outline) ──
+      // These docs use ## section headers, not INT./EXT. sluglines.
+      // Split on ## headers instead of sluglines so each chunk stays coherent.
+      const SECTIONED_PLAN_TYPES = new Set(["character_bible", "beat_sheet", "treatment", "story_outline", "long_treatment", "long_character_bible"]);
+      const buildSectionHeaderChunks = (text: string): string[] => {
+        const CHUNK_TARGET = 12000;
+        const lines = text.split("\n");
+        let currentChunk = "";
+        const chunks: string[] = [];
+        for (const line of lines) {
+          const isSectionHeader = /^##\s/.test(line.trim());
+          if (isSectionHeader && currentChunk.length >= CHUNK_TARGET) {
+            chunks.push(currentChunk.trim());
+            currentChunk = "";
+          }
+          currentChunk += line + "\n";
+        }
+        if (currentChunk.trim()) chunks.push(currentChunk.trim());
+        return chunks.length > 0 ? chunks : [text];
+      };
+
+      let chunkTexts = SECTIONED_PLAN_TYPES.has(sourceDocType)
+        ? buildSectionHeaderChunks(fullText)
+        : buildLegacySluglineChunks(fullText);
       let chunkMeta: Array<{ chunk_index: number; chunk_key: string; label: string; episode_start?: number | null; episode_end?: number | null; section_id?: string | null }> =
         chunkTexts.map((_, i) => ({
           chunk_index: i,
           chunk_key: `chunk_${String(i + 1).padStart(2, "0")}`,
           label: `Chunk ${i + 1}`,
         }));
-      let strategy = "legacy_slugline";
+      let strategy = SECTIONED_PLAN_TYPES.has(sourceDocType) ? "sectioned" : "legacy_slugline";
       let resolvedEpisodeCount: number | null = null;
 
       if (isLargeRiskDocType(sourceDocType)) {
@@ -8010,8 +8098,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
       // NOTE: docType must be declared BEFORE this line (temporal dead zone guard)
       const isGridDocType = docType === "episode_grid" || docType === "vertical_episode_grid";
       const isBeatsDocType = docType === "vertical_episode_beats" || docType === "episode_beats";
+      const isSectionedDocType = new Set(["character_bible", "beat_sheet", "treatment", "story_outline", "long_treatment", "long_character_bible"]).has(docType);
       const baseChunkSystem = isGridDocType ? REWRITE_CHUNK_SYSTEM_GRID
         : isBeatsDocType ? REWRITE_CHUNK_SYSTEM_BEATS
+        : isSectionedDocType ? REWRITE_CHUNK_SYSTEM_SECTIONED
         : REWRITE_CHUNK_SYSTEM; // screenplay — correct for season_script, episode_script
       const augmentedChunkSystem = contextInjection
         ? `${baseChunkSystem}\n\n${contextInjection}`

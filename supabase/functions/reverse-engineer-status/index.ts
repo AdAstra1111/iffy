@@ -1,38 +1,51 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { serve } from https://deno.land/std@0.168.0/http/server.ts;
 
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  Access-Control-Allow-Origin: *,
+  Access-Control-Allow-Headers: authorization, x-client-info, apikey, content-type,
 };
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+// Use SUPABASE_MANAGEMENT_PAT (set by Trinity for re-job-processor)
+// This is the Management PAT — bypasses RLS completely from Edge Runtime
+const MANAGEMENT_PAT = Deno.env.get(SUPABASE_MANAGEMENT_PAT) ?? ;
+const PROJECT_REF = Deno.env.get(SUPABASE_URL) ?? hdfderbphdobomkdjypc;
+
+async function mgmtQuery(query: string) {
+  const res = await fetch(`https://api.supabase.com/v1/projects/${PROJECT_REF}/database/query`, {
+    method: POST,
+    headers: {
+      Authorization: `Bearer ${MANAGEMENT_PAT}`,
+      Content-Type: application/json,
+    },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => );
+    throw new Error(`Management API ${res.status}: ${text.slice(0, 200)}`);
+  }
+  return res.json();
+}
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method === OPTIONS) return new Response(ok, { headers: corsHeaders });
   try {
     const { job_id, project_id } = await req.json().catch(() => ({}));
     if (!job_id && !project_id)
-      return new Response(JSON.stringify({ error: "job_id or project_id required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
-    const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+      return new Response(JSON.stringify({ error: job_id or project_id required }),
+        { status: 400, headers: { ...corsHeaders, Content-Type: application/json } });
 
     if (job_id) {
-      // Single job status
-      const { data, error } = await sb
-        .from("narrative_units")
-        .select("id, project_id, payload_json")
-        .eq("id", job_id)
-        .maybeSingle();
-      if (error || !data)
-        return new Response(JSON.stringify({ error: "Job not found" }),
-          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const p = data.payload_json || {};
+      const rows: any[] = await mgmtQuery(
+        `SELECT id, project_id, payload_json FROM narrative_units WHERE id = '${job_id}' AND unit_type = 'async_job' LIMIT 1;`
+      );
+      if (!rows.length)
+        return new Response(JSON.stringify({ error: Job not found }),
+          { status: 404, headers: { ...corsHeaders, Content-Type: application/json } });
+      const d = rows[0];
+      const p = d.payload_json || {};
       return new Response(JSON.stringify({
-        job_id: data.id,
-        project_id: data.project_id,
+        job_id: d.id,
+        project_id: d.project_id,
         status: p.status,
         current_stage: p.current_stage,
         stages: p.stages,
@@ -40,27 +53,34 @@ serve(async (req) => {
         error: p.error,
         created_at: p.created_at,
         updated_at: p.updated_at,
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }), { headers: { ...corsHeaders, Content-Type: application/json } });
     }
 
     // All jobs for a project
-    const { data, error } = await sb
-      .from("narrative_units")
-      .select("id, project_id, payload_json")
-      .eq("project_id", project_id)
-      .eq("unit_type", "async_job")
-      .order("created_at", { ascending: false });
-    // Filter in JS: only reverse_engineer jobs
-    const allJobs = (data || []).filter((d: any) => d.payload_json?.job_type === "reverse_engineer");
+    const rows: any[] = await mgmtQuery(
+      `SELECT id, project_id, payload_json FROM narrative_units WHERE project_id = '${project_id}' AND unit_type = 'async_job' ORDER BY created_at DESC LIMIT 20;`
+    );
+    const allJobs = rows.filter((d: any) => d.payload_json?.job_type === reverse_engineer);
     const jobs = allJobs.map((d: any) => {
       const p = d.payload_json || {};
-      return { job_id: d.id, project_id: d.project_id, status: p.status, current_stage: p.current_stage, stages: p.stages, result: p.result, error: p.error, created_at: p.created_at, updated_at: p.updated_at };
+      return {
+        job_id: d.id,
+        project_id: d.project_id,
+        status: p.status,
+        current_stage: p.current_stage,
+        stages: p.stages,
+        result: p.result,
+        error: p.error,
+        created_at: p.created_at,
+        updated_at: p.updated_at,
+      };
     });
     return new Response(JSON.stringify({ jobs }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      { headers: { ...corsHeaders, Content-Type: application/json } });
 
   } catch (err: any) {
+    console.error([reverse-engineer-status] error:, err?.message);
     return new Response(JSON.stringify({ error: err?.message }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      { status: 500, headers: { ...corsHeaders, Content-Type: application/json } });
   }
 });
