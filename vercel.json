@@ -26,10 +26,6 @@
       "destination": "/api/nit-sync-proxy"
     },
     {
-      "source": "/api/supabase-proxy/(.*)",
-      "destination": "/api/supabase-proxy?path=$1"
-    },
-    {
       "source": "/api/reverse-engineer-status-proxy",
       "destination": "/api/reverse-engineer-status-proxy"
     },
