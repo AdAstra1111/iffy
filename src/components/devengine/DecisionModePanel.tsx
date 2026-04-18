@@ -50,6 +50,8 @@ interface DecisionModePanelProps {
   /** Available versions for "continue from" dropdown */
   availableVersions?: Array<{ id: string; version_number: number; label?: string | null }>;
   hideApplyButton?: boolean;
+  /** Callback fired when selected options change — used by PDE to sync decisions to Apply All */
+  onDecisionsChange?: (selections: Record<string, string>) => void;
 }
 
 async function callDevEngine(action: string, extra: Record<string, any> = {}) {
@@ -71,7 +73,7 @@ export function DecisionModePanel({
   decisions: externalDecisions, globalDirections: externalDirections,
   jobId, isAutoRunPaused,
   onRewriteComplete, onAutoRunContinue, onGenerateOptions,
-  isGeneratingOptions, availableVersions, hideApplyButton,
+  isGeneratingOptions, availableVersions, hideApplyButton, onDecisionsChange,
 }: DecisionModePanelProps) {
   const [decisions, setDecisions] = useState<Decision[]>(() => normalizeDecisionsForUI(externalDecisions || [], 'decision-mode-panel:initial') as Decision[]);
   const [globalDirections, setGlobalDirections] = useState<GlobalDirection[]>(externalDirections || []);
