@@ -312,7 +312,29 @@ export function DevEngineSimpleView({
 
             {/* Current Doc tab */}
             <TabsContent value="current" className="mt-2 space-y-2">
-              {!currentDoc ? (
+              {!autoRunJob && documents.length > 0 ? (
+                // No active job — show all available project docs so user can see what's ready
+                <ScrollArea className="max-h-[400px]">
+                  <p className="text-[9px] text-muted-foreground mb-2 px-0.5">
+                    {documents.length} document{documents.length !== 1 ? 's' : ''} ready — start Auto-Run to begin.
+                  </p>
+                  {documents.map((doc: any) => (
+                    <div
+                      key={doc.id}
+                      className={`flex items-center justify-between py-1.5 px-2 rounded hover:bg-muted/40 transition-colors cursor-pointer ${
+                        selectedDocId === doc.id ? 'bg-primary/10 border border-primary/20' : ''
+                      }`}
+                      onClick={() => selectDocument(doc.id)}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                        <span className="text-[10px] font-medium truncate">{formatDocType(doc.doc_type)}</span>
+                      </div>
+                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    </div>
+                  ))}
+                </ScrollArea>
+              ) : !currentDoc ? (
                 <p className="text-xs text-muted-foreground py-4 text-center">
                   {autoRunJob ? 'No active document detected.' : 'Start Auto-Run to see the current document.'}
                 </p>
