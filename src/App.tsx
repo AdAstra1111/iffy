@@ -13,15 +13,15 @@ import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner
 import { UIModeProvider } from "@/hooks/useUIMode";
 import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
 
-// Eagerly load critical path pages — lazy+Suspense causes removeChild crash on Android/slow connections
+// Eagerly load critical path pages — lazy+Suspense+framer-motion causes removeChild crash on Android/slow connections
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ProjectDevelopmentEngine from "./pages/ProjectDevelopmentEngine";
+import NewProject from "./pages/NewProject";
 
 // Lazy-load everything else
-// Dashboard is eagerly loaded above — do not lazy-load it (causes removeChild crash)
-const NewProject = lazy(() => import("./pages/NewProject"));
+// Dashboard, NewProject, ProjectDevelopmentEngine eagerly loaded above — do not lazy-load (causes removeChild crash)
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
 const Trends = lazy(() => import("./pages/Trends"));
 const StoryTrends = lazy(() => import("./pages/StoryTrends"));
@@ -164,7 +164,7 @@ const AnimatedRoutes = () => (
     <Route path="/" element={<Index />} />
     <Route path="/auth" element={<Auth />} />
     <Route path="/dashboard" element={<P><Dashboard /></P>} />
-    <Route path="/projects/new" element={<P><S><NewProject /></S></P>} />
+    <Route path="/projects/new" element={<P><NewProject /></P>} />
     <Route path="/projects/:id" element={<P><S><ProjectShell><ProjectDetail /></ProjectShell></S></P>} />
     <Route path="/projects/:id/development" element={<P><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></P>} />
     <Route path="/projects/:id/script" element={<P><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></P>} />
