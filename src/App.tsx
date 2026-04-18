@@ -14,12 +14,13 @@ import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner
 import { UIModeProvider } from "@/hooks/useUIMode";
 import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
 
-// Eagerly load landing + auth (first paint)
+// Eagerly load landing + auth + dashboard (critical path — lazy+Suspense causes removeChild crash on Android/slow connections)
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Dashboard from "./pages/Dashboard";
 
 // Lazy-load everything else
-const Dashboard = lazy(() => import("./pages/Dashboard"));
+// Dashboard is eagerly loaded above — do not lazy-load it (causes removeChild crash)
 const NewProject = lazy(() => import("./pages/NewProject"));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
 const Trends = lazy(() => import("./pages/Trends"));
