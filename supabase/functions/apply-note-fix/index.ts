@@ -320,6 +320,17 @@ Apply the fix above. Return ONLY the complete revised document text.`;
         return json({ error: "Failed to create new version", detail: createError?.message }, 500);
       }
 
+      // Promote new version to is_current — clear old current first, then set new one
+      await db
+        .from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", documentId)
+        .eq("is_current", true);
+      await db
+        .from("project_document_versions")
+        .update({ is_current: true })
+        .eq("id", (newVersion as any).id);
+
       // If approve_after_apply, update active docs
       if (approve_after_apply) {
         await db.from("project_active_docs").upsert({
