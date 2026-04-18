@@ -27,8 +27,10 @@ const JOB_STAGES = [
   { key: "synthesise",      label: "Synthesising analysis..." },
   { key: "idea",            label: "Creating idea document..." },
   { key: "beat_sheet",      label: "Building beat sheet..." },
+  { key: "story_outline",   label: "Building story outline..." },
   { key: "character_bible", label: "Building character bible..." },
   { key: "treatment",       label: "Writing treatment..." },
+  { key: "market_sheet",    label: "Building market sheet..." },
   { key: "infer_criteria",  label: "Inferring criteria..." },
   { key: "storing_docs",   label: "Saving foundation documents..." },
 ];
@@ -525,7 +527,34 @@ Respond with ONLY JSON.`, 12000);
     // Fetch project resolver hash so Idea version stays in sync with project state
     const { data: projRow } = await sb.from("projects").select("resolved_qualifications_hash").eq("id", project_id).single();
     const ideaResolverHash = projRow?.resolved_qualifications_hash || undefined;
-    const ideaData = {
+
+    // Dedicated idea call: full synthesis + script voice excerpt
+    const ideaScriptExcerpt = script_text.slice(0, 2000);
+    const callIdea = await callLLM(`Given the full synthesis and script opening, write the creative seed document.
+
+The logline must be 1-2 sentences that hook immediately — it should make someone want to see this story.
+Genre, subgenre, tone, themes, and target_audience must all be consistent with each other.
+
+Return ONLY valid JSON:
+{
+  "title": "string",
+  "logline": "string — 1-2 sentence hook that sells the story",
+  "genre": "string",
+  "subgenre": "string or null",
+  "tone": "string",
+  "themes": ["string"],
+  "target_audience": "string"
+}
+
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (all characters, events, locations, themes from all chunks):
+${synthSummary}
+
+SUPPLEMENTARY — SCRIPT OPENING (for voice/tone check):
+${ideaScriptExcerpt}
+
+Respond with ONLY JSON.`, 6000);
+
+    const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
       title: metadata.title || "Untitled",
       logline: metadata.logline || "",
       genre: metadata.genre || null,
@@ -535,7 +564,7 @@ Respond with ONLY JSON.`, 12000);
       target_audience: metadata.target_audience || null,
     };
     await storeDoc(sb, project_id, script_document_id, user_id, "idea", "creative_primary",
-      (metadata.title || "Script") + " — Idea",
+      (ideaData.title || metadata.title || "Script") + " — Idea",
       ideaData,
       { source_citations: [allChunksCitation, ...chunkCitations] },
       ideaResolverHash
@@ -547,7 +576,9 @@ Respond with ONLY JSON.`, 12000);
     updateStage(payload, "beat_sheet", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const beatScript = script_text.slice(0, 80000); // beats need enough to track structure
+    // Synthesis-first context: synthSummary covers all 3 chunks completely.
+    // Raw script excerpt kept as supplementary reference for style/voice only.
+    const beatScript = script_text.slice(0, 15000);
     const call2 = await callLLM(`Extract a beat sheet from this ${format} script. Use the full structural arc.
 
 IMPORTANT — beat naming:
@@ -556,9 +587,6 @@ IMPORTANT — beat naming:
 - NEVER use "Character 1", "Character 2", "Protagonist", "MC", or placeholder labels
 - Good names: "The Discovery", "Amara's Betrayal", "First Contact", "Point of No Return", "The Reckoning"
 - Bad names: "Character 1 Arrives", "Protagonist meets someone", "MC does something"
-
-CHARACTER NAMES (use these in beat names and descriptions):
-${mergedCharacters.map(c => `- ${c}`).join("\n")}
 
 Return ONLY valid JSON:
 {
@@ -569,7 +597,7 @@ Return ONLY valid JSON:
       "number": 1,
       "name": "string — short evocative title for this beat (1-6 words, use real character names)",
       "page_range": "string",
-      "description": "string",
+      "description": "string — full description of what happens in this beat",
       "emotional_shift": "string",
       "protagonist_state": "string",
       "dramatic_function": "string"
@@ -580,21 +608,59 @@ Return ONLY valid JSON:
   "turning_points": [{"page": "string", "description": "string"}]
 }
 
-SCRIPT (first 80k chars):
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (covers entire story, all chunks):
+${synthSummary}
+
+SUPPLEMENTARY — SCRIPT EXCERPT (for style/voice reference):
 ${beatScript}
 
-KNOWN KEY EVENTS FROM FULL SCRIPT:
-${allEvents.map(e => `- ${e}`).join("\n")}
+Respond with ONLY JSON.`, 14000);
 
-Respond with ONLY JSON.`, 12000);
+    // ── Stage 6: Story outline (dedicated call — not a beat_sheet slice) ───
+    updateStage(payload, "story_outline", "running");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // ── Stage 6: Character bible (use synthesis + head for full cast) ────────
+    const allBeatEntries = (call2 as any).beats
+      ? (call2 as any).beats.map((b: any) => `Beat ${b.number} [${b.name}]: ${b.description || ""}`).join("\n")
+      : "";
+
+    const callStoryOutline = await callLLM(`Given the full beat sheet and synthesis, produce an abbreviated story sequence.
+
+RULES:
+- Each entry: number, title, 1-2 sentence description
+- Entries structured in acts matching the beat_sheet exactly
+- Read as a coherent miniature story — if you read only the titles and descriptions in order, you understand the full arc
+- Different density from beat_sheet: beat_sheet is the full map, story_outline is the 2-minute index
+
+Return ONLY valid JSON:
+{
+  "title": "string",
+  "format": "string",
+  "entries": [
+    { "number": 1, "title": "string", "description": "string — 1-2 sentences, narrative prose in sequence" }
+  ]
+}
+
+PRIMARY CONTEXT — FULL BEAT SHEET (all beats, all descriptions):
+${allBeatEntries}
+
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (characters, locations, events, themes from all chunks):
+${synthSummary}
+
+Respond with ONLY JSON.`, 8000);
+
+    updateStage(payload, "story_outline", "done");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    // ── Stage 7: Character bible ─────────────────────────────────────────────
     updateStage(payload, "character_bible", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const charScript = script_text.slice(0, 80000);
+    // Synthesis-first: synthSummary is complete across all chunks. Script excerpt for style only.
+    const charScript = script_text.slice(0, 15000);
     const call3 = await callLLM(`Write a complete character bible for this ${format} script.
-Known characters from full script analysis: ${mergedCharacters.join(", ")}.
+
+CRITICAL ORDERING RULE: Characters array MUST be ordered by narrative importance — protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time and story weight, then recurring/minor roles last. NEVER alphabetical order.
 
 Return ONLY valid JSON:
 {
@@ -619,12 +685,13 @@ Return ONLY valid JSON:
   "ensemble_notes": "string"
 }
 
-CRITICAL ORDERING RULE: Characters array MUST be ordered by narrative importance — protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time and story weight, then recurring/minor roles last. NEVER alphabetical order.
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (covers all characters from all script chunks):
+${synthSummary}
 
-SCRIPT (first 80k chars):
+SUPPLEMENTARY — SCRIPT EXCERPT (for character voice/style reference only):
 ${charScript}
 
-Respond with ONLY JSON.`, 12000);
+Respond with ONLY JSON.`, 14000);
 
     // ── Stage 6.5: Treatment synthesis ──────────────────────────────────────
     updateStage(payload, "treatment", "running");
@@ -634,38 +701,90 @@ Respond with ONLY JSON.`, 12000);
     const worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
     const protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
     const beats       = (call2 as any).beats || [];
-    const storyOutline = (call2 as any).beats
-      ? (call2 as any).beats.slice(0, 20).map((b: any, i: number) => ({ number: i + 1, title: b.name, description: b.description }))
-      : [];
 
-    const callTreatment = await callLLM(`You are a senior story analyst. Write a factual treatment narrative for this screenplay — a prose summary of WHAT HAPPENS in the story.
+    // Full beat descriptions — no truncation, all beats
+    const allBeatDescriptions = beats.map((b: any) =>
+      `Beat ${b.number} [${b.name}]: ${b.description || ""}`
+    ).join("\n");
+
+    const callTreatment = await callLLM(`You are a senior story analyst. Write a factual treatment narrative for this screenplay — a prose summary of WHAT HAPPENS in the complete story.
 
 RULES:
-- Write in third-person narrative prose. No beat markers, no scene numbers, no stage directions.
-- Structure as flowing paragraphs that tell the story as a reader would experience it.
-- Do NOT invent scenes, dialogue, or details not present in the script. Stick strictly to what the source material contains.
-- Act breaks should feel like natural story progressions, not bullet-point summaries.
+- Write in third-person narrative prose. Act breaks must match the beat structure exactly.
+- Cover the FULL story arc — beginning to end. Do not truncate mid-story.
+- Do NOT invent scenes, dialogue, or details not present in the source. Stick strictly to what the material contains.
+- Write 3-6 paragraphs per act. Treat this as a polished narrative summary, not a beat list.
 - Mention key characters by name and ground events in specific locations.
-- Length: 3-6 paragraphs. Treat this as a polished narrative summary, not a line-by-line synopsis.
 
-SOURCE MATERIAL:
+Return valid JSON:
+{
+  "title": "string",
+  "format": "string",
+  "treatment": "string — full prose narrative, act-by-act, covering the complete story arc",
+  "act_breaks": [{"act_number": 1, "description": "string"}]
+}
 
+PRIMARY CONTEXT — FULL BEAT DESCRIPTIONS (all beats, complete arc):
+${allBeatDescriptions}
+
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (all characters, locations, events, themes across all chunks):
+${synthSummary}
+
+SOURCE:
 LOGLINE: ${metadata.logline}
-
 PREMISE: ${premise}
-
 WORLD NOTES: ${worldNotes}
-
 PROTAGONIST: ${protagonist}
 
-BEAT STRUCTURE (use these to trace the story arc — write prose, not a list):
-${beats.map((b: any, i: number) => `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 300)}`).join("\n")}
-
-Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`, 6000);
+Respond with ONLY JSON.`, 12000);
 
     updateStage(payload, "treatment", "done");
 
-    // ── Stage 4: Store documents ────────────────────────────────────────────
+    // ── Stage 8: Market sheet (dedicated call — not embedded in call1) ────
+    updateStage(payload, "market_sheet", "running");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    const marketCallInput = {
+      concept_brief: call1.concept_brief || {},
+      structural: {
+        total_beats: (call2 as any).total_beats || 0,
+        locations_count: allLocations.length,
+        characters_count: mergedCharacters.length,
+        tone_notes: toneNotes,
+      },
+      format,
+    };
+
+    const callMarketSheet = await callLLM(`Given the concept brief and structural analysis, produce the commercial context document.
+
+RULES:
+- Comparable titles must be genuinely comparable — tone + subject matter + target demographic, not obvious defaults
+- Budget range must be derived from structural analysis: location count, period/era, VFX complexity, cast size, action density
+  - If beat_sheet has 14+ locations across multiple countries + period setting + VFX creatures → budget_range cannot be micro
+  - If beat_sheet is confined locations + minimal cast + contemporary → low or micro possible
+- Audience age range and gender breakdown must be consistent with genre norms and comparable titles
+- Tagline: one-line hook summing core appeal, derive from tone + premise
+- Market positioning: specific placement, not generic
+
+Return ONLY valid JSON:
+{
+  "tagline": "string — one-line hook (derive from tone + premise)",
+  "comparable_titles": ["string"],
+  "market_positioning": "string",
+  "budget_range": "string — micro | low | medium | high | tent-pole (derived from structural analysis)",
+  "audience_age_range": "string",
+  "audience_breakdown": {"male": "string", "female": "string"}
+}
+
+INPUT:
+${JSON.stringify(marketCallInput, null, 2)}
+
+Respond with ONLY JSON.`, 8000);
+
+    updateStage(payload, "market_sheet", "done");
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    // ── Store documents ────────────────────────────────────────────────────
     updateStage(payload, "storing_docs", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
@@ -677,14 +796,17 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
       { source_citations: [allChunksCitation, ...chunkCitations] });
 
     const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
+    // callMarketSheet is the dedicated call — run after beat_sheet has structural metadata
+    const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1.market_sheet || {}), ...callMarketSheet } : (call1.market_sheet || {});
     await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
       `${metadata.title} — Market Sheet`,
-      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...call1.market_sheet });
+      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
 
     const arcType = isTV ? "season_arc" : "treatment";
+    const treatmentData = typeof callTreatment === "string" ? callTreatment : (callTreatment as any).treatment || JSON.stringify(callTreatment);
     await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
       `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
-      { title: metadata.title, logline: metadata.logline, format, treatment: callTreatment },
+      { title: (callTreatment as any).title || metadata.title, logline: metadata.logline, format: (callTreatment as any).format || format, treatment: treatmentData, act_breaks: (callTreatment as any).act_breaks || [] },
       { source_citations: [partialCitation] });
 
     const beatType = isTV ? "format_rules" : "beat_sheet";
@@ -699,7 +821,7 @@ Respond with ONLY the prose treatment text. No JSON, no markdown, no preamble.`,
     const outlineType = isTV ? "episode_grid" : "story_outline";
     await storeDoc(sb, project_id, script_document_id, user_id, outlineType, "creative_primary",
       `${metadata.title} — Story Outline`,
-      { title: metadata.title, format, entries: (call2.beats || []).slice(0, 20).map((b: any, i: number) => ({ number: i + 1, title: b.name, description: b.description })) });
+      typeof callStoryOutline === "object" ? callStoryOutline : { title: metadata.title, format, entries: [] });
 
     // Write all extracted canonical fields back to canon_json so downstream drift detection is accurate
     try {
