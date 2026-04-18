@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -149,9 +150,11 @@ const PageFallback = () => (
 );
 
 const AnimatedRoutes = () => {
+  const location = useLocation();
   return (
-    <Suspense fallback={<PageFallback />}>
-      <Routes>
+    <AnimatePresence mode="popLayout" initial={false}>
+      <Suspense fallback={<PageFallback />}>
+        <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
@@ -251,8 +254,9 @@ const AnimatedRoutes = () => {
           
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
           <Route path="*" element={<NotFound />} />
-      </Routes>
-    </Suspense>
+        </Routes>
+      </Suspense>
+    </AnimatePresence>
   );
 };
 
