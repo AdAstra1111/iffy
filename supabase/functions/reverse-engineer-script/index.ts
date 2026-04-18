@@ -647,7 +647,7 @@ ${allBeatEntries}
 PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (characters, locations, events, themes from all chunks):
 ${synthSummary}
 
-Respond with ONLY JSON.`, 8000);
+Respond with ONLY JSON.`, 14000);
 
     updateStage(payload, "story_outline", "done");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
