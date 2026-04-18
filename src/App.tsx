@@ -149,10 +149,9 @@ const PageFallback = () => (
 );
 
 const AnimatedRoutes = () => {
-  const location = useLocation();
   return (
     <Suspense fallback={<PageFallback />}>
-      <Routes location={location} key={location.pathname}>
+      <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
