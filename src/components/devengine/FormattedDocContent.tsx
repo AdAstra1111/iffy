@@ -305,8 +305,8 @@ function renderJSON(parsed: any) {
     );
   }
 
-  // Unwrap common wrapper keys: CHARACTER_BIBLE, character_bible, CHARACTERS, BEATS, ENTRIES, etc.
-  const WRAPPER_KEYS = ['CHARACTER_BIBLE', 'character_bible', 'CHARACTERS', 'characters_list', 'cast', 'BEATS', 'ENTRIES', 'beats', 'entries'];
+  // Unwrap common wrapper keys: CHARACTER_BIBLE, character_bible, CHARACTERS, BEATS, ENTRIES, ACT_BREAKS, etc.
+  const WRAPPER_KEYS = ['CHARACTER_BIBLE', 'character_bible', 'CHARACTERS', 'characters_list', 'cast', 'BEATS', 'ENTRIES', 'beats', 'entries', 'ACT_BREAKS', 'act_breaks'];
   for (const wk of WRAPPER_KEYS) {
     if (parsed[wk] && typeof parsed[wk] === 'object') {
       return renderJSON(parsed[wk]);
@@ -320,6 +320,31 @@ function renderJSON(parsed: any) {
         {parsed.characters.map((char: any, i: number) => (
           <CharacterCard key={i} char={char} index={i} />
         ))}
+      </div>
+    );
+  }
+
+  // Act breaks pattern: array of objects with act_number + description (from treatment documents)
+  if ((parsed.act_breaks || parsed.ACT_BREAKS) && Array.isArray(parsed.act_breaks || parsed.ACT_BREAKS)) {
+    const actBreaks = parsed.act_breaks || parsed.ACT_BREAKS;
+    return (
+      <div>
+        {actBreaks.map((item: any, i: number) => {
+          const actNum = item.act_number ?? item.actNumber ?? i + 1;
+          const desc = item.description || '';
+          return (
+            <div key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '1rem', marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c49a3d', marginBottom: '0.4rem' }}>
+                Act {actNum}
+              </div>
+              {desc && (
+                <div style={{ fontSize: '0.82rem', lineHeight: 1.6, color: 'rgba(226,224,220,0.85)', whiteSpace: 'pre-wrap' }}>
+                  {desc}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   }

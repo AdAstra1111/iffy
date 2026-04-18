@@ -711,7 +711,7 @@ Respond with ONLY JSON.`, 14000);
 This prose will be used as a foundational corpus for AI image and video generation.
 It must capture the sensory and emotional texture of each scene — not just the plot events.
 
-STRUCTURE: 3 acts, 3-6 paragraphs per act.
+STRUCTURE: 3-4 acts. Use a fourth act if the story has a dedicated confrontation/climax section that needs more space than a single act break can accommodate. Act breaks fall at: Act 1 ends at first turning point, Act 2 ends at midpoint, Act 3 ends at second turning point. If the confrontation section is distinct enough to need its own act, label it Act 4.
 FORMAT: Flowing prose narrative — NOT a beat list, NOT entries with titles and descriptions.
 The reader should experience the story, not read a structural outline.
 
