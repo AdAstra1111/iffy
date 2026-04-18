@@ -14,10 +14,11 @@ import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner
 import { UIModeProvider } from "@/hooks/useUIMode";
 import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
 
-// Eagerly load landing + auth + dashboard (critical path — lazy+Suspense causes removeChild crash on Android/slow connections)
+// Eagerly load critical path pages — lazy+Suspense causes removeChild crash on Android/slow connections
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
+import ProjectDevelopmentEngine from "./pages/ProjectDevelopmentEngine";
 
 // Lazy-load everything else
 // Dashboard is eagerly loaded above — do not lazy-load it (causes removeChild crash)
@@ -61,7 +62,7 @@ const CalibrationLab = lazy(() => import("./pages/CalibrationLab"));
 const PitchDeckViewer = lazy(() => import("./pages/PitchDeckViewer"));
 const InvestorPresentation = lazy(() => import("./pages/InvestorPresentation"));
 const DevelopmentEngine = lazy(() => import("./pages/DevelopmentEngine"));
-const ProjectDevelopmentEngine = lazy(() => import("./pages/ProjectDevelopmentEngine"));
+// ProjectDevelopmentEngine is eagerly loaded above — do not lazy-load (causes removeChild crash)
 const SeriesWriterPage = lazy(() => import("./pages/SeriesWriter"));
 const FeatureScript = lazy(() => import("./pages/FeatureScript"));
 const ProducerCockpit = lazy(() => import("./pages/ProducerCockpit"));
