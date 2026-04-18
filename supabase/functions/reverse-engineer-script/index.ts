@@ -498,7 +498,7 @@ ${scriptHead}
 FULL SCRIPT SYNTHESIS:
 ${synthSummary}
 
-Respond with ONLY JSON.`, 12000);
+Respond with ONLY JSON.`, 16000);
 
     updateStage(payload, "synthesise", "done");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -552,7 +552,7 @@ ${synthSummary}
 SUPPLEMENTARY — SCRIPT OPENING (for voice/tone check):
 ${ideaScriptExcerpt}
 
-Respond with ONLY JSON.`, 6000);
+Respond with ONLY JSON.`, 14000);
 
     const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
       title: metadata.title || "Untitled",
