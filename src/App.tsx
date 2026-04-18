@@ -1,5 +1,4 @@
 import { lazy, Suspense } from "react";
-import { AnimatePresence } from "framer-motion";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -151,116 +150,111 @@ const PageFallback = () => (
   </div>
 );
 
-const AnimatedRoutes = () => {
-  const location = useLocation();
-  return (
-    <AnimatePresence mode="popLayout" initial={false}>
-      <Suspense fallback={<PageFallback />}>
-        <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<Index />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
-          <Route path="/how-it-works" element={<ProtectedRoute><HowItWorks /></ProtectedRoute>} />
-          <Route path="/faq" element={<ProtectedRoute><FAQ /></ProtectedRoute>} />
-          <Route path="/how-iffy-thinks" element={<ProtectedRoute><HowIFFYThinks /></ProtectedRoute>} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/projects/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
-          <Route path="/projects/:id" element={<ProtectedRoute><ProjectShell><ProjectDetail /></ProjectShell></ProtectedRoute>} />
-          <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
-          <Route path="/trends/story" element={<ProtectedRoute><StoryTrends /></ProtectedRoute>} />
-          <Route path="/trends/cast" element={<ProtectedRoute><CastTrends /></ProtectedRoute>} />
-          <Route path="/trends/governance" element={<ProtectedRoute><TrendGovernance /></ProtectedRoute>} />
-          <Route path="/trends/explorer" element={<ProtectedRoute><TrendsExplorer /></ProtectedRoute>} />
-          <Route path="/trends/coverage" element={<ProtectedRoute><TrendsCoverage /></ProtectedRoute>} />
-          <Route path="/incentives" element={<ProtectedRoute><IncentiveFinder /></ProtectedRoute>} />
-          <Route path="/incentives/copro" element={<ProtectedRoute><CoproPlanner /></ProtectedRoute>} />
-          <Route path="/incentives/stack" element={<ProtectedRoute><StackCashflow /></ProtectedRoute>} />
-          <Route path="/compare" element={<ProtectedRoute><CompareProjects /></ProtectedRoute>} />
-          <Route path="/pipeline" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
-          <Route path="/festivals" element={<ProtectedRoute><FestivalCalendar /></ProtectedRoute>} />
-          <Route path="/calendar" element={<ProtectedRoute><ProductionCalendar /></ProtectedRoute>} />
-          <Route path="/buyer-crm" element={<ProtectedRoute><BuyerCRM /></ProtectedRoute>} />
-          <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
-          <Route path="/market-intelligence" element={<ProtectedRoute><MarketIntelligence /></ProtectedRoute>} />
-          <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-          <Route path="/reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-          <Route path="/intel" element={<ProtectedRoute><IntelDashboard /></ProtectedRoute>} />
-          <Route path="/intel/policies" element={<ProtectedRoute><IntelPolicies /></ProtectedRoute>} />
-          <Route path="/intel/events" element={<ProtectedRoute><IntelEvents /></ProtectedRoute>} />
-          <Route path="/intel/alignment/:id" element={<ProtectedRoute><IntelAlignment /></ProtectedRoute>} />
-          <Route path="/companies" element={<ProtectedRoute><Companies /></ProtectedRoute>} />
-          <Route path="/companies/:id" element={<ProtectedRoute><CompanyDetail /></ProtectedRoute>} />
-          <Route path="/companies/:id/projects" element={<ProtectedRoute><CompanyProjects /></ProtectedRoute>} />
-          <Route path="/projects/:id/present" element={<ProtectedRoute><PresentationMode /></ProtectedRoute>} />
-          <Route path="/projects/:id/pitch-deck" element={<ProtectedRoute><PitchDeckViewer /></ProtectedRoute>} />
-          <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
-          <Route path="/coverage-lab" element={<ProtectedRoute><CoverageLab /></ProtectedRoute>} />
-          <Route path="/pitch-ideas" element={<ProtectedRoute><PitchIdeas /></ProtectedRoute>} />
-          <Route path="/exemplars" element={<ProtectedRoute><ExemplarBrowser /></ProtectedRoute>} />
-          <Route path="/ci-blueprint" element={<ProtectedRoute><CIBlueprintEngine /></ProtectedRoute>} />
-          <Route path="/ai-cast" element={<ProtectedRoute><AICastLibrary /></ProtectedRoute>} />
-          <Route path="/ai-cast/actors" element={<ProtectedRoute><ActorLibrary /></ProtectedRoute>} />
-          <Route path="/actor-marketplace" element={<ProtectedRoute><ActorMarketplace /></ProtectedRoute>} />
-          <Route path="/calibration-lab" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
-          <Route path="/demo" element={<GuidedDemo />} />
-          <Route path="/demo/cinematic" element={<CinematicDemo />} />
-          <Route path="/demo/interactive" element={<InteractiveDemo />} />
-          <Route path="/demo/executive" element={<ExecutiveDemo />} />
-          <Route path="/demo/run" element={<ProtectedRoute><DemoDashboard /></ProtectedRoute>} />
-          <Route path="/investor" element={<ProtectedRoute><InvestorPresentation /></ProtectedRoute>} />
-          <Route path="/development-engine" element={<ProtectedRoute><DevelopmentEngine /></ProtectedRoute>} />
-          <Route path="/projects/:id/development" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/notes" element={<ProtectedRoute><NotesInbox /></ProtectedRoute>} />
-          <Route path="/projects/:id/series-writer" element={<ProtectedRoute><SeriesWriterPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/feature-script" element={<ProtectedRoute><FeatureScript /></ProtectedRoute>} />
-          <Route path="/projects/:id/cockpit" element={<ProtectedRoute><ProducerCockpit /></ProtectedRoute>} />
-          <Route path="/projects/:id/shot-list" element={<ProtectedRoute><ShotListPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/storyboards" element={<ProtectedRoute><StoryboardsPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-references" element={<ProtectedRoute><VisualReferencesPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/script-intake" element={<ProtectedRoute><ScriptIntakePage /></ProtectedRoute>} />
-          {/* /ai-trailer removed — redirects to canonical trailer */}
-          <Route path="/projects/:id/ai-trailer" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-units" element={<ProtectedRoute><VisualUnits /></ProtectedRoute>} />
-          <Route path="/projects/:id/storyboard-pipeline" element={<ProtectedRoute><StoryboardPipeline /></ProtectedRoute>} />
-          <Route path="/projects/:id/trailer-pipeline" element={<ProtectedRoute><TrailerRedirect tab="blueprints" /></ProtectedRoute>} />
-          <Route path="/projects/:id/trailer-clips" element={<ProtectedRoute><TrailerRedirect tab="clips" /></ProtectedRoute>} />
-          <Route path="/projects/:id/trailer-assemble" element={<ProtectedRoute><TrailerRedirect tab="assemble" /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-dev" element={<ProtectedRoute><VisualDevHub /></ProtectedRoute>} />
-          {/* Legacy visual-dev/trailer/* → canonical trailer route */}
-          <Route path="/projects/:id/visual-dev/trailer/*" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
+// S — thin per-route Suspense wrapper. Each lazy route gets its own boundary
+// so a slow load never races with another route's Suspense unmount.
+const S = ({ children }: { children: React.ReactNode }) => (
+  <Suspense fallback={<PageFallback />}>{children}</Suspense>
+);
+const P = ({ children }: { children: React.ReactNode }) => (
+  <ProtectedRoute>{children}</ProtectedRoute>
+);
 
-          {/* ── Week 1 refactor: new ProjectShell workspace routes ── */}
-          <Route path="/projects/:id/script" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/canon" element={<ProtectedRoute><ProjectShell><CanonPlaceholder /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/trailer" element={<ProtectedRoute><ProjectShell><TrailerHub /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/produce" element={<ProtectedRoute><ProjectShell><ProducerCockpit /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/ai-content" element={<ProtectedRoute><ProjectShell><AIContentPage /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/casting" element={<ProtectedRoute><ProjectShell><CastingPipeline /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/production-design" element={<ProtectedRoute><ProjectShell><ProductionDesign /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-production" element={<ProtectedRoute><ProjectShell><VisualProductionPipeline /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/casting-studio" element={<ProtectedRoute><ProjectShell><CastingStudio /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/casting-advanced" element={<ProtectedRoute><ProjectShell><ProjectCasting /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/poster" element={<ProtectedRoute><ProjectShell><PosterEngine /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/lookbook" element={<ProtectedRoute><ProjectShell><LookBookPage /></ProjectShell></ProtectedRoute>} />
-          <Route path="/projects/:id/images" element={<ProtectedRoute><ProjectShell><ProjectImageLibrary /></ProjectShell></ProtectedRoute>} />
-          <Route path="/showcase" element={<ProtectedRoute><Showcase /></ProtectedRoute>} />
-          <Route path="/narrative-dna" element={<ProtectedRoute><NarrativeDna /></ProtectedRoute>} />
-          <Route path="/narrative-engines" element={<ProtectedRoute><NarrativeEngines /></ProtectedRoute>} />
-
-          <Route path="/processing" element={<Processing />} />
-          {/* Quick/Deep review: preserve projectId context when present */}
-          <Route path="/quick-review" element={<ReviewRedirect />} />
-          <Route path="/deep-review" element={<ReviewRedirect />} />
-          <Route path="/invite" element={<AcceptInvite />} />
-          <Route path="/share/pack/:token" element={<SharePackView />} />
-          
-          <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
-    </AnimatePresence>
-  );
-};
+const AnimatedRoutes = () => (
+  <Routes>
+    <Route path="/" element={<Index />} />
+    <Route path="/auth" element={<Auth />} />
+    <Route path="/dashboard" element={<P><Dashboard /></P>} />
+    <Route path="/projects/new" element={<P><S><NewProject /></S></P>} />
+    <Route path="/projects/:id" element={<P><S><ProjectShell><ProjectDetail /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/development" element={<P><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></P>} />
+    <Route path="/projects/:id/script" element={<P><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></P>} />
+    <Route path="/projects/:id/notes" element={<P><S><NotesInbox /></S></P>} />
+    <Route path="/projects/:id/series-writer" element={<P><S><SeriesWriterPage /></S></P>} />
+    <Route path="/projects/:id/feature-script" element={<P><S><FeatureScript /></S></P>} />
+    <Route path="/projects/:id/cockpit" element={<P><S><ProducerCockpit /></S></P>} />
+    <Route path="/projects/:id/shot-list" element={<P><S><ShotListPage /></S></P>} />
+    <Route path="/projects/:id/storyboards" element={<P><S><StoryboardsPage /></S></P>} />
+    <Route path="/projects/:id/visual-references" element={<P><S><VisualReferencesPage /></S></P>} />
+    <Route path="/projects/:id/script-intake" element={<P><S><ScriptIntakePage /></S></P>} />
+    <Route path="/projects/:id/ai-trailer" element={<P><TrailerRedirect /></P>} />
+    <Route path="/projects/:id/visual-units" element={<P><S><VisualUnits /></S></P>} />
+    <Route path="/projects/:id/storyboard-pipeline" element={<P><S><StoryboardPipeline /></S></P>} />
+    <Route path="/projects/:id/trailer-pipeline" element={<P><TrailerRedirect tab="blueprints" /></P>} />
+    <Route path="/projects/:id/trailer-clips" element={<P><TrailerRedirect tab="clips" /></P>} />
+    <Route path="/projects/:id/trailer-assemble" element={<P><TrailerRedirect tab="assemble" /></P>} />
+    <Route path="/projects/:id/visual-dev" element={<P><S><VisualDevHub /></S></P>} />
+    <Route path="/projects/:id/visual-dev/trailer/*" element={<P><TrailerRedirect /></P>} />
+    <Route path="/projects/:id/canon" element={<P><S><ProjectShell><CanonPlaceholder /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/trailer" element={<P><S><ProjectShell><TrailerHub /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/produce" element={<P><S><ProjectShell><ProducerCockpit /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/ai-content" element={<P><S><ProjectShell><AIContentPage /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/casting" element={<P><S><ProjectShell><CastingPipeline /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/production-design" element={<P><S><ProjectShell><ProductionDesign /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/visual-production" element={<P><S><ProjectShell><VisualProductionPipeline /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/casting-studio" element={<P><S><ProjectShell><CastingStudio /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/casting-advanced" element={<P><S><ProjectShell><ProjectCasting /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/poster" element={<P><S><ProjectShell><PosterEngine /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/lookbook" element={<P><S><ProjectShell><LookBookPage /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/images" element={<P><S><ProjectShell><ProjectImageLibrary /></ProjectShell></S></P>} />
+    <Route path="/projects/:id/present" element={<P><S><PresentationMode /></S></P>} />
+    <Route path="/projects/:id/pitch-deck" element={<P><S><PitchDeckViewer /></S></P>} />
+    <Route path="/trends" element={<P><S><Trends /></S></P>} />
+    <Route path="/trends/story" element={<P><S><StoryTrends /></S></P>} />
+    <Route path="/trends/cast" element={<P><S><CastTrends /></S></P>} />
+    <Route path="/trends/governance" element={<P><S><TrendGovernance /></S></P>} />
+    <Route path="/trends/explorer" element={<P><S><TrendsExplorer /></S></P>} />
+    <Route path="/trends/coverage" element={<P><S><TrendsCoverage /></S></P>} />
+    <Route path="/incentives" element={<P><S><IncentiveFinder /></S></P>} />
+    <Route path="/incentives/copro" element={<P><S><CoproPlanner /></S></P>} />
+    <Route path="/incentives/stack" element={<P><S><StackCashflow /></S></P>} />
+    <Route path="/compare" element={<P><S><CompareProjects /></S></P>} />
+    <Route path="/pipeline" element={<P><S><Pipeline /></S></P>} />
+    <Route path="/festivals" element={<P><S><FestivalCalendar /></S></P>} />
+    <Route path="/calendar" element={<P><S><ProductionCalendar /></S></P>} />
+    <Route path="/buyer-crm" element={<P><S><BuyerCRM /></S></P>} />
+    <Route path="/notifications" element={<P><S><Notifications /></S></P>} />
+    <Route path="/market-intelligence" element={<P><S><MarketIntelligence /></S></P>} />
+    <Route path="/settings" element={<P><S><Settings /></S></P>} />
+    <Route path="/reports" element={<P><S><Reports /></S></P>} />
+    <Route path="/intel" element={<P><S><IntelDashboard /></S></P>} />
+    <Route path="/intel/policies" element={<P><S><IntelPolicies /></S></P>} />
+    <Route path="/intel/events" element={<P><S><IntelEvents /></S></P>} />
+    <Route path="/intel/alignment/:id" element={<P><S><IntelAlignment /></S></P>} />
+    <Route path="/companies" element={<P><S><Companies /></S></P>} />
+    <Route path="/companies/:id" element={<P><S><CompanyDetail /></S></P>} />
+    <Route path="/companies/:id/projects" element={<P><S><CompanyProjects /></S></P>} />
+    <Route path="/pricing" element={<P><S><Pricing /></S></P>} />
+    <Route path="/coverage-lab" element={<P><S><CoverageLab /></S></P>} />
+    <Route path="/pitch-ideas" element={<P><S><PitchIdeas /></S></P>} />
+    <Route path="/exemplars" element={<P><S><ExemplarBrowser /></S></P>} />
+    <Route path="/ci-blueprint" element={<P><S><CIBlueprintEngine /></S></P>} />
+    <Route path="/ai-cast" element={<P><S><AICastLibrary /></S></P>} />
+    <Route path="/ai-cast/actors" element={<P><S><ActorLibrary /></S></P>} />
+    <Route path="/actor-marketplace" element={<P><S><ActorMarketplace /></S></P>} />
+    <Route path="/calibration-lab" element={<P><S><CalibrationLab /></S></P>} />
+    <Route path="/about" element={<P><S><About /></S></P>} />
+    <Route path="/how-it-works" element={<P><S><HowItWorks /></S></P>} />
+    <Route path="/faq" element={<P><S><FAQ /></S></P>} />
+    <Route path="/how-iffy-thinks" element={<P><S><HowIFFYThinks /></S></P>} />
+    <Route path="/showcase" element={<P><S><Showcase /></S></P>} />
+    <Route path="/narrative-dna" element={<P><S><NarrativeDna /></S></P>} />
+    <Route path="/narrative-engines" element={<P><S><NarrativeEngines /></S></P>} />
+    <Route path="/development-engine" element={<P><S><DevelopmentEngine /></S></P>} />
+    <Route path="/demo" element={<S><GuidedDemo /></S>} />
+    <Route path="/demo/cinematic" element={<S><CinematicDemo /></S>} />
+    <Route path="/demo/interactive" element={<S><InteractiveDemo /></S>} />
+    <Route path="/demo/executive" element={<S><ExecutiveDemo /></S>} />
+    <Route path="/demo/run" element={<P><S><DemoDashboard /></S></P>} />
+    <Route path="/investor" element={<P><S><InvestorPresentation /></S></P>} />
+    <Route path="/processing" element={<S><Processing /></S>} />
+    <Route path="/quick-review" element={<ReviewRedirect />} />
+    <Route path="/deep-review" element={<ReviewRedirect />} />
+    <Route path="/invite" element={<S><AcceptInvite /></S>} />
+    <Route path="/share/pack/:token" element={<S><SharePackView /></S>} />
+    <Route path="/pitch" element={<S><Pitch /></S>} />
+    <Route path="*" element={<S><NotFound /></S>} />
+  </Routes>
+);
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
