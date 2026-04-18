@@ -828,10 +828,13 @@ Respond with ONLY JSON.`, 8000);
       { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
 
     const arcType = isTV ? "season_arc" : "treatment";
-    const treatmentData = typeof callTreatment === "string" ? callTreatment : (callTreatment as any).treatment || JSON.stringify(callTreatment);
+    // Store callTreatment response directly — FormattedDocContent knows how to render:
+    //   treatment: string  → prose narrative
+    //   act_breaks: array → "Act 1", "Act 2" etc. via dedicated renderer
+    //   treatment_narrative (legacy) → treated as prose string by generic handler
     await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
       `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
-      { title: (callTreatment as any).title || metadata.title, logline: metadata.logline, format: (callTreatment as any).format || format, treatment: treatmentData, act_breaks: (callTreatment as any).act_breaks || [] },
+      typeof callTreatment === "string" ? { treatment: callTreatment } : callTreatment,
       { source_citations: [partialCitation] });
 
     const beatType = isTV ? "format_rules" : "beat_sheet";

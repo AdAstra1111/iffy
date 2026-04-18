@@ -361,6 +361,50 @@ function renderJSON(parsed: any) {
     );
   }
 
+  // Treatment document: treatment prose (string) + optional act_breaks
+  // Display: prose first, then act breaks as a structured section
+  if (typeof parsed.treatment === 'string') {
+    return (
+      <div>
+        {parsed.treatment && (
+          <div style={{ fontSize: '0.85rem', lineHeight: 1.75, color: 'rgba(226,224,220,0.88)', whiteSpace: 'pre-wrap', marginBottom: '2rem' }}>
+            {parsed.treatment}
+          </div>
+        )}
+        {parsed.act_breaks && Array.isArray(parsed.act_breaks) && parsed.act_breaks.length > 0 && (
+          <div style={{ borderTop: '1px solid rgba(255,255,255,0.08)', paddingTop: '1.5rem', marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '0.62rem', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(138,136,128,0.7)', marginBottom: '1rem' }}>Act Structure</div>
+            {(parsed.act_breaks || []).map((item: any, i: number) => {
+              const actNum = item.act_number ?? item.actNumber ?? i + 1;
+              const desc = item.description || '';
+              return (
+                <div key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.85rem', marginBottom: '0.85rem' }}>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#c49a3d', marginBottom: '0.3rem' }}>
+                    Act {actNum}
+                  </div>
+                  {desc && (
+                    <div style={{ fontSize: '0.82rem', lineHeight: 1.6, color: 'rgba(226,224,220,0.78)', whiteSpace: 'pre-wrap' }}>
+                      {desc}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Treatment narrative: prose stored in treatment_narrative field (legacy format)
+  if (parsed.treatment_narrative && typeof parsed.treatment_narrative === 'string') {
+    return (
+      <div style={{ fontSize: '0.85rem', lineHeight: 1.75, color: 'rgba(226,224,220,0.88)', whiteSpace: 'pre-wrap' }}>
+        {parsed.treatment_narrative}
+      </div>
+    );
+  }
+
   // Story outline / moment pattern: array of objects with number + title
   if (parsed.entries && Array.isArray(parsed.entries)) {
     return (
