@@ -620,32 +620,37 @@ Respond with ONLY JSON.`, 14000);
     updateStage(payload, "story_outline", "running");
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const allBeatEntries = (call2 as any).beats
-      ? (call2 as any).beats.map((b: any) => `Beat ${b.number} [${b.name}]: ${b.description || ""}`).join("\n")
+    const beatStructuralLabels = (call2 as any).beats
+      ? (call2 as any).beats.map((b: any) => {
+          const fn = (b.dramatic_function || "").toLowerCase();
+          const act = fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
+                      fn.includes('midpoint') ? 'Midpoint' :
+                      fn.includes('climax') || fn.includes('finale') ? 'Finale' : 'Act 2';
+          return `Beat ${b.number} [${act}]`;
+        }).join("\n")
       : "";
-
-    const callStoryOutline = await callLLM(`Given the full beat sheet and synthesis, produce an abbreviated story sequence.
+    const callStoryOutline = await callLLM(`Given the full story arc (synthSummary) and structural beat labels, produce an abbreviated story sequence.
 
 RULES:
-- Each entry: number, title, 1-2 sentence description
-- Entries structured in acts matching the beat_sheet exactly
-- Read as a coherent miniature story — if you read only the titles and descriptions in order, you understand the full arc
-- Different density from beat_sheet: beat_sheet is the full map, story_outline is the 2-minute index
+- Each entry: number, title (a short structural label), and description (1-2 sentences of narrative prose)
+- Descriptions must ADVANCE the story arc from the previous entry — they are sequential narrative prose, not paraphrased beat summaries
+- Do NOT repeat in the description what the title/label says. The description moves the story forward.
+- A reader should understand the full story arc from the sequence of descriptions alone.
 
 Return ONLY valid JSON:
 {
   "title": "string",
   "format": "string",
   "entries": [
-    { "number": 1, "title": "string", "description": "string — 1-2 sentences, narrative prose in sequence" }
+    { "number": 1, "title": "string — short structural label (e.g. Act 1 Opening, Midpoint, Act 2 Turn)", "description": "string — 1-2 sentences, sequential narrative prose that advances the arc" }
   ]
 }
 
-PRIMARY CONTEXT — FULL BEAT SHEET (all beats, all descriptions):
-${allBeatEntries}
-
-PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (characters, locations, events, themes from all chunks):
+PRIMARY CONTEXT — FULL STORY ARC (characters, locations, events, themes, tonal beats):
 ${synthSummary}
+
+STRUCTURAL BEAT MARKERS:
+${beatStructuralLabels}
 
 Respond with ONLY JSON.`, 14000);
 
