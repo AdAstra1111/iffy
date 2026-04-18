@@ -152,7 +152,7 @@ const PageFallback = () => (
 const AnimatedRoutes = () => {
   const location = useLocation();
   return (
-    <AnimatePresence mode="popLayout">
+    <AnimatePresence mode="wait">
       <Suspense fallback={<PageFallback />}>
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
