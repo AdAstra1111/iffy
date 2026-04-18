@@ -707,34 +707,59 @@ Respond with ONLY JSON.`, 14000);
       `Beat ${b.number} [${b.name}]: ${b.description || ""}`
     ).join("\n");
 
-    const callTreatment = await callLLM(`You are a senior story analyst. Write a factual treatment narrative for this screenplay — a prose summary of WHAT HAPPENS in the complete story.
+    const callTreatment = await callLLM(`You are writing descriptive narrative prose for a feature film production.
+This prose will be used as a foundational corpus for AI image and video generation.
+It must capture the sensory and emotional texture of each scene — not just the plot events.
 
-RULES:
-- Write in third-person narrative prose. Act breaks must match the beat structure exactly.
-- Cover the FULL story arc — beginning to end. Do not truncate mid-story.
-- Do NOT invent scenes, dialogue, or details not present in the source. Stick strictly to what the material contains.
-- Write 3-6 paragraphs per act. Treat this as a polished narrative summary, not a beat list.
-- Mention key characters by name and ground events in specific locations.
+STRUCTURE: 3 acts, 3-6 paragraphs per act.
+FORMAT: Flowing prose narrative — NOT a beat list, NOT entries with titles and descriptions.
+The reader should experience the story, not read a structural outline.
+
+PER ACT:
+Act 1 — Setup. Establish the world, the characters, the central tension.
+Act 2 — Complication. Escalation, turning points, growing stakes.
+Act 3 — Resolution. Climax and denouement.
+
+FOR EACH SCENE/MOMENT, WRITE WITH:
+- Atmospheric specificity: What does this location actually look/sound/smell feel like?
+  (Not "the mine" — the specific cold, the ancient carved walls, the way torchlight catches the stone face)
+- Character interiority in motion: How does this character feel and behave in this moment?
+  (Not "Bill is angry" — the controlled stillness before he speaks, the way he holds his left hand still)
+- Emotional texture: What is the felt experience of this beat?
+  (Not "tense" — the particular quality of silence when the stone dust settles)
+
+AVOID:
+- Plot summary language ("He discovers...", "She realizes...")
+- Beat catalogue structure with titles and descriptions
+- Generic sensory descriptors (not "dark and scary" — what's specifically dark and scary here?)
+- Emotional shorthand (not "tense" or "dramatic" — what does it feel like exactly?)
+
+REMEMBER:
+- This prose will be read by AI systems to understand the visual and emotional world of the story
+- Specificity is everything. "Ancient carved walls with torchlight catching the stone" creates AI consistency. "The dark mine" creates generic AI.
+- Character voice in the prose should match their established psychology
+- Act breaks should match the beat_sheet exactly
 
 Return valid JSON:
 {
   "title": "string",
-  "format": "string",
-  "treatment": "string — full prose narrative, act-by-act, covering the complete story arc",
+  "treatment": "string — full prose narrative, paragraphs per act, no structure markers except act transitions",
   "act_breaks": [{"act_number": 1, "description": "string"}]
 }
 
 PRIMARY CONTEXT — FULL BEAT DESCRIPTIONS (all beats, complete arc):
 ${allBeatDescriptions}
 
-PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (all characters, locations, events, themes across all chunks):
+PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (all characters, locations, events, themes from all chunks):
 ${synthSummary}
+
+CHARACTER ROSTER:
+${(call3 as any)?.characters?.map((c: any) => `${c.name} (${c.role}): ${c.backstory?.slice(0, 200)}`).join('\n') || protagonist}
 
 SOURCE:
 LOGLINE: ${metadata.logline}
 PREMISE: ${premise}
 WORLD NOTES: ${worldNotes}
-PROTAGONIST: ${protagonist}
 
 Respond with ONLY JSON.`, 12000);
 
