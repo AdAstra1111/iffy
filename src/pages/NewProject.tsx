@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-// framer-motion removed — AnimatePresence inside lazy Suspense causes removeChild crash in React 18
+import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, Loader2, Building2, Lightbulb, Sparkles, Palette, Camera, Blend, Film } from 'lucide-react';
 import { ScriptDropZone } from '@/components/ScriptDropZone';
 import { ProcessStageProgress, type ProcessStage } from '@/components/ProcessStageProgress';
@@ -149,7 +149,12 @@ export default function NewProject() {
       <main className="container max-w-2xl py-10">
 
         {/* ── Script Drop Zone — fast path ──────────────────────────────── */}
-        <div className="glass-card rounded-xl p-6 mb-5 border-primary/20 bg-primary/5">
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+          className="glass-card rounded-xl p-6 mb-5 border-primary/20 bg-primary/5"
+        >
           <div className="flex items-start gap-3 mb-4">
             <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
               <Film className="h-4 w-4 text-primary" />
@@ -162,7 +167,7 @@ export default function NewProject() {
             </div>
           </div>
           <ScriptDropZone />
-        </div>
+        </motion.div>
 
         <div className="flex items-center gap-3 mb-5">
           <div className="flex-1 h-px bg-border/50" />
@@ -171,7 +176,12 @@ export default function NewProject() {
         </div>
 
       {/* Idea Quick-Create Box */}
-        <div className="glass-card rounded-xl p-6 mb-8 border-border/40">
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25, delay: 0.05 }}
+          className="glass-card rounded-xl p-6 mb-8 border-border/40"
+        >
           <div className="flex items-start gap-3 mb-3">
             <div className="h-8 w-8 rounded-full bg-primary/15 flex items-center justify-center shrink-0 mt-0.5">
               <Lightbulb className="h-4 w-4 text-primary" />
@@ -204,7 +214,7 @@ export default function NewProject() {
               )}
             </Button>
           </div>
-        </div>
+        </motion.div>
 
         <div className="flex items-center gap-3 mb-8">
           <div className="flex-1 h-px bg-border/50" />
@@ -245,7 +255,14 @@ export default function NewProject() {
           ))}
         </div>
 
-        <div key={step}>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={step}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+          >
             {/* Step 0: Basics */}
             {step === 0 && (
               <div className="space-y-6">
@@ -569,7 +586,8 @@ export default function NewProject() {
                 </div>
               </div>
             )}
-        </div>
+          </motion.div>
+        </AnimatePresence>
 
         {/* Navigation */}
         <div className="flex items-center justify-between mt-10 pt-6 border-t border-border/50">
