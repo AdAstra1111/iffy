@@ -416,7 +416,7 @@ export function DecisionPanel({
             <CollapsibleContent>
               <ScrollArea className="h-[200px] mt-1 rounded border border-border/40 bg-muted/20 p-2">
                 <pre className="text-[10px] text-foreground/80 whitespace-pre-wrap font-body">
-                  {documentText.slice(0, 5000)}{documentText.length > 5000 ? '\n\n... (truncated)' : ''}
+                  {documentText}
                 </pre>
               </ScrollArea>
             </CollapsibleContent>

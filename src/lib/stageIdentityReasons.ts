@@ -2,7 +2,6 @@
  * Returns human-readable reasons why a document is stale, based on its content.
  */
 
-const IDEA_MAX_CHARS = 4000;
 const IDEA_MAX_WORDS = 600;
 const IDEA_MAX_SECTIONS = 6;
 
@@ -18,7 +17,6 @@ function getIdeaStaleReasons(plaintext: string): string[] {
   const charCount = plaintext.length;
   const wordCount = plaintext.trim().split(/\s+/).filter(Boolean).length;
   const sectionCount = countSections(plaintext);
-  if (charCount > IDEA_MAX_CHARS) reasons.push(`Char count ${charCount.toLocaleString()} exceeds idea max ${IDEA_MAX_CHARS.toLocaleString()}`);
   if (wordCount > IDEA_MAX_WORDS) reasons.push(`Word count ${wordCount.toLocaleString()} exceeds idea max ${IDEA_MAX_WORDS.toLocaleString()}`);
   if (sectionCount > IDEA_MAX_SECTIONS) reasons.push(`Section count ${sectionCount} exceeds idea max ${IDEA_MAX_SECTIONS}`);
   const screenplayIndicators = [

@@ -26,7 +26,6 @@ const TEMPORAL_DOC_TYPES = [
 ];
 
 // Max chars per doc to avoid blowing up the resolver
-const MAX_DOC_CHARS = 6000;
 
 export const CANONICAL_TEMPORAL_KEY = (pid: string) => ['canonical-temporal-truth', pid];
 
@@ -107,7 +106,7 @@ export function useCanonicalTemporalTruth(projectId: string | undefined) {
 
       const results: Array<{ source: string; text: string }> = [];
       for (const doc of docs) {
-        const text = (doc.plaintext || doc.extracted_text || '').slice(0, MAX_DOC_CHARS);
+        const text = doc.plaintext || doc.extracted_text || '';
         if (text.length > 20) {
           results.push({ source: `document.${doc.doc_type}`, text });
         }
