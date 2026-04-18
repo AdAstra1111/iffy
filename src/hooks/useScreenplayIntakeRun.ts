@@ -250,6 +250,10 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
         case 'binding_derive':
           result = await callFunction('dev-engine-v2', { action: 'scene_derive_blueprint_bindings', projectId }, token);
           break;
+        case 'entity_extract':
+          // entity-links-engine self-extracts — re-run with same project
+          result = await callFunction('entity-links-engine', { projectId }, token);
+          break;
         case 'scene_index':
           result = await callFunction('extract-scene-index', { project_id: projectId }, token);
           break;
