@@ -217,12 +217,41 @@ async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Pro
 // ─── Doc storage ──────────────────────────────────────────────────────────────
 async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any, extraMeta?: Record<string, any>, dependsOnResolverHash?: string): Promise<void> {
   const content = JSON.stringify(data, null, 2);
-  const plaintext = Object.entries(data).map(([k, v]) => {
-    if (v === null || v === undefined) return "";
-    if (Array.isArray(v)) return `${k.toUpperCase().replace(/_/g," ")}\n${v.map((i: any) => typeof i === "object" ? JSON.stringify(i, null, 2) : `• ${i}`).join("\n")}`;
-    if (typeof v === "object") return `${k.toUpperCase().replace(/_/g," ")}\n${JSON.stringify(v, null, 2)}`;
-    return `${k.toUpperCase().replace(/_/g," ")}\n${v}`;
-  }).filter(Boolean).join("\n\n");
+  // Smart plaintext formatter for structured docs (beat_sheet, story_outline)
+  // - Arrays of objects (beats/entries): formatted individually
+  // - Object fields within beats/entries: skipped
+  function buildPlaintext(data: any): string {
+    if (!data || typeof data !== "object") return String(data ?? "");
+    if (Array.isArray(data)) {
+      if (data.length === 0) return "";
+      const first = data[0];
+      if (typeof first === "object" && first !== null) {
+        // Array of objects (beats/entries) — format each one individually
+        return data.map((item: any, idx: number) => {
+          const num = item.number ?? item.entry_number ?? idx + 1;
+          const label = item.name ?? item.title ?? item.entry_title ?? `Item ${num}`;
+          const lines: string[] = [`ITEM ${num}: ${label}`];
+          for (const [k, val] of Object.entries(item)) {
+            if (k === "number" || k === "name" || k === "title" || k === "entry_title" || val === null || val === undefined) continue;
+            const label2 = k.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+            if (Array.isArray(val)) { lines.push(`  ${label2}: ${val.join(", ")}`); }
+            else if (typeof val === "object") { /* skip nested objects at item level */ }
+            else { lines.push(`  ${label2}: ${val}`); }
+          }
+          return lines.join("\n");
+        }).join("\n\n");
+      }
+      return data.map((i: any) => typeof i === "object" ? JSON.stringify(i) : `• ${i}`).join("\n");
+    }
+    // Plain object — recurse on entries
+    return Object.entries(data).map(([k, v]) => {
+      if (v === null || v === undefined) return "";
+      if (Array.isArray(v)) return `${k.toUpperCase().replace(/_/g," ")}\n${v.map((i: any) => typeof i === "object" ? JSON.stringify(i, null, 2) : `• ${i}`).join("\n")}`;
+      if (typeof v === "object") return buildPlaintext(v);
+      return `${k.toUpperCase().replace(/_/g," ")}\n${v}`;
+    }).filter(Boolean).join("\n\n");
+  }
+  const plaintext = buildPlaintext(data);
 
   // Fall back to project owner if userId not provided (e.g. direct API calls without auth)
   let effectiveUserId = userId;
