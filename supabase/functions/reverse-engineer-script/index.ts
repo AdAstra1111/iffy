@@ -171,7 +171,7 @@ function extractJSON(raw: string): any {
 async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Promise<any> {
   const { key, baseUrl, model } = resolveGatewayKey();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${timeoutMs/1000}s`)), timeoutMs);
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(`${baseUrl}/chat/completions`, {

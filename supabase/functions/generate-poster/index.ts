@@ -879,7 +879,7 @@ async function sleep(ms: number) {
 
 async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = AI_REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(new Error("LLM call timed out after " + (timeoutMs/1000) + "s")), timeoutMs);
   try {
     return await fetch(input, {
       ...init,

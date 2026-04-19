@@ -89,7 +89,7 @@ async function callChunkLLM(
   maxTokens: number = 16000
 ): Promise<string> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CHUNK_LLM_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${CHUNK_LLM_TIMEOUT_MS/1000}s`)), CHUNK_LLM_TIMEOUT_MS);
   try {
     const res = await fetch(gatewayUrl, {
       method: "POST",

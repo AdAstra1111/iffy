@@ -96,7 +96,7 @@ function wrapText(rawText: string, font: PDFFont, size: number, maxWidth: number
 // ── Image fetching & embedding ──
 async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${timeoutMs/1000}s`)), timeoutMs);
   try {
     return await fetch(url, { signal: controller.signal });
   } finally {

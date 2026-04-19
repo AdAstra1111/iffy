@@ -66,7 +66,7 @@ function extractJSON(raw: string): any {
 async function callAI(systemPrompt: string, userPrompt: string, temperature = 0.15): Promise<string> {
   const gw = resolveGateway();
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90_000);
+  const timeout = setTimeout(() => controller.abort(new Error('LLM call timed out after 90s')), 90_000);
   try {
     const response = await fetch(gw.url, {
       method: "POST",

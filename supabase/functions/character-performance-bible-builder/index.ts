@@ -515,7 +515,7 @@ async function runSingleChunk(
     // Process next chunk - use continuationOffset to handle DB commit lag
     const nextScenes = allSceneContexts.slice(continuationOffset, continuationOffset + chunkSize);
     const abortCtrl = new AbortController();
-    const timeoutId = setTimeout(() => abortCtrl.abort(), TIMEOUT_MS);
+    const timeoutId = setTimeout(() => abortCtrl.abort(new Error(`LLM call timed out after ${TIMEOUT_MS/1000}s`)), TIMEOUT_MS);
 
     try {
       const chunkResult = await processOneChunk(

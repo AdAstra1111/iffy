@@ -13,7 +13,7 @@ const ANALYSIS_MODEL = MODELS.FAST;
 
 async function callAIWithTools(apiKey: string, systemPrompt: string, userPrompt: string, tools: any[], toolChoice: any) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 55000);
+  const timeout = setTimeout(() => controller.abort(new Error('LLM call timed out after 55s')), 55000);
   try {
     const resp = await fetch(resolveGateway().url, {
       method: "POST",

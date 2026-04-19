@@ -26,7 +26,7 @@ const FAST_MODEL = "google/gemini-2.5-flash";
 async function callAI(apiKey: string, systemPrompt: string, userPrompt: string, temperature = 0.25): Promise<string> {
   const controller = new AbortController();
   // 60s per AI call — two calls + DB ops must fit within ~150s edge function limit
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(new Error('LLM call timed out after 60s')), 60000);
 
   try {
     const response = await fetch(resolveGateway().url, {
