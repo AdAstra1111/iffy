@@ -268,7 +268,7 @@ serve(async (req) => {
     }
 
     const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
 
     const body = await req.json();
     const {
@@ -320,7 +320,7 @@ serve(async (req) => {
 
     console.log(`[convergence-engine] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
 
-    const raw = await callAI(LOVABLE_API_KEY, model, systemPrompt, userPrompt);
+    const raw = await callAI(OPENROUTER_API_KEY, model, systemPrompt, userPrompt);
     let parsed: any;
 
     try {
@@ -328,7 +328,7 @@ serve(async (req) => {
     } catch {
       // Repair attempt
       const repairRaw = await callAI(
-        LOVABLE_API_KEY, "google/gemini-2.5-flash",
+        OPENROUTER_API_KEY, "google/gemini-2.5-flash",
         `You are IFFY_JSON_REPAIR. Fix this malformed JSON to match the convergence output schema. Return JSON ONLY.`,
         `MALFORMED:\n${raw.slice(0, 4000)}\n\nFix and return valid JSON.`
       );
@@ -346,8 +346,25 @@ serve(async (req) => {
     const CI_COMPONENTS = ["originality", "emotional_conviction", "thematic_coherence", "voice_strength", "directorial_magnetism", "scene_memorability", "risk_taking_value", "edge_retention"];
     const GP_COMPONENTS = ["packaging_probability", "finance_viability", "lane_clarity", "market_timing", "risk_exposure", "travelability"];
 
-    const avgCI = CI_COMPONENTS.reduce((sum, k) => sum + (Number(ciSubScores[k]) || 5), 0) / CI_COMPONENTS.length;
-    const avgGP = GP_COMPONENTS.reduce((sum, k) => sum + (Number(gpSubScores[k]) || 5), 0) / GP_COMPONENTS.length;
+    // Validate sub-scores — FAIL-CLOSED: missing/invalid/non-numeric = run is unsorable
+    const invalidSubScores: string[] = [];
+    for (const k of CI_COMPONENTS) {
+      const v = ciSubScores[k];
+      if (v == null || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 10) {
+        invalidSubScores.push(`CI::${k}`);
+      }
+    }
+    for (const k of GP_COMPONENTS) {
+      const v = gpSubScores[k];
+      if (v == null || isNaN(Number(v)) || Number(v) < 0 || Number(v) > 10) {
+        invalidSubScores.push(`GP::${k}`);
+      }
+    }
+
+    const hasInvalidSubScores = invalidSubScores.length > 0;
+
+    const avgCI = hasInvalidSubScores ? 0 : CI_COMPONENTS.reduce((sum, k) => sum + Number(ciSubScores[k]), 0) / CI_COMPONENTS.length;
+    const avgGP = hasInvalidSubScores ? 0 : GP_COMPONENTS.reduce((sum, k) => sum + Number(gpSubScores[k]), 0) / GP_COMPONENTS.length;
 
     // Enforce CI 2× arithmetic — this is the canonical calculation
     const ciScore = Math.round(avgCI * 2);
@@ -400,17 +417,200 @@ serve(async (req) => {
     // Include purpose_class in the returned full_result for API consumers
     const fullResult = { ...result, purpose_class: purposeClass };
 
+    // ═══════════════════════════════════════════════════════════════
+    // PATCH A2: BLOCKING CLASSIFIER (deterministic thresholds)
+    // Blocking = gating — document cannot proceed
+    // Advisory = weak but non-gating
+    // All thresholds use NORMALIZED scale (0-100)
+    // PATCH 1: normalize raw LLM scores (0-10) to 0-100 before any check
+    // ═══════════════════════════════════════════════════════════════
+    const BLOCK_THRESHOLD = 30;   // normalized score < 30 = blocking (raw < 3)
+    const ADVISORY_THRESHOLD = 50; // normalized score < 50 = advisory (raw < 5)
+    const AT_RISK_THRESHOLD = 50; // SR below this = AT_RISK (gradient, not binary)
+
+    // Build normalized sub-scores: raw (0-10) → normalized (0-100)
+    const ciSubScoreValues = CI_COMPONENTS.map(k => {
+      const raw = Number(ciSubScores[k]);
+      const normalized = isNaN(raw) ? null : Math.round(raw * 10);
+      return { dim: k, raw, normalized };
+    });
+    const gpSubScoreValues = GP_COMPONENTS.map(k => {
+      const raw = Number(gpSubScores[k]);
+      const normalized = isNaN(raw) ? null : Math.round(raw * 10);
+      return { dim: k, raw, normalized };
+    });
+
+    const blockingIssues: string[] = [];
+    const advisoryIssues: string[] = [];
+
+    for (const { dim, raw, normalized } of ciSubScoreValues) {
+      if (normalized === null) {
+        blockingIssues.push(`CI::${dim} missing`);
+      } else if (normalized < BLOCK_THRESHOLD) {
+        blockingIssues.push(`CI::${dim} below block threshold (raw=${raw}, norm=${normalized})`);
+      } else if (normalized < ADVISORY_THRESHOLD) {
+        advisoryIssues.push(`CI::${dim} weak (raw=${raw}, norm=${normalized})`);
+      }
+    }
+    for (const { dim, raw, normalized } of gpSubScoreValues) {
+      if (normalized === null) {
+        blockingIssues.push(`GP::${dim} missing`);
+      } else if (normalized < BLOCK_THRESHOLD) {
+        blockingIssues.push(`GP::${dim} below block threshold (raw=${raw}, norm=${normalized})`);
+      } else if (normalized < ADVISORY_THRESHOLD) {
+        advisoryIssues.push(`GP::${dim} weak (raw=${raw}, norm=${normalized})`);
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // SR v2 ENGINE
+    // SR = (CI*0.15) + (GP*0.15) + (floor*0.30) + (mean*0.20) + (gap*0.10) + (trajectory*0.10) - blocking
+    // sub-score layer is now primary; CI/GP are secondary diagnostics
+    // FAIL-CLOSED: if sub-scores invalid, SR = null, status = UNSCORABLE
+    // ═══════════════════════════════════════════════════════════════
+
+    // PATCH 1: subscore_mean — average of all valid normalized sub-scores
+    const allValidNormalized: number[] = [];
+    for (const { normalized } of [...ciSubScoreValues, ...gpSubScoreValues]) {
+      if (normalized !== null && normalized >= 0) {
+        allValidNormalized.push(normalized);
+      }
+    }
+
+    const subscoreFloor = allValidNormalized.length > 0 ? Math.min(...allValidNormalized) : 0;
+    const subscoreMean = allValidNormalized.length > 0
+      ? Math.round(allValidNormalized.reduce((a, b) => a + b, 0) / allValidNormalized.length)
+      : null;
+
+    // gap_score: lower gap = better, invert so 100 = best alignment
+    const gapScore = Math.max(0, 100 - gap);
+
+    // Trajectory value: null/stable → 50, Converging/Improving → 100, Diverging → 25, Eroding → 0
+    const trajectoryValue = (trajectory === "Converging" || trajectory === "Improving") ? 100
+      : trajectory === "Stalled" || trajectory === null ? 50
+      : trajectory === "Diverging" ? 25
+      : trajectory === "Eroding" ? 0 : 50;
+
+    // Blocking penalty: per normalized dimension below BLOCK_THRESHOLD
+    // capped at 50 (2+ dimensions blocking = max penalty)
+    const blockingPenalty = Math.min(50, blockingIssues.length * 25);
+
+    // Data integrity check — FAIL-CLOSED
+    const dataIntegrityOk = !hasInvalidSubScores && subscoreMean !== null;
+
+    // PATCH 2: SR v2 — sub-score layer weighted heavily, CI/GP as diagnostics
+    const ciComponent = ciScore * 0.15;
+    const gpComponent = gpScore * 0.15;
+    const floorComponent = subscoreFloor * 0.30;
+    const meanComponent = (subscoreMean ?? 0) * 0.20;
+    const gapComponent = gapScore * 0.10;
+    const trajectoryComponent = trajectoryValue * 0.10;
+
+    const srRaw = dataIntegrityOk
+      ? ciComponent + gpComponent + floorComponent + meanComponent + gapComponent + trajectoryComponent - blockingPenalty
+      : null;
+    const stageReadiness = srRaw !== null ? Math.round(Math.max(0, Math.min(100, srRaw))) : null;
+
+    // PATCH 3: Status rules — exact logic
+    // Hierarchy: UNSCORABLE > BLOCKED > AT_RISK > READY
+    // UNSCORABLE: data integrity failed (invalid/missing sub-scores or null mean)
+    // BLOCKED: any blockingIssues exist (deterministic — not SR-value dependent)
+    // AT_RISK: no blocking issues AND SR < AT_RISK_THRESHOLD (50)
+    // READY: no blocking issues AND SR >= AT_RISK_THRESHOLD (50)
+    let srStatus: "READY" | "AT_RISK" | "BLOCKED" | "UNSCORABLE";
+    let promotionAllowed: boolean;
+    // SOFT-GATE POLICY LAYER: override_allowed
+    // READY         → promotion_allowed=true,  override_allowed=true  (upgrade or lateral move)
+    // AT_RISK        → promotion_allowed=false, override_allowed=true  (can force-promote)
+    // BLOCKED        → promotion_allowed=false, override_allowed=true  (product rule: overrideable)
+    // UNSCORABLE     → promotion_allowed=false, override_allowed=false (fail-closed, no override)
+    let overrideAllowed: boolean;
+
+    if (!dataIntegrityOk) {
+      srStatus = "UNSCORABLE";
+      promotionAllowed = false;
+      overrideAllowed = false;
+    } else if (blockingIssues.length > 0) {
+      srStatus = "BLOCKED";
+      promotionAllowed = false;
+      overrideAllowed = true;
+    } else if (stageReadiness !== null && stageReadiness < AT_RISK_THRESHOLD) {
+      srStatus = "AT_RISK";
+      promotionAllowed = false;
+      overrideAllowed = true;
+    } else {
+      srStatus = "READY";
+      promotionAllowed = true;
+      overrideAllowed = true;
+    }
+
+    // LLM advisory explanation (NOT authority — blocking is deterministic)
+    const advisoryExplanation = advisoryIssues.length > 0
+      ? `Advisory: ${advisoryIssues.join("; ")}. ${blockingIssues.length > 0 ? "Blocking: " + blockingIssues.join("; ") : ""}`
+      : blockingIssues.length > 0
+      ? `Blocking: ${blockingIssues.join("; ")}`
+      : null;
+
+    const stageReadinessResult = {
+      score: stageReadiness,
+      status: srStatus,
+      promotion_allowed: promotionAllowed,
+      override_allowed: overrideAllowed,
+      primary_blockers: blockingIssues.length > 0 ? blockingIssues : null,
+      advisory_issues: advisoryIssues.length > 0 ? advisoryIssues : null,
+      ci_score: ciScore,
+      gp_score: gpScore,
+      gap,
+      subscore_floor: subscoreFloor,
+      gap_score: gapScore,
+      trajectory_value: trajectoryValue,
+      blocking_penalty: blockingPenalty,
+      at_risk_threshold: AT_RISK_THRESHOLD,
+      data_integrity_ok: dataIntegrityOk,
+      invalid_subscores: hasInvalidSubScores ? invalidSubScores : null,
+      advisory_explanation: advisoryExplanation,
+      // PATCH 1: subscore_mean
+      subscore_mean: subscoreMean,
+      // PATCH 4: score_breakdown — full audit trail
+      score_breakdown: {
+        ci_component: ciComponent,
+        gp_component: gpComponent,
+        floor_component: floorComponent,
+        mean_component: meanComponent,
+        gap_component: gapComponent,
+        trajectory_component: trajectoryComponent,
+        blocking_penalty: blockingPenalty,
+        total_raw: srRaw,
+        total_clamped: stageReadiness,
+      },
+      // Audit: raw + normalized sub-scores for transparency
+      ci_sub_scores_normalized: ciSubScoreValues.reduce((acc, { dim, raw, normalized }) => {
+        acc[dim] = { raw, normalized };
+        return acc;
+      }, {} as Record<string, { raw: number; normalized: number | null }>),
+      gp_sub_scores_normalized: gpSubScoreValues.reduce((acc, { dim, raw, normalized }) => {
+        acc[dim] = { raw, normalized };
+        return acc;
+      }, {} as Record<string, { raw: number; normalized: number | null }>),
+    };
+
+    console.log(`[convergence-engine] SR: status=${srStatus} score=${stageReadiness} at_risk_thresh=${AT_RISK_THRESHOLD} blocking=${blockingPenalty} data_ok=${dataIntegrityOk}`);
+
+    // Inject SR into fullResult for API consumers
+    const fullResultWithSR = { ...fullResult, stage_readiness: stageReadinessResult };
+
     // Save to DB — atomic write to development_runs + meta_json cache
     try {
       const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
       const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
       const supabase = createClient(supabaseUrl, supabaseKey);
 
-      // Extract user_id from JWT
+      // Extract user_id from JWT — service role key has no user context; use null user_id for persistence
       const token = authHeader.replace("Bearer ", "");
-      const { data: { user } } = await supabase.auth.getUser(token);
+      const { data: { user } } = await supabase.auth.getUser(token).catch(() => ({ data: { user: null } }));
 
-      if (user && projectId) {
+      // Always attempt DB write when projectId is provided (service role key = no user but still persist)
+      if (projectId) {
         // Resolve document_id and version_id — look up latest version if not provided
         let resolvedDocId = documentId;
         let resolvedVersionId = versionId;
@@ -446,7 +646,7 @@ serve(async (req) => {
           leverage_moves: result.leverage_moves,
           format_advisory: result.format_advisory,
           executive_guidance: result.executive_guidance,
-          full_result: fullResult,
+          full_result: fullResultWithSR,
           purpose_class: purposeClass,
           deliverable_type: deliverableType || null,
         };
@@ -458,7 +658,7 @@ serve(async (req) => {
               p_project_id: projectId,
               p_document_id: resolvedDocId || null,
               p_version_id: resolvedVersionId,
-              p_user_id: user.id,
+              p_user_id: user?.id ?? null,
               p_run_type: "CONVERGENCE",
               p_production_type: productionType,
               p_strategic_priority: strategicPriority,
@@ -477,11 +677,111 @@ serve(async (req) => {
               p_format_advisory: result.format_advisory,
               p_executive_guidance: result.executive_guidance,
               p_executive_snapshot: result.executive_snapshot,
-              p_full_result: fullResult,
+              p_full_result: fullResultWithSR,
               p_creative_detail: result.creative_detail,
               p_greenlight_detail: result.greenlight_detail,
             });
             console.log(`[convergence-engine] atomic write done: version=${resolvedVersionId}`);
+
+            // ── A1: Extract + persist sub-scores as first-class data ──────────────
+            // These unlock: delta tracking, blocking detection, SR calculation, trend analysis
+            try {
+              // Build sub-score records with VALIDATION (scale 0-10 → 0-100)
+              // FAIL-CLOSED: invalid sub-scores are flagged but NOT defaulted
+              const ciRecords = CI_COMPONENTS.map(k => {
+                const raw = ciSubScores[k];
+                const num = Number(raw);
+                const valid = raw != null && !isNaN(num) && num >= 0 && num <= 10;
+                return {
+                  dimension: k,
+                  score: Math.round(num * 10),
+                  is_valid: valid,
+                  validation_error: valid ? null : `CI::${k} missing or out of range [0-10]: ${JSON.stringify(raw)}`,
+                };
+              });
+              const gpRecords = GP_COMPONENTS.map(k => {
+                const raw = gpSubScores[k];
+                const num = Number(raw);
+                const valid = raw != null && !isNaN(num) && num >= 0 && num <= 10;
+                return {
+                  dimension: k,
+                  score: Math.round(num * 10),
+                  is_valid: valid,
+                  validation_error: valid ? null : `GP::${k} missing or out of range [0-10]: ${JSON.stringify(raw)}`,
+                };
+              });
+
+              // Fetch previous version's sub-scores for delta tracking
+              const { data: prevScores } = await supabase
+                .from("document_version_subscores")
+                .select("dimension, category, score")
+                .eq("version_id", resolvedVersionId)
+                .order("created_at", { ascending: false })
+                .limit(50);
+
+              const prevMap: Record<string, number> = {};
+              if (prevScores) {
+                for (const r of prevScores) {
+                  const key = `${r.category}::${r.dimension}`;
+                  if (!(key in prevMap)) prevMap[key] = r.score;
+                }
+              }
+
+              const now = new Date().toISOString();
+              const rows: Array<Record<string, unknown>> = [];
+              for (const rec of ciRecords) {
+                const key = `CI::${rec.dimension}`;
+                const prev = prevMap[key];
+                // Delta only computed for valid scores
+                const delta = rec.is_valid && prev != null ? rec.score - prev : null;
+                const trend = delta != null
+                  ? (delta > 2 ? "up" : delta < -2 ? "down" : "stable")
+                  : null;
+                rows.push({
+                  version_id: resolvedVersionId,
+                  category: "CI",
+                  dimension: rec.dimension,
+                  score: rec.score,
+                  confidence: null,
+                  delta_from_previous: delta,
+                  trend,
+                  is_valid: rec.is_valid,
+                  validation_error: rec.validation_error,
+                  created_at: now,
+                });
+              }
+              for (const rec of gpRecords) {
+                const key = `GP::${rec.dimension}`;
+                const prev = prevMap[key];
+                // Delta only computed for valid scores
+                const delta = rec.is_valid && prev != null ? rec.score - prev : null;
+                const trend = delta != null
+                  ? (delta > 2 ? "up" : delta < -2 ? "down" : "stable")
+                  : null;
+                rows.push({
+                  version_id: resolvedVersionId,
+                  category: "GP",
+                  dimension: rec.dimension,
+                  score: rec.score,
+                  confidence: null,
+                  delta_from_previous: delta,
+                  trend,
+                  is_valid: rec.is_valid,
+                  validation_error: rec.validation_error,
+                  created_at: now,
+                });
+              }
+
+              if (rows.length > 0) {
+                await supabase.from("document_version_subscores").upsert(rows, {
+                  onConflict: "version_id,category,dimension",
+                });
+                console.log(`[convergence-engine] sub-scores persisted: ${rows.length} records for version=${resolvedVersionId}`);
+              }
+            } catch (subErr) {
+              // Non-fatal: sub-score extraction failures must not break the main write
+              console.error("[convergence-engine] sub-score extraction failed:", subErr);
+            }
           } catch (rpcErr) {
             console.error("[convergence-engine] atomic_write RPC failed:", rpcErr);
           }
@@ -490,7 +790,7 @@ serve(async (req) => {
         // Legacy: convergence_scores (kept for backward compat during rollout)
         await supabase.from("convergence_scores").insert({
           project_id: projectId,
-          user_id: user.id,
+          user_id: user?.id ?? null,
           creative_integrity_score: ciScore,
           greenlight_probability: gpScore,
           gap,
@@ -506,14 +806,14 @@ serve(async (req) => {
           leverage_moves: result.leverage_moves,
           format_advisory: result.format_advisory,
           executive_guidance: result.executive_guidance,
-          full_result: fullResult,
+          full_result: fullResultWithSR,
         }).then(() => {}).catch(() => {});
       }
     } catch (dbErr) {
       console.error("[convergence-engine] DB save error:", dbErr);
     }
 
-    return new Response(JSON.stringify(fullResult), {
+    return new Response(JSON.stringify(fullResultWithSR), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
