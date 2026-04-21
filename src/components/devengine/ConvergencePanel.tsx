@@ -5,7 +5,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BarChart3, AlertTriangle, Info, CircleCheck, ShieldAlert, Lightbulb, Sparkles, Shield, Target } from 'lucide-react';
+import { BarChart3, AlertTriangle, Info, CircleCheck, ShieldAlert, Lightbulb, Sparkles, Shield, Target, ArrowUpCircle, XCircle, AlertCircle } from 'lucide-react';
 import { computeManualDecisionState, type ManualDecisionInput, type ManualActionKey, recommendationToActionKey } from '@/lib/manualDecisionState';
 import { ApprovalSection } from './ApprovalSection';
 
@@ -152,6 +152,135 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
 
         {/* Sparkline */}
         <Sparkline history={convergenceHistory} />
+
+        {/* ═══ Stage Readiness — Phase 1 SR Policy ═══ */}
+        {latestAnalysis?.stage_readiness && (
+          <div className={`p-2.5 rounded border ${
+            latestAnalysis.stage_readiness.status === 'READY' ? 'bg-emerald-500/10 border-emerald-500/25' :
+            latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/10 border-amber-500/25' :
+            latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/10 border-destructive/25' :
+            'bg-muted/20 border-border/30'
+          }`}>
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                {latestAnalysis.stage_readiness.status === 'READY' ? <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-400" /> :
+                 latestAnalysis.stage_readiness.status === 'AT_RISK' ? <AlertCircle className="h-3.5 w-3.5 text-amber-400" /> :
+                 latestAnalysis.stage_readiness.status === 'BLOCKED' ? <XCircle className="h-3.5 w-3.5 text-destructive" /> :
+                 <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
+                <span className="text-[10px] font-bold">Stage Readiness</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {/* Promotion badge */}
+                <Badge variant={latestAnalysis.stage_readiness.promotion_allowed ? 'default' : 'outline'} className={`text-[9px] px-1.5 py-0 ${
+                  latestAnalysis.stage_readiness.promotion_allowed ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                  'text-muted-foreground'
+                }`}>
+                  {latestAnalysis.stage_readiness.promotion_allowed ? '▶ PROMO' : '⊍ HOLD'}
+                </Badge>
+                {/* Override badge */}
+                {latestAnalysis.stage_readiness.override_allowed !== undefined && (
+                  <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${
+                    latestAnalysis.stage_readiness.override_allowed ? 'text-sky-400 border-sky-500/30' : 'text-muted-foreground/50 border-border/20'
+                  }`}>
+                    {latestAnalysis.stage_readiness.override_allowed ? '⟳ OVERRIDE' : '⊍ NO-OVR'}
+                  </Badge>
+                )}
+                {/* Status badge */}
+                <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${
+                  latestAnalysis.stage_readiness.status === 'READY' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                  latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                  latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/20 text-destructive border-destructive/30' :
+                  'bg-muted/20 text-muted-foreground border-border/30'
+                }`}>
+                  {latestAnalysis.stage_readiness.status}
+                </Badge>
+              </div>
+            </div>
+
+            {/* Score + diagnostics row */}
+            <div className="grid grid-cols-4 gap-1 text-center mb-2">
+              <div>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">SR Score</p>
+                <p className={`text-sm font-display font-bold ${
+                  latestAnalysis.stage_readiness.status === 'READY' ? 'text-emerald-400' :
+                  latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'text-amber-400' :
+                  latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'text-destructive' :
+                  'text-muted-foreground'
+                }`}>
+                  {latestAnalysis.stage_readiness.score ?? '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">Sub Floor</p>
+                <p className="text-sm font-display font-bold text-foreground">
+                  {latestAnalysis.stage_readiness.subscore_floor ?? '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">Sub Mean</p>
+                <p className="text-sm font-display font-bold text-foreground">
+                  {latestAnalysis.stage_readiness.subscore_mean ?? '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">@Risk≥</p>
+                <p className="text-sm font-display font-bold text-muted-foreground">
+                  {latestAnalysis.stage_readiness.at_risk_threshold ?? '—'}
+                </p>
+              </div>
+            </div>
+
+            {/* Blockers */}
+            {latestAnalysis.stage_readiness.primary_blockers?.length > 0 && (
+              <div className="mt-2 space-y-0.5">
+                <p className="text-[8px] font-bold text-destructive uppercase tracking-wider">Blockers ({latestAnalysis.stage_readiness.primary_blockers.length})</p>
+                {latestAnalysis.stage_readiness.primary_blockers.slice(0, 3).map((b: string, i: number) => (
+                  <p key={i} className="text-[8px] text-destructive/80 leading-tight">• {b}</p>
+                ))}
+                {latestAnalysis.stage_readiness.primary_blockers.length > 3 && (
+                  <p className="text-[8px] text-muted-foreground/60">+{latestAnalysis.stage_readiness.primary_blockers.length - 3} more</p>
+                )}
+              </div>
+            )}
+
+            {/* Advisory issues */}
+            {latestAnalysis.stage_readiness.advisory_issues?.length > 0 && (
+              <div className="mt-2 space-y-0.5">
+                <p className="text-[8px] font-bold text-amber-400 uppercase tracking-wider">Advisories ({latestAnalysis.stage_readiness.advisory_issues.length})</p>
+                {latestAnalysis.stage_readiness.advisory_issues.slice(0, 2).map((a: string, i: number) => (
+                  <p key={i} className="text-[8px] text-amber-400/80 leading-tight">• {a}</p>
+                ))}
+              </div>
+            )}
+
+            {/* Score breakdown toggle */}
+            {latestAnalysis.stage_readiness.score_breakdown && (
+              <details className="group mt-2">
+                <summary className="text-[8px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground/80">
+                  ↑ score breakdown
+                </summary>
+                <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[8px] font-mono text-muted-foreground/70">
+                  {[
+                    ['CI component', latestAnalysis.stage_readiness.score_breakdown.ci_component],
+                    ['GP component', latestAnalysis.stage_readiness.score_breakdown.gp_component],
+                    ['Floor component', latestAnalysis.stage_readiness.score_breakdown.floor_component],
+                    ['Mean component', latestAnalysis.stage_readiness.score_breakdown.mean_component],
+                    ['Gap component', latestAnalysis.stage_readiness.score_breakdown.gap_component],
+                    ['Trajectory', latestAnalysis.stage_readiness.score_breakdown.trajectory_component],
+                    ['Block penalty', latestAnalysis.stage_readiness.score_breakdown.blocking_penalty],
+                    ['Total raw', latestAnalysis.stage_readiness.score_breakdown.total_raw],
+                  ].map(([k, v]) => v !== undefined && v !== null && v !== 0 && (
+                    <span key={k as string} className="flex justify-between">
+                      <span>{k}</span>
+                      <span className={typeof v === 'number' && v < 0 ? 'text-destructive/70' : ''}>{typeof v === 'number' ? v.toFixed(2) : v}</span>
+                    </span>
+                  ))}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
 
         {/* ═══ Discipline Mode Indicator ═══ */}
         {decision.disciplineMode && decision.disciplineMode !== 'full_rewrite' && (
