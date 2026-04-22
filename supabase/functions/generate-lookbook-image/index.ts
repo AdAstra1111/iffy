@@ -989,7 +989,7 @@ serve(async (req) => {
 
   try {
     const _gw = resolveGateway();
-    if (!_gw.apiKey) throw new Error("No AI gateway key configured (LOVABLE_API_KEY / OPENROUTER_API_KEY)");
+    if (!_gw.apiKey) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
 
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

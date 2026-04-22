@@ -20,7 +20,6 @@ import { usePitchIdeas, type PitchIdea } from '@/hooks/usePitchIdeas';
 import { useProjects } from '@/hooks/useProjects';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { supabase as supabaseAdmin } from '@/lib/supabase-admin';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
 import { type AnimationMeta, ANIMATION_PRIMARY_LIST, ANIMATION_STYLE_LIST, ANIMATION_TAG_LIST } from '@/config/animationMeta';
@@ -237,13 +236,16 @@ export default function PitchIdeas() {
 
       if (error) {
         // Check if this is a fetch/timeout error — ideas may already be saved server-side
-        const isFetchTimeout = error.name === 'FunctionsFetchError' || error.message?.includes('Failed to fetch');
+        const isFetchTimeout = error.name === 'FunctionsFetchError' || error.message?.includes('Failed to fetch') || error.name === 'TimeoutError' || error.message?.includes('timed out') || error.message?.includes('AbortError');
         if (isFetchTimeout) {
           console.warn('[PitchIdeas] Fetch timeout detected — checking if ideas were saved server-side...');
-          // Wait briefly for any in-flight DB writes to complete, then refetch
-          await new Promise(r => setTimeout(r, 3000));
+          // Wait briefly for any in-flight DB writes to complete, then refetch immediately
+          await new Promise(r => setTimeout(r, 2000));
           await qc.invalidateQueries({ queryKey: ['pitch-ideas'] });
-          toast.info('Generation took longer than expected — refreshing ideas from server...');
+          // Give the query cache a moment to update
+          await new Promise(r => setTimeout(r, 1000));
+          await qc.refetchQueries({ queryKey: ['pitch-ideas'] });
+          toast.info('Generation took longer than expected — checking for saved ideas...');
           setGenerating(false);
           return;
         }

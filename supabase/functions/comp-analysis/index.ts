@@ -31,7 +31,7 @@ serve(async (req) => {
     const { title, format, genres, budget_range, tone, comparable_titles } = await req.json();
 
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
+    const OPENROUTER_API_KEY = _gw.apiKey;
     const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
 
     // ── STEP 1: Perplexity grounded research (if available) ──
@@ -120,7 +120,7 @@ Return ONLY valid JSON with this structure:
     const response = await fetch(_gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

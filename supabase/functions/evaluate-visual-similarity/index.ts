@@ -41,7 +41,7 @@ serve(async (req: Request) => {
 
   try {
     const apiKey = gw.apiKey || Deno.env.get("OPENROUTER_API_KEY");
-    if (!apiKey) throw new Error("No AI API key configured — set LOVABLE_API_KEY or OPENROUTER_API_KEY");
+    if (!apiKey) throw new Error("No AI API key configured — set OPENROUTER_API_KEY or OPENROUTER_API_KEY");
 
     const { candidateUrl, anchorUrls, characterName } = await req.json();
 

@@ -636,7 +636,7 @@ serve(async (req) => {
     if (userError || !user) throw new Error("Invalid auth token");
 
     const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
 
     const body = await req.json();
     const { action, projectId, scriptId, forceNew, seriesMode, episodeNumber, episodeTitle, episodeLogline, totalEpisodes } = body;
@@ -678,7 +678,7 @@ serve(async (req) => {
       }
       const resp = await fetch(resolveGateway().url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify(aiBody),
       });
       if (!resp.ok) {

@@ -65,7 +65,7 @@ Write 3-5 paragraphs covering: the emotional promise, the genre contract, what t
 
 // ─── LLM ──────────────────────────────────────────────────────────────────────
 function resolveGatewayKey(): { key: string; baseUrl: string; model: string } {
-  const lovable = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+  const lovable = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
   if (lovable) return { key: lovable, baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-2.5-flash" };
   const openai = Deno.env.get("OPENAI_API_KEY");
   if (openai) return { key: openai, baseUrl: "https://api.openai.com/v1", model: "gpt-4o" };
@@ -304,7 +304,7 @@ serve(async (req) => {
 
 // DEBUG helper — remove after testing
 async function debugLLM(): Promise<void> {
-  const key = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("LOVABLE_API_KEY");
+  const key = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
   console.log("KEY present:", !!key, key ? key.slice(0, 10) + "..." : "none");
   try {
     const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {

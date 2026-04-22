@@ -140,8 +140,8 @@ Deno.serve(async (req) => {
     runId = body.runId;
     if (!runId) return jsonRes({ error: "runId required" }, 400);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) return jsonRes({ error: "LOVABLE_API_KEY not configured" }, 500);
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY) return jsonRes({ error: "OPENROUTER_API_KEY not configured" }, 500);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -226,7 +226,7 @@ Deno.serve(async (req) => {
       const result = await compareImages(
         variants[0].url,
         variants[1].url,
-        LOVABLE_API_KEY,
+        OPENROUTER_API_KEY,
         `Intra-slot consistency for ${slotKey}: variant A vs B under identical conditions`,
       );
 
@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
         const result = await compareImages(
           referenceUrl,
           variants[0].url,
-          LOVABLE_API_KEY,
+          OPENROUTER_API_KEY,
           `Cross-slot persistence: ${REFERENCE_SLOT} vs ${slotKey}`,
         );
 

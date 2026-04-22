@@ -5001,8 +5001,8 @@ serve(async (req) => {
     }
 
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
-    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured (LOVABLE_API_KEY / OPENROUTER_API_KEY)");
+    const OPENROUTER_API_KEY = _gw.apiKey;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -5715,15 +5715,15 @@ ${docTextForScoring}`;
       const analyzeModel = ANALYZE_MODEL; // scoring uses o4-mini for deterministic output
       console.log("[dev-engine-v2] analyze model selected", { analyzeModel, previousCI, forceProModel: body.forceProModel });
 
-      const raw = await callAI(LOVABLE_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.0, 6000, 42);
-      let parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.0, 6000, 42);
+      let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
       // ── Strict JSON retry: one deterministic recovery attempt ──
       if (!parsed || !looksLikeAnalyzeShape(parsed)) {
         console.log("[dev-engine-v2] analyze json invalid -> strict retry", { projectId, documentId, versionId: version.id });
         try {
-          const raw2 = await callAI(LOVABLE_API_KEY, analyzeModel, `${STRICT_JSON_RULES}\n\n${systemPrompt}`, userPrompt, 0.0, 6000, 42);
-          const parsed2 = await parseAIJson(LOVABLE_API_KEY, raw2);
+          const raw2 = await callAI(OPENROUTER_API_KEY, analyzeModel, `${STRICT_JSON_RULES}\n\n${systemPrompt}`, userPrompt, 0.0, 6000, 42);
+          const parsed2 = await parseAIJson(OPENROUTER_API_KEY, raw2);
           if (parsed2 && looksLikeAnalyzeShape(parsed2)) {
             console.log("[dev-engine-v2] analyze strict retry succeeded", { projectId });
             parsed = parsed2;
@@ -6008,7 +6008,7 @@ ${docTextForScoring}`;
             console.log(`[NIE] Adjacent docs loaded: upstream=${adjacentPack.upstream?.doc_type || "none"}, downstream=${adjacentPack.downstream?.doc_type || "none"}, canon=${!!adjacentPack.canon_text}`);
 
             const nieResult = await evaluateNarrativeIntegrity(
-              callAI, parseAIJson, LOVABLE_API_KEY, FAST_MODEL,
+              callAI, parseAIJson, OPENROUTER_API_KEY, FAST_MODEL,
               effectiveDeliverable, version.plaintext.slice(0, 12000),
               adjacentPack,
             );
@@ -6576,8 +6576,8 @@ ${(() => {
       const notesNecBlock = await loadNECGuardrailBlock(supabase, projectId);
 
       const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
-      const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] notes: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "notes", snippet: raw.slice(0, 300) }), {
@@ -6957,15 +6957,15 @@ ${(() => {
                 hasClassAAxes
                   ? (async () => {
                       const classAUser = buildClassASpineCheckUserPrompt(spine, spineCheckDocType, spineValidatorText, notesProject?.title, notesProject?.assigned_lane);
-                      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, buildClassASpineCheckSystemPrompt(), classAUser, 0.1, 2000);
-                      const p = await parseAIJson(LOVABLE_API_KEY, raw);
+                      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, buildClassASpineCheckSystemPrompt(), classAUser, 0.1, 2000);
+                      const p = await parseAIJson(OPENROUTER_API_KEY, raw);
                       return parseClassASpineCheckOutput(p);
                     })()
                   : Promise.resolve(null),
                 hasClassBAxes
                   ? (async () => {
-                      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, buildClassBSpineCheckSystemPrompt(), classBUserPrompt!, 0.1, 2000);
-                      const p = await parseAIJson(LOVABLE_API_KEY, raw);
+                      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, buildClassBSpineCheckSystemPrompt(), classBUserPrompt!, 0.1, 2000);
+                      const p = await parseAIJson(OPENROUTER_API_KEY, raw);
                       return parseClassBSpineCheckOutput(p);
                     })()
                   : Promise.resolve(null),
@@ -7305,8 +7305,8 @@ NOTES REQUIRING DECISIONS:\n${JSON.stringify(notesForPrompt)}
 
 MATERIAL:\n${version.plaintext}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
       // Store as OPTIONS run
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({
@@ -7413,7 +7413,7 @@ MATERIAL:\n${version.plaintext}`;
         if (rewriteNote.trim()) {
           console.log(`[dev-engine-v2] rewrite: surgical episode mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
           const surgLLM = async (system: string, user: string): Promise<string> => {
-            const r = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, system, user, 0.25, 4000);
+            const r = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, system, user, 0.25, 4000);
             return r || "";
           };
           const surgResult = await surgicalEpisodeRewrite({
@@ -7617,8 +7617,8 @@ TARGET FORMAT: ${targetDocType || "same as source"}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, rewriteSystemPrompt, userPrompt, 0.4, 32000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, rewriteSystemPrompt, userPrompt, 0.4, 32000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "rewrite", snippet: raw.slice(0, 300) }), {
@@ -8158,7 +8158,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
             ? `Rewrite episode ${start}/${plan.total_chunks}`
             : `Rewrite episodic unit ${chunkIndex + 1}/${plan.total_chunks} (episodes ${start}-${end})`);
           rewrittenChunk = await callAI(
-            LOVABLE_API_KEY,
+            OPENROUTER_API_KEY,
             BALANCED_MODEL,
             augmentedChunkSystem,
             episodicPrompt,
@@ -8182,7 +8182,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
         const chunkPrompt = `${notesContext}${prevContext}\n\nCHUNK ${chunkIndex + 1} OF ${plan.total_chunks} — Rewrite this section, applying notes while preserving all scenes and story beats:\n\n${chunkText}`;
         console.log(`Rewrite chunk ${chunkIndex + 1}/${plan.total_chunks} (${chunkText.length} chars)`);
         rewrittenChunk = await callAI(
-          LOVABLE_API_KEY, BALANCED_MODEL, augmentedChunkSystem, chunkPrompt, 0.4, 16000,
+          OPENROUTER_API_KEY, BALANCED_MODEL, augmentedChunkSystem, chunkPrompt, 0.4, 16000,
         );
       }
 
@@ -8677,7 +8677,7 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
       const model = isDraftScript ? PRO_MODEL : BALANCED_MODEL;
       const maxTok = isDraftScript ? 16000 : 10000;
       const systemPrompt = isDraftScript ? CONVERT_SYSTEM : CONVERT_SYSTEM_JSON;
-      const raw = await callAI(LOVABLE_API_KEY, model, systemPrompt, userPrompt, 0.35, maxTok);
+      const raw = await callAI(OPENROUTER_API_KEY, model, systemPrompt, userPrompt, 0.35, maxTok);
 
       let parsed: any;
       if (isDraftScript) {
@@ -8687,7 +8687,7 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
         const changeSummary = markerIdx >= 0 ? raw.slice(markerIdx + 20).trim() : "Converted to screenplay format";
         parsed = { converted_text: convertedText, format: "DRAFT_SCRIPT", change_summary: changeSummary };
       } else {
-        parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+        parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       }
       // resolvedDocType already computed above (before large-risk check)
 
@@ -8902,8 +8902,8 @@ PROTECT (non-negotiable creative DNA): ${JSON.stringify(protectItems || [])}
 MATERIAL (${version.plaintext.length} chars):
 ${version.plaintext}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, PRO_MODEL, SCRIPT_PLAN_SYSTEM, userPrompt, 0.25, 8000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, SCRIPT_PLAN_SYSTEM, userPrompt, 0.25, 8000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({
         project_id: projectId,
@@ -8997,7 +8997,7 @@ ${continuityContext}
 
 Write these scenes NOW in proper screenplay format. Output ONLY screenplay text.`;
 
-      const raw = await callAI(LOVABLE_API_KEY, PRO_MODEL, WRITE_BATCH_SYSTEM, userPrompt, 0.4, 8000);
+      const raw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, WRITE_BATCH_SYSTEM, userPrompt, 0.4, 8000);
       const cleanText = raw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
 
       await supabase.from("development_runs").insert({
@@ -9188,8 +9188,8 @@ Return ONLY valid JSON:
 }`;
 
       const userPrompt = `PROJECT: ${project.title}\nGENRES: ${(project.genres || []).join(", ")}\nTONE: ${project.tone || "Unknown"}\nAUDIENCE: ${project.target_audience || "Unknown"}\nLANE: ${project.assigned_lane || "Unknown"}\n\nCONCEPT:\n${conceptText.slice(0, 8000)}`;
-      const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, weightSystem, userPrompt, 0.3, 4000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, weightSystem, userPrompt, 0.3, 4000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
       return new Response(JSON.stringify({ recommendation: parsed }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -9531,13 +9531,13 @@ Rules:
 - If all blocking issues are resolvable from the CONTEXT above, return an empty must_decide array.`;
 
       const userPrompt = `FOUNDATION DOCUMENTS (use these to answer qualification questions — do NOT ask the user about anything resolvable from here):\n${foundationContext}\n\nLATEST ANALYSIS:\n${analysisSnippet}\n\nCURRENT DOCUMENT MATERIAL:\n${materialText}`;
-      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, EXEC_STRATEGY_SYSTEM, userPrompt, 0.3, 2500);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, EXEC_STRATEGY_SYSTEM, userPrompt, 0.3, 2500);
       let parsed: any;
       try {
         parsed = JSON.parse(extractJSON(raw));
       } catch {
         try {
-          const repair = await callAI(LOVABLE_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return JSON ONLY.", raw.slice(0, 3000), 0, 1500);
+          const repair = await callAI(OPENROUTER_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return JSON ONLY.", raw.slice(0, 3000), 0, 1500);
           parsed = JSON.parse(extractJSON(repair));
         } catch (e2) {
           console.error("[dev-engine-v2] executive-strategy JSON repair failed", raw.slice(0, 300));
@@ -9764,8 +9764,8 @@ Return ONLY valid JSON:
   "change_summary": "what was adapted"
 }`;
           const convPrompt = `SOURCE FORMAT: ${srcDoc?.doc_type || "unknown"}\nTARGET FORMAT: ${targetStageName}\n\nMATERIAL:\n${(srcVer?.plaintext || "").slice(0, 20000)}`;
-          const convRaw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, convSystem, convPrompt, 0.35, 10000);
-          const convParsed = await parseAIJson(LOVABLE_API_KEY, convRaw);
+          const convRaw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, convSystem, convPrompt, 0.35, 10000);
+          const convParsed = await parseAIJson(OPENROUTER_API_KEY, convRaw);
 
           const resolvedDocType = LADDER[i];
           const rebasedTitle = `${srcDoc?.title || "Document"} — ${LADDER[i]} (rebased)`;
@@ -9882,13 +9882,13 @@ Return ONLY valid JSON matching this schema:
   "notes_for_user": ["short bullets explaining extraction decisions"]
 }`;
 
-      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, EXTRACT_CRITERIA_SYSTEM, `DOCUMENT:\n${text.slice(0, 12000)}`, 0.1, 2000);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, EXTRACT_CRITERIA_SYSTEM, `DOCUMENT:\n${text.slice(0, 12000)}`, 0.1, 2000);
       let parsed: any;
       try {
         parsed = JSON.parse(extractJSON(raw));
       } catch {
         try {
-          const repair = await callAI(LOVABLE_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return JSON ONLY.", raw.slice(0, 3000), 0, 1500);
+          const repair = await callAI(OPENROUTER_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return JSON ONLY.", raw.slice(0, 3000), 0, 1500);
           parsed = JSON.parse(extractJSON(repair));
         } catch (e2) {
           console.error("[dev-engine-v2] extract-criteria JSON repair failed", raw.slice(0, 300));
@@ -10054,12 +10054,12 @@ Overall score = average of all 5 dimension scores. Passed = overall_score >= 65 
 
       const userPrompt = `${canonContext ? `CANON CONTEXT:\n${canonContext}\n` : ""}${prevEpisodeText ? `PREVIOUS EPISODE (for escalation check):\n${prevEpisodeText}\n\n` : ""}EPISODE ${episodeNumber} SCRIPT TO VALIDATE:\n${scriptText}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, VALIDATION_SYSTEM, userPrompt, 0.1, 2000);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, VALIDATION_SYSTEM, userPrompt, 0.1, 2000);
       let result: any;
       try {
         result = JSON.parse(extractJSON(raw));
       } catch {
-        result = await parseAIJson(LOVABLE_API_KEY, raw);
+        result = await parseAIJson(OPENROUTER_API_KEY, raw);
       }
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "validate-episode", snippet: raw.slice(0, 300) }), {
@@ -10218,12 +10218,12 @@ RULES:
 
       const userPrompt = `${prevScriptText ? `PREVIOUS EPISODE (for escalation comparison):\n${prevScriptText}\n\n` : ""}EPISODE ${episodeNumber} SCRIPT:\n${scriptText}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, METRICS_SYSTEM, userPrompt, 0.2, 3000);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, METRICS_SYSTEM, userPrompt, 0.2, 3000);
       let result: any;
       try {
         result = JSON.parse(extractJSON(raw));
       } catch {
-        result = await parseAIJson(LOVABLE_API_KEY, raw);
+        result = await parseAIJson(OPENROUTER_API_KEY, raw);
       }
       if (!result) {
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "episode-metrics", snippet: raw.slice(0, 300) }), {
@@ -10321,7 +10321,7 @@ Return ONLY valid JSON:
 Season signals: mentions multiple episodes, "Episode X:" headings, "season arc", "mid-season", episode ranges.
 Episode signals: single episode focus, 8-20 beats, cold open/hook/cliffhanger for one arc, sequential present-tense flow.`;
 
-      const scopeRaw = await callAI(LOVABLE_API_KEY, FAST_MODEL, SCOPE_DETECT_SYSTEM, beatSheetText.slice(0, 6000), 0.1, 1000);
+      const scopeRaw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, SCOPE_DETECT_SYSTEM, beatSheetText.slice(0, 6000), 0.1, 1000);
       let scopeResult: any;
       try { scopeResult = JSON.parse(extractJSON(scopeRaw)); } catch { scopeResult = { scope: "unknown", confidence: 50, signals: [] }; }
 
@@ -10377,7 +10377,7 @@ Continuity Notes: [carryover from previous episode]`;
 
         const slicePrompt = `SEASON BEAT SHEET:\n${beatSheetText.slice(0, 12000)}\n\n${gridContext ? `EPISODE GRID:\n${gridContext}\n\n` : ""}${prevEpContext ? `PREVIOUS EPISODE ENDING:\n${prevEpContext}\n\n` : ""}Extract Episode ${epNum} of ${seasonCount}.`;
 
-        const sliced = await callAI(LOVABLE_API_KEY, FAST_MODEL, SLICE_SYSTEM, slicePrompt, 0.2, 3000);
+        const sliced = await callAI(OPENROUTER_API_KEY, FAST_MODEL, SLICE_SYSTEM, slicePrompt, 0.2, 3000);
         episodeBeatSheet = sliced.trim();
         sliceMethod = "ai_slice";
       }
@@ -10501,7 +10501,7 @@ ${prevScript ? `PREVIOUS EPISODE ENDING (for continuity):\n${prevScript}\n\n` : 
         return { passed, sceneCount, dialogueCount, outlinePct, banned, reasons, hasCliffhanger };
       }
 
-      let scriptRaw = await callAI(LOVABLE_API_KEY, PRO_MODEL, SCREENPLAY_SYSTEM, scriptPrompt, 0.4, 16000);
+      let scriptRaw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, SCREENPLAY_SYSTEM, scriptPrompt, 0.4, 16000);
       let scriptText = scriptRaw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
       let validation = validateScreenplayOutput(scriptText);
       let regenAttempted = false;
@@ -10521,7 +10521,7 @@ You MUST rewrite as proper screenplay pages with:
 - Start with a scene heading immediately. Do NOT start with a title or summary paragraph.
 
 Previous attempt problems: ${validation.reasons.join("; ")}`;
-        const regenRaw = await callAI(LOVABLE_API_KEY, PRO_MODEL, REGEN_SYSTEM, scriptPrompt, 0.35, 16000);
+        const regenRaw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, REGEN_SYSTEM, scriptPrompt, 0.35, 16000);
         const regenText = regenRaw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
         const regenValidation = validateScreenplayOutput(regenText);
         // Use regen if it's better
@@ -10823,8 +10823,8 @@ ${contextBlocks.join("\n\n") || "[No additional context provided]"}
 ${baseScriptText.slice(0, 30000)}`;
 
       try {
-        const raw = await callAI(LOVABLE_API_KEY, PRO_MODEL, PATCH_SYSTEM, userPrompt, 0.3, 16000);
-        const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+        const raw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, PATCH_SYSTEM, userPrompt, 0.3, 16000);
+        const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
         const patchSummary = parsed.patch_summary || "";
         const replacement = parsed.replacement_script || "";
@@ -11056,7 +11056,7 @@ STRICT RULES:
 ${globalDirections ? `ADDITIONAL DIRECTIONS FROM CREATOR:\n${globalDirections}\n\n` : ""}CONTEXT DOCUMENTS (${contextParts.length} source doc${contextParts.length !== 1 ? "s" : ""}):
 ${contextBlock}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, PRO_MODEL, toplineSystemPrompt, userPrompt, 0.3, 6000);
+      const raw = await callAI(OPENROUTER_API_KEY, PRO_MODEL, toplineSystemPrompt, userPrompt, 0.3, 6000);
       let generatedText = raw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
 
       // ── BUG PREVENTION: detect leaked instruction text ──
@@ -11184,8 +11184,8 @@ Return ONLY valid JSON:
   "changes_summary": "bullet summary of changes applied"
 }`;
       const decisionUserPrompt = `DECISION PLAN:\n${chosenOption.plan_text}\n\nMATERIAL:\n${baseVersion.plaintext.slice(0, 40000)}`;
-      const decisionRaw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, decisionSystem, decisionUserPrompt, 0.3, 32000);
-      const decisionParsed = await parseAIJson(LOVABLE_API_KEY, decisionRaw);
+      const decisionRaw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, decisionSystem, decisionUserPrompt, 0.3, 32000);
+      const decisionParsed = await parseAIJson(OPENROUTER_API_KEY, decisionRaw);
       const rewrittenText = decisionParsed.rewritten_text || baseVersion.plaintext;
 
       // Create new version via doc-os + CCE drift check
@@ -11361,8 +11361,8 @@ Return ONLY valid JSON:
 }`;
 
       const userPrompt = `EDITORIAL PLAN TO APPLY:\n${plan_text}\n\nMATERIAL:\n${version.plaintext.slice(0, 40000)}`;
-      const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, bundleSystem, userPrompt, 0.3, 32000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, bundleSystem, userPrompt, 0.3, 32000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       const rewrittenText = parsed.rewritten_text || version.plaintext;
 
       // Create new version via doc-os + CCE drift check
@@ -18436,7 +18436,7 @@ Return ONLY valid JSON:
     //
     // Proposal is validated before persistence.
     // No seed mutation occurs here — apply_narrative_patch executes it.
-    // Requires LOVABLE_API_KEY (OpenRouter). Fail-closed if absent.
+    // Requires OPENROUTER_API_KEY (OpenRouter). Fail-closed if absent.
     //
     if (action === "propose_narrative_patch") {
       const { projectId, repair_id } = body;
@@ -18468,11 +18468,11 @@ Return ONLY valid JSON:
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // ── LOVABLE_API_KEY guard ─────────────────────────────────────────
+      // ── OPENROUTER_API_KEY guard ─────────────────────────────────────────
       const _rp4Gw = resolveGateway();
       const RP4_API_KEY = _rp4Gw.apiKey;
       if (!RP4_API_KEY) {
-        return new Response(JSON.stringify({ ok: false, error: "LOVABLE_API_KEY not configured — cannot generate patch proposal" }),
+        return new Response(JSON.stringify({ ok: false, error: "OPENROUTER_API_KEY not configured — cannot generate patch proposal" }),
           { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
@@ -20814,8 +20814,8 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
       const failedSceneKeys:     string[] = [];
 
       // Load shared project context once before the loop (stale units + API key)
-      const LOVABLE_API_KEY = resolveGateway().apiKey;
-      if (!LOVABLE_API_KEY) {
+      const OPENROUTER_API_KEY = resolveGateway().apiKey;
+      if (!OPENROUTER_API_KEY) {
         await supabase.from("regeneration_runs").update({
           status: "failed", abort_reason: "missing_api_key", completed_at: new Date().toISOString(),
         }).eq("id", execRunId);
@@ -20931,7 +20931,7 @@ Preserve continuity. Output ONLY the rewritten scene in screenplay format.`;
         let generatedContent: string;
         try {
           const rawGenerated = await callAI(
-            LOVABLE_API_KEY,
+            OPENROUTER_API_KEY,
             PRO_MODEL,
             rewriteSystemPrompt,
             rewriteUserPrompt,
@@ -21087,8 +21087,8 @@ Preserve continuity. Output ONLY the rewritten scene in screenplay format.`;
                   const classAUser = buildClassASpineCheckUserPrompt(
                     spine, "story_outline", docText, projectRow?.title, projectRow?.assigned_lane
                   );
-                  const rawA = await callAI(LOVABLE_API_KEY, FAST_MODEL, buildClassASpineCheckSystemPrompt(), classAUser, 0.1, 2000);
-                  const pA = await parseAIJson(LOVABLE_API_KEY, rawA);
+                  const rawA = await callAI(OPENROUTER_API_KEY, FAST_MODEL, buildClassASpineCheckSystemPrompt(), classAUser, 0.1, 2000);
+                  const pA = await parseAIJson(OPENROUTER_API_KEY, rawA);
                   return parseClassASpineCheckOutput(pA);
                 })()
               : Promise.resolve(null),
@@ -21098,8 +21098,8 @@ Preserve continuity. Output ONLY the rewritten scene in screenplay format.`;
                     spine, "story_outline", docText, projectRow?.title, projectRow?.assigned_lane
                   );
                   if (!classBUser) return null;
-                  const rawB = await callAI(LOVABLE_API_KEY, FAST_MODEL, buildClassBSpineCheckSystemPrompt(), classBUser, 0.1, 2000);
-                  const pB = await parseAIJson(LOVABLE_API_KEY, rawB);
+                  const rawB = await callAI(OPENROUTER_API_KEY, FAST_MODEL, buildClassBSpineCheckSystemPrompt(), classBUser, 0.1, 2000);
+                  const pB = await parseAIJson(OPENROUTER_API_KEY, rawB);
                   return parseClassBSpineCheckOutput(pB);
                 })()
               : Promise.resolve(null),
@@ -23467,7 +23467,7 @@ Rules:
           const imgResp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+              'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -26654,8 +26654,8 @@ Only output the missing fields. Do not include fields that are not in the MISSIN
 
       const userPrompt = `PROJECT DOCUMENTS:\n\n${docContext}`;
 
-      const raw = await callAI(LOVABLE_API_KEY, FAST_MODEL, systemPrompt, userPrompt, 0.2, 4000);
-      const parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, systemPrompt, userPrompt, 0.2, 4000);
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
 
       if (!parsed || typeof parsed !== "object") {
         console.warn("[dev-engine-v2] canon_os_extract_from_seed_docs: LLM parse failed");
@@ -26785,7 +26785,7 @@ TONE/STYLE: ${toneStyle}
 LOGLINE: ${logline}
 PREMISE: ${premise.slice(0, 500)}`;
 
-      const compRaw = await callAI(LOVABLE_API_KEY, FAST_MODEL, compSystem, compUser, 0.3, 2000);
+      const compRaw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, compSystem, compUser, 0.3, 2000);
       let compParsed: any;
       try {
         // extractJSON favors {} — for arrays, do a direct parse first
@@ -26796,7 +26796,7 @@ PREMISE: ${premise.slice(0, 500)}`;
           compParsed = JSON.parse(extractJSON(compRaw));
         } catch {
           try {
-            const repair = await callAI(LOVABLE_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return a valid JSON array of objects with title, format, rationale, confidence fields. Return JSON ONLY.", compRaw.slice(0, 3000), 0, 1500);
+            const repair = await callAI(OPENROUTER_API_KEY, FAST_MODEL, "Fix this malformed JSON. Return a valid JSON array of objects with title, format, rationale, confidence fields. Return JSON ONLY.", compRaw.slice(0, 3000), 0, 1500);
             const repairCleaned = repair.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
             compParsed = JSON.parse(repairCleaned);
           } catch {
@@ -27666,7 +27666,7 @@ CRITICAL:
         const startTime = Date.now();
 
         const rewrittenScene = await callAI(
-          LOVABLE_API_KEY, BALANCED_MODEL, SCENE_REWRITE_SYSTEM, scenePrompt, 0.4, maxOutputTokens
+          OPENROUTER_API_KEY, BALANCED_MODEL, SCENE_REWRITE_SYSTEM, scenePrompt, 0.4, maxOutputTokens
         );
 
         const durationMs = Date.now() - startTime;
@@ -28687,8 +28687,8 @@ Include all required sections with substantive content.
 MATERIAL:
 ${upstreamText}`;
 
-          const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, userPrompt, 0.35, 10000);
-          let parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+          const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, userPrompt, 0.35, 10000);
+          let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
           // extractConvertedText: tries converted_text, then alt keys, then raw prose fallback.
           const extractConvertedText = (p: any, rawText: string): string => {
             const ct = p?.converted_text;
@@ -28729,8 +28729,8 @@ ${upstreamText}`;
 RETRY INSTRUCTION: Previous output was insufficient (${outputReason}).
 Produce the FULL document now with rich section-level substance.
 No stubs, no placeholders, no TODO markers.`;
-            const raw2 = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, retryPrompt, 0.35, 10000);
-            const parsed2 = await parseAIJson(LOVABLE_API_KEY, raw2);
+            const raw2 = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, retryPrompt, 0.35, 10000);
+            const parsed2 = await parseAIJson(OPENROUTER_API_KEY, raw2);
             const retryText = extractConvertedText(parsed2, raw2);
             if (retryText.length > convertedText.length) {
               convertedText = retryText;
@@ -29336,8 +29336,8 @@ Include all required sections with substantive content.
 MATERIAL:
 ${upstreamText}`;
 
-          const raw = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, userPrompt, 0.35, 10000);
-          let parsed = await parseAIJson(LOVABLE_API_KEY, raw);
+          const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, userPrompt, 0.35, 10000);
+          let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
           // extractConvertedText: tries parsed.converted_text first, then alternative JSON keys,
           // then raw AI output as a final fallback (handles prose docs where the model skips JSON wrapper).
           const extractConvertedText = (p: any, rawText: string): string => {
@@ -29371,8 +29371,8 @@ ${upstreamText}`;
           if (outputReason) {
             retryUsed = true;
             const retryPrompt = `${userPrompt}\n\nRETRY INSTRUCTION: Previous output was insufficient (${outputReason}). Produce the FULL document now with complete episode coverage.`;
-            const raw2 = await callAI(LOVABLE_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, retryPrompt, 0.35, 10000);
-            const parsed2 = await parseAIJson(LOVABLE_API_KEY, raw2);
+            const raw2 = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, retryPrompt, 0.35, 10000);
+            const parsed2 = await parseAIJson(OPENROUTER_API_KEY, raw2);
             const retryText = extractConvertedText(parsed2, raw2);
             if (retryText.length > convertedText.length || isEpisodeCountDoc) convertedText = retryText;
             outputReason = validateOutput(stage, convertedText) || validateEpisodeCoverage(stage, convertedText);
@@ -29784,7 +29784,7 @@ Write the COMPLETE teleplay for this episode NOW.`;
           const model = isVertical ? BALANCED_MODEL : PRO_MODEL;
           const maxTok = isVertical ? 8000 : 16000;
 
-          let scriptText = await callAI(LOVABLE_API_KEY, model, EPISODE_SCRIPT_SYSTEM, userPrompt, 0.4, maxTok);
+          let scriptText = await callAI(OPENROUTER_API_KEY, model, EPISODE_SCRIPT_SYSTEM, userPrompt, 0.4, maxTok);
           scriptText = scriptText.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
 
           const MIN_CHARS = isVertical ? 1500 : 8000;
@@ -29856,7 +29856,7 @@ CRITICAL RULES:
 - Minimum ${MIN_CHARS} characters of actual teleplay content.
 - No bullet-point summaries. No episode overviews. Full dramatic scenes only.
 Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
-            let retryText = await callAI(LOVABLE_API_KEY, PRO_MODEL, EPISODE_SCRIPT_SYSTEM, retryPrompt, 0.4, 16000);
+            let retryText = await callAI(OPENROUTER_API_KEY, PRO_MODEL, EPISODE_SCRIPT_SYSTEM, retryPrompt, 0.4, 16000);
             retryText = retryText.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
             if (retryText.length > scriptText.length) scriptText = retryText;
             validationFailure = validateEpisodeScript(scriptText, epIdx, isVertical);

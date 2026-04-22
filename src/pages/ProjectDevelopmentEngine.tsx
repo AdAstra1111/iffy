@@ -336,7 +336,7 @@ export default function ProjectDevelopmentEngine() {
     selectedDoc, selectedVersion, selectedDocId, selectedVersionId,
     selectDocument, setSelectedVersionId,
     runs, allDocRuns, convergenceHistory,
-    latestAnalysis, latestNotes, isConverged, convergenceStatus, isLoading,
+    latestAnalysis, latestNotes, latestConvergence, isConverged, convergenceStatus, isLoading,
     analyze, generateNotes, rewrite, convert, createPaste, deleteDocument, deleteVersion, beatSheetToScript,
     driftEvents, latestDrift, acknowledgeDrift, resolveDrift,
     approvedVersionMap,
@@ -2696,6 +2696,7 @@ export default function ProjectDevelopmentEngine() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <ConvergencePanel
                   latestAnalysis={latestAnalysis}
+                  latestConvergence={latestConvergence}
                   convergenceHistory={convergenceHistory}
                   convergenceStatus={convergenceStatus}
                   tieredNotes={tieredNotes}

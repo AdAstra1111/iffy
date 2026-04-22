@@ -720,7 +720,7 @@ Which preset id best matches this project?`;
   try {
     const resp = await fetch(resolveGateway().url, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${LOVABLE_API_KEY}` },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENROUTER_API_KEY}` },
       body: JSON.stringify({
         model: BALANCED_MODEL,
         messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],

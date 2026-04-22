@@ -32,8 +32,8 @@ serve(async (req) => {
     const { projectTitle, format, genres, budgetRange, tone, assignedLane, excludeNames, replacementFor, maxSuggestions, targetCharacter, mode, targetDepartment, customBrief } = await req.json();
     const isCrew = mode === 'crew';
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
-    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+    const OPENROUTER_API_KEY = _gw.apiKey;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured");
 
     // Production type conditioning
     const FORMAT_LABELS: Record<string, string> = {
@@ -118,7 +118,7 @@ ${crewFields}`;
     const response = await fetch(_gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

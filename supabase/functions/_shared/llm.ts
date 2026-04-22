@@ -3,19 +3,17 @@
  * Shared LLM wrapper for all IFFY edge functions.
  * Centralizes AI gateway calls, system prompt composition, and JSON parsing.
  *
- * Gateway priority: OPENROUTER_API_KEY → OPENAI_API_KEY → LOVABLE_API_KEY
- * (Lovable is last resort only — do not use as primary)
+ * Gateway priority: OPENROUTER_API_KEY → OPENAI_API_KEY
  */
 
 // ─── Constants ───
 
-export const GATEWAY_URL_LOVABLE = "https://ai.gateway.lovable.dev/v1/chat/completions";
 export const GATEWAY_URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions";
 export const GATEWAY_URL_OPENAI = "https://api.openai.com/v1/chat/completions";
 
 /**
  * Resolve the active gateway URL and API key from environment.
- * Priority: OPENROUTER_API_KEY → OPENAI_API_KEY → LOVABLE_API_KEY
+ * Priority: OPENROUTER_API_KEY → OPENAI_API_KEY
  */
 export function resolveGateway(): { url: string; apiKey: string } {
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
@@ -24,10 +22,7 @@ export function resolveGateway(): { url: string; apiKey: string } {
   const openaiKey = Deno.env.get("OPENAI_API_KEY");
   if (openaiKey) return { url: GATEWAY_URL_OPENAI, apiKey: openaiKey };
 
-  const lovableKey = Deno.env.get("LOVABLE_API_KEY");
-  if (lovableKey) return { url: GATEWAY_URL_LOVABLE, apiKey: lovableKey };
-
-  throw new Error("No AI gateway key configured. Set OPENROUTER_API_KEY, OPENAI_API_KEY, or LOVABLE_API_KEY.");
+  throw new Error("No AI gateway key configured. Set OPENROUTER_API_KEY or OPENAI_API_KEY.");
 }
 
 // Backwards-compatible default — points to OpenRouter (our primary)
@@ -385,7 +380,7 @@ export async function callLLMChunked<TItem, TResult>(
 // ─── Core LLM Caller ───
 
 /**
- * Unified fetch wrapper for the Lovable AI Gateway.
+ * Unified fetch wrapper for AI Gateway calls.
  * Handles retries with exponential backoff for 500+ errors and empty responses.
  * Surfaces 429/402 as typed errors for upstream handling.
  */
@@ -423,7 +418,7 @@ export async function callLLM(opts: CallLLMOptions): Promise<CallLLMResult> {
     if (response.status === 429) throw new Error("RATE_LIMIT");
     if (response.status === 402) throw new Error("PAYMENT_REQUIRED");
     if (response.status === 401) {
-      console.error("AI gateway 401: API key rejected. LOVABLE_API_KEY may be expired or invalid.");
+      console.error("AI gateway 401: API key rejected. OPENROUTER_API_KEY may be expired or invalid.");
       throw new Error("AI_AUTH_FAILED");
     }
 

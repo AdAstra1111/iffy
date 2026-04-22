@@ -202,7 +202,7 @@ export async function ensureDocSlot(
     title,
     file_name: fileName,
     // Scripts bucket path: scripts/<user_id>/<project_id>/<filename>
-    // (user_id prefix ensures user's storage namespace, not Lovable's accidental UUID bucket)
+    // (user_id prefix ensures user's storage namespace, not a shared UUID bucket)
     file_path: `${userId}/${projectId}/${fileName}`,
     extraction_status: "complete",
     source: opts?.source || "generated",

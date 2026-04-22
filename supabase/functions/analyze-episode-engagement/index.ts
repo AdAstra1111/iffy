@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
     } = body;
 
     const apiKey = Deno.env.get("OPENROUTER_API_KEY");
-    if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+    if (!apiKey) throw new Error("Missing OPENROUTER_API_KEY");
 
     const supaUrl = Deno.env.get("SUPABASE_URL")!;
     const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

@@ -158,8 +158,8 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -217,7 +217,7 @@ serve(async (req) => {
 
       const userPrompt = `${contextLine}\n\nMATERIAL:\n${materialText}`;
       const parsed = await callLLMWithJsonRetry(
-        { apiKey: LOVABLE_API_KEY, model: REVIEW_MODEL, system: reviewSystem, user: userPrompt },
+        { apiKey: OPENROUTER_API_KEY, model: REVIEW_MODEL, system: reviewSystem, user: userPrompt },
         { handler: "development-engine:review" },
       );
 
@@ -293,7 +293,7 @@ serve(async (req) => {
 
       const userPrompt = `REVIEW FINDINGS:\n${reviewContext}${corpusContext}\n\nMATERIAL EXCERPT:\n${(session.input_text || "").slice(0, 8000)}`;
       const parsed = await callLLMWithJsonRetry(
-        { apiKey: LOVABLE_API_KEY, model: REVIEW_MODEL, system: notesSystem, user: userPrompt },
+        { apiKey: OPENROUTER_API_KEY, model: REVIEW_MODEL, system: notesSystem, user: userPrompt },
         { handler: "development-engine:notes" },
       );
 
@@ -339,7 +339,7 @@ MATERIAL TO REWRITE:\n${(session.input_text || "").slice(0, 15000)}`;
       const rewriteSystem = composeSystem({ baseSystem: REWRITE_SYSTEM, guardrailsBlock: guardrails.textBlock });
 
       const parsed = await callLLMWithJsonRetry(
-        { apiKey: LOVABLE_API_KEY, model: REWRITE_MODEL, system: rewriteSystem, user: userPrompt, temperature: 0.4, maxTokens: 10000 },
+        { apiKey: OPENROUTER_API_KEY, model: REWRITE_MODEL, system: rewriteSystem, user: userPrompt, temperature: 0.4, maxTokens: 10000 },
         { handler: "development-engine:rewrite" },
       );
 
@@ -384,7 +384,7 @@ Reassess and provide new scores with deltas.`;
       const reassessSystem = composeSystem({ baseSystem: REASSESS_SYSTEM, guardrailsBlock: guardrails.textBlock });
 
       const parsed = await callLLMWithJsonRetry(
-        { apiKey: LOVABLE_API_KEY, model: REVIEW_MODEL, system: reassessSystem, user: userPrompt },
+        { apiKey: OPENROUTER_API_KEY, model: REVIEW_MODEL, system: reassessSystem, user: userPrompt },
         { handler: "development-engine:reassess" },
       );
 

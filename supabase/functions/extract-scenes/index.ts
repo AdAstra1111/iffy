@@ -157,8 +157,8 @@ serve(async (req) => {
     }
 
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
-    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+    const OPENROUTER_API_KEY = _gw.apiKey;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured");
 
     const systemMessage = {
       role: "system",
@@ -200,7 +200,7 @@ IMPORTANT PAGE COUNT RULES:
     const aiResponse = await fetch(resolveGateway().url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

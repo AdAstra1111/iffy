@@ -15,8 +15,8 @@ Deno.serve(async (req) => {
 
   try {
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
-    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+    const OPENROUTER_API_KEY = _gw.apiKey;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured");
 
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -128,7 +128,7 @@ Include bilateral treaties between any pair of these countries, multilateral con
     const aiResponse = await fetch(_gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

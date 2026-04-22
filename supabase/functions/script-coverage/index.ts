@@ -106,7 +106,7 @@ serve(async (req) => {
     }
 
     const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
 
     const isDocumentary = documentaryMode || ['documentary', 'documentary-series', 'hybrid-documentary'].includes(format);
     const formatLabel = FORMAT_LABELS[format] || "Film";
@@ -658,7 +658,7 @@ CALIBRATION RULES FOR TV:
 
     // =========== PASS A: ANALYST (diagnostic read) ===========
     const passAResult = await callAI(
-      LOVABLE_API_KEY,
+      OPENROUTER_API_KEY,
       promptVersion.analyst_prompt + corpusDeviationBlock + masterworkBlock + commercialBlock + failureBlock + formatEngineBlock,
       `${projectMeta}\n\nSCRIPT:\n${truncatedScript}`,
       0.2
@@ -877,7 +877,7 @@ CALIBRATION:
 Each note: {"note_id":"N-001","section":"string","category":"${formatNoteCategories}","priority":1-3,"title":"short","note_text":"full note","prescription":"what to do","rewrite_priority":"high|medium|low","tags":["act1"]}`;
 
     const passBResult = await callAI(
-      LOVABLE_API_KEY,
+      OPENROUTER_API_KEY,
       passBSystem,
       `${projectMeta}\n\nANALYST DIAGNOSTICS:\n${passAResult}\n\nWrite a FINAL COVERAGE REPORT with the full ${isDocumentary ? 'Documentary Producer Benchmark Grid' : isVertical ? 'Vertical Producer Benchmark Grid' : isTV ? 'TV Producer Benchmark Grid' : 'Producer Benchmark Grid'}, risk flags, development tier, and finance readiness status. Use markdown. Be decisive.${passBUserSuffix}`,
       0.3

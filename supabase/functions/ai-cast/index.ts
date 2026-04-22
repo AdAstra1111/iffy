@@ -377,8 +377,8 @@ Deno.serve(async (req) => {
         const negPrompt = (stActor as any).negative_prompt || "";
         const genCount = Math.min(Math.max(count || 3, 1), MAX_SCREEN_TEST_STILLS);
 
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-        if (!LOVABLE_API_KEY) {
+        const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+        if (!OPENROUTER_API_KEY) {
           return jsonRes({ error: "AI generation not configured" }, 500, req);
         }
 
@@ -421,7 +421,7 @@ Deno.serve(async (req) => {
             const aiResp = await fetch(resolveGateway().url, {
               method: "POST",
               headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
@@ -566,8 +566,8 @@ Deno.serve(async (req) => {
         }
 
         // 5. Generate profile image
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-        if (!LOVABLE_API_KEY) {
+        const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+        if (!OPENROUTER_API_KEY) {
           return jsonRes({ error: "AI generation not configured" }, 500, req);
         }
 
@@ -589,7 +589,7 @@ Deno.serve(async (req) => {
           const aiResp = await fetch(resolveGateway().url, {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              Authorization: `Bearer ${OPENROUTER_API_KEY}`,
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
@@ -967,8 +967,8 @@ Deno.serve(async (req) => {
           await db.from("convergence_rounds").update({ reference_ids: referenceIds }).eq("id", round.id);
         }
 
-        const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-        if (!LOVABLE_API_KEY) {
+        const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+        if (!OPENROUTER_API_KEY) {
           await db.from("convergence_rounds").update({ stage: "failed" }).eq("id", round.id);
           return jsonRes({ error: "AI generation not configured" }, 500, req);
         }
@@ -1011,7 +1011,7 @@ Deno.serve(async (req) => {
 
             const aiResp = await fetch(resolveGateway().url, {
               method: "POST",
-              headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+              headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
               body: JSON.stringify({
                 model: "google/gemini-3.1-flash-image-preview",
                 messages: [{ role: "user", content: messageContent }],
@@ -1128,7 +1128,7 @@ Score guide: 10=identical person, 7-9=same person with natural variation, 4-6=am
 
           const evalResp = await fetch(resolveGateway().url, {
             method: "POST",
-            headers: { Authorization: `Bearer ${LOVABLE_API_KEY}`, "Content-Type": "application/json" },
+            headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" },
             body: JSON.stringify({
               model: SCORING_MODEL,
               messages: [{ role: "user", content: compareContent }],

@@ -945,8 +945,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
 
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -1068,7 +1068,7 @@ serve(async (req) => {
       if (insertErr) throw new Error(`Failed to create refresh record: ${insertErr.message}`);
 
       try {
-        const imageResult = await generateImage(LOVABLE_API_KEY, refreshPrompt, refreshGenConfig.model, refreshGenConfig.gatewayUrl);
+        const imageResult = await generateImage(OPENROUTER_API_KEY, refreshPrompt, refreshGenConfig.model, refreshGenConfig.gatewayUrl);
 
         const keyArtPath = `${project_id}/key-art/v${nextVersion}-refresh.${imageResult.format}`;
         const { error: uploadErr } = await supabase.storage
@@ -1245,7 +1245,7 @@ serve(async (req) => {
             const aiResponse = await fetchWithTimeout(editGenConfig.gatewayUrl, {
               method: "POST",
               headers: {
-                Authorization: `Bearer ${LOVABLE_API_KEY}`,
+                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
@@ -1280,7 +1280,7 @@ serve(async (req) => {
           if (editLastError) throw editLastError;
         } else {
           // No source image available — generate fresh with edit context
-          imageResult = await generateImage(LOVABLE_API_KEY, editFullPrompt, editGenConfig.model, editGenConfig.gatewayUrl);
+          imageResult = await generateImage(OPENROUTER_API_KEY, editFullPrompt, editGenConfig.model, editGenConfig.gatewayUrl);
         }
 
         const keyArtPath = `${project_id}/key-art/v${nextVersion}-edit.${imageResult.format}`;
@@ -1416,7 +1416,7 @@ serve(async (req) => {
         }
 
         try {
-          const imageResult = await generateImage(LOVABLE_API_KEY, prompt, genConfig.model, genConfig.gatewayUrl);
+          const imageResult = await generateImage(OPENROUTER_API_KEY, prompt, genConfig.model, genConfig.gatewayUrl);
 
           const keyArtPath = `${project_id}/key-art/v${versionNum}-${strategy.key}.${imageResult.format}`;
           const { error: uploadErr } = await supabase.storage
@@ -1522,7 +1522,7 @@ serve(async (req) => {
     if (insertErr) throw new Error(`Failed to create poster record: ${insertErr.message}`);
 
     try {
-      const imageResult = await generateImage(LOVABLE_API_KEY, prompt, primaryGenConfig.model, primaryGenConfig.gatewayUrl);
+      const imageResult = await generateImage(OPENROUTER_API_KEY, prompt, primaryGenConfig.model, primaryGenConfig.gatewayUrl);
 
       const keyArtPath = `${project_id}/key-art/v${nextVersion}.${imageResult.format}`;
       const { error: uploadErr } = await supabase.storage

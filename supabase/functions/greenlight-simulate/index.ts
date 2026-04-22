@@ -429,8 +429,8 @@ serve(async (req) => {
     }
 
     const _gw2 = resolveGateway();
-    const LOVABLE_API_KEY = _gw2.apiKey;
-    if (!LOVABLE_API_KEY) throw new Error("No AI gateway key configured");
+    const OPENROUTER_API_KEY = _gw2.apiKey;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured");
 
     const { projectTitle, format, genres, lane, budget, scoringGrid, riskFlags, developmentTier, financeReadiness, coverageSummary } = await req.json();
 
@@ -464,7 +464,7 @@ ${coverageSummary ? `\nCOVERAGE SUMMARY:\n${coverageSummary.slice(0, 3000)}` : "
 
 Run the full greenlight simulation. Return JSON only.`;
 
-    const specialistRaw = await callAI(LOVABLE_API_KEY, model, specialistSystem, userPrompt);
+    const specialistRaw = await callAI(OPENROUTER_API_KEY, model, specialistSystem, userPrompt);
     let specialistJSON: string;
     let specialistResult: any;
 
@@ -475,7 +475,7 @@ Run the full greenlight simulation. Return JSON only.`;
       console.error("Specialist JSON parse failed, attempting repair");
       // ── STEP 4a: REPAIR (specialist output) ──
       const repairRaw = await callAI(
-        LOVABLE_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
+        OPENROUTER_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
         `MALFORMED OUTPUT:\n${specialistRaw.slice(0, 4000)}\n\nFix this to match IFFY_ANALYSIS_V1. Return JSON only.`
       );
       try {
@@ -500,7 +500,7 @@ ${JSON.stringify(specialistResult, null, 2)}
 
 Calibrate this analysis. Apply all rules. Return FINAL JSON only.`;
 
-    const calibratorRaw = await callAI(LOVABLE_API_KEY, calibratorModel, CALIBRATOR_PROMPT, calibratorUser, 0.2);
+    const calibratorRaw = await callAI(OPENROUTER_API_KEY, calibratorModel, CALIBRATOR_PROMPT, calibratorUser, 0.2);
     let finalResult: any;
 
     try {
@@ -509,7 +509,7 @@ Calibrate this analysis. Apply all rules. Return FINAL JSON only.`;
       console.error("Calibrator JSON parse failed, attempting repair");
       // ── STEP 4b: REPAIR (calibrator output) ──
       const repairRaw = await callAI(
-        LOVABLE_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
+        OPENROUTER_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
         `MALFORMED OUTPUT:\n${calibratorRaw.slice(0, 4000)}\n\nFix this to match IFFY_ANALYSIS_V1. Return JSON only.`
       );
       try {
@@ -527,7 +527,7 @@ Calibrate this analysis. Apply all rules. Return FINAL JSON only.`;
       console.warn("Validation warnings:", validationErrors);
       // Attempt one more repair
       const repairRaw = await callAI(
-        LOVABLE_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
+        OPENROUTER_API_KEY, "google/gemini-2.5-flash", REPAIR_PROMPT,
         `VALIDATION ERRORS: ${validationErrors.join(", ")}\n\nMALFORMED OUTPUT:\n${JSON.stringify(finalResult, null, 2).slice(0, 4000)}\n\nFix this to match IFFY_ANALYSIS_V1. Return JSON only.`
       );
       try {

@@ -17,8 +17,8 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const LOVABLE_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
 
     const supabase = createClient(supabaseUrl, serviceKey);
 
@@ -465,7 +465,7 @@ Output as a JSON object with keys: bible_starter, nuance_contract, market_ration
       response = await fetch(resolveGateway().url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
           "Content-Type": "application/json",
         },
         body: aiPayload,
@@ -677,7 +677,7 @@ Return the same JSON schema as before with the structural elements strengthened.
         const repairResp = await fetch(resolveGateway().url, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
             "Content-Type": "application/json",
           },
           body: repairPayload,

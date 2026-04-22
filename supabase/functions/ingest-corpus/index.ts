@@ -152,7 +152,7 @@ async function handleIngest(
     addLog(`HTML extracted: ${rawText.length} chars`);
   } else {
     // PDF — use Gemini via Lovable AI to extract text
-    if (!lovableKey) throw new Error("LOVABLE_API_KEY not configured — needed for PDF extraction");
+    if (!lovableKey) throw new Error("OPENROUTER_API_KEY not configured — needed for PDF extraction");
     addLog("Fetching PDF and extracting text via AI…");
     const pdfResp = await fetch(source.source_url);
     if (!pdfResp.ok) throw new Error(`Failed to fetch PDF: ${pdfResp.status}`);

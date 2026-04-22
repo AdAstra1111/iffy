@@ -49,7 +49,7 @@ export interface ChunkRunResult {
 
 // ── Constants ──
 
-const GATEWAY_URL = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const GATEWAY_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_ASSEMBLY_REPAIR_PASSES = 2;
 const CHUNK_LLM_TIMEOUT_MS = 180_000; // 3 minutes per chunk LLM call
 const STALE_RUNNING_THRESHOLD_MS = 120_000; // 2 minutes — running chunk considered stale
@@ -460,7 +460,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
   const resolvedGw = opts.gatewayUrl
     ? { url: opts.gatewayUrl }
     : (() => {
-        try { return resolveGateway(); } catch { return { url: "https://ai.gateway.lovable.dev/v1/chat/completions" }; }
+        try { return resolveGateway(); } catch { return { url: "https://openrouter.ai/api/v1/chat/completions" }; }
       })();
   const effectiveGatewayUrl = opts.gatewayUrl || resolvedGw.url;
 
@@ -848,7 +848,7 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
   const resolvedGw = opts.gatewayUrl
     ? { url: opts.gatewayUrl }
     : (() => {
-        try { return resolveGateway(); } catch { return { url: "https://ai.gateway.lovable.dev/v1/chat/completions" }; }
+        try { return resolveGateway(); } catch { return { url: "https://openrouter.ai/api/v1/chat/completions" }; }
       })();
   const effectiveGatewayUrl = opts.gatewayUrl || resolvedGw.url;
   const chunkOpts = { ...opts, gatewayUrl: effectiveGatewayUrl };

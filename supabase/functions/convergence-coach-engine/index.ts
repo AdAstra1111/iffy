@@ -858,7 +858,7 @@ Generate scene-specific prescriptions for each finding above.`;
 
   try {
     // Use the same AI gateway pattern as dev-engine-v2
-    const apiKey = Deno.env.get('LOVABLE_API_KEY') || Deno.env.get('OPENROUTER_API_KEY') || '';
+    const apiKey = Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('OPENROUTER_API_KEY') || '';
     if (!apiKey) return []; // No AI key = fall back to deterministic only
 
     const response = await fetch('https://ai-gateway.woz-ai.com/v1/messages', {
@@ -1155,7 +1155,7 @@ serve(async (req: Request) => {
     // ── Phase 2.2: LLM scene-anchored prescription enhancement ──
     // Run in background — does not block the diagnostic response.
     // Augments deterministic prescriptions with scene-specific actionable guidance + GP impact.
-    if (Deno.env.get('LOVABLE_API_KEY') || Deno.env.get('OPENROUTER_API_KEY')) {
+    if (Deno.env.get('OPENROUTER_API_KEY') || Deno.env.get('OPENROUTER_API_KEY')) {
       try {
         const allFindings = [
           ...nsFindings.map(f => ({ ...f, axis: 'narrative_structure' as const, affectedElements: f.affectedElements || [] })),

@@ -695,9 +695,9 @@ Deno.serve(async (req) => {
 
     if (!projectId) return jsonRes({ error: "projectId required" }, 400);
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY)
-      return jsonRes({ error: "LOVABLE_API_KEY not configured" }, 500);
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
+    if (!OPENROUTER_API_KEY)
+      return jsonRes({ error: "OPENROUTER_API_KEY not configured" }, 500);
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -821,7 +821,7 @@ Deno.serve(async (req) => {
         try {
           const headshotBase64 = await generateImage(
             headshotPrompt,
-            LOVABLE_API_KEY
+            OPENROUTER_API_KEY
           );
           if (headshotBase64) {
             const storagePath = `casting/${projectId}/${batchId}/${character.name.toLowerCase().replace(/\s+/g, "_")}_${i}_headshot.png`;
@@ -846,7 +846,7 @@ Deno.serve(async (req) => {
           );
           const fullBodyBase64 = await generateImage(
             fullBodyPrompt,
-            LOVABLE_API_KEY
+            OPENROUTER_API_KEY
           );
           if (fullBodyBase64) {
             const storagePath = `casting/${projectId}/${batchId}/${character.name.toLowerCase().replace(/\s+/g, "_")}_${i}_full_body.png`;

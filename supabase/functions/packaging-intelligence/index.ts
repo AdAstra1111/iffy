@@ -120,7 +120,7 @@ serve(async (req) => {
     }
 
     const _gw = resolveGateway();
-    const LOVABLE_API_KEY = _gw.apiKey;
+    const OPENROUTER_API_KEY = _gw.apiKey;
 
     const guardrails = buildGuardrailBlock({ productionType: format, engineName: "packaging-intelligence" });
     console.log(`[packaging-intelligence] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
@@ -210,7 +210,7 @@ Run the full packaging & attachment intelligence analysis. Return JSON only.`;
     const response = await fetch(_gw.url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

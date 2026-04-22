@@ -129,7 +129,7 @@ function MomentCard({ entry, index }: { entry: Record<string, any>; index: numbe
   const num = entry.number ?? index + 1;
   const title = entry.title || entry.name || `Moment ${num}`;
 
-  const excludeKeys = new Set(['number', 'title', 'name']);
+  const excludeKeys = new Set(['number', 'title', 'name', 'subtitle']);
   const fields = Object.entries(entry).filter(([k, v]) => !excludeKeys.has(k) && v != null && v !== '');
 
   return (

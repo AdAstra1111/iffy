@@ -256,6 +256,27 @@ export function useDevEngineV2(projectId: string | undefined) {
     enabled: !!selectedDocId,
   });
 
+  // ── Stage Readiness (SR) — latest CONVERGENCE run for selected version ──
+  // convergence-engine writes run_type='CONVERGENCE' to development_runs with stage_readiness in output_json.
+  // This is the canonical SR source. Do NOT compute SR in dev-engine-v2 or frontend.
+  const { data: convergenceRuns = [] } = useQuery({
+    queryKey: ['dev-v2-sr-convergence', selectedVersionId],
+    queryFn: async () => {
+      if (!selectedVersionId) return [];
+      const { data, error } = await (supabase as any)
+        .from('development_runs')
+        .select('*')
+        .eq('version_id', selectedVersionId)
+        .eq('run_type', 'CONVERGENCE')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedVersionId,
+  });
+
+  const latestConvergence = convergenceRuns[0]?.output_json || null;
+
   // Drift events for selected version
   const { data: driftEvents = [], refetch: refetchDrift } = useQuery({
     queryKey: ['dev-v2-drift', selectedVersionId],
@@ -551,7 +572,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     selectedDoc, selectedVersion, selectedDocId, selectedVersionId,
     selectDocument, setSelectedVersionId,
     runs, allDocRuns, convergenceHistory,
-    latestAnalysis, latestNotes, isConverged, convergenceStatus, isLoading,
+    latestAnalysis, latestNotes, latestConvergence, isConverged, convergenceStatus, isLoading,
     analyze, generateNotes, rewrite, convert, createPaste, deleteDocument, deleteVersion, beatSheetToScript,
     // Drift
     driftEvents, latestDrift, acknowledgeDrift, resolveDrift,

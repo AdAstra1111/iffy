@@ -11,6 +11,8 @@ import { ApprovalSection } from './ApprovalSection';
 
 interface ConvergencePanelProps {
   latestAnalysis: any;
+  /** Canonical Stage Readiness data from convergence-engine (CONVERGENCE run) */
+  latestConvergence?: any;
   convergenceHistory: any[];
   convergenceStatus: string;
   tieredNotes: { blockers: any[]; high: any[]; polish: any[] };
@@ -73,7 +75,7 @@ const CTA_VARIANT: Record<string, 'default' | 'destructive' | 'outline' | 'secon
   muted: 'secondary',
 };
 
-export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergenceStatus, tieredNotes, versionMetaJson, versionLabel, versionNumber, onAction, isLoading, projectId, docType, versionId, documentId }: ConvergencePanelProps) {
+export function ConvergencePanel({ latestAnalysis, latestConvergence, convergenceHistory, convergenceStatus, tieredNotes, versionMetaJson, versionLabel, versionNumber, onAction, isLoading, projectId, docType, versionId, documentId }: ConvergencePanelProps) {
   const metaCi = typeof versionMetaJson?.ci === 'number' ? versionMetaJson.ci : null;
   const metaGp = typeof versionMetaJson?.gp === 'number' ? versionMetaJson.gp : null;
   const analysisCi = latestAnalysis?.ci_score || latestAnalysis?.scores?.ci_score || 0;
@@ -154,46 +156,46 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
         <Sparkline history={convergenceHistory} />
 
         {/* ═══ Stage Readiness — Phase 1 SR Policy ═══ */}
-        {latestAnalysis?.stage_readiness && (
+        {latestConvergence?.stage_readiness ? (
           <div className={`p-2.5 rounded border ${
-            latestAnalysis.stage_readiness.status === 'READY' ? 'bg-emerald-500/10 border-emerald-500/25' :
-            latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/10 border-amber-500/25' :
-            latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/10 border-destructive/25' :
+            latestConvergence.stage_readiness.status === 'READY' ? 'bg-emerald-500/10 border-emerald-500/25' :
+            latestConvergence.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/10 border-amber-500/25' :
+            latestConvergence.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/10 border-destructive/25' :
             'bg-muted/20 border-border/30'
           }`}>
             {/* Header row */}
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-1.5">
-                {latestAnalysis.stage_readiness.status === 'READY' ? <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-400" /> :
-                 latestAnalysis.stage_readiness.status === 'AT_RISK' ? <AlertCircle className="h-3.5 w-3.5 text-amber-400" /> :
-                 latestAnalysis.stage_readiness.status === 'BLOCKED' ? <XCircle className="h-3.5 w-3.5 text-destructive" /> :
+                {latestConvergence.stage_readiness.status === 'READY' ? <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-400" /> :
+                 latestConvergence.stage_readiness.status === 'AT_RISK' ? <AlertCircle className="h-3.5 w-3.5 text-amber-400" /> :
+                 latestConvergence.stage_readiness.status === 'BLOCKED' ? <XCircle className="h-3.5 w-3.5 text-destructive" /> :
                  <XCircle className="h-3.5 w-3.5 text-muted-foreground" />}
                 <span className="text-[10px] font-bold">Stage Readiness</span>
               </div>
               <div className="flex items-center gap-2">
                 {/* Promotion badge */}
-                <Badge variant={latestAnalysis.stage_readiness.promotion_allowed ? 'default' : 'outline'} className={`text-[9px] px-1.5 py-0 ${
-                  latestAnalysis.stage_readiness.promotion_allowed ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                <Badge variant={latestConvergence.stage_readiness.promotion_allowed ? 'default' : 'outline'} className={`text-[9px] px-1.5 py-0 ${
+                  latestConvergence.stage_readiness.promotion_allowed ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
                   'text-muted-foreground'
                 }`}>
-                  {latestAnalysis.stage_readiness.promotion_allowed ? '▶ PROMO' : '⊍ HOLD'}
+                  {latestConvergence.stage_readiness.promotion_allowed ? '▶ PROMO' : '⊍ HOLD'}
                 </Badge>
                 {/* Override badge */}
-                {latestAnalysis.stage_readiness.override_allowed !== undefined && (
+                {latestConvergence.stage_readiness.override_allowed !== undefined && (
                   <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${
-                    latestAnalysis.stage_readiness.override_allowed ? 'text-sky-400 border-sky-500/30' : 'text-muted-foreground/50 border-border/20'
+                    latestConvergence.stage_readiness.override_allowed ? 'text-sky-400 border-sky-500/30' : 'text-muted-foreground/50 border-border/20'
                   }`}>
-                    {latestAnalysis.stage_readiness.override_allowed ? '⟳ OVERRIDE' : '⊍ NO-OVR'}
+                    {latestConvergence.stage_readiness.override_allowed ? '⟳ OVERRIDE' : '⊍ NO-OVR'}
                   </Badge>
                 )}
                 {/* Status badge */}
                 <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${
-                  latestAnalysis.stage_readiness.status === 'READY' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
-                  latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
-                  latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/20 text-destructive border-destructive/30' :
+                  latestConvergence.stage_readiness.status === 'READY' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+                  latestConvergence.stage_readiness.status === 'AT_RISK' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+                  latestConvergence.stage_readiness.status === 'BLOCKED' ? 'bg-destructive/20 text-destructive border-destructive/30' :
                   'bg-muted/20 text-muted-foreground border-border/30'
                 }`}>
-                  {latestAnalysis.stage_readiness.status}
+                  {latestConvergence.stage_readiness.status}
                 </Badge>
               </div>
             </div>
@@ -203,73 +205,73 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
               <div>
                 <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">SR Score</p>
                 <p className={`text-sm font-display font-bold ${
-                  latestAnalysis.stage_readiness.status === 'READY' ? 'text-emerald-400' :
-                  latestAnalysis.stage_readiness.status === 'AT_RISK' ? 'text-amber-400' :
-                  latestAnalysis.stage_readiness.status === 'BLOCKED' ? 'text-destructive' :
+                  latestConvergence.stage_readiness.status === 'READY' ? 'text-emerald-400' :
+                  latestConvergence.stage_readiness.status === 'AT_RISK' ? 'text-amber-400' :
+                  latestConvergence.stage_readiness.status === 'BLOCKED' ? 'text-destructive' :
                   'text-muted-foreground'
                 }`}>
-                  {latestAnalysis.stage_readiness.score ?? '—'}
+                  {latestConvergence.stage_readiness.score ?? '—'}
                 </p>
               </div>
               <div>
                 <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">Sub Floor</p>
                 <p className="text-sm font-display font-bold text-foreground">
-                  {latestAnalysis.stage_readiness.subscore_floor ?? '—'}
+                  {latestConvergence.stage_readiness.subscore_floor ?? '—'}
                 </p>
               </div>
               <div>
                 <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">Sub Mean</p>
                 <p className="text-sm font-display font-bold text-foreground">
-                  {latestAnalysis.stage_readiness.subscore_mean ?? '—'}
+                  {latestConvergence.stage_readiness.subscore_mean ?? '—'}
                 </p>
               </div>
               <div>
                 <p className="text-[8px] text-muted-foreground uppercase tracking-wider leading-tight">@Risk≥</p>
                 <p className="text-sm font-display font-bold text-muted-foreground">
-                  {latestAnalysis.stage_readiness.at_risk_threshold ?? '—'}
+                  {latestConvergence.stage_readiness.at_risk_threshold ?? '—'}
                 </p>
               </div>
             </div>
 
             {/* Blockers */}
-            {latestAnalysis.stage_readiness.primary_blockers?.length > 0 && (
+            {latestConvergence.stage_readiness.primary_blockers?.length > 0 && (
               <div className="mt-2 space-y-0.5">
-                <p className="text-[8px] font-bold text-destructive uppercase tracking-wider">Blockers ({latestAnalysis.stage_readiness.primary_blockers.length})</p>
-                {latestAnalysis.stage_readiness.primary_blockers.slice(0, 3).map((b: string, i: number) => (
+                <p className="text-[8px] font-bold text-destructive uppercase tracking-wider">Blockers ({latestConvergence.stage_readiness.primary_blockers.length})</p>
+                {latestConvergence.stage_readiness.primary_blockers.slice(0, 3).map((b: string, i: number) => (
                   <p key={i} className="text-[8px] text-destructive/80 leading-tight">• {b}</p>
                 ))}
-                {latestAnalysis.stage_readiness.primary_blockers.length > 3 && (
-                  <p className="text-[8px] text-muted-foreground/60">+{latestAnalysis.stage_readiness.primary_blockers.length - 3} more</p>
+                {latestConvergence.stage_readiness.primary_blockers.length > 3 && (
+                  <p className="text-[8px] text-muted-foreground/60">+{latestConvergence.stage_readiness.primary_blockers.length - 3} more</p>
                 )}
               </div>
             )}
 
             {/* Advisory issues */}
-            {latestAnalysis.stage_readiness.advisory_issues?.length > 0 && (
+            {latestConvergence.stage_readiness.advisory_issues?.length > 0 && (
               <div className="mt-2 space-y-0.5">
-                <p className="text-[8px] font-bold text-amber-400 uppercase tracking-wider">Advisories ({latestAnalysis.stage_readiness.advisory_issues.length})</p>
-                {latestAnalysis.stage_readiness.advisory_issues.slice(0, 2).map((a: string, i: number) => (
+                <p className="text-[8px] font-bold text-amber-400 uppercase tracking-wider">Advisories ({latestConvergence.stage_readiness.advisory_issues.length})</p>
+                {latestConvergence.stage_readiness.advisory_issues.slice(0, 2).map((a: string, i: number) => (
                   <p key={i} className="text-[8px] text-amber-400/80 leading-tight">• {a}</p>
                 ))}
               </div>
             )}
 
             {/* Score breakdown toggle */}
-            {latestAnalysis.stage_readiness.score_breakdown && (
+            {latestConvergence.stage_readiness.score_breakdown && (
               <details className="group mt-2">
                 <summary className="text-[8px] text-muted-foreground/60 cursor-pointer hover:text-muted-foreground/80">
                   ↑ score breakdown
                 </summary>
                 <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-[8px] font-mono text-muted-foreground/70">
                   {[
-                    ['CI component', latestAnalysis.stage_readiness.score_breakdown.ci_component],
-                    ['GP component', latestAnalysis.stage_readiness.score_breakdown.gp_component],
-                    ['Floor component', latestAnalysis.stage_readiness.score_breakdown.floor_component],
-                    ['Mean component', latestAnalysis.stage_readiness.score_breakdown.mean_component],
-                    ['Gap component', latestAnalysis.stage_readiness.score_breakdown.gap_component],
-                    ['Trajectory', latestAnalysis.stage_readiness.score_breakdown.trajectory_component],
-                    ['Block penalty', latestAnalysis.stage_readiness.score_breakdown.blocking_penalty],
-                    ['Total raw', latestAnalysis.stage_readiness.score_breakdown.total_raw],
+                    ['CI component', latestConvergence.stage_readiness.score_breakdown.ci_component],
+                    ['GP component', latestConvergence.stage_readiness.score_breakdown.gp_component],
+                    ['Floor component', latestConvergence.stage_readiness.score_breakdown.floor_component],
+                    ['Mean component', latestConvergence.stage_readiness.score_breakdown.mean_component],
+                    ['Gap component', latestConvergence.stage_readiness.score_breakdown.gap_component],
+                    ['Trajectory', latestConvergence.stage_readiness.score_breakdown.trajectory_component],
+                    ['Block penalty', latestConvergence.stage_readiness.score_breakdown.blocking_penalty],
+                    ['Total raw', latestConvergence.stage_readiness.score_breakdown.total_raw],
                   ].map(([k, v]) => v !== undefined && v !== null && v !== 0 && (
                     <span key={k as string} className="flex justify-between">
                       <span>{k}</span>
@@ -279,6 +281,14 @@ export function ConvergencePanel({ latestAnalysis, convergenceHistory, convergen
                 </div>
               </details>
             )}
+          </div>
+        ) : (
+          <div className="p-2.5 rounded border bg-muted/20 border-border/30">
+            <div className="flex items-center gap-2">
+              <XCircle className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-bold">Stage Readiness not yet computed</span>
+            </div>
+            <p className="text-[8px] text-muted-foreground mt-1">Run convergence analysis to compute SR policy.</p>
           </div>
         )}
 

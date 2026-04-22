@@ -42,6 +42,7 @@ function createProxiedClient(url: string, key: string) {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(120000), // 120s timeout for long-running edge functions
       });
       const text = await response.text();
       let data: any;
