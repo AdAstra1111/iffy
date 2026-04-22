@@ -1110,6 +1110,10 @@ export default function ProjectDevelopmentEngine() {
         };
         setTimeout(pollJob, 2000);
       } else {
+        // Refresh session before invocation — long-running edge functions can expire the token mid-call
+        await supabase.auth.refreshSession();
+        const { data: { session: freshSession } } = await supabase.auth.getSession();
+        if (!freshSession) throw new Error('Session expired — please log in again');
         const { error: genErr } = await supabase.functions.invoke('generate-document', {
           body: {
             projectId,
