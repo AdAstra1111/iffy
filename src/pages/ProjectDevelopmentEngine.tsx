@@ -1140,7 +1140,11 @@ export default function ProjectDevelopmentEngine() {
           innerError = String(ctxObj['message']);
         }
       }
-      const fullMsg = innerError ? `${msg}: ${innerError}` : msg;
+      const statusCode = (anyErr as any).status || null;
+      const ctxStr = ctx ? (typeof ctx === 'string' ? ctx.slice(0, 200) : JSON.stringify(ctx).slice(0, 200)) : null;
+      const fullMsg = innerError
+        ? `${msg}: ${innerError}${statusCode ? ` [HTTP ${statusCode}]` : ''}`
+        : `${msg}${statusCode ? ` [HTTP ${statusCode}]` : ''}${ctxStr ? ` | ctx: ${ctxStr}` : ''}`;
       toast.error(`Regeneration failed: ${fullMsg}`);
       console.error('[handleStaleRegenerate]', fullMsg, err);
     } finally {
