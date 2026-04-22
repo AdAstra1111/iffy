@@ -8,7 +8,6 @@ import { Lightbulb, Loader2, Download, RefreshCw, Globe } from 'lucide-react';
 import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { HardCriteriaForm, EMPTY_CRITERIA, type HardCriteria } from '@/components/pitch/HardCriteriaForm';
@@ -40,8 +39,6 @@ export default function PitchIdeas() {
   const didScrollRef = useRef(false);
   const [generating, setGenerating] = useState(false);
   const [generateFailed, setGenerateFailed] = useState(false);
-  const [genProgress, setGenProgress] = useState({ current: 0, total: 5 });
-  const preGenCountRef = useRef(0);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [criteria, setCriteria] = useState<HardCriteria>({ ...EMPTY_CRITERIA });
   const [editedFields, setEditedFields] = useState<EditedFieldsMap>(() => initEditedFields());
@@ -109,11 +106,9 @@ export default function PitchIdeas() {
   const generatingRef = useRef(false);
   generatingRef.current = generating;
 
+  // Poll for new ideas during generation to show incremental progress in the UI
   useEffect(() => {
-    if (!generating) {
-      setGenProgress({ current: 0, total: 5 });
-      return;
-    }
+    if (!generating) return;
     let cancelled = false;
     const poll = async () => {
       while (!cancelled && generatingRef.current) {
@@ -125,18 +120,6 @@ export default function PitchIdeas() {
     poll();
     return () => { cancelled = true; };
   }, [generating, qc]);
-
-  // Update progress counter when ideas array grows during generation
-  const ideasLen = ideas.length;
-  useEffect(() => {
-    if (!generatingRef.current) return;
-    const newCount = Math.max(0, ideasLen - preGenCountRef.current);
-    setGenProgress(prev => {
-      const clamped = Math.min(newCount, prev.total);
-      if (clamped === prev.current) return prev;
-      return { ...prev, current: clamped };
-    });
-  }, [ideasLen]);
 
   // Scroll to highlighted idea (from Blueprint Engine promotion)
   useEffect(() => {
@@ -174,8 +157,6 @@ export default function PitchIdeas() {
     }
     setGenerating(true);
     setGenerateFailed(false);
-    setGenProgress({ current: 0, total: 5 });
-    preGenCountRef.current = ideas.length;
 
     try {
       const normalized = normalizePitchCriteria(criteria as unknown as Record<string, unknown>, editedFields);
@@ -362,7 +343,6 @@ export default function PitchIdeas() {
     safetyTimerRef.current = setTimeout(() => {
       if (generatingRef.current) {
         setGenerating(false);
-        setGenProgress({ current: 0, total: 5 });
         console.warn('[PitchIdeas] Generate safety timer fired — forcing generating=false');
       }
     }, 90000);
@@ -470,33 +450,6 @@ export default function PitchIdeas() {
         />
 
         <OperationProgress isActive={generating} stages={GENERATE_PITCH_STAGES} />
-
-        {/* Generation progress bar */}
-        <AnimatePresence>
-          {generating && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="space-y-2"
-            >
-              <Card className="border-primary/20 bg-primary/5">
-                <CardContent className="py-4 space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-foreground font-medium flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                      Generating concepts…
-                    </span>
-                    <span className="text-muted-foreground tabular-nums">
-                      {genProgress.current} / {genProgress.total}
-                    </span>
-                  </div>
-                  <Progress value={(genProgress.current / genProgress.total) * 100} className="h-2" />
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Trends Snapshot — persisted across refresh, visible when data exists */}
         {lastSignalsMetadata && (
