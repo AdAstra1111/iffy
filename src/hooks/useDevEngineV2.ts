@@ -420,9 +420,9 @@ export function useDevEngineV2(projectId: string | undefined) {
       } else if (status === 'SCRIPT_FORMAT_INVALID') {
         toast.warning(`Episode ${data.episode_number} generated but needs rewrite — format validation failed`);
       } else if (regenAttempted) {
-        toast.success(`Episode ${data.episode_number} screenplay created (auto-corrected on first pass)`);
+        toast.success(`Episode ${data.episode_number} script created (auto-corrected on first pass)`);
       } else {
-        toast.success(`Episode ${data.episode_number} screenplay created`);
+        toast.success(`Episode ${data.episode_number} script created`);
       }
       if (data.newDoc) {
         selectDocument(data.newDoc.id);

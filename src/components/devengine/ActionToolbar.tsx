@@ -328,7 +328,7 @@ export function ActionToolbar({
             ) : (
               <Film className="h-3 w-3" />
             )}
-            Write Episode Script (Screenplay)
+            Write Episode Script (Vertical)
           </Button>
 
           {beatSheetScope?.scope === 'season' && (

@@ -10619,7 +10619,7 @@ Previous attempt problems: ${validation.reasons.join("; ")}`;
         file_name: `${srcDoc?.title || "Beat Sheet"} → ${title}`,
         file_path: "",
         extraction_status: "complete",
-        doc_type: "episode_script",
+        doc_type: "season_script",
         title,
         source: "generated",
         plaintext: scriptText,
