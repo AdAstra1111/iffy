@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "functions": {
-    "api/supabase-proxy/[...path]/route.ts": {
+    "api/supabase-proxy/[...path].ts": {
       "maxDuration": 300
     },
     "api/nit-sync-proxy.ts": {
