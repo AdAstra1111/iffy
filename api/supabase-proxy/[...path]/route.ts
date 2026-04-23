@@ -71,12 +71,11 @@ async function handleReverseEngineerStatus(body: { job_id?: string; project_id?:
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Extract [...path] from URL — Vercel Node API routes encode catch-all in req.url
+  // Extract [...path] from URL — Vercel Node API routes encode catch-all as query param
+  // For [...path], Vercel encodes the full path as req.query.path
+  const path = (req.query.path as string) || '';
   const urlPath = req.url ?? '';
-  const matched = urlPath.match(/^\/api\/supabase-proxy\/(.+)$/);
-  const path = matched ? matched[1] : '';
-
-  console.log('[proxy] request url:', req.url, 'path:', path);
+  console.log('[proxy] request url:', urlPath, 'query.path:', path);
 
   // Bypass: reverse-engineer-status via Management API
   if (path === 'reverse-engineer-status') {
