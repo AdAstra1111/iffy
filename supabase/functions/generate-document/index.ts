@@ -164,11 +164,8 @@ const gw = resolveGateway();
 const GATEWAY_URL = gw.url;
 
 async function callLLM(apiKey: string, system: string, user: string, model = "google/gemini-2.5-flash"): Promise<string> {
-  const promptChars = (system + userPrompt).length;
-  const ideaLen = upstreamBlocks.get('idea')?.length ?? 0;
-  const cbLen = upstreamBlocks.get('concept_brief')?.length ?? 0;
-  console.log(`[generate-document] LLM call: docType=${docType} model=${model} max_tokens=65000 prompt_chars=${promptChars}`);
-  console.log(`[generate-document] upstream: types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_len=${ideaLen} cb_len=${cbLen}`);
+  const promptChars = (system + user).length;
+  console.log(`[generate-document] LLM call: model=${model} max_tokens=65000 prompt_chars=${promptChars}`);
   const res = await fetch(gw.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -1902,8 +1899,6 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
     } else {
       assertLLMAllowed(generationMode, "primary_generation", docType);
-      console.log(`[generate-document] LLM call for ${docType}: model=${model} max_tokens=65000 prompt_chars=${(system+userPrompt).length}`);
-      console.log(`[generate-document] upstream debug: docType=${docType} upstream_types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_plaintext_len=${upstreamBlocks.get('idea')?.length ?? 0} concept_brief_plaintext_len=${upstreamBlocks.get('concept_brief')?.length ?? 0}`);
       content = await callLLM(apiKey, system, userPrompt);
       llmCallCount++;
 
@@ -2330,14 +2325,9 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
     });
   } catch (e: any) {
     console.error("[generate-document] FATAL error:", {
-      docType,
-      projectId,
-      upstreamTypes,
-      upstreamContentLength: upstreamContent.length,
       error: e?.message,
       status: (e as any)?.status,
-      context: (e as any)?.context,
-      stack: e?.stack ? String(e?.stack).split("\\n").slice(0,3) : null,
+      stack: e?.stack ? String(e?.stack).split("\n").slice(0,3) : null,
     });
     // Extract the most useful error message for the caller
     let errorMsg = e?.message || "Internal error";
