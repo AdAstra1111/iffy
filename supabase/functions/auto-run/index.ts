@@ -452,6 +452,7 @@ import { DOC_TYPE_REGISTRY } from "../_shared/doc-os.ts";
 
 const FORMAT_LADDERS: Record<string, string[]> = STAGE_LADDERS.FORMAT_LADDERS;
 const DOC_TYPE_ALIASES: Record<string, string> = STAGE_LADDERS.DOC_TYPE_ALIASES;
+const FORMAT_SPECIFIC_ALIASES: Record<string, Record<string, string>> = STAGE_LADDERS.FORMAT_SPECIFIC_ALIASES || {};
 
 // ── DRIFT GUARD: Fail fast if any ladder stage is not in DOC_TYPE_REGISTRY ──
 // This runs once at module load time — prevents silent runtime crashes.
@@ -787,6 +788,24 @@ async function evaluateCIGate(
   const ci = stageBest?.ci ?? 0;
   const gp = stageBest?.gp ?? 0;
 
+  // ── canon_drift gate: block promotion even if CI/GP thresholds are met ──
+  if (projectId && stageBest?.version_id) {
+    try {
+      const { data: versionRecord } = await supabase
+        .from("project_document_versions")
+        .select("meta_json")
+        .eq("id", stageBest.version_id)
+        .maybeSingle();
+      const meta = versionRecord?.meta_json;
+      if (meta?.canon_drift?.passed === false) {
+        console.warn(`[auto-run][IEL] canon_drift_block { job_id: "${jobId}", doc_type: "${docType}", version_id: "${stageBest.version_id}" }`);
+        return { pass: false, ci, gp, bestCiSoFar: ci, failReason: "canon_drift violations detected" };
+      }
+    } catch (cdErr) {
+      console.warn(`[auto-run][IEL] canon_drift_check_failed { job_id: "${jobId}", error: "${cdErr?.message}" }`);
+    }
+  }
+
   // Check for doc-type-specific overrides (e.g. market_sheet, format_rules)
   const override = DOC_TYPE_GATE_OVERRIDES[docType];
   if (override) {
@@ -1082,13 +1101,13 @@ function getEffectiveVersionCap(job: any): number {
 
 // ── IEL: Validate and correct target_document against ladder + deprecated guard ──
 function ielValidateTarget(rawTarget: string, format: string): { target: string; corrected: boolean; log: string | null } {
-  let target = canonicalDocType(rawTarget);
+  let target = canonicalDocType(rawTarget, format);
   let corrected = false;
   let log: string | null = null;
 
   // Guard 1: deprecated target resolution
   if (isDeprecatedTargetDocType(target)) {
-    const resolved = canonicalDocType(target);
+    const resolved = canonicalDocType(target, format);
     log = `[IEL] Corrected deprecated target_document "${target}" → "${resolved}"`;
     target = resolved;
     corrected = true;
@@ -1122,8 +1141,15 @@ function getLadderForJob(format: string): string[] | null {
 // Canonical doc_type keys use underscores (season_script, feature_script).
 // Alias lookup keys use hyphens (matching DOC_TYPE_ALIASES keys from stage-ladders).
 // We normalize input to hyphens for lookup, but always return underscore-canonical output.
-function canonicalDocType(raw: string): string {
+function canonicalDocType(raw: string, format?: string): string {
   const hyphenKey = (raw || "").toLowerCase().replace(/[_ ]+/g, "-");
+  // Check format-specific aliases first (e.g. VD: episode_beats -> vertical_episode_beats)
+  if (format) {
+    const formatSpecific = FORMAT_SPECIFIC_ALIASES[format];
+    if (formatSpecific && formatSpecific[hyphenKey]) {
+      return formatSpecific[hyphenKey].replace(/-/g, "_");
+    }
+  }
   const resolved = DOC_TYPE_ALIASES[hyphenKey] || hyphenKey;
   // Ensure output uses canonical underscores (ladder values are underscored)
   return resolved.replace(/-/g, "_");
@@ -1756,10 +1782,17 @@ async function nextUnsatisfiedStage(
     .select("id, doc_type")
     .eq("project_id", projectId);
 
+  // Build docsByType -- also apply canonical doc type aliasing so VD's episode_beats
+  // docs are found when querying by the canonical ladder name vertical_episode_beats.
   const docsByType = new Map<string, string[]>();
   for (const d of (allDocs || [])) {
-    if (!docsByType.has(d.doc_type)) docsByType.set(d.doc_type, []);
-    docsByType.get(d.doc_type)!.push(d.id);
+    const rawType = d.doc_type;
+    const canonicalType = canonicalDocType(rawType, format);
+    // Store under both the raw type AND the canonical type (if different)
+    for (const key of [rawType, canonicalType]) {
+      if (!docsByType.has(key)) docsByType.set(key, []);
+      docsByType.get(key)!.push(d.id);
+    }
   }
 
   // Collect all doc IDs for batch version fetch
@@ -3580,6 +3613,35 @@ async function finalizeBest(supabase: any, jobId: string, job: any, explicitCurr
     console.warn(`[auto-run][IEL] finalize_approval_stamp_failed { version_id: "${bestVersionId}", error: "${approvalErr.message}" }`);
   }
   console.log(`[auto-run][IEL] candidate_accepted_persisted { document_id: "${ver.document_id}", accepted_version_id: "${bestVersionId}", approval_status_set: "approved", ci: ${job.best_ci}, gp: ${job.best_gp}, job_id: "${jobId}", source: "finalize_best" }`);
+  // ── CANON CASCADE: trigger downstream/upstream cascade on promotion ──
+  try {
+    const ladder = FORMAT_LADDERS[job.format as string] || [];
+    const isOnLadder = ladder.includes(job.current_document);
+    if (isOnLadder && job.project_id && job.best_document_id && job.current_document && bestVersionId) {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      const cascadePayload = {
+        projectId: job.project_id,
+        triggerDocId: job.best_document_id,
+        triggerDocType: job.current_document,
+        triggerVersionId: bestVersionId,
+        direction: "both",
+      };
+      const cascadeFetch = fetch(`${supabaseUrl}/functions/v1/canon-cascade-engine`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(cascadePayload),
+      }).catch((e: any) => { console.warn(`[auto-run][cascade] fire_and_forget_error: ${e?.message}`); });
+      if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+        (globalThis as any).EdgeRuntime.waitUntil(cascadeFetch);
+      }
+      console.log(`[auto-run][cascade] canon_cascade_fired { project_id: "${job.project_id}", doc_type: "${job.current_document}", version_id: "${bestVersionId}", format: "${job.format}" }`);
+    } else {
+      console.log(`[auto-run][cascade] canon_cascade_skipped { doc_type: "${job.current_document}", format: "${job.format}", isOnLadder: ${isOnLadder} }`);
+    }
+  } catch (cascadeErr: any) {
+    console.warn(`[auto-run][cascade] canon_cascade_trigger_error: ${cascadeErr?.message}`);
+  }
   // ── NARRATIVE SPINE: lock if this is Concept Brief approval ──
   await lockNarrativeSpine(supabase, job.project_id, job.current_document || "");
 
@@ -4923,10 +4985,10 @@ Deno.serve(async (req) => {
         }, 422);
       }
 
-      const startDoc = canonicalDocType(start_document || "idea");
+      const startDoc = canonicalDocType(start_document || "idea", fmt);
       // Sanitize target_document — "draft" and "coverage" are legacy aliases, never real targets
       const rawTarget = target_document || fmtLadder[fmtLadder.length - 1];
-      const targetDoc = canonicalDocType(rawTarget);
+      const targetDoc = canonicalDocType(rawTarget, fmt);
       // IEL: validate + correct target via unified guard
       const ielResult = ielValidateTarget(targetDoc, fmt);
       if (ielResult.log) console.warn(ielResult.log);
@@ -10696,7 +10758,7 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
           }
 
           // ── NARRATIVE SPINE: inject locked structural constraints into all stages after concept_brief ──
-          const SPINE_ELIGIBLE_STAGES = ["character_bible", "season_arc", "episode_grid", "episode_beats", "season_scripts", "episode_script", "treatment", "story_outline", "beat_sheet", "feature_script", "production_draft"];
+          const SPINE_ELIGIBLE_STAGES = ["character_bible", "season_arc", "episode_grid", "episode_beats", "vertical_episode_beats", "season_scripts", "episode_script", "treatment", "story_outline", "beat_sheet", "feature_script", "production_draft"];
           if (SPINE_ELIGIBLE_STAGES.includes(currentDoc)) {
             try {
               const { data: spineProj } = await supabase.from("projects")
