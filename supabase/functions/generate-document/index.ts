@@ -170,8 +170,8 @@ async function callLLM(apiKey: string, system: string, user: string, model = "go
     body: JSON.stringify({
       model,
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      temperature: 0.5,
-      max_tokens: 65000,
+      console.log(`[generate-document] LLM call for ${docType}: model=${model} max_tokens=65000 prompt_chars=${(system+userPrompt).length}`);
+      console.log(`[generate-document] upstream debug: docType=${docType} upstream_types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_plaintext_len=${upstreamBlocks.get('idea')?.length ?? 0} concept_brief_plaintext_len=${upstreamBlocks.get('concept_brief')?.length ?? 0}`);
     }),
   });
   if (!res.ok) throw new Error(`LLM call failed: ${res.status}`);
@@ -1898,6 +1898,8 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })
     } else {
       assertLLMAllowed(generationMode, "primary_generation", docType);
+      console.log(`[generate-document] LLM call for ${docType}: model=${model} max_tokens=65000 prompt_chars=${(system+userPrompt).length}`);
+      console.log(`[generate-document] upstream debug: docType=${docType} upstream_types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_plaintext_len=${upstreamBlocks.get('idea')?.length ?? 0} concept_brief_plaintext_len=${upstreamBlocks.get('concept_brief')?.length ?? 0}`);
       content = await callLLM(apiKey, system, userPrompt);
       llmCallCount++;
 
@@ -2323,7 +2325,16 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e: any) {
-    console.error("[generate-document] error:", e);
+    console.error("[generate-document] FATAL error:", {
+      docType,
+      projectId,
+      upstreamTypes,
+      upstreamContentLength: upstreamContent.length,
+      error: e?.message,
+      status: (e as any)?.status,
+      context: (e as any)?.context,
+      stack: e?.stack ? String(e?.stack).split("\\n").slice(0,3) : null,
+    });
     // Extract the most useful error message for the caller
     let errorMsg = e?.message || "Internal error";
     // If it's a fetch/network error (no response at all)

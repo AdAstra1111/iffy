@@ -11757,92 +11757,171 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
         if (promo.recommendation === "promote") {
           // ── CI HARD GATE: no promotion unless CI meets job target (default 90) ──
           const writeTargetCi = resolveTargetCI(job);
+          let finalRecommendation = promo.recommendation; // "promote"
+          let remediationReason: string | null = null;
+
           const ciGate = await evaluateCIGate(supabase, jobId, currentDoc, writeTargetCi, job.project_id, job);
           console.log(`[auto-run][IEL] ci_gate_eval { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci}, min_ci: ${writeTargetCi}, rule: "promote_gate_writing" }`);
           if (!ciGate.pass) {
+            remediationReason = "ci_gate_blocked";
+            finalRecommendation = "stabilise";
             console.warn(`[auto-run][IEL] ci_gate_blocked_promote { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci}, min_ci: ${writeTargetCi}, trigger: "promote_writing" }`);
             await logStep(supabase, jobId, null, currentDoc, "ci_gate_blocked",
-              `Promotion blocked: CI=${ciGate.ci} < ${writeTargetCi}. Continuing stabilise despite readiness ${promo.readiness_score}.`,
+              `Promotion blocked: CI=${ciGate.ci} < ${writeTargetCi}. Converting to stabilise.`,
               { ci: ciGate.ci, gp }, undefined, { min_ci: writeTargetCi, readiness: promo.readiness_score, trigger: "promote_writing" });
             await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
-            // ── PATCH A: fall through to stabilise path instead of returning ──
-            remediationReason = "ci_gate_blocked";
-          }
-          console.log(`[auto-run][IEL] ci_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci} }`);
-
-          const modeConf = MODE_CONFIG[job.mode] || MODE_CONFIG.balanced;
-          if (modeConf.require_readiness && promo.readiness_score < modeConf.require_readiness) {
-            await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
-            await logStep(supabase, jobId, null, currentDoc, "stabilise", `Readiness ${promo.readiness_score} < ${modeConf.require_readiness} (premium threshold)`);
-            return respondWithJob(supabase, jobId, "run-next");
+          } else {
+            console.log(`[auto-run][IEL] ci_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci} }`);
           }
 
-          // ── IEL: ACTIONABLE NOTE EXHAUSTION GATE (writing promote path) ──
-          const writeNoteExhaust = await checkActionableNoteExhaustion(supabase, job.project_id, currentDoc, latestVersion?.id || null);
-          if (writeNoteExhaust.hasActionable) {
-            console.warn(`[auto-run][IEL] note_exhaustion_blocked_promote { job_id: "${jobId}", doc_type: "${currentDoc}", actionable_notes: ${writeNoteExhaust.count}, path: "writing_promote" }`);
-            await logStep(supabase, jobId, null, currentDoc, "note_exhaustion_blocked",
-              `Promotion blocked: ${writeNoteExhaust.count} actionable note(s) remain for ${currentDoc}. Continuing stabilise.`,
-              { ci: ciGate.ci, gp }, undefined,
-              { actionable_count: writeNoteExhaust.count, trigger: "writing_promote" });
-            await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
-            return respondWithJob(supabase, jobId, "run-next");
-          }
-
-          const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
-          if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
-            if (job.allow_defaults) {
-              // Full Autopilot: auto-approve and promote without pausing
-              try {
-                await supabase.from("project_document_versions").update({
-                  approval_status: "approved",
-                  approved_at: new Date().toISOString(),
-                  approved_by: job.user_id,
-                }).eq("id", latestVersion.id);
-              } catch (e: any) {
-                console.warn("[auto-run] non-fatal auto-approve failed before promote:", e?.message || e);
+          // ── BRANCH ON finalRecommendation ONLY AFTER THIS POINT ──
+          if (finalRecommendation === "stabilise") {
+            // STABILISE PATH (canonical remediation pipeline — also reached when CI gate demoted promote)
+            const newLoopCount = stageLoopCount + 1;
+            if (blockersCount > 0 || (newLoopCount <= 1 && highImpactCount > 0) || remediationReason === "ci_gate_blocked") {
+              if (remediationReason === "ci_gate_blocked") {
+                await logStep(supabase, jobId, null, currentDoc, "stabilise_entered",
+                  `Entering stabilise for ${currentDoc} (reason: ${remediationReason})`,
+                  { ci: ciGate.ci, gp }, undefined, { remediationReason });
               }
-              await logStep(supabase, jobId, null, currentDoc, "auto_approved_promote",
-                `Promote recommended: ${currentDoc} → ${next}. Auto-promoting (allow_defaults). CI=${ciGate.ci}≥${writeTargetCi}✓`,
+              // ── OPTIONS/DECISIONS PIPELINE ──
+              try {
+                const optionsResult = await callEdgeFunctionWithRetry(
+                  supabase, supabaseUrl, "dev-engine-v2", {
+                    action: "options",
+                    projectId: job.project_id,
+                    documentId: doc.id,
+                    versionId: latestVersion.id,
+                    deliverableType: currentDoc,
+                    developmentBehavior: behavior,
+                    format,
+                  }, token, job.project_id, format, currentDoc, jobId, newStep + 2
+                );
+                const optionsData = optionsResult?.result?.options || optionsResult?.result || {};
+                const stabiliseDecisions = normalizePendingDecisions(optionsData.decisions || [], "Stabilise: blockers/high-impact", jobId, newStep + 2);
+                await logStep(supabase, jobId, null, currentDoc, "options_generated",
+                  `Generated ${stabiliseDecisions.length} decision sets for ${blockersCount} blockers + ${highImpactCount} high-impact notes`,
+                  { ci, gp, gap, readiness: promo.readiness_score });
+                const finalDecisions = stabiliseDecisions.length > 0 ? stabiliseDecisions : createFallbackDecisions(currentDoc, ci, gp, "Blockers/high-impact issues");
+                const autoSelections = tryAutoAcceptDecisions(finalDecisions, job.allow_defaults !== false);
+                if (autoSelections) {
+                  await logStep(supabase, jobId, null, currentDoc, "auto_decided",
+                    `Auto-accepted ${Object.keys(autoSelections).length} stabilise decisions`);
+                } else {
+                  await updateJob(supabase, jobId, {
+                    stage_loop_count: newLoopCount,
+                    status: "paused",
+                    stop_reason: "Decisions required",
+                    pending_decisions: finalDecisions,
+                  });
+                  return respondWithJob(supabase, jobId, "decisions-required");
+                }
+              } catch (optErr: any) {
+                console.error("Options generation failed, falling back to rewrite:", optErr.message);
+                await logStep(supabase, jobId, null, currentDoc, "options_failed",
+                  `Options generation failed: ${optErr.message}. Falling back to rewrite.`);
+              }
+            }
+            // Fall through to rewriteWithFallback for ci_gate_blocked stabilise
+            try {
+              const rewriteResult = await rewriteWithFallback(
+                supabase, supabaseUrl, job, jobId, currentDoc, latestVersion, doc, format, ci, gp,
+                gap, promo, behavior, newStep, stageLoopCount, token, blockers, highImpactNotes,
+                actionAttemptCountRef, stepLimitRef, optionsGeneratedThisStep
+              );
+              if (rewriteResult.status === "returned") return;
+              // Update locals if rewrite returned updated values
+              if (rewriteResult.updatedCI !== undefined) ci = rewriteResult.updatedCI;
+              if (rewriteResult.updatedGP !== undefined) gp = rewriteResult.updatedGP;
+              if (rewriteResult.updatedGap !== undefined) gap = rewriteResult.updatedGap;
+            } catch (e: any) {
+              console.error("[auto-run] rewriteWithFallback error:", e?.message || e);
+              await updateJob(supabase, jobId, { status: "failed", error: `Rewrite failed: ${e.message}` });
+              return respondWithJob(supabase, jobId);
+            }
+          } else {
+            // finalRecommendation === "promote" — only reached if CI gate PASSED
+            const modeConf = MODE_CONFIG[job.mode] || MODE_CONFIG.balanced;
+            if (modeConf.require_readiness && promo.readiness_score < modeConf.require_readiness) {
+              await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
+              await logStep(supabase, jobId, null, currentDoc, "stabilise", `Readiness ${promo.readiness_score} < ${modeConf.require_readiness}`);
+              return respondWithJob(supabase, jobId, "run-next");
+            }
+
+            // ── IEL: ACTIONABLE NOTE EXHAUSTION GATE (writing promote path) ──
+            const writeNoteExhaust = await checkActionableNoteExhaustion(supabase, job.project_id, currentDoc, latestVersion?.id || null);
+            if (writeNoteExhaust.hasActionable) {
+              console.warn(`[auto-run][IEL] note_exhaustion_blocked_promote { job_id: "${jobId}", doc_type: "${currentDoc}", actionable_notes: ${writeNoteExhaust.count}, path: "writing_promote" }`);
+              await logStep(supabase, jobId, null, currentDoc, "note_exhaustion_blocked",
+                `Promotion blocked: ${writeNoteExhaust.count} actionable note(s) remain for ${currentDoc}. Continuing stabilise.`,
+                { ci: ciGate.ci, gp }, undefined,
+                { actionable_count: writeNoteExhaust.count, trigger: "writing_promote" });
+              await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
+              return respondWithJob(supabase, jobId, "run-next");
+            }
+
+            // ── PATCH 4 BACKSTOP: fail-closed if gate somehow bypassed ──
+            if (ciGate.pass !== true || remediationReason === "ci_gate_blocked") {
+              console.error(`[auto-run][PATCH4] BLOCKED: auto_approved_promote called with ciGate.pass=${ciGate.pass}, remediationReason=${remediationReason}. Forcing stabilise.`);
+              await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
+              return respondWithJob(supabase, jobId, "run-next");
+            }
+
+            const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
+            if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
+              if (job.allow_defaults) {
+                // Full Autopilot: auto-approve and promote without pausing
+                try {
+                  await supabase.from("project_document_versions").update({
+                    approval_status: "approved",
+                    approved_at: new Date().toISOString(),
+                    approved_by: job.user_id,
+                  }).eq("id", latestVersion.id);
+                } catch (e: any) {
+                  console.warn("[auto-run] non-fatal auto-approve failed before promote:", e?.message || e);
+                }
+                await logStep(supabase, jobId, null, currentDoc, "auto_approved_promote",
+                  `Promote recommended: ${currentDoc} → ${next}. Auto-promoting (allow_defaults). CI=${ciGate.ci}≥${writeTargetCi}✓`,
+                  { ci, gp, gap, readiness: promo.readiness_score, confidence: promo.confidence },
+                  undefined, { docId: doc.id, versionId: latestVersion.id, doc_type: currentDoc, next_doc_type: next }
+                );
+                await updateJob(supabase, jobId, {
+                  current_document: next,
+                  stage_loop_count: 0,
+                  stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4,
+                  status: "running",
+                  stop_reason: null,
+                  awaiting_approval: false,
+                  approval_type: null,
+                  pending_doc_id: null,
+                  pending_version_id: null,
+                  pending_doc_type: null,
+                  pending_next_doc_type: null,
+                  // Clear frontier on stage change (best_* is global, preserved)
+                  frontier_version_id: null, frontier_ci: null, frontier_gp: null, frontier_attempts: 0,
+                });
+                console.log(`[auto-run][IEL] stage_transition { job_id: "${jobId}", from: "${currentDoc}", to: "${next}", best_preserved: true, trigger: "auto_approved_promote_writing" }`);
+                return respondWithJob(supabase, jobId, "run-next");
+              }
+              // ── APPROVAL GATE: pause before promoting to next stage ──
+              await logStep(supabase, jobId, null, currentDoc, "approval_required",
+                `Promote recommended: ${currentDoc} → ${next}. Review before advancing.`,
                 { ci, gp, gap, readiness: promo.readiness_score, confidence: promo.confidence },
                 undefined, { docId: doc.id, versionId: latestVersion.id, doc_type: currentDoc, next_doc_type: next }
               );
               await updateJob(supabase, jobId, {
-                current_document: next,
-                stage_loop_count: 0,
-                stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4,
-                status: "running",
-                stop_reason: null,
-                awaiting_approval: false,
-                approval_type: null,
-                pending_doc_id: null,
-                pending_version_id: null,
-                pending_doc_type: null,
-                pending_next_doc_type: null,
-                // Clear frontier on stage change (best_* is global, preserved)
-                frontier_version_id: null, frontier_ci: null, frontier_gp: null, frontier_attempts: 0,
+                status: "paused",
+                stop_reason: `Approval required: review ${currentDoc} before promoting to ${next}`,
+                awaiting_approval: true, approval_type: "promote",
+                pending_doc_id: doc.id, pending_version_id: latestVersion.id,
+                pending_doc_type: currentDoc, pending_next_doc_type: next,
               });
-              console.log(`[auto-run][IEL] stage_transition { job_id: "${jobId}", from: "${currentDoc}", to: "${next}", best_preserved: true, trigger: "auto_approved_promote_writing" }`);
-              return respondWithJob(supabase, jobId, "run-next");
+              return respondWithJob(supabase, jobId, "awaiting-approval");
+            } else {
+              await updateJob(supabase, jobId, { status: "completed", stop_reason: "All stages satisfied up to target" });
+              await logStep(supabase, jobId, null, currentDoc, "stop", "All stages satisfied up to target");
+              return respondWithJob(supabase, jobId);
             }
-            // ── APPROVAL GATE: pause before promoting to next stage ──
-            await logStep(supabase, jobId, null, currentDoc, "approval_required",
-              `Promote recommended: ${currentDoc} → ${next}. Review before advancing.`,
-              { ci, gp, gap, readiness: promo.readiness_score, confidence: promo.confidence },
-              undefined, { docId: doc.id, versionId: latestVersion.id, doc_type: currentDoc, next_doc_type: next }
-            );
-            await updateJob(supabase, jobId, {
-              status: "paused",
-              stop_reason: `Approval required: review ${currentDoc} before promoting to ${next}`,
-              awaiting_approval: true, approval_type: "promote",
-              pending_doc_id: doc.id, pending_version_id: latestVersion.id,
-              pending_doc_type: currentDoc, pending_next_doc_type: next,
-            });
-            return respondWithJob(supabase, jobId, "awaiting-approval");
-          } else {
-            await updateJob(supabase, jobId, { status: "completed", stop_reason: "All stages satisfied up to target" });
-            await logStep(supabase, jobId, null, currentDoc, "stop", "All stages satisfied up to target");
-            return respondWithJob(supabase, jobId);
           }
         }
        } catch (e: any) {
