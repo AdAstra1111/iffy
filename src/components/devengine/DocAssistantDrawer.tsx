@@ -67,7 +67,7 @@ function ActionCard({ action, projectId }: { action: DAAction; projectId?: strin
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/apply-project-change`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/apply-project-change`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

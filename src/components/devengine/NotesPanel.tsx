@@ -198,7 +198,7 @@ function NoteStateActions({ note, projectId, currentDocType, onStatusChange }: {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+      const fnUrl = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
       await fetch(fnUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -443,7 +443,7 @@ function BundlesSection({ bundles, projectId, documentId, versionId, currentDocT
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+      const fnUrl = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
       const res = await fetch(fnUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -555,7 +555,7 @@ function DecisionSetsSection({ decisionSets, projectId, documentId, versionId, o
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+      const fnUrl = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
       const res = await fetch(fnUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
@@ -651,7 +651,7 @@ function PinnedNoteDecisions({ pinnedNotes, projectId, documentId, versionId, on
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const nj = note.note_json || {};
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resolve-carried-note`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/resolve-carried-note`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
@@ -696,7 +696,7 @@ function PinnedNoteDecisions({ pinnedNotes, projectId, documentId, versionId, on
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resolve-carried-note`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/resolve-carried-note`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({

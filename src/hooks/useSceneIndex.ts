@@ -34,7 +34,7 @@ export function useSceneIndex(projectId: string | undefined) {
       if (!session) throw new Error('Not authenticated');
 
       const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/extract-scene-index`,
+        `/api/supabase-proxy/functions/v1/extract-scene-index`,
         {
           method: 'POST',
           headers: {

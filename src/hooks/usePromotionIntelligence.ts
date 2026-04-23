@@ -390,7 +390,7 @@ export function usePromotionIntelligence() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
       const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/suggest-promotion`,
+        `/api/supabase-proxy/functions/v1/suggest-promotion`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },

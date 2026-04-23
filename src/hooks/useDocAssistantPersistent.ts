@@ -107,7 +107,7 @@ export function useDocAssistantPersistent(projectId: string | undefined) {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/document-assistant-run`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/document-assistant-run`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

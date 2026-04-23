@@ -36,7 +36,7 @@ export interface NarrativeMonitorStatus {
   last_run_scope: string | null;
 }
 
-const FUNC_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
 
 export function useNarrativeMonitor(projectId: string | undefined) {
   const queryClient = useQueryClient();

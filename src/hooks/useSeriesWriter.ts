@@ -323,7 +323,7 @@ export function useSeriesWriter(projectId: string) {
   async function callEngine(action: string, pId: string, scriptId?: string, extra: Record<string, any> = {}) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/script-engine`, {
+    const resp = await fetch(`/api/supabase-proxy/functions/v1/script-engine`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -340,7 +340,7 @@ export function useSeriesWriter(projectId: string) {
   async function callDevEngineV2(action: string, body: Record<string, any>) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`, {
+    const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -484,7 +484,7 @@ export function useSeriesWriter(projectId: string) {
   }) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/script-engine`, {
+    const resp = await fetch(`/api/supabase-proxy/functions/v1/script-engine`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

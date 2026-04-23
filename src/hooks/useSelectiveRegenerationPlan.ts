@@ -44,7 +44,7 @@ export interface SelectiveRegenerationPlanResponse {
   diagnostics?: string;
 }
 
-const FUNC_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
 
 export type RepairStrategy = 'precision' | 'balanced' | 'stabilization';
 

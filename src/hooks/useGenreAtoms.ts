@@ -3,7 +3,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-const FUNC_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/genre-atomiser`;
+const FUNC_BASE = `/api/supabase-proxy/functions/v1/genre-atomiser`;
 
 export interface GenreAtom {
   id: string; project_id: string; atom_type: 'genre'; entity_id: string | null;

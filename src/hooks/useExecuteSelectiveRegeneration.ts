@@ -28,7 +28,7 @@ export interface RegenExecutionResult {
   diagnostics?: string;
 }
 
-const FUNC_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
 
 export function useExecuteSelectiveRegeneration(projectId: string | undefined) {
   const [isExecuting, setIsExecuting] = useState(false);

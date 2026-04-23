@@ -65,7 +65,7 @@ export interface DevEngineIteration {
 async function callEngine(action: string, extra: Record<string, any> = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/development-engine`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/development-engine`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

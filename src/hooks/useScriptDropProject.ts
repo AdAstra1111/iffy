@@ -83,7 +83,7 @@ const INITIAL_STAGES: DropStage[] = STAGE_DEFINITIONS.map(s => ({
   key: s.key, label: s.label, status: 'pending', retryable: s.retryable,
 }));
 
-const FUNC_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+const FUNC_BASE = `/api/supabase-proxy/functions/v1`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

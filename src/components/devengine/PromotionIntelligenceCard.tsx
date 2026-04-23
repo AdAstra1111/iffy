@@ -57,7 +57,7 @@ const LABELS: Record<string, { label: string; color: string; icon: typeof ArrowR
 async function callAutoRun(action: string, extra: Record<string, any> = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/auto-run`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/auto-run`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

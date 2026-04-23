@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 async function callFactory(action: string, payload: Record<string, any>) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-trailer-factory`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/ai-trailer-factory`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -198,7 +198,7 @@ export function useAiTrailerFactory(projectId: string | undefined) {
     mutationFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pdf-to-script`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/pdf-to-script`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

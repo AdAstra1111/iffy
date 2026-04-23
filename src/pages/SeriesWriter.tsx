@@ -194,7 +194,7 @@ export default function SeriesWriter() {
     queryFn: async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/resolve-qualifications`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/resolve-qualifications`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

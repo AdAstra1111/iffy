@@ -21,7 +21,7 @@ async function callCinematicEngine(action: string, payload: Record<string, any>)
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trailer-cinematic-engine`, {
+    const resp = await fetch(`/api/supabase-proxy/functions/v1/trailer-cinematic-engine`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

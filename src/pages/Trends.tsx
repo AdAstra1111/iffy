@@ -34,7 +34,7 @@ export default function Trends() {
       }
       // Use batch refresh (scheduled-refresh-trends) for global cooldown
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scheduled-refresh-trends`,
+        `/api/supabase-proxy/functions/v1/scheduled-refresh-trends`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },

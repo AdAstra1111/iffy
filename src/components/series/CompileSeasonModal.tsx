@@ -89,7 +89,7 @@ export function CompileSeasonModal({
       };
 
       const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compile-season`,
+        `/api/supabase-proxy/functions/v1/compile-season`,
         {
           method: 'POST',
           headers: {

@@ -113,7 +113,7 @@ export async function executeAutoRepair(
   const token = await getSessionToken();
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-cast-regen`,
+    `/api/supabase-proxy/functions/v1/queue-cast-regen`,
     {
       method: 'POST',
       headers: {

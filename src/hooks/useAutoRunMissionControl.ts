@@ -52,7 +52,7 @@ async function callAutoRun(action: string, extra: Record<string, any> = {}) {
 async function callDocumentText(documentId?: string, versionId?: string) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/document-text`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/document-text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ documentId, versionId }),

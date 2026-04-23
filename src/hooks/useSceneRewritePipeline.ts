@@ -117,7 +117,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

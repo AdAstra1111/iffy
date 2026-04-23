@@ -84,7 +84,7 @@ export default function StoryTrends() {
         return;
       }
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/refresh-trends`,
+        `/api/supabase-proxy/functions/v1/refresh-trends`,
         {
           method: 'POST',
           headers: {

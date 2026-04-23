@@ -69,7 +69,7 @@ async function getAccessToken() {
 
 async function callEdgeFunction(name: string, body: any) {
   const token = await getAccessToken();
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${name}`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/${name}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

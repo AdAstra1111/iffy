@@ -162,7 +162,7 @@ export function SeasonPackagePanel({ projectId, episodeCount, completedEpisodeCo
       if (!session) throw new Error('Not authenticated');
 
       const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/season-package`,
+        `/api/supabase-proxy/functions/v1/season-package`,
         {
           method: 'POST',
           headers: {

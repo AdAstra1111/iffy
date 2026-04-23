@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 async function callOrchestrator(action: string, payload: Record<string, any>) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ai-content-orchestrator`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/ai-content-orchestrator`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

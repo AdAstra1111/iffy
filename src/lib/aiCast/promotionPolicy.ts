@@ -102,7 +102,7 @@ export async function evaluateActorPromotionEligibility(
   }
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/apply-actor-promotion`,
+    `/api/supabase-proxy/functions/v1/apply-actor-promotion`,
     {
       method: 'POST',
       headers: {
@@ -149,7 +149,7 @@ export async function applyActorPromotionDecision(input: {
   if (!session) throw new Error('Not authenticated');
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/apply-actor-promotion`,
+    `/api/supabase-proxy/functions/v1/apply-actor-promotion`,
     {
       method: 'POST',
       headers: {

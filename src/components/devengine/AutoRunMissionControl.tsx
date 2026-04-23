@@ -65,7 +65,7 @@ async function callInferCriteria(projectId: string): Promise<{ criteria: Record<
     const { supabase } = await import('@/integrations/supabase/client');
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return null;
-    const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/infer-criteria`, {
+    const resp = await fetch(`/api/supabase-proxy/functions/v1/infer-criteria`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ project_id: projectId }),

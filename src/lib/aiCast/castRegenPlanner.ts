@@ -44,7 +44,7 @@ export async function buildCastRegenPlan(projectId: string): Promise<RegenPlan> 
   if (!session) throw new Error('Not authenticated');
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-cast-regen`,
+    `/api/supabase-proxy/functions/v1/queue-cast-regen`,
     {
       method: 'POST',
       headers: {

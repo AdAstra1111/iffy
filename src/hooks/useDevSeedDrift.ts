@@ -50,7 +50,7 @@ export function useDevSeedDrift(projectId: string | undefined): UseDevSeedDriftR
     try {
       const { data: session } = await supabase.auth.getSession();
       const token = session?.session?.access_token;
-      const funcUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/story-dev-seed-engine`;
+      const funcUrl = `/api/supabase-proxy/functions/v1/story-dev-seed-engine`;
 
       const resp = await fetch(funcUrl, {
         method: 'POST',

@@ -131,7 +131,7 @@ export function useMasterSeasonScript(projectId: string, episodes: SeriesEpisode
       if (!session) throw new Error('Not authenticated');
 
       const resp = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/compile-season`,
+        `/api/supabase-proxy/functions/v1/compile-season`,
         {
           method: 'POST',
           headers: {

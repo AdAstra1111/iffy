@@ -7,7 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 async function callNUE(action: string, payload: Record<string, any>) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/narrative-unit-engine`, {
+  const resp = await fetch(`/api/supabase-proxy/functions/v1/narrative-unit-engine`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

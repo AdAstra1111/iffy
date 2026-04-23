@@ -93,7 +93,7 @@ export async function queueCastRegenJobs(
   const token = await getSessionToken();
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-cast-regen`,
+    `/api/supabase-proxy/functions/v1/queue-cast-regen`,
     {
       method: 'POST',
       headers: {
@@ -126,7 +126,7 @@ export async function processCastRegenJobs(
   const token = await getSessionToken();
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-cast-regen`,
+    `/api/supabase-proxy/functions/v1/process-cast-regen`,
     {
       method: 'POST',
       headers: {
@@ -153,7 +153,7 @@ export async function retryCastRegenJob(jobId: string): Promise<{ created: boole
   const token = await getSessionToken();
 
   const resp = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/retry-cast-regen`,
+    `/api/supabase-proxy/functions/v1/retry-cast-regen`,
     {
       method: 'POST',
       headers: {

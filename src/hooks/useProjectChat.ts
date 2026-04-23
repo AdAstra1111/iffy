@@ -50,7 +50,7 @@ export function useProjectChat(projectId: string | undefined) {
       setStreamingContent('');
 
       // Stream from edge function
-      const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/project-chat`;
+      const CHAT_URL = `/api/supabase-proxy/functions/v1/project-chat`;
       const session = (await supabase.auth.getSession()).data.session;
 
       const resp = await fetch(CHAT_URL, {

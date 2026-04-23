@@ -368,7 +368,7 @@ export default function ProjectCasting() {
     mutationFn: async (params: { characterKey: string; nextActorId: string; reason?: string }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rebind-project-cast`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/rebind-project-cast`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -405,7 +405,7 @@ export default function ProjectCasting() {
     mutationFn: async (params: { characterKey: string; reason?: string }) => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/rebind-project-cast`, {
+      const resp = await fetch(`/api/supabase-proxy/functions/v1/rebind-project-cast`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

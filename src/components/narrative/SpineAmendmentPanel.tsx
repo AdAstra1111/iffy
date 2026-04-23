@@ -86,7 +86,7 @@ export function SpineAmendmentPanel({ projectId, spine, onAmendmentConfirmed }: 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/spine-amendment`, {
+      const res = await fetch(`/api/supabase-proxy/functions/v1/spine-amendment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ action: 'compute_impact', projectId, axis: selectedAxis, proposed_value: proposedValue }),
@@ -108,7 +108,7 @@ export function SpineAmendmentPanel({ projectId, spine, onAmendmentConfirmed }: 
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/spine-amendment`, {
+      const res = await fetch(`/api/supabase-proxy/functions/v1/spine-amendment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ action: 'confirm_amendment', projectId, axis: selectedAxis, proposed_value: proposedValue, rationale }),

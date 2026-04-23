@@ -27,7 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { STAGE_DEFINITIONS } from './useScriptDropProject';
 
-const FUNC_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1`;
+const FUNC_BASE = `/api/supabase-proxy/functions/v1`;
 
 export type SceneGraphHealthState = 'EMPTY_GRAPH' | 'PARTIAL_GRAPH' | 'POPULATED_GRAPH';
 

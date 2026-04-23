@@ -36,7 +36,7 @@ export function ProjectNoteInput({ projectId }: ProjectNoteInputProps) {
       }
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-note`,
+        `/api/supabase-proxy/functions/v1/analyze-note`,
         {
           method: 'POST',
           headers: {

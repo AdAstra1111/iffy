@@ -6,7 +6,7 @@ import { useState, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-const FUNC_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/dev-engine-v2`;
+const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
 
 export function usePlanNarrativeRepairs(projectId: string | undefined) {
   const queryClient = useQueryClient();

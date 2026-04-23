@@ -43,7 +43,7 @@ export default function TrendsCoverage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const res = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/trends-coverage-audit`,
+        `/api/supabase-proxy/functions/v1/trends-coverage-audit`,
         { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({}) }
       );
       if (!res.ok) throw new Error(await res.text());
@@ -100,7 +100,7 @@ export default function TrendsCoverage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scheduled-refresh-trends`, {
+      const res = await fetch(`/api/supabase-proxy/functions/v1/scheduled-refresh-trends`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ trigger: 'manual' }),
@@ -130,7 +130,7 @@ export default function TrendsCoverage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-trends-types`, {
+      const res = await fetch(`/api/supabase-proxy/functions/v1/backfill-trends-types`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({}),
@@ -151,7 +151,7 @@ export default function TrendsCoverage() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/scheduled-refresh-trends`, {
+      const res = await fetch(`/api/supabase-proxy/functions/v1/scheduled-refresh-trends`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ trigger: 'manual', override_global_cooldown: true }),

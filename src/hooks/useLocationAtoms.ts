@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-const FUNC_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/location-atomiser`;
+const FUNC_BASE = `/api/supabase-proxy/functions/v1/location-atomiser`;
 
 export interface LocationAtom {
   id: string;
