@@ -164,14 +164,18 @@ const gw = resolveGateway();
 const GATEWAY_URL = gw.url;
 
 async function callLLM(apiKey: string, system: string, user: string, model = "google/gemini-2.5-flash"): Promise<string> {
+  const promptChars = (system + userPrompt).length;
+  const ideaLen = upstreamBlocks.get('idea')?.length ?? 0;
+  const cbLen = upstreamBlocks.get('concept_brief')?.length ?? 0;
+  console.log(`[generate-document] LLM call: docType=${docType} model=${model} max_tokens=65000 prompt_chars=${promptChars}`);
+  console.log(`[generate-document] upstream: types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_len=${ideaLen} cb_len=${cbLen}`);
   const res = await fetch(gw.url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model,
       messages: [{ role: "system", content: system }, { role: "user", content: user }],
-      console.log(`[generate-document] LLM call for ${docType}: model=${model} max_tokens=65000 prompt_chars=${(system+userPrompt).length}`);
-      console.log(`[generate-document] upstream debug: docType=${docType} upstream_types=${JSON.stringify(upstreamTypes)} upstreamContent_len=${upstreamContent.length} idea_plaintext_len=${upstreamBlocks.get('idea')?.length ?? 0} concept_brief_plaintext_len=${upstreamBlocks.get('concept_brief')?.length ?? 0}`);
+      max_tokens: 65000,
     }),
   });
   if (!res.ok) throw new Error(`LLM call failed: ${res.status}`);
