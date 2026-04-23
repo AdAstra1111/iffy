@@ -76,7 +76,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const matched = urlPath.match(/^\/api\/supabase-proxy\/(.+)$/);
   const path = matched ? matched[1] : '';
 
-  console.log('[proxy] path:', path);
+  console.log('[proxy] request url:', req.url, 'path:', path);
 
   // Bypass: reverse-engineer-status via Management API
   if (path === 'reverse-engineer-status') {
