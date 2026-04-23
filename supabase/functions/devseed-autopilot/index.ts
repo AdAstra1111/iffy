@@ -243,11 +243,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Write to canon
-      await sb.from("project_canon").update({
+      // Write to canon — upsert ensures the row exists (first run has no canon row yet)
+      await sb.from("project_canon").upsert({
+        project_id: projectId,
         canon_json: { ...canonJson, autopilot },
         updated_by: userId,
-      }).eq("project_id", projectId);
+      }, { onConflict: "project_id" });
 
       return jsonRes({ ok: true, autopilot }, 200, req);
     }
@@ -322,11 +323,12 @@ Deno.serve(async (req) => {
       };
       autopilot.updated_at = nowISO();
 
-      // Persist running state
-      await sb.from("project_canon").update({
+      // Persist running state — upsert ensures the row exists
+      await sb.from("project_canon").upsert({
+        project_id: projectId,
         canon_json: { ...canonJson, autopilot },
         updated_by: userId,
-      }).eq("project_id", projectId);
+      }, { onConflict: "project_id" });
 
       try {
         // ── Execute stage ──
@@ -364,17 +366,12 @@ Deno.serve(async (req) => {
 
       // Persist
       // Re-read canon to avoid overwriting concurrent changes
-      const { data: freshCanon } = await sb
-        .from("project_canon")
-        .select("canon_json")
-        .eq("project_id", projectId)
-        .single();
-      const freshJson = freshCanon?.canon_json || {};
-
-      await sb.from("project_canon").update({
-        canon_json: { ...freshJson, autopilot },
+      // Persist stage state — upsert ensures the row exists
+      await sb.from("project_canon").upsert({
+        project_id: projectId,
+        canon_json: { ...canonJson, autopilot },
         updated_by: userId,
-      }).eq("project_id", projectId);
+      }, { onConflict: "project_id" });
 
       return jsonRes({
         ok: true,
@@ -495,6 +492,7 @@ async function executeApplySeedIntelPack(
   };
 
   // Route through canon-decisions
+  // Include userId in body so canon-decisions can use it directly when authed with service key
   const resp = await fetch(`${supabaseUrl}/functions/v1/canon-decisions`, {
     method: "POST",
     headers: {
@@ -504,6 +502,7 @@ async function executeApplySeedIntelPack(
     body: JSON.stringify({
       action: "create_and_apply",
       projectId,
+      userId, // allows canon-decisions to use actorUserId directly when service role authed
       decision: {
         type: "APPLY_SEED_INTEL_PACK",
         payload: {
@@ -789,7 +788,7 @@ async function executeExtractComparables(
   const extractResp = await fetch(`${supabaseUrl}/functions/v1/comps-engine`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
-    body: JSON.stringify({ action: "extract_from_docs", project_id: projectId }),
+    body: JSON.stringify({ action: "extract_from_docs", project_id: projectId, user_id: userId }),
   });
   const extractData = await extractResp.json();
   const extractedCount = extractData?.extraction_summary?.attached || 0;

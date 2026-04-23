@@ -127,7 +127,12 @@ Criterion CI-5: Craft Quality (10 pts)
   PARTIAL (5): Adequate craft with some muddled passages or logic gaps
   NO (0): Poor craft: unclear writing, logical contradictions, or content that impedes understanding
 
-CI SCORE = sum of CI-1 through CI-5 (max 50, multiply by 2 for 0-100 scale)
+Criterion CI-6: Canon Conformance (6 pts)
+  YES (6): All character names, roles, relationships, and identity facts match the established character bible canon. Episode premises do not contradict canon facts (logline, premise, genre, tone, character roles). No character appears under a different name, motivation, or role than what is defined in the character bible.
+  PARTIAL (3): Minor canon drift detected — some character details or relationship facts differ from canon, but no major identity contradictions.
+  NO (0): Significant canon violations — protagonist profession/trait contradicts canon, key relationship type differs (e.g., friend vs enemy), or character not in canon appears as primary. Any instance of a character acting against their established bible identity is a full NO.
+
+CI SCORE = sum of CI-1 through CI-6 (max 56, multiply by 2 for 0-100 scale, capped at 100)
 
 == GP: DEVELOPMENT READINESS (50 points max) ==
 
@@ -164,7 +169,10 @@ CRITICAL SCORING RULES for DEVELOPMENT_ARCHITECTURE:
 - Do NOT penalize for lacking audience hook language or pitch-facing polish.
 - A character bible with named characters, defined roles/goals/conflicts, and complete profiles scores ci_score 80+ and gp_score 75+ regardless of commercial language.
 - A beat sheet with all acts, clearly labeled turning points, midpoint, climax, and mutually consistent story logic scores ci_score 78+ and gp_score 75+.
-- CI and GP are independent: a document can score high on one and lower on the other.`,
+- CI and GP are independent: a document can score high on one and lower on the other.
+- Canon conformance (CI-6) is MANDATORY for episode_grid, vertical_episode_beats, episode_beats, and season_arc. For these doc types, CI-6 must be evaluated against the character bible and canon facts. A document that violates canon facts scores a maximum of CI-4 (72) regardless of other quality dimensions.
+
+- CANONICAL COMMITMENT RULE: Once a document is promoted and locked, its facts become canonical for all downstream documents. Downstream docs (beat_sheet, character_bible, season_arc, episode_grid, episode_beats, VEB) MUST NOT contradict established canon facts without explicit documented justification. If a downstream doc PROPOSES a canon change, it MUST be raised as a development_note with severity=blocker, explaining: (1) exactly what fact is being changed, (2) the specific CI or GP gain that justifies it, and (3) why the gain is worth the canonical breakage. A canon change without documented justification is a blocker. A canon change with weak justification (CI/GP gain <5 points) is also a blocker. Only changes with compelling, specific CI/GP rationale may proceed.`,
 
   PREMISE_POSITIONING: `SCORING RUBRIC (PURPOSE: PREMISE_POSITIONING)
 
@@ -194,7 +202,15 @@ Criterion CI-4: Structural Integrity of Concept (13 pts)
   PARTIAL (7): Basic structure present but incomplete
   NO (0): No identifiable story structure; premise does not generate a narrative
 
-CI SCORE = sum of CI-1 through CI-4 (max 50, multiply by 2 for 0-100 scale)
+Criterion CI-5: Canon Conformance for Downstream Docs (6 pts)
+  [Only evaluate this criterion if the document is treatment, story_outline, or topline_narrative — skip for idea/concept_brief/format_rules as these documents ESTABLISH canon rather than conform to it]
+  YES (6): All character names, relationship types, story facts, and premise elements match what was established in the upstream locked documents (idea logline, concept_brief premise, format_rules specs). The treatment does not contradict, rename, or reframe any element that was locked in an earlier stage.
+  PARTIAL (3): Minor drift from upstream canon — a character motivation or relationship dynamic differs slightly, but no core identity contradictions.
+  NO (0): Treatment contradicts a locked premise element — protagonist's core goal changes, a key relationship type inverts (e.g., mentor becomes antagonist), or the genre/tone shifts significantly from what was declared in the idea/concept_brief.
+
+CI SCORE = sum of CI-1 through CI-5 (max 56, multiply by 2 for 0-100 scale, capped at 100)
+
+CRITICAL SCORING RULE for PREMISE_POSITIONING: If this is a treatment or story_outline, CI-5 is MANDATORY. Score it against the locked idea and concept_brief. Do not apply CI-5 to idea, concept_brief, or format_rules documents — these are establishing canon, not conforming to it.
 
 == GP: GREENLIGHT PROBABILITY (50 points max) ==
 
@@ -232,7 +248,9 @@ ci_score [0-100] = CI SCORE multiplied by 2
 gp_score [0-100] = GP SCORE multiplied by 2
 
 Both CI and GP matter equally for this purpose class.
-Do NOT penalize for lacking scene-level craft detail; this is a concept/framing document.`,
+Do NOT penalize for lacking scene-level craft detail; this is a concept/framing document.
+
+- CANONICAL COMMITMENT RULE: concept_brief and treatment are establishing documents. However, once a concept_brief is promoted, its premise facts (protagonist identity, core goal, central conflict, genre, tone) are canonical. A treatment that contradicts concept_brief facts must raise the contradiction as a blocker note with specific justification. If the contradiction is deliberate and improves CI or GP by 5+ points, the change may be approved — but the justification must be documented. Canon breakage without clear benefit is a blocker.`,
 
   PACKAGING_COMMERCIAL: `SCORING RUBRIC (PURPOSE: PACKAGING_COMMERCIAL):
 This document is a commercial-facing output. Its job is to communicate market promise,
@@ -257,19 +275,77 @@ Do NOT penalise a market sheet or deck for lacking character development.`,
   SCRIPT_EXECUTION: `SCORING RUBRIC (PURPOSE: SCRIPT_EXECUTION):
 This document is executable story delivery in script or production-ready form.
 
-CI (Creative Integrity) evaluates:
-- Dialogue craft, scene dynamics, character voice
-- Structural integrity and pacing
-- Thematic coherence and emotional conviction
-- Visual storytelling and dramatic impact
+== CI: CREATIVE INTEGRITY (50 points max) ==
 
-GP (Greenlight Probability) evaluates:
-- Production feasibility relative to stated budget and format
-- Audience clarity and hook strength
-- Packaging magnetism (castability, concept clarity for this format)
-- Commercial viability of the produced work
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
 
-Both CI and GP matter. Score relative to the declared format and lane.`,
+Criterion CI-1: Dialogue Craft and Scene Dynamics (12 pts)
+  YES (12): Character voice is distinct and consistent; dialogue drives story; scenes have clear purpose and momentum.
+  PARTIAL (6): Dialogue is functional but some exchanges feel generic or scenes ramble.
+  NO (0): Character voice is undifferentiated; dialogue is expository or hollow; scenes lack purpose.
+
+Criterion CI-2: Structural Integrity and Pacing (12 pts)
+  YES (12): The script's structure supports the story's arc; pacing serves the material's natural rhythm; act/episode breaks land correctly.
+  PARTIAL (6): General structure is present but some act breaks feel off or pacing is uneven.
+  NO (0): Structural problems — pacing drags, act breaks missing or misplaced, episode structure violated.
+
+Criterion CI-3: Visual Storytelling and Dramatic Impact (10 pts)
+  YES (10): The script uses cinematic language — blocking, camera perspective, environment — to tell the story visually as well as verbally.
+  PARTIAL (5): Some visual storytelling present but often falls back to dialogue explanation.
+  NO (0): Minimal visual storytelling; the script reads like a stage play without cinematic intent.
+
+Criterion CI-4: Thematic Coherence and Emotional Conviction (8 pts)
+  YES (8): The script's emotional throughline is clear; theme is embedded in action and dialogue, not stated.
+  PARTIAL (4): Emotional element present but inconsistent; theme occasionally stated rather than shown.
+  NO (0): No clear emotional arc; theme is absent or heavy-handed.
+
+Criterion CI-5: Canon Conformance (8 pts)
+  YES (8): All character names, visual descriptions, relationship dynamics, and story facts match the established character_bible canon. Episode premises do not contradict the episode_grid or season_arc. No character behaves against their established bible identity.
+  PARTIAL (4): Minor canon drift — a character detail or visual description differs from the bible but no core identity violation.
+  NO (0): Significant canon violations — a character acts against their bible identity, a relationship type contradicts the bible, or an episode premise contradicts the episode_grid/season_arc.
+
+CI SCORE = sum of CI-1 through CI-5 (max 50, multiply by 2 for 0-100 scale)
+
+== GP: GREENLIGHT PROBABILITY (50 points max) ==
+
+Score each criterion. Award full points for YES, half for PARTIAL, zero for NO.
+
+Criterion GP-1: Production Feasibility vs Budget (10 pts)
+  YES (10): Every scene is executable within the declared budget and format constraints. No exigency problems.
+  PARTIAL (5): Mostly executable with minor budgetrisks.
+  NO (0): Multiple scenes require resources beyond budget or format constraints.
+
+Criterion GP-2: Audience Clarity and Hook Strength (10 pts)
+  YES (10): The script has a clear target audience; the hook is present and compelling; the audience knows what they are getting.
+  PARTIAL (5): Audience is vaguely defined; hook is present but not specific.
+  NO (0): No clear target audience; hook is absent or generic.
+
+Criterion GP-3: Packaging Magnetism (10 pts)
+  YES (10): The script has castable roles, a clear audience promise, and a marketable concept.
+  PARTIAL (5): Some packaging elements present but not compelling.
+  NO (0): Weak packaging — roles feel generic, concept is hard to articulate in a market context.
+
+Criterion GP-4: Commercial Viability (10 pts)
+  YES (10): The produced script is viable as a product — it can be made within budget, sold to the target audience, and executed in the declared format.
+  PARTIAL (5): Basic viability but significant risks.
+  NO (0): Viability is unclear or compromised by execution requirements.
+
+Criterion GP-5: Format Compliance (10 pts)
+  YES (10): Script format is correct for the declared type (screenplay, episode script, or season script); proper sluglines, action, dialogue formatting used throughout.
+  PARTIAL (5): Generally correct format with occasional errors.
+  NO (0): Format errors throughout — sluglines wrong, action blocks misused, format violated for the declared type.
+
+GP SCORE = sum of GP-1 through GP-5 (max 50, multiply by 2 for 0-100 scale)
+
+== FINAL SCORES ==
+ci_score [0-100] = CI SCORE multiplied by 2
+gp_score [0-100] = GP SCORE multiplied by 2
+
+CRITICAL SCORING RULE for SCRIPT_EXECUTION: CI-5 (Canon Conformance) is MANDATORY. Scripts must conform to the character_bible, episode_grid, and season_arc. A script that violates canon scores a maximum of CI-3 (60) regardless of dialogue quality.
+
+- CANONICAL COMMITMENT RULE: Scripts must not contradict the character_bible, episode_grid, or season_arc. If a script discovers that following canon would limit CI or GP, it must raise a canon_rewrite proposal as a blocker note — not silently ignore the canon. Scripts are downstream consumers of canon; they do not rewrite canon unilaterally. Any scene that requires violating a character's established identity must be flagged.
+
+Do NOT score idea/concept development, market positioning, or packaging language in a script. Score the execution quality only.`,
 };
 
 

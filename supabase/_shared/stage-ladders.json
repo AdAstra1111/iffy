@@ -26,6 +26,7 @@
     "architecture":          "story_outline",
     "plot_architecture":     "story_outline",
     "episode_beat_sheet":    "beat_sheet",
+    "episode_beats":         "episode_beats",
     "script":                "feature_script",
     "feature_script":        "feature_script",
     "pilot_script":          "episode_script",
@@ -38,6 +39,12 @@
     "coverage":              "production_draft",
     "complete_season_script": "season_script",
     "vertical_episode_beats": "vertical_episode_beats"
+  },
+  "FORMAT_SPECIFIC_ALIASES": {
+    "_comment": "Format-specific doc type aliases. Checked BEFORE DOC_TYPE_ALIASES. VD lane uses episode_beats → vertical_episode_beats.",
+    "vertical-drama": {
+      "episode_beats": "vertical_episode_beats"
+    }
   },
   "FORMAT_SCRIPT_TYPES": {
     "_comment": "Maps project format to the correct script doc_type. Used by all flows (promote, convert, create, auto-run).",

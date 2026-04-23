@@ -1461,6 +1461,14 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // ── GRID MODE: upstream validation (vertical_episode_beats requires episode_grid) ──
+      if (docType === "vertical_episode_beats" && inputsUsed["character_bible"]) {
+        return new Response(JSON.stringify({
+          error: "wrong_upstream",
+          message: "vertical_episode_beats requires episode_grid as upstream, but character_bible was resolved. Wait for episode_grid to be generated first.",
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // ── GRID MODE: synchronous (fast enough for episode_grid, <30s) ──
       content = await generateEpisodeBeatsChunked({
         apiKey,

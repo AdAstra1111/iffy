@@ -27,6 +27,7 @@ export const STAGE_LADDERS = {
     "architecture":          "story_outline",
     "plot_architecture":     "story_outline",
     "episode_beat_sheet":    "beat_sheet",
+    "episode_beats":         "episode_beats",
     "script":                "feature_script", // NOTE: VD projects must override to season_script at runtime
     "feature_script":        "feature_script", // NOTE: VD projects must override to season_script at runtime
     "pilot_script":          "episode_script",
@@ -40,6 +41,12 @@ export const STAGE_LADDERS = {
     "complete_season_script": "season_script",
     "vertical_episode_beats": "vertical_episode_beats",
   } as Record<string, string>,
+  // Format-specific aliases — checked BEFORE DOC_TYPE_ALIASES in canonicalDocType()
+  FORMAT_SPECIFIC_ALIASES: {
+    "vertical-drama": {
+      "episode_beats": "vertical_episode_beats",
+    },
+  } as Record<string, Record<string, string>>,
   FORMAT_SCRIPT_TYPES: {
     "film":               "feature_script",
     "feature":            "feature_script",

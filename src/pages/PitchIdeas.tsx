@@ -38,6 +38,7 @@ export default function PitchIdeas() {
   const highlightRef = useRef<HTMLDivElement | null>(null);
   const didScrollRef = useRef(false);
   const [generating, setGenerating] = useState(false);
+  const [loadingIdeas, setLoadingIdeas] = useState(false);
   const [generateFailed, setGenerateFailed] = useState(false);
   const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [criteria, setCriteria] = useState<HardCriteria>({ ...EMPTY_CRITERIA });
@@ -120,6 +121,13 @@ export default function PitchIdeas() {
     poll();
     return () => { cancelled = true; };
   }, [generating, qc]);
+
+  // Clear loading bridge once ideas query has fresh data
+  useEffect(() => {
+    if (loadingIdeas && ideas.length > 0 && !isLoading) {
+      setLoadingIdeas(false);
+    }
+  }, [ideas, isLoading, loadingIdeas]);
 
   // Scroll to highlighted idea (from Blueprint Engine promotion)
   useEffect(() => {
@@ -337,6 +345,7 @@ export default function PitchIdeas() {
     } finally {
       clearTimeout(safetyTimerRef.current);
       setGenerating(false);
+      setLoadingIdeas(true); // bridge: keep progress indicator alive until ideas query returns
     }
 
     // Safety: if generating is still true after 90s, force-reset (edge function timeout fallback)
@@ -449,13 +458,13 @@ export default function PitchIdeas() {
           onGlobalModalityChange={setGlobalModality}
         />
 
-        <OperationProgress isActive={generating} stages={GENERATE_PITCH_STAGES} />
+        <OperationProgress isActive={generating || loadingIdeas} stages={GENERATE_PITCH_STAGES} />
 
         {/* Trends Snapshot — persisted across refresh, visible when data exists */}
         {lastSignalsMetadata && (
           <TrendsSnapshot
             signalsMetadata={lastSignalsMetadata}
-            updating={generating}
+            updating={generating || loadingIdeas}
             onClear={() => {
               setLastSignalsMetadata(null);
               try { localStorage.removeItem(signalsStorageKey); } catch {}

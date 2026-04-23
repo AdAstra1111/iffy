@@ -83,6 +83,7 @@ import { ApprovalGateModal } from '@/components/devengine/ApprovalGateModal';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
 import { CanonicalEditor } from '@/components/devengine/CanonicalEditor';
 import { ProvenancePanel } from '@/components/devengine/ProvenancePanel';
+import { CascadePanel } from '@/components/devengine/CascadePanel';
 import { ConnectivityBanner } from '@/components/devengine/ConnectivityBanner';
 import { useDocumentPackage } from '@/hooks/useDocumentPackage';
 import { DocAssistantDrawer } from '@/components/devengine/DocAssistantDrawer';
@@ -202,7 +203,7 @@ export default function ProjectDevelopmentEngine() {
       invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
     },
   });
-  const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual']);
+  const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual', 'cascade']);
   const initialTab = (() => { const t = searchParams.get('tab'); return t && VALID_TABS.has(t) ? t : 'notes'; })();
   const [intelligenceTab, setIntelligenceTab] = useState(initialTab);
 
@@ -2411,6 +2412,7 @@ export default function ProjectDevelopmentEngine() {
               <TabsTrigger value="criteria" className="text-xs">Criteria</TabsTrigger>
               <TabsTrigger value="package" className="text-xs">Package</TabsTrigger>
               <TabsTrigger value="canon" className="text-xs">Canon</TabsTrigger>
+              <TabsTrigger value="cascade" className="text-xs">Cascade</TabsTrigger>
               <TabsTrigger value="provenance" className="text-xs">Provenance</TabsTrigger>
                <TabsTrigger value="scenes" className="text-xs">Scenes</TabsTrigger>
                <TabsTrigger value="quality" className="text-xs">Quality</TabsTrigger>
@@ -2851,6 +2853,10 @@ export default function ProjectDevelopmentEngine() {
                   <CanonicalEditor projectId={projectId!} />
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="cascade" className="mt-3">
+              <CascadePanel projectId={projectId!} />
             </TabsContent>
 
             <TabsContent value="provenance" className="mt-3">

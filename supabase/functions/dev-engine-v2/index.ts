@@ -5461,6 +5461,66 @@ Format: ${rq.format}.${episodeLengthBlock}`;
           console.warn("[dev-engine-v2] cross-rung canonical load failed (non-fatal):", e?.message);
         }
       }
+      // ── Canon conformance scoring context injection (all doc types) ──
+      // When scoring any DEVELOPMENT_ARCHITECTURE or SCRIPT_EXECUTION doc type,
+      // inject the relevant canonical documents so CI-5/CI-6 can be evaluated.
+      let canonConformanceContext = "";
+      const canonConformanceTypes = new Set([
+        "character_bible", "story_outline", "beat_sheet", "season_arc",
+        "episode_grid", "episode_beats", "vertical_episode_beats",
+        "treatment", "story_outline",
+        "feature_script", "episode_script", "season_script", "production_draft",
+        "season_master_script",
+      ]);
+      if (canonConformanceTypes.has(deliverableType)) {
+        try {
+          // Build upstream doc type list based on what this doc should check against
+          const upstreamMap: Record<string, string[]> = {
+            "episode_grid": ["character_bible"],
+            "vertical_episode_beats": ["character_bible", "episode_grid"],
+            "episode_beats": ["character_bible", "episode_grid"],
+            "season_arc": ["character_bible", "idea", "concept_brief"],
+            "beat_sheet": ["character_bible"],
+            "character_bible": ["idea", "concept_brief"],
+            "story_outline": ["idea", "concept_brief", "character_bible"],
+            "treatment": ["idea", "concept_brief"],
+            "feature_script": ["character_bible", "beat_sheet", "idea"],
+            "episode_script": ["character_bible", "episode_grid", "season_arc"],
+            "season_script": ["character_bible", "episode_grid", "season_arc"],
+            "production_draft": ["character_bible", "episode_grid", "format_rules"],
+          };
+          const upstreamTypes = upstreamMap[deliverableType] || [];
+          if (upstreamTypes.length > 0) {
+            const { data: upstreamDocs } = await supabase
+              .from("project_documents")
+              .select("id, doc_type")
+              .eq("project_id", projectId)
+              .in("doc_type", upstreamTypes);
+            if (upstreamDocs && upstreamDocs.length > 0) {
+              const docIds = upstreamDocs.map((d: any) => d.id);
+              const { data: upstreamVersions } = await supabase
+                .from("project_document_versions")
+                .select("document_id, plaintext")
+                .in("document_id", docIds)
+                .eq("is_current", true);
+              if (upstreamVersions && upstreamVersions.length > 0) {
+                const canonBlocks = upstreamVersions
+                  .filter((v: any) => v.plaintext && v.plaintext.length > 200)
+                  .map((v: any) => {
+                    const docType = upstreamDocs.find((d: any) => d.id === v.document_id)?.doc_type || "unknown";
+                    return `[${docType.toUpperCase()} CANON]\n${v.plaintext.slice(0, 2500)}`;
+                  });
+                if (canonBlocks.length > 0) {
+                  canonConformanceContext = `\n\nCANON CONFORMANCE REFERENCE (for CI-5/CI-6 scoring — DO NOT contradict these established facts):\n${canonBlocks.join("\n\n")}`;
+                  console.log(`[dev-engine-v2] canon conformance context injected for ${deliverableType}, sources: ${upstreamTypes.join(",")}`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[dev-engine-v2] canon conformance context injection failed (non-fatal):", e);
+        }
+      }
       // ── NEC Guardrail injection for analyze (NEC-first) ──
       const analyzeNecBlock = await loadNECGuardrailBlock(supabase, projectId);
 
@@ -5694,7 +5754,7 @@ STRATEGIC PRIORITY: ${strategicPriority || "BALANCED"}
 DEVELOPMENT STAGE: ${developmentStage || "IDEA"}
 PROJECT: ${project?.title || "Unknown"}
 LANE: ${analyzeLane} | BUDGET: ${project?.budget_range || "Unknown"}
-${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
+${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${canonConformanceContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
 
 MATERIAL (${version.plaintext.length} chars total${episodeGridStructuralBlock || seasonScriptStructuralBlock ? " — sampled for scoring stability" : ""}):
 ${docTextForScoring}`;
@@ -8551,11 +8611,17 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
       // Single-shot LLM calls truncate at high episode counts (e.g., 35 episodes).
       // Route through the chunked generator which batches episodes in groups of 6.
       const EPISODE_REDIRECT_SET = new Set(["episode_grid", "vertical_episode_beats", "episode_beats", "season_script", "season_master_script"]);
+      // Determine if this is a VD project for lane-aware doc type mapping
+      const rqFormat = resolverResult?.resolvedQualifications?.format;
+      const isVDProject = rqFormat === "vertical-drama";
+
       const resolvedTargetForRedirect = (() => {
         const docTypeMap_local: Record<string, string> = {
           EPISODE_GRID: "episode_grid", "EPISODE GRID": "episode_grid",
           VERTICAL_EPISODE_BEATS: "vertical_episode_beats", "VERTICAL EPISODE BEATS": "vertical_episode_beats",
-          EPISODE_BEATS: "episode_beats", "EPISODE BEATS": "episode_beats",
+          // For VD projects, episode_beats canonical doc type is vertical_episode_beats (not episode_beats)
+          EPISODE_BEATS: isVDProject ? "vertical_episode_beats" : "episode_beats",
+          "EPISODE BEATS": isVDProject ? "vertical_episode_beats" : "episode_beats",
           EPISODE_BEAT_SHEET: "vertical_episode_beats", "EPISODE BEAT SHEET": "vertical_episode_beats",
           SEASON_SCRIPT: "season_script", "SEASON SCRIPT": "season_script",
           SEASON_MASTER_SCRIPT: "season_master_script", "SEASON MASTER SCRIPT": "season_master_script",

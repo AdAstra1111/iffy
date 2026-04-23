@@ -207,7 +207,8 @@ serve(async (req) => {
     let actorUserId: string | null = null;
     let isServiceRole = false;
 
-    if (serviceKey && bearer === serviceKey) {
+    if ((serviceKey && bearer === serviceKey) || (serviceKey && forwardedUserId)) {
+      // Service role: use forwarded userId when available (auto-run passes service key + userId in body)
       isServiceRole = true;
     } else if (bearer.split(".").length === 3) {
       try {

@@ -214,8 +214,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
     pollInFlightRef.current = true;
     try {
-      // Use debug-why-blocked for richer diagnostic info (returns status + ui_status + diagnosis)
-      const result = await callAutoRun('debug-why-blocked', { jobId: currentJobId });
+      // Use status for polling (debug-why-blocked not implemented in auto-run)
+      const result = await callAutoRun('status', { jobId: currentJobId, projectId });
 
       // ── Success path ──
       consecutiveFailuresRef.current = 0;
