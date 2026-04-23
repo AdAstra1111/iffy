@@ -680,6 +680,12 @@ serve(async (req) => {
               p_full_result: fullResultWithSR,
               p_creative_detail: result.creative_detail,
               p_greenlight_detail: result.greenlight_detail,
+              // SR fields persisted to project_document_versions.meta_json (cascade reads by version_id)
+              p_stage_readiness_score: stageReadiness,
+              p_stage_readiness_status: srStatus,
+              p_promotion_allowed: promotionAllowed,
+              p_override_allowed: overrideAllowed,
+              p_data_integrity_ok: dataIntegrityOk,
             });
             console.log(`[convergence-engine] atomic write done: version=${resolvedVersionId}`);
 
