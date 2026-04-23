@@ -32,6 +32,28 @@ import {
   type AttemptStrategy,
 } from "../_shared/convergencePolicy.ts";
 
+// ── PATCH D: plateau eligibility check ──
+async function hasQualifyingRewriteAttempt(
+  supabase: any,
+  jobId: string,
+  currentDoc: string
+): Promise<boolean> {
+  try {
+    const { data: steps } = await supabase
+      .from("auto_run_steps")
+      .select("action, document")
+      .eq("job_id", jobId)
+      .order("step_index", { ascending: true });
+    if (!steps || steps.length === 0) return false;
+    return steps.some((s: any) =>
+      s.document === currentDoc &&
+      (s.action === "rewrite_created_new_version" || s.action === "rewrite_noop_same_content")
+    );
+  } catch {
+    return false; // fail closed
+  }
+}
+
 // ── Unified score extraction helper ──
 // dev-engine-v2 "analyze" returns { run, analysis: { ci_score, gp_score, ... } }
 // callEdgeFunctionWithRetry wraps that as { result: { run, analysis }, retried }
@@ -3906,6 +3928,13 @@ async function tryPlateauForcePromote(
 ): Promise<Response | null> {
   const { jobId, job, currentDoc, format, stepCount, targetCi, detectedCi, detectedBestCi, plateauVersion } = params;
   if (!job.allow_defaults) return null;
+
+  // ── PATCH D: require qualifying rewrite attempt before plateau promotion ──
+  const hasQualifyingAttempt = await hasQualifyingRewriteAttempt(supabase, jobId, currentDoc);
+  if (!hasQualifyingAttempt) {
+    console.log(`[auto-run][PLATEAU_GATE] plateau_promotion_denied { job_id: "${jobId}", doc_type: "${currentDoc}", reason: "no_qualifying_rewrite_attempt" }`);
+    return null;
+  }
 
   // ── CLEANUP PASS GATE: try deterministic note cleanup before escalating ──
   if (isExceptionalObjective(job) && (typeof detectedBestCi === "number" ? detectedBestCi : detectedCi) < targetCi) {
@@ -9363,6 +9392,9 @@ Deno.serve(async (req) => {
           last_analyzed_version_id: latestVersion.id,
         });
 
+        // ── PATCH A: remediation reason flag for ci_gate_blocked fallthrough ──
+        let remediationReason: string | undefined = undefined;
+
         // ── HARD STOPS ──
         if (promo.risk_flags.includes("hard_gate:thrash")) {
           await updateJob(supabase, jobId, { status: "stopped", stop_reason: "Thrash detected — run Executive Strategy Loop" });
@@ -9474,7 +9506,14 @@ Deno.serve(async (req) => {
           const newLoopCount = stageLoopCount + 1;
 
           // If blockers exist, generate options and pause for user decisions
-          if (blockersCount > 0 || (newLoopCount <= 1 && highImpactCount > 0)) {
+          // ── PATCH B: also enter for ci_gate_blocked remediation ──
+          if (blockersCount > 0 || (newLoopCount <= 1 && highImpactCount > 0) || remediationReason === "ci_gate_blocked") {
+            // ── PATCH B: log stabilise_entered when entering for ci_gate_blocked ──
+            if (remediationReason === "ci_gate_blocked") {
+              await logStep(supabase, jobId, null, currentDoc, "stabilise_entered",
+                `Entering stabilise for ${currentDoc} (reason: ${remediationReason})`,
+                { ci: ciGate.ci, gp }, undefined, { remediationReason });
+            }
             try {
               // Call dev-engine-v2 "options" to generate decision options
               const optionsResult = await callEdgeFunctionWithRetry(
@@ -11252,6 +11291,38 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
               }, jobId, newStep + 2, format, currentDoc
             );
 
+            // ── PATCH C: explicit rewrite outcome ──
+            const newVersionId = candidateVersionId;
+            const sourceVersionId = singleInputVersionId;
+
+            // Detect no-delta: if returned version equals source, content hash matched (dedupe fired)
+            const rewriteOutcome = (!newVersionId)
+              ? "rewrite_failed"
+              : (newVersionId === sourceVersionId)
+                ? "rewrite_noop_same_content"
+                : "rewrite_created_new_version";
+
+            await logStep(supabase, jobId, null, currentDoc, rewriteOutcome,
+              rewriteOutcome === "rewrite_created_new_version"
+                ? `New version created: ${newVersionId}`
+                : rewriteOutcome === "rewrite_noop_same_content"
+                  ? `Rewrite produced identical content — no new version created`
+                  : `Rewrite failed: ${newVersionId === null ? "rewrite returned null" : "unknown error"}`,
+              { ci, gp, gap }, undefined,
+              { newVersionId: newVersionId || null, sourceVersionId, outcome: rewriteOutcome });
+
+            if (rewriteOutcome === "rewrite_failed") {
+              await updateJob(supabase, jobId, { status: "failed", error: `Rewrite failed: candidateVersionId was null` });
+              return respondWithJob(supabase, jobId);
+            }
+            if (rewriteOutcome === "rewrite_noop_same_content") {
+              // Do NOT increment stage_loop_count as a successful iteration — record no-delta
+              // Fall through to next cycle with same content
+            }
+            if (rewriteOutcome === "rewrite_created_new_version") {
+              // Normal progression
+            }
+
             // ── PHASE 2D-B: TRUE EPISODIC BLOCK PATCH EXECUTION ──
             // After rewrite, if episode targeting was active, enforce episode-block integrity:
             // Merge only the target episode from rewritten output; preserve all others from original.
@@ -11694,7 +11765,8 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
               `Promotion blocked: CI=${ciGate.ci} < ${writeTargetCi}. Continuing stabilise despite readiness ${promo.readiness_score}.`,
               { ci: ciGate.ci, gp }, undefined, { min_ci: writeTargetCi, readiness: promo.readiness_score, trigger: "promote_writing" });
             await updateJob(supabase, jobId, { stage_loop_count: stageLoopCount + 1 });
-            return respondWithJob(supabase, jobId, "run-next");
+            // ── PATCH A: fall through to stabilise path instead of returning ──
+            remediationReason = "ci_gate_blocked";
           }
           console.log(`[auto-run][IEL] ci_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci} }`);
 

@@ -200,6 +200,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return rows;
     },
     enabled: !!selectedDocId,
+    staleTime: 0,
   });
 
   // Derive the "current" version: prefer is_current flag, fallback to highest version_number
