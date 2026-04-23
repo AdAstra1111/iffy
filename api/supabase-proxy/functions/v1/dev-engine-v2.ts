@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 export const maxDuration = 300;
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  const path = 'functions/v1/generate-document';
+  const path = 'functions/v1/dev-engine-v2';
   const targetUrl = `https://hdfderbphdobomkdjypc.supabase.co/${path}`;
   const apikey = req.headers['x-supabase-key'] as string || '';
   const authorization = req.headers['authorization'] as string || `Bearer ${apikey}`;

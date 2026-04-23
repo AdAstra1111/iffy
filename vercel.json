@@ -6,6 +6,18 @@
     "api/supabase-proxy/[...path].ts": {
       "maxDuration": 300
     },
+    "api/supabase-proxy/functions/v1/reverse-engineer-script.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/dev-engine-v2.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/auto-run.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/generate-document.ts": {
+      "maxDuration": 300
+    },
     "api/nit-sync-proxy.ts": {
       "maxDuration": 300
     },
