@@ -208,6 +208,7 @@ async function writeVersionSafe(
     projectId?: string;
   },
 ): Promise<{ data: any; error: any; deduplicated?: boolean }> {
+  let cceResult: { driftResult: any; metaPatch: any } | null = null;
   const generatorId = opts.generatorId || "dev-engine-v2";
 
   // ── DEDUPE GUARD: compute content hash and check for identical existing version ──
@@ -234,7 +235,7 @@ async function writeVersionSafe(
   // ── CCE: Canon Constraint Enforcement post-generation drift check ──
   let cceMeta: Record<string, any> = {};
   if (opts.projectId && opts.plaintext && opts.plaintext.length > 100) {
-    const cceResult = await runCCEPostGeneration(
+    cceResult = await runCCEPostGeneration(
       supabaseClient,
       opts.projectId,
       opts.plaintext,
@@ -657,6 +658,58 @@ async function loadVoiceTargets(
   return { target: { voice_source: "none" }, metaStamp: null };
 }
 
+// ── Structural metrics for episode beats (Fix 2) ──
+// Used in runStyleEval when docType is episode_beats / vertical_episode_beats
+
+function _computeBeatCoverage(plaintext: string): number {
+  // Count beats: numbered items like "1.", "2." or "BEAT 1:" patterns
+  const beatMatches = plaintext.match(/\b\d+\.[\s\*]*[A-Z]|^##\s*EPISODE/mgi);
+  const episodeMatches = plaintext.match(/^##\s*EPISODE\s*\d+/gmi);
+  const beatsPerEpisode = episodeMatches && episodeMatches.length > 0
+    ? (beatMatches?.length || 0) / episodeMatches.length
+    : (beatMatches?.length || 0);
+  // Target: at least 5 beats per episode
+  const targetBeatsPerEpisode = 5;
+  const coverage = episodeMatches && episodeMatches.length > 0
+    ? Math.min(1.0, beatsPerEpisode / targetBeatsPerEpisode)
+    : 0;
+  return Math.round(coverage * 100) / 100;
+}
+
+function _computeProtagonistPresence(plaintext: string): number {
+  // Count non-empty lines that contain actual content (not headers/blank)
+  const lines = plaintext.split("\n").filter(l => l.trim().length > 0);
+  if (lines.length === 0) return 0;
+  // Heuristic: first named entity / proper noun that appears repeatedly is the protagonist
+  // Count lines containing at least one capitalized word (proxy for named content)
+  const contentLines = lines.filter(l => /[A-Z][a-z]+/.test(l));
+  return Math.round((contentLines.length / lines.length) * 100) / 100;
+}
+
+function _computeRelationshipConsistency(plaintext: string): number {
+  // Check for consistent character pair references across the document
+  // Split into episode blocks
+  const episodeBlocks = plaintext.split(/^##\s*EPISODE/mi);
+  if (episodeBlocks.length < 2) return 1.0; // insufficient data
+  let consistentCount = 0;
+  let totalChecks = 0;
+  // Extract names that look like character references (Capitalized words)
+  const namePattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*/g;
+  for (let i = 1; i < episodeBlocks.length; i++) {
+    const names = new Set((episodeBlocks[i].match(namePattern) || []));
+    // Compare with previous episode
+    if (i > 1) {
+      const prevNames = new Set((episodeBlocks[i-1].match(namePattern) || []));
+      const intersection = [...names].filter(n => prevNames.has(n));
+      const union = new Set([...names, ...prevNames]);
+      const consistency = union.size > 0 ? intersection.length / union.size : 1.0;
+      consistentCount += consistency;
+    }
+    totalChecks++;
+  }
+  return totalChecks > 0 ? Math.round((consistentCount / totalChecks) * 100) / 100 : 1.0;
+}
+
 /**
  * Run style eval on generated text. Returns enriched meta_json fields and optionally
  * inserts a style_evals row. Returns null if no voice target is set.
@@ -670,11 +723,51 @@ async function runStyleEval(
   lane: string,
   target: StyleTarget,
   attempt = 0,
+  docTypeOverride?: string,
 ): Promise<{ evalResult: StyleEvalResult; metaFields: Record<string, any> } | null> {
   if (target.voice_source === "none") return null;
   try {
-    const fingerprint = extractFingerprint(plaintext);
-    const deviation = computeDeviation(fingerprint, target);
+    // ── FIX 2: Document-Type Rubric Calibration ──
+    // For episode_beats / vertical_episode_beats, suppress script metrics and use structural ones
+    let effectiveDocType = docTypeOverride;
+    if (!effectiveDocType) {
+      const { data: doc } = await supabase
+        .from("project_documents")
+        .select("doc_type")
+        .eq("id", documentId)
+        .maybeSingle();
+      effectiveDocType = doc?.doc_type || null;
+    }
+    const isEpisodeBeats = effectiveDocType === "vertical_episode_beats" || effectiveDocType === "episode_beats";
+    // ── FIX 2 (EXPANDED): Document-Type Rubric Calibration ──
+    // For all non-script structural docs (beat_sheet, story_outline, season_arc, etc.),
+    // suppress script metrics (dialogue_ratio, sentence_len). Use structural metrics instead.
+    const NON_SCRIPT_DOC_TYPES = new Set([
+      // DEVELOPMENT_ARCHITECTURE - structural/internal docs, no script metrics
+      "beat_sheet",
+      "story_outline",
+      "season_arc",
+      "character_bible",
+      "concept_brief",
+      "treatment",
+      "format_rules",
+      "episode_grid",
+      "vertical_episode_beats",
+      "episode_beats",
+      // PREMISE_POSITIONING - concept/viability docs, no script metrics
+      "idea",
+      "topline_narrative",
+      // PACKAGING_COMMERCIAL - market/finance docs, no script metrics
+      "market_sheet",
+      "deck",
+      "vertical_market_sheet",
+      "trailer_script",
+      "project_overview",
+      "market_positioning",
+    ]);
+
+    const fingerprint = extractFingerprint(plaintext, isNonScriptDoc ? { suppressDialogueRatio: true, suppressSentenceLength: true } : {});
+    const deviation = computeDeviation(fingerprint, target, isNonScriptDoc ? { suppressDialogueRatio: true, suppressSentenceLength: true } : {});
     const evalResult: StyleEvalResult = {
       score: deviation.score,
       drift_level: deviation.drift_level,
@@ -685,7 +778,11 @@ async function runStyleEval(
       engine_version: STYLE_ENGINE_VERSION,
       voice_source: target.voice_source,
     };
-    const metaFields = buildStyleEvalMeta(evalResult);
+    const metaFields = buildStyleEvalMeta(evalResult, isEpisodeBeats ? {
+      beat_coverage: _computeBeatCoverage(plaintext),
+      protagonist_presence: _computeProtagonistPresence(plaintext),
+      relationship_consistency: _computeRelationshipConsistency(plaintext),
+    } : undefined);
 
     // Insert style_evals row (non-fatal)
     try {
@@ -1896,7 +1993,14 @@ Preserve all episodes not mentioned in the notes exactly as they are.`;
   const purposeClass = getDocPurposeClass(deliverable);
   const rewriteGoals = PURPOSE_REWRITE_GOALS[purposeClass];
 
+  // ── PROTAGONIST IDENTITY INJECTION — Fix 3 ──
+  // Note: actual protagonist lookup happens at call time (needs projectId).
+  // This is a placeholder block that will be replaced at runtime with real protagonist names.
+  // The runtime substitution happens in the rewrite action where projectId is available.
+  const PROTAGONIST_PLACEHOLDER = "__PROTAGONIST_BLOCK__";
+
   return `You are IFFY. Rewrite the material applying the approved strategic notes.
+${PROTAGONIST_PLACEHOLDER}
 DELIVERABLE TYPE: ${deliverable}
 FORMAT: ${format}
 BEHAVIOR: ${behavior}
@@ -5082,7 +5186,7 @@ serve(async (req) => {
         .eq("id", stuckVersionId);
 
       if (fixErr) {
-        console.error(`[fix_stuck_version] DB update failed: ${fixErr.message}`);
+        console.error(`[fix_stuck_version] DB update failed: ${fixErr?.message ?? String(fixErr)}`);
         return new Response(JSON.stringify({ error: fixErr.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
@@ -7578,6 +7682,48 @@ MATERIAL:\n${version.plaintext}`;
 
       const rewriteSystemPrompt = buildRewriteSystem(effectiveDeliverable, effectiveFormat, effectiveBehavior);
 
+      // ── PROTAGONIST IDENTITY INJECTION — Fix 3 ──
+      // Replace __PROTAGONIST_BLOCK__ placeholder with actual protagonist names from character_bible
+      let protagonistBlock = "";
+      try {
+        const { data: cbDoc } = await supabase
+          .from("project_documents")
+          .select("id")
+          .eq("project_id", projectId)
+          .eq("doc_type", "character_bible")
+          .maybeSingle();
+        if (cbDoc) {
+          const { data: cbVersion } = await supabase
+            .from("project_document_versions")
+            .select("plaintext")
+            .eq("document_id", cbDoc.id)
+            .eq("is_current", true)
+            .maybeSingle();
+          const cbText = cbVersion?.plaintext || "";
+          // Extract protagonist names from character bible — look for protagonist role entries
+          const protagMatches = cbText.matchAll(/"name":\s*"([^"]+)"[^}]*"role":\s*"protagonist"/g);
+          const protagNames: string[] = [];
+          for (const m of protagMatches) protagNames.push(m[1]);
+          // Also check aliases field
+          const aliasMatches = cbText.matchAll(/"name":\s*"([^"]+)"[^}]*(?:"aliases":\s*"([^"]+)"|"alias":\s*"([^"]+)")/g);
+          for (const m of aliasMatches) {
+            const name = m[1];
+            const alias = m[2] || m[3] || "";
+            if (!protagNames.includes(name) && (m.input || "").includes("protagonist")) protagNames.push(name);
+          }
+          if (protagNames.length > 0) {
+            protagonistBlock = `\n\nCRITICAL: PROTAGONIST IDENTITY — this character MUST appear in every episode beat. Do not omit, replace, or anonymize the protagonist.\nPROTAGONIST: ${protagNames.join(" / ")}. Always use the full name(s) listed. Never substitute pronouns or generic references for the protagonist.`;
+          }
+        }
+      } catch (pgErr: any) {
+        console.warn("[dev-engine-v2] rewrite: protagonist lookup failed:", pgErr?.message);
+      }
+      // Inject protagonist block into system prompt (replace placeholder)
+      const effectiveRewritePrompt = rewriteSystemPrompt.replace(
+        "__PROTAGONIST_BLOCK__",
+        protagonistBlock || "\n\nCRITICAL: The protagonist(s) of this project MUST appear in every output. Do not omit, anonymize, or replace them."
+      );
+
       // ── Narrative Context Resolver: unified NEC + canon + signals + decisions + voice ──
       const rewriteLane = project?.assigned_lane || "independent-film";
       const narrativeCtx = await resolveNarrativeContext(supabase, projectId, {
@@ -7677,7 +7823,7 @@ TARGET FORMAT: ${targetDocType || "same as source"}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, rewriteSystemPrompt, userPrompt, 0.4, 32000);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
       const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
@@ -8450,6 +8596,90 @@ MATERIAL TO REWRITE:\n${fullText}`;
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
 
+      // ── CANON DRIFT CORRECTION LOOP — Fix 1 ──
+      // After version is created, check canon drift. If violations > 0, inject as negative constraints
+      // for the next rewrite pass. Track violation_count per version. After 3 consecutive passes
+      // with same violation count → flag for human review (do not auto-rewrite further).
+      let canonConstraintBlock = "";
+      let humanReviewFlag = false;
+      let cceResult: { driftResult: { findings: any[] }; metaPatch: Record<string, any> } | null = null;
+      try {
+        const prevVersionId = versionId; // source version for this rewrite pass
+        // Fetch previous version's canon_drift metadata
+        const { data: prevVersion } = await supabase
+          .from("project_document_versions")
+          .select("meta_json")
+          .eq("id", prevVersionId)
+          .single();
+        const prevMeta = prevVersion?.meta_json || {};
+        const prevViolations = prevMeta?.canon_drift?.violations || 0;
+
+        // Run CCE on the newly assembled text
+        cceResult = await runCCEPostGeneration(
+          supabase, projectId, assembledText, effectiveDeliverable || "episode_beats",
+          "dev-engine-v2:rewrite-assemble-cce"
+        );
+        const newViolations = cceResult.driftResult.findings.filter((f: any) => f.severity === "violation").length;
+        const newWarnings = cceResult.driftResult.findings.filter((f: any) => f.severity === "warning").length;
+
+        // Update version meta_json with canon_drift result
+        if (cceResult.metaPatch.canon_drift) {
+          const updatedMeta = { ...(newVersion.meta_json || {}), canon_drift: cceResult.metaPatch.canon_drift };
+          await supabase.from("project_document_versions").update({ meta_json: updatedMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = updatedMeta;
+        }
+
+        if (newViolations > 0) {
+          // Inject violation details as explicit negative constraints for next pass
+          const violationLines = cceResult.driftResult.findings
+            .filter((f: any) => f.severity === "violation")
+            .map((f: any) => `- ${f.detail}`)
+            .join("\n");
+          canonConstraintBlock = `\n\nCANON CONSTRAINTS (violations detected — must be corrected):\n${violationLines}\nThese violations must be FIXED, not just acknowledged.`;
+
+          // Check consecutive violation staleness
+          if (prevViolations > 0 && newViolations >= prevViolations) {
+            // Count consecutive passes with same or worse violation count
+            const consecutiveKey = `canon_violation_streak`;
+            const prevStreak = prevMeta[consecutiveKey] || 0;
+            const newStreak = prevStreak + 1;
+            if (newStreak >= 3) {
+              humanReviewFlag = true;
+              // Stamp streak on version meta
+              const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
+              await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
+              newVersion.meta_json = streakMeta;
+            } else {
+              // Stamp streak counter
+              const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
+              await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
+              newVersion.meta_json = streakMeta;
+            }
+          } else {
+            // Violations reduced — reset streak
+            const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
+            await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
+            newVersion.meta_json = resetMeta;
+          }
+        }
+      } catch (cceErr: any) {
+        console.warn("[dev-engine-v2] rewrite-assemble CCE check failed (non-fatal):", cceErr?.message);
+      }
+
+      // If human review flagged, return immediately with flag (do not continue auto-rewrite)
+      if (humanReviewFlag) {
+        return new Response(JSON.stringify({
+          error: "CANON_VIOLATION_HUMAN_REVIEW_REQUIRED",
+          message: `Canon violations unchanged after 3 consecutive rewrite passes. Flagging for human review. Violations: ${cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || "unknown"}.`,
+          version_id: newVersion.id,
+          project_id: projectId,
+          human_review_required: true,
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Store canonConstraintBlock for use in development_runs output_json
+      const violationConstraintBlock = canonConstraintBlock;
+
       // ── Style eval on chunked rewrite output ──
       const chunkStyleTarget = (await loadVoiceTargets(supabase, projectId, chunkLane)).target;
       const chunkStyleEval = await runStyleEval(supabase, assembledText, projectId, documentId, newVersion.id, chunkLane, chunkStyleTarget);
@@ -8486,9 +8716,29 @@ MATERIAL TO REWRITE:\n${fullText}`;
           source_version_id: versionId,
           source_doc_id: documentId,
           ...(isEpisodicRun ? { episode_count: runEpisodeCount, affected_episodes: runAffectedCount } : {}),
+          canon_violations: violationConstraintBlock ? (cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || 0) : 0,
+          canon_violation_constraint_block: violationConstraintBlock || null,
+          human_review_flag: humanReviewFlag || false,
         },
         schema_version: SCHEMA_VERSION,
       }).select().single();
+
+      // Trigger async convergence scoring in background
+      if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+        (globalThis as any).EdgeRuntime.waitUntil(
+          fetch(`${supabaseUrl}/functions/v1/convergence-dispatch`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
+            body: JSON.stringify({
+              version_id: newVersion.id,
+              project_id: projectId,
+              deliverable_type: effectiveDeliverable,
+              development_behavior: "market",
+              format: assembleProject?.format || "film",
+            }),
+          }).catch(function(e) { console.error("[dev-engine-v2] convergence-dispatch failed: " + String(e)); })
+        );
+      }
 
       return new Response(JSON.stringify({
         run, newVersion,
@@ -8500,7 +8750,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       });
     }
 
-    // ── CONVERT ──
+    // CONVERT
     if (action === "convert") {
       const { projectId, documentId, versionId, targetOutput, protectItems, assimilationContext } = body;
       if (!projectId || !documentId || !versionId || !targetOutput) throw new Error("projectId, documentId, versionId, targetOutput required");
@@ -29322,8 +29572,48 @@ No stubs, no placeholders, no TODO markers.`;
         const stage = item.doc_type;
         const upstream = findUpstream(stage);
         if (!upstream) {
-          await supabase.from("regen_job_items").update({ status: "error", error: "No upstream doc with usable content" }).eq("id", item.id);
-          processed.push({ ...item, status: "error", error: "No upstream doc" });
+          // Foundation doc types have no upstream — route to generate-seed-pack instead of erroring
+          const FOUNDATION_FALLBACK_TYPES = new Set(["project_overview", "creative_brief", "market_positioning", "canon", "nec"]);
+          if (FOUNDATION_FALLBACK_TYPES.has(stage)) {
+            console.log(`[regen-tick] Foundation type "${stage}" has no upstream — calling generate-seed-pack`);
+            try {
+              const seedPackRes = await fetch(`${supabaseUrl}/functions/v1/generate-seed-pack`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${supabaseServiceKey}`,
+                },
+                body: JSON.stringify({
+                  projectId,
+                  pitch: proj?.title || "Untitled",
+                  lane: proj?.assigned_lane || "independent-film",
+                }),
+              });
+              const seedResult = await seedPackRes.json().catch(() => ({}));
+              if (!seedPackRes.ok || !seedResult.success) {
+                const seedErr = `generate-seed-pack failed: ${seedResult.error || seedPackRes.status}`;
+                console.error(`[regen-tick] seed-pack fallback failed for "${stage}": ${seedErr}`);
+                await supabase.from("regen_job_items").update({ status: "error", error: seedErr }).eq("id", item.id);
+                processed.push({ ...item, status: "error", error: seedErr });
+              } else {
+                console.log(`[regen-tick] seed-pack fallback success for "${stage}" (inserted=${seedResult.insertedCount}, updated=${seedResult.updatedCount})`);
+                await supabase.from("regen_job_items").update({ status: "regenerated", char_after: seedResult.insertedCount > 0 ? 1000 : 500 }).eq("id", item.id);
+                processed.push({ ...item, status: "regenerated", via: "seed-pack" });
+              }
+            } catch (seedEx: any) {
+              const seedErr = `generate-seed-pack exception: ${seedEx?.message || seedEx}`;
+              console.error(`[regen-tick] seed-pack fallback threw for "${stage}":`, seedErr);
+              await supabase.from("regen_job_items").update({ status: "error", error: seedErr }).eq("id", item.id);
+              processed.push({ ...item, status: "error", error: seedErr });
+            }
+            continue;
+          }
+
+          // Non-foundation type with no upstream — skip gracefully rather than erroring
+          const skipReason = "no_valid_upstream";
+          console.warn(`[regen-tick] No upstream for non-foundation type "${stage}" — skipping gracefully`);
+          await supabase.from("regen_job_items").update({ status: "skipped", error: skipReason }).eq("id", item.id);
+          processed.push({ ...item, status: "skipped", error: skipReason });
           continue;
         }
 

@@ -150,6 +150,11 @@ export function getDocTypeTemplate(docType: string, ctx: TemplateContext = {}): 
     case "format_rules":
       return `# FORMAT RULES: ${title}
 
+## ⚠️ DOCUMENT SCOPE — STRICT BOUNDARY (MUST READ FIRST)
+This document contains ONLY technical and production constraints.
+**ABSOLUTELY NO CHARACTER CONTENT.** Do not include: character names, character descriptions, character arcs, backstory, relationships, psychological profiles, voice descriptions, or any story/narrative elements.
+If you find yourself writing about any character — STOP. That content belongs in Character Bible or Season Arc, NOT in Format Rules.
+
 ## EPISODE SPECIFICATIONS
 - **Duration:** ${durMin}–${durMax} seconds per episode
 - **Episode count:** ${epCount} episodes per season

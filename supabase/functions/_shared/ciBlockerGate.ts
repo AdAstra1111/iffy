@@ -162,6 +162,9 @@ export function evaluateCIBlockerGateFromPayload(
 // ── Plateau V2: Composite plateau check ──
 export interface PlateauV2Result {
   isPlateaued: boolean;
+  isCeilingHit: boolean;      // NEW: content at structural CI ceiling, not convergence plateau
+  ceilingDiagnostic: string | null;  // e.g. "Content at CI ceiling for Feature Film High Budget"
+  estimatedCeiling: number | null;
   ciDelta: number;
   blockerCountDelta: number;
   highImpactCountDelta: number;
@@ -169,6 +172,36 @@ export interface PlateauV2Result {
   currentBlockerCount: number;
   currentHighImpactCount: number;
   reason: string;
+}
+
+/**
+ * Get CI plateau ceiling for a given format + optional budget.
+ * These are format-aware targets — not arbitrary.
+ */
+export function getCIPlateauCeiling(format: string, budgetLevel?: string | null): number {
+  switch (format) {
+    case "feature_film":
+    case "feature":
+      return 90;
+    case "tv_drama":
+    case "tv_series":
+    case "limited_series":
+      return 88;
+    case "vertical_drama":
+    case "vertical":
+      // Vertical drama: budget determines ceiling
+      if (budgetLevel === "low") return 78;
+      if (budgetLevel === "medium") return 82;
+      if (budgetLevel === "high") return 85;
+      return 82; // default medium
+    case "documentary":
+      return 80;
+    case "short_film":
+    case "short":
+      return 85;
+    default:
+      return 85; // safe default
+  }
 }
 
 /**
@@ -181,6 +214,8 @@ export async function checkPlateauV2(
   docType: string,
   minCI: number,
   windowSize: number = 2,
+  format?: string,
+  budgetLevel?: string | null,
 ): Promise<PlateauV2Result> {
   // ── IEL: Include both 'review' AND 'rewrite_accepted' steps as CI data points ──
   // This ensures promoted candidates' scores are visible to the plateau gate,
@@ -248,15 +283,37 @@ export async function checkPlateauV2(
 
   const isPlateaued = currentCI < minCI && ciNotImproving && notesNotShrinking && consecutiveNonImproving >= windowSize;
 
+  // ── Structural Ceiling Detection ──
+  // Before declaring a convergence plateau, check if content is at format's structural ceiling.
+  // This prevents conflating "not converged yet" with "at ceiling."
+  // Only evaluate ceiling if plateau is detected.
+  let isCeilingHit = false;
+  let ceilingDiagnostic: string | null = null;
+  let estimatedCeiling: number | null = null;
+
+  if (isPlateaued && format) {
+    estimatedCeiling = getCIPlateauCeiling(format, budgetLevel ?? undefined);
+    const atCeiling = currentCI >= estimatedCeiling * 0.92; // within 8% of ceiling
+    if (atCeiling) {
+      isCeilingHit = true;
+      ceilingDiagnostic = `Content at CI ceiling (${currentCI}/${estimatedCeiling}) for ${format}${budgetLevel ? `, ${budgetLevel} budget` : ''}. Estimated ceiling: ${estimatedCeiling}.`;
+    }
+  }
+
   return {
-    isPlateaued,
+    isPlateaued: isCeilingHit ? false : isPlateaued, // ceiling hit is NOT a convergence plateau
+    isCeilingHit,
+    ceilingDiagnostic,
+    estimatedCeiling,
     ciDelta,
     blockerCountDelta,
     highImpactCountDelta,
     currentCI,
     currentBlockerCount: currentCounts.blockerCount,
     currentHighImpactCount: currentCounts.highImpactCount,
-    reason: isPlateaued
+    reason: isCeilingHit
+      ? `ceiling_hit: currentCI=${currentCI}, estimatedCeiling=${estimatedCeiling}, format=${format}, budget=${budgetLevel ?? 'unknown'}`
+      : isPlateaued
       ? `plateau_v2:ci_delta=${ciDelta},blocker_delta=${blockerCountDelta},hi_delta=${highImpactCountDelta},window=${consecutiveNonImproving}`
       : "not_plateaued",
   };

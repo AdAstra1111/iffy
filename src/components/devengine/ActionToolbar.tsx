@@ -130,9 +130,11 @@ export function ActionToolbar({
   const isScriptDoc = currentDocType && ['script', 'episode_script', 'season_master_script', 'season_script'].includes(currentDocType.toLowerCase().replace(/[\s\-]+/g, '_'));
 
   // Show beat sheet → script button for vertical_drama when on a beat_sheet doc
-  const isBeatSheet = currentDocType?.toLowerCase().replace(/[\s\-]+/g, '_') === 'beat_sheet'
-    || currentDocType?.toLowerCase().replace(/[\s\-]+/g, '_') === 'vertical_episode_beats';
+  const isBeatSheet = currentDocType?.toLowerCase().replace(/[\s\-]+/g, '_') === 'beat_sheet';
   const showBeatSheetToScript = isVerticalDrama && isBeatSheet && onBeatSheetToScript;
+
+  // Hide promote button on episode beats pages
+  const isEpisodeBeatsPage = currentDocType?.toLowerCase().replace(/[\s\-]+/g, '_').match(/^(vertical_)?episode_beats$/) != null;
 
   const epCount = seasonEpisodeCount || 10;
 
@@ -192,7 +194,7 @@ export function ActionToolbar({
         )}
 
         {/* Converged — promote or enter mode (de-prioritized when VPB activation is primary) */}
-        {isConverged && !visualActivationEligible && !visualProductionLocked && (
+        {isConverged && !visualActivationEligible && !visualProductionLocked && !isEpisodeBeatsPage && (
           <Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
             onClick={() => {
               if (nextAction?.kind === 'enter_mode' && nextAction.route && !isVerticalDrama) {
@@ -210,7 +212,7 @@ export function ActionToolbar({
           </Button>
         )}
         {/* Ladder promote — shown secondary when VPB activation is active */}
-        {isConverged && (visualActivationEligible || visualProductionLocked) && (
+        {isConverged && (visualActivationEligible || visualProductionLocked) && !isEpisodeBeatsPage && (
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-muted-foreground"
             onClick={onPromote}
             disabled={actionsDisabled}>

@@ -55,6 +55,7 @@ import { StagePlanPanel } from '@/components/stages/StagePlanPanel';
 import { DocumentSidebar } from '@/components/devengine/DocumentSidebar';
 import { ActionToolbar } from '@/components/devengine/ActionToolbar';
 import { NotesPanel } from '@/components/devengine/NotesPanel';
+import { ConvergenceCoachPanel } from '@/components/convergence/ConvergenceCoachPanel';
 import { ConvergencePanel } from '@/components/devengine/ConvergencePanel';
 import { DriftBanner } from '@/components/devengine/DriftBanner';
 import { PromotionIntelligenceCard } from '@/components/devengine/PromotionIntelligenceCard';
@@ -713,7 +714,7 @@ export default function ProjectDevelopmentEngine() {
       selectDocument(bestDoc.id);
     }
     setImportHandled(true);
-  }, [documents, docsLoading, searchParams, importHandled, selectDocument, setSelectedVersionId, packageStatusData]);
+  }, [documents, docsLoading, searchParams, selectDocument, setSelectedVersionId, packageStatusData]);
 
   // Auto-set deliverable type from selected doc
   useEffect(() => {
@@ -2770,6 +2771,8 @@ export default function ProjectDevelopmentEngine() {
                       onReReview={handleRunEngine}
                     />
                   </div>
+                  {/* Convergence Coach — diagnostic axes + prescriptions */}
+                  <ConvergenceCoachPanel projectId={projectId!} />
                 </div>
               </div>
             </TabsContent>

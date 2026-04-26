@@ -104,7 +104,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}, retri
     } catch (err: any) {
       lastError = err;
       if (err.name === 'AbortError') {
-        throw new Error('Engine request timed out (120s)');
+        throw new Error('Engine request timed out (600s)');
       }
       if (attempt < retries) {
         await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));

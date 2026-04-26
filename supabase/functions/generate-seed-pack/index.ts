@@ -207,8 +207,9 @@ serve(async (req) => {
     let actorUserId: string | null = null;
     let isServiceRole = false;
 
-    if ((serviceKey && bearer === serviceKey) || (serviceKey && forwardedUserId)) {
-      // Service role: use forwarded userId when available (auto-run passes service key + userId in body)
+    // Service role: require BOTH valid service key in header AND userId in body
+    // This prevents arbitrary body injection from bypassing auth
+    if (serviceKey && bearer === serviceKey && forwardedUserId) {
       isServiceRole = true;
     } else if (bearer.split(".").length === 3) {
       try {
@@ -591,15 +592,36 @@ Preserve the concept. Return the same JSON schema with structural elements stren
       .in("doc_type", SEED_DOC_CONFIGS.map(c => c.doc_type));
     const preExistingSet = new Set((preExistingDocs || []).map((d: any) => d.doc_type));
 
+    // Validate ALL required content exists before attempting any upserts.
+    // This catches partial LLM output (e.g., 2/5 docs returned) vs upsert failures.
+    const missingContent: string[] = [];
+    for (const cfg of SEED_DOC_CONFIGS) {
+      const content = contentMap[cfg.key];
+      if (!content || content.trim().length < 10) {
+        missingContent.push(cfg.title);
+      }
+    }
+    if (missingContent.length > 0) {
+      console.error("[generate-seed-pack] LLM returned no/empty content for:", missingContent);
+      return jsonRes({
+        success: false,
+        insertedCount,
+        updatedCount,
+        partial: true,
+        error: `LLM returned no content for: ${missingContent.join(", ")}`,
+        failedDocTypes: missingContent,
+      }, 500);
+    }
+
     // Create/update documents using canonical doc-os helpers
     const createdDocs: { title: string; doc_type: string; document_id: string; version_number: number }[] = [];
+    const upsertFailed: string[] = [];
     let necDocumentId: string | null = null;
     let insertedCount = 0;
     let updatedCount = 0;
 
     for (const cfg of SEED_DOC_CONFIGS) {
       const content = contentMap[cfg.key];
-      if (!content) continue;
 
       try {
         const result = await upsertDoc(adminClient, {
@@ -629,17 +651,22 @@ Preserve the concept. Return the same JSON schema with structural elements stren
         }
       } catch (err: any) {
         console.error(`[generate-seed-pack] upsertDoc failed for ${cfg.title}:`, err.message);
+        upsertFailed.push(cfg.title);
         continue;
       }
     }
 
-    // Never return success if any seed doc failed to persist
-    if (createdDocs.length < SEED_DOC_CONFIGS.length) {
-      const missing = SEED_DOC_CONFIGS
-        .filter(c => !createdDocs.some(d => d.doc_type === c.doc_type))
-        .map(c => c.title);
-      console.error("[generate-seed-pack] incomplete — failed docs:", missing, { insertedCount, updatedCount });
-      return jsonRes({ success: false, insertedCount, updatedCount, error: `Failed to persist seed documents: ${missing.join(", ")}` }, 500);
+    // Never return success if any seed doc failed to upsert
+    if (upsertFailed.length > 0) {
+      console.error("[generate-seed-pack] incomplete — upsert failed for:", upsertFailed, { insertedCount, updatedCount });
+      return jsonRes({
+        success: false,
+        insertedCount,
+        updatedCount,
+        partial: true,
+        error: `Upsert failed for: ${upsertFailed.join(", ")}`,
+        failedDocTypes: upsertFailed,
+      }, 500);
     }
 
     console.log("[generate-seed-pack] complete", { insertedCount, updatedCount });

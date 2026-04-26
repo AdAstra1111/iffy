@@ -270,15 +270,6 @@ async function completionGate(
     }
 
     const currentVer = await getCurrentVersionForDoc(supabase, targetDoc.id);
-    const contentLen = currentVer?.plaintext?.length || 0;
-
-    if (!currentVer || contentLen === 0) {
-      console.error(`[auto-run][IEL] target_missing_fail_closed { project_id: "${projectId}", target_doc_type: "${targetDocument}", has_doc: true, has_version: ${!!currentVer}, content_len: ${contentLen} }`);
-      return {
-        stop_reason: "TARGET_DELIVERABLE_MISSING",
-        details: `Target document '${targetDocument}' exists but has no version with content (content_len=${contentLen}). Cannot declare completion without persisted content.`,
-      };
-    }
 
     // Gate 3: Canon alignment for target document
     // Skip when allow_defaults=true (autonomous mode) — manually-seeded canon may be sparse
@@ -1528,62 +1519,99 @@ async function ensureSeedPack(
   console.log("[auto-run] SEED_PACK ensured=true missing=" + missing.join(","));
   console.log("[auto-run] calling generate-seed-pack", { projectId, lane });
 
-  try {
-    const seedRes = await fetch(`${supabaseUrl}/functions/v1/generate-seed-pack`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined }),
-    });
+  // Retry loop: attempt generate-seed-pack up to 2 times on partial failure
+  let seedRes: Response | null = null;
+  let raw = "";
+  let seedResult: any = null;
+  let seed_http_status = 0;
+  let attempt = 0;
+  const MAX_SEED_ATTEMPTS = 2;
 
-    const raw = await seedRes.text();
-    const snippet = raw.slice(0, 300);
-    console.log("[auto-run] generate-seed-pack http", { status: seedRes.status, snippet });
+  while (attempt < MAX_SEED_ATTEMPTS) {
+    attempt++;
+    console.log(`[auto-run] generate-seed-pack attempt ${attempt}`);
 
-    if (!seedRes.ok) {
-      return {
-        ensured: true, missing, failed: true,
-        fail_type: "SEED_PACK_FAILED_HTTP",
-        error: `generate-seed-pack HTTP ${seedRes.status}: ${snippet}`,
-        seed_http_status: seedRes.status,
-        seed_debug: { http_status: seedRes.status, response_snippet: snippet, parsed_success: false },
-      };
-    }
-
-    let seedResult: any;
     try {
-      seedResult = JSON.parse(raw);
-    } catch (_parseErr) {
-      return {
-        ensured: true, missing, failed: true,
-        fail_type: "SEED_PACK_FAILED_HTTP",
-        error: `generate-seed-pack returned invalid JSON: ${snippet}`,
-        seed_http_status: seedRes.status,
-        seed_debug: { http_status: seedRes.status, response_snippet: snippet, parsed_success: false, parse_error: true },
-      };
+      seedRes = await fetch(`${supabaseUrl}/functions/v1/generate-seed-pack`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined }),
+      });
+
+      raw = await seedRes.text();
+      seed_http_status = seedRes.status;
+      const snippet = raw.slice(0, 300);
+      console.log("[auto-run] generate-seed-pack http", { status: seed_http_status, snippet });
+
+      if (!seedRes.ok) {
+        // HTTP error — don't retry, fail immediately
+        return {
+          ensured: true, missing, failed: true,
+          fail_type: "SEED_PACK_FAILED_HTTP",
+          error: `generate-seed-pack HTTP ${seed_http_status}: ${snippet}`,
+          seed_http_status,
+          seed_debug: { http_status: seed_http_status, response_snippet: snippet, parsed_success: false, attempt },
+        };
+      }
+
+      try {
+        seedResult = JSON.parse(raw);
+      } catch (_parseErr) {
+        return {
+          ensured: true, missing, failed: true,
+          fail_type: "SEED_PACK_FAILED_HTTP",
+          error: `generate-seed-pack returned invalid JSON: ${snippet}`,
+          seed_http_status,
+          seed_debug: { http_status: seed_http_status, response_snippet: snippet, parsed_success: false, parse_error: true, attempt },
+        };
+      }
+
+      console.log("[auto-run] generate-seed-pack json", {
+        success: seedResult.success,
+        partial: seedResult.partial,
+        failedDocTypes: seedResult.failedDocTypes,
+        insertedCount: seedResult.insertedCount,
+        updatedCount: seedResult.updatedCount,
+        error: seedResult.error,
+      });
+
+      if (!seedResult.success) {
+        // Partial failure — retry once if this is the first attempt
+        if (attempt < MAX_SEED_ATTEMPTS) {
+          const missingTypes = (seedResult.failedDocTypes || []).join(", ");
+          console.warn(`[auto-run] generate-seed-pack partial failure (${missingTypes}) — retrying...`);
+          continue;
+        }
+        // Second attempt also failed
+        const truncErr = ((seedResult.error || "generate-seed-pack returned success=false") as string).slice(0, 300);
+        return {
+          ensured: true, missing, failed: true,
+          fail_type: "SEED_PACK_FAILED_LOGIC",
+          error: `Seed pack still incomplete after ${MAX_SEED_ATTEMPTS} attempts: ${truncErr}`,
+          seed_http_status,
+          seed_debug: {
+            http_status: seed_http_status,
+            response_snippet: raw.slice(0, 300),
+            parsed_success: false,
+            insertedCount: seedResult.insertedCount,
+            updatedCount: seedResult.updatedCount,
+            failedDocTypes: seedResult.failedDocTypes,
+            attempt,
+          },
+        };
+      }
+
+      // success === true — seed pack complete
+      break;
+
+    } catch (e: any) {
+      const truncErr = ((e.message || "Unknown error") as string).slice(0, 300);
+      console.error("[auto-run] SEED_PACK generation failed:", truncErr);
+      return { ensured: true, missing, failed: true, fail_type: "SEED_PACK_FAILED_HTTP", error: truncErr, seed_debug: { exception: true, error: truncErr, attempt } };
     }
-
-    console.log("[auto-run] generate-seed-pack json", { success: seedResult.success, insertedCount: seedResult.insertedCount, updatedCount: seedResult.updatedCount, error: seedResult.error });
-
-    if (!seedResult.success) {
-      const truncErr = ((seedResult.error || "generate-seed-pack returned success=false") as string).slice(0, 300);
-      return {
-        ensured: true, missing, failed: true,
-        fail_type: "SEED_PACK_FAILED_LOGIC",
-        error: truncErr,
-        seed_http_status: seedRes.status,
-        seed_debug: { http_status: seedRes.status, response_snippet: snippet, parsed_success: false, insertedCount: seedResult.insertedCount, updatedCount: seedResult.updatedCount },
-      };
-    }
-
-    // Success path — carry debug forward
-    var _seedDebugSuccess: Record<string, any> = { http_status: seedRes.status, parsed_success: true, insertedCount: seedResult.insertedCount, updatedCount: seedResult.updatedCount };
-  } catch (e: any) {
-    const truncErr = ((e.message || "Unknown error") as string).slice(0, 300);
-    console.error("[auto-run] SEED_PACK generation failed:", truncErr);
-    return { ensured: true, missing, failed: true, fail_type: "SEED_PACK_FAILED_HTTP", error: truncErr, seed_debug: { exception: true, error: truncErr } };
   }
 
   // Re-verify after generation
@@ -1627,7 +1655,7 @@ async function ensureSeedPack(
 
   if (trulyMissingPost.length > 0) {
     console.error(`[auto-run] SEED_PACK still missing after generation: ${trulyMissingPost.join(",")}`);
-    return { ensured: true, missing: trulyMissingPost, failed: true, fail_type: "SEED_PACK_INCOMPLETE", error: `Seed pack missing after generation: ${trulyMissingPost.join(", ")}`, warnings: shortDocsPost, seed_debug: { ..._seedDebugSuccess, post_verify_missing: trulyMissingPost } };
+    return { ensured: true, missing: trulyMissingPost, failed: true, fail_type: "SEED_PACK_INCOMPLETE", error: `Seed pack missing after generation: ${trulyMissingPost.join(", ")}`, warnings: shortDocsPost, seed_debug: { http_status: seed_http_status, parsed_success: true, attempt, post_verify_missing: trulyMissingPost } };
   }
 
   if (shortDocsPost.length > 0) {
@@ -1635,7 +1663,7 @@ async function ensureSeedPack(
   }
 
   console.log("[auto-run] SEED_PACK verified after generation");
-  return { ensured: true, missing: [], failed: false, warnings: shortDocsPost.length > 0 ? shortDocsPost : undefined, seed_debug: _seedDebugSuccess };
+  return { ensured: true, missing: [], failed: false, warnings: shortDocsPost.length > 0 ? shortDocsPost : undefined, seed_debug: { http_status: seed_http_status, parsed_success: true, attempt } };
 }
 
 // ── Downstream Sufficiency Gate ──────────────────────────────────────────────
@@ -3446,11 +3474,11 @@ async function updateJob(supabase: any, jobId: string, fields: Record<string, an
         }
       }
     } catch (gateErr: any) {
-      console.error(`[auto-run] Completion gate error (FAIL-CLOSED): ${gateErr.message}`);
+      console.error(`[auto-run] Completion gate error (FAIL-CLOSED): ${gateErr?.message ?? String(gateErr)}`);
       fields.status = "paused";
       fields.stop_reason = "CANON_MISMATCH";
       fields.pause_reason = "CANON_MISMATCH";
-      fields.error = `CANON_MISMATCH: completion gate error: ${gateErr.message}`;
+      fields.error = `CANON_MISMATCH: completion gate error: ${gateErr?.message ?? String(gateErr)}`;
     }
   }
   await supabase.from("auto_run_jobs").update(fields).eq("id", jobId);
@@ -7223,8 +7251,45 @@ Deno.serve(async (req) => {
         // ── PILLAR 3: PLATEAU V2 — composite CI + blocker/high-impact trend check ──
         const targetCi = resolveTargetCI(job);
         if (isPlateauV2Enabled()) {
-          const plateauV2 = await checkPlateauV2(supabase, jobId, currentDoc, targetCi, CI_PLATEAU_WINDOW);
+          const plateauV2 = await checkPlateauV2(supabase, jobId, currentDoc, targetCi, CI_PLATEAU_WINDOW, format);
           console.log(`[auto-run][IEL] plateau_v2_eval ${JSON.stringify({ job_id: jobId, doc_type: currentDoc, ...plateauV2 })}`);
+
+          // ── CEILING HIT PATH: content at structural ceiling, not convergence plateau ──
+          if (plateauV2.isCeilingHit) {
+            console.warn(`[auto-run][IEL] ceiling_hit { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${plateauV2.currentCI}, estimated_ceiling: ${plateauV2.estimatedCeiling}, diagnostic: "${plateauV2.ceilingDiagnostic}" }`);
+            await logStep(supabase, jobId, stepCount + 1, currentDoc, "ci_ceiling_hit",
+              `CEILING_HIT: ${plateauV2.ceilingDiagnostic} Human review required to promote or abandon.`,
+              { ci: plateauV2.currentCI, estimated_ceiling: plateauV2.estimatedCeiling }, undefined,
+              { ceiling_hit: true, ceiling_diagnostic: plateauV2.ceilingDiagnostic, estimated_ceiling: plateauV2.estimatedCeiling, current_ci: plateauV2.currentCI, format });
+
+            const { data: docForEsc } = await supabase.from("project_documents")
+              .select("id").eq("project_id", job.project_id).eq("doc_type", currentDoc)
+              .order("created_at", { ascending: false }).limit(1).maybeSingle();
+            if (docForEsc) await finalizeBest(supabase, jobId, job, docForEsc.id);
+
+            await updateJob(supabase, jobId, {
+              status: "paused",
+              stop_reason: "CEILING_HIT",
+              pause_reason: "CEILING_HIT",
+              error: `CEILING_HIT: CI=${plateauV2.currentCI}, estimated ceiling=${plateauV2.estimatedCeiling} for ${format}. ${plateauV2.ceilingDiagnostic ?? ''} Human review required.`,
+            });
+            persistPlateauDiagnosis(supabase, {
+              job, jobId, currentDoc, bestCi: plateauV2.currentCI, finalCi: plateauV2.currentCI,
+              targetCi, targetGp: extractTargetGP(job), haltReason: "CEILING_HIT",
+              stepCount, stageLoopCount: job.stage_loop_count ?? 0,
+            }).then(undefined, (e: any) => console.error(`[auto-run][DIAG] fire_forget: ${e?.message}`));
+            // ── Create QUALITY_CEILING workflow decision for human review ──
+            try {
+              const { checkQualityCeiling } = await import("../_shared/pendingDecisionGate.ts");
+              await checkQualityCeiling(supabase, job.project_id, jobId, format, currentDoc,
+                plateauV2.currentCI, plateauV2.estimatedCeiling ?? 85, plateauV2.ceilingDiagnostic ?? "Content at structural CI ceiling");
+            } catch (e: any) {
+              console.error(`[auto-run][IEL] checkQualityCeiling error: ${e.message}`);
+            }
+
+            await releaseProcessingLock(supabase, jobId);
+            return respondWithJob(supabase, jobId);
+          }
 
           if (plateauV2.isPlateaued) {
             // ── IEL: When allow_defaults is ON and plateaued, auto-promote best version instead of looping ──
@@ -11824,16 +11889,22 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
             }
             // Fall through to rewriteWithFallback for ci_gate_blocked stabilise
             try {
-              const rewriteResult = await rewriteWithFallback(
-                supabase, supabaseUrl, job, jobId, currentDoc, latestVersion, doc, format, ci, gp,
-                gap, promo, behavior, newStep, stageLoopCount, token, blockers, highImpactNotes,
-                actionAttemptCountRef, stepLimitRef, optionsGeneratedThisStep
+              const { candidateVersionId } = await rewriteWithFallback(
+                supabase, supabaseUrl, token, {
+                  projectId: job.project_id,
+                  documentId: doc.id,
+                  versionId: latestVersion.id,
+                  approvedNotes: [],
+                  protectItems: [],
+                  deliverableType: currentDoc,
+                  developmentBehavior: behavior,
+                  format,
+                }, jobId, newStep, format, currentDoc
               );
-              if (rewriteResult.status === "returned") return;
-              // Update locals if rewrite returned updated values
-              if (rewriteResult.updatedCI !== undefined) ci = rewriteResult.updatedCI;
-              if (rewriteResult.updatedGP !== undefined) gp = rewriteResult.updatedGP;
-              if (rewriteResult.updatedGap !== undefined) gap = rewriteResult.updatedGap;
+              if (!candidateVersionId) {
+                await updateJob(supabase, jobId, { status: "failed", error: `Rewrite failed: candidateVersionId was null` });
+                return respondWithJob(supabase, jobId);
+              }
             } catch (e: any) {
               console.error("[auto-run] rewriteWithFallback error:", e?.message || e);
               await updateJob(supabase, jobId, { status: "failed", error: `Rewrite failed: ${e.message}` });

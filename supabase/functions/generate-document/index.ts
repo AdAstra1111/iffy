@@ -1081,8 +1081,15 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         mode === "final" ? "This is a FINAL version — ensure completeness and polish." : "This is a DRAFT — focus on substance over polish.",
       ].filter(Boolean).join("\n\n");
 
+      // ── format_rules content focus override ──
+      let contentFocus = "";
+      if (docType === "format_rules") {
+        contentFocus = "\n\n⚠️ FORMAT RULES SCOPE: Generate ONLY technical/production constraints (aspect ratio, beat cadence, visual grammar rules, dialogue density limits, location discipline, budget constraints). UPSTREAM CHARACTER CONTENT IS IRRELEVANT — do not include character names, descriptions, arcs, backstory, or any narrative elements in this document.";
+      }
+
+
       userPrompt = upstreamContent
-        ? `Using the upstream documents below, generate the ${docType.replace(/_/g, " ")}.\n\n${upstreamContent}`
+        ? `Using the upstream documents below, generate the ${docType.replace(/_/g, " ")}.\n\n${upstreamContent}${contentFocus}`
         : `Generate the ${docType.replace(/_/g, " ")} from scratch based on the project context.`;
 
       // ── Template injection ──

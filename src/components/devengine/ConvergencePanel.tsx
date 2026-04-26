@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { BarChart3, AlertTriangle, Info, CircleCheck, ShieldAlert, Lightbulb, Sparkles, Shield, Target, ArrowUpCircle, XCircle, AlertCircle } from 'lucide-react';
 import { computeManualDecisionState, type ManualDecisionInput, type ManualActionKey, recommendationToActionKey } from '@/lib/manualDecisionState';
 import { ApprovalSection } from './ApprovalSection';
+import { ConvergenceCoachPanel } from './ConvergenceCoachPanel';
 
 interface ConvergencePanelProps {
   latestAnalysis: any;
@@ -467,6 +468,11 @@ export function ConvergencePanel({ latestAnalysis, latestConvergence, convergenc
             versionId={versionId}
             documentId={documentId}
           />
+        )}
+
+        {/* ═══ Convergence Coaching Panel — Phase 2.1 ═══ */}
+        {projectId && (
+          <ConvergenceCoachPanel projectId={projectId} latestAnalysis={latestAnalysis} />
         )}
       </CardContent>
     </Card>

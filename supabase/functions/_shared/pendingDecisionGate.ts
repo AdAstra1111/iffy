@@ -283,6 +283,52 @@ export async function checkQualityPlateau(
 }
 
 /**
+ * Quality Ceiling Guard — creates a DEFERRABLE workflow decision when content hits structural CI ceiling.
+ * Different from QUALITY_PLATEAU: this is a ceiling case, not a convergence case.
+ */
+export async function checkQualityCeiling(
+  supabase: any,
+  projectId: string,
+  jobId: string,
+  format: string,
+  docType: string,
+  currentCI: number,
+  estimatedCeiling: number,
+  ceilingDiagnostic: string,
+): Promise<{ isCeilingHit: boolean; decisionId?: string }> {
+  if (!DECISION_DEFS["QUALITY_CEILING"]) {
+    console.warn(`[decision-gate] QUALITY_CEILING not in DECISION_DEFS — skipping`);
+    return { isCeilingHit: false };
+  }
+
+  const wfKey = workflowKey(format, docType, "QUALITY_CEILING");
+  const def = DECISION_DEFS["QUALITY_CEILING"];
+
+  const { data: inserted } = await supabase.from("decision_ledger").insert({
+    project_id: projectId,
+    decision_key: wfKey,
+    title: def.question,
+    decision_text: `CEILING_HIT: CI=${currentCI}, estimated ceiling=${estimatedCeiling}. ${ceilingDiagnostic}`,
+    decision_value: {
+      question: def.question,
+      options: def.options,
+      recommendation: { value: "promote_anyway", reason: "Content at structural ceiling" },
+      classification: "DEFERRABLE",
+      required_evidence: [],
+      revisit_stage: null,
+      scope_json: { format, doc_type: docType, current_ci: currentCI, estimated_ceiling: estimatedCeiling, ceiling_diagnostic: ceilingDiagnostic },
+      provenance: { job_id: jobId, generator: "quality_ceiling_guard" },
+    },
+    scope: "project",
+    source: "workflow_decision",
+    status: "workflow_pending",
+  }).select("id").single();
+
+  console.log(`[decision-gate] QUALITY_CEILING workflow_pending created for ${format}:${docType} CI=${currentCI} ceiling=${estimatedCeiling}`);
+  return { isCeilingHit: true, decisionId: inserted?.id };
+}
+
+/**
  * Resolve a workflow_pending decision: mark superseded + create canon entry.
  * Called from server-side (edge function / auto-run approve-decision handler).
  */

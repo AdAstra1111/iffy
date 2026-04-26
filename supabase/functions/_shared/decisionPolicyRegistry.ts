@@ -150,6 +150,16 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
     required_evidence_template: [],
     default_revisit_stage: null,
   },
+  QUALITY_CEILING: {
+    question: "Content has reached its structural CI ceiling. Current CI is within 8% of the estimated maximum for this format/budget profile.",
+    options: [
+      { value: "promote_anyway", label: "Promote at current CI" },
+      { value: "abandon", label: "Abandon" },
+      { value: "adjust_target", label: "Adjust target CI" },
+    ],
+    required_evidence_template: [],
+    default_revisit_stage: null,
+  },
 };
 
 // ── Required Decisions by Stage ────────────────────────────────────────────
@@ -256,11 +266,13 @@ export function classifyDecision(
     };
   }
 
-  // Quality plateau is always deferrable
-  if (semanticKey === "QUALITY_PLATEAU") {
+  // Quality plateau and quality ceiling are always deferrable — human decisions
+  if (semanticKey === "QUALITY_PLATEAU" || semanticKey === "QUALITY_CEILING") {
     return {
       classification: "DEFERRABLE",
-      reason: "Quality plateau — proceed to next stage or user decides",
+      reason: semanticKey === "QUALITY_CEILING"
+        ? "Content at structural CI ceiling — human must decide promote, abandon, or adjust target"
+        : "Quality plateau — proceed to next stage or user decides",
       revisit_stage: getNextStage(ctx.doc_type, ctx.ladder),
     };
   }

@@ -64,15 +64,31 @@ async function callInferCriteria(projectId: string): Promise<{ criteria: Record<
   try {
     const { supabase } = await import('@/integrations/supabase/client');
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return null;
+    if (!session) {
+      console.warn('[infer-criteria] No active session — skipping auto-fill');
+      return null;
+    }
     const resp = await fetch(`/api/supabase-proxy/functions/v1/infer-criteria`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
       body: JSON.stringify({ project_id: projectId }),
     });
-    if (!resp.ok) return null;
-    return await resp.json();
-  } catch { return null; }
+    if (!resp.ok) {
+      console.warn('[infer-criteria] HTTP error', resp.status, await resp.text().catch(() => ''));
+      return null;
+    }
+    const result = await resp.json();
+    console.log('[infer-criteria] result', {
+      hasLogline: !!result?.criteria?.logline,
+      hasPremise: !!result?.criteria?.premise,
+      filledFields: Object.entries(result?.criteria || {}).filter(([,v]) => v).map(([k]) => k),
+      missingFields: Object.entries(result?.criteria || {}).filter(([,v]) => !v).map(([k]) => k),
+    });
+    return result;
+  } catch (e) {
+    console.warn('[infer-criteria] exception', e);
+    return null;
+  }
 }
 
 const STATUS_STYLES: Record<string, { color: string; label: string }> = {
@@ -652,8 +668,12 @@ export function AutoRunMissionControl({
         for (const [key, val] of Object.entries(criteria)) {
           if (!val?.trim()) continue;
           const method = sources?.[key]?.method;
-          // Always overwrite if extracted or inferred; only fill blank if default
-          if (method === 'extracted' || method === 'inferred' || !merged[key]) {
+          // Always overwrite if extracted or inferred (either frontend or backend naming)
+          // Backend returns 'heading_extract' | 'llm_infer' | 'project_metadata' | 'default'
+          // Frontend type uses 'extracted' | 'inferred' | 'default' | 'project'
+          const isExtracted = method === 'extracted' || method === 'heading_extract';
+          const isInferred  = method === 'inferred'  || method === 'llm_infer';
+          if (isExtracted || isInferred || !merged[key]) {
             merged[key] = val;
           }
         }
@@ -937,7 +957,9 @@ export function AutoRunMissionControl({
         for (const [key, val] of Object.entries(criteria)) {
           if (!val?.trim()) continue;
           const method = sources?.[key]?.method;
-          if (method === 'extracted' || method === 'inferred' || !merged[key]) {
+          const isExtracted = method === 'extracted' || method === 'heading_extract';
+          const isInferred  = method === 'inferred'  || method === 'llm_infer';
+          if (isExtracted || isInferred || !merged[key]) {
             merged[key] = val;
           }
         }

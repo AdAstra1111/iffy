@@ -103,7 +103,7 @@ function countPer1k(text: string, patterns: string[]): number {
 
 // ── Fingerprint Extraction ───────────────────────────────────────────
 
-export function extractFingerprint(text: string): StyleFingerprint {
+export function extractFingerprint(text: string, options?: { suppressDialogueRatio?: boolean }): StyleFingerprint {
   if (!text || text.length === 0) {
     return emptyFingerprint();
   }
@@ -267,6 +267,7 @@ export function buildTargetFromWritingVoice(preset: any): StyleTarget {
 export function computeDeviation(
   fingerprint: StyleFingerprint,
   target: StyleTarget,
+  options?: { suppressDialogueRatio?: boolean; suppressSentenceLength?: boolean },
 ): StyleDeviation {
   if (target.voice_source === "none") {
     return { score: 1, drift_level: "low", deltas: {}, top_3_drivers: [] };
@@ -274,8 +275,8 @@ export function computeDeviation(
 
   const penalties: Array<{ name: string; penalty: number; detail: string }> = [];
 
-  // Dialogue ratio
-  if (target.dialogue_ratio != null) {
+  // Dialogue ratio — suppressed for episode_beats documents
+  if (target.dialogue_ratio != null && !options?.suppressDialogueRatio) {
     const diff = Math.abs(fingerprint.dialogue_ratio - target.dialogue_ratio);
     const penalty = clamp(diff / 0.25) * 0.25;
     if (penalty > 0.01) {
@@ -287,8 +288,8 @@ export function computeDeviation(
     }
   }
 
-  // Sentence length band
-  if (target.sentence_len_band) {
+  // Sentence length band — suppressed for episode_beats documents
+  if (target.sentence_len_band && !options?.suppressSentenceLength) {
     const [lo, hi] = target.sentence_len_band;
     const avg = fingerprint.avg_sentence_len;
     let distance = 0;
