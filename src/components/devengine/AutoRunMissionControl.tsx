@@ -187,6 +187,8 @@ interface AutoRunMissionControlProps {
   availableDocuments?: ProjectDocument[];
   /** Project data for pre-filling fields */
   project?: ProjectData | null;
+  /** Canon data for pre-filling story_setup when guardrails_config is empty */
+  canonJson?: Record<string, string>;
 }
 
 // ── Sub-components ──
@@ -465,24 +467,46 @@ export function AutoRunMissionControl({
   });
   const [storySources, setStorySources] = useState<Record<string, { source_doc_type: string; method: InferMethod }>>({});
 
-  // ── Pre-load story_setup from guardrails_config on mount ──
+  // ── Pre-load story_setup: guardrails_config first, canon_json as fallback ──
   useEffect(() => {
-    if (!project?.guardrails_config?.overrides?.story_setup) return;
-    const gcStory = project.guardrails_config.overrides.story_setup as Record<string, string>;
-    const hasContent = Object.values(gcStory).some(v => typeof v === 'string' && v.trim().length > 0);
-    if (!hasContent) return;
-    setStorySetup(prev => {
-      const merged = { ...prev };
-      let changed = false;
-      for (const [key, val] of Object.entries(gcStory)) {
-        if (typeof val === 'string' && val.trim() && (!merged[key] || !merged[key].trim())) {
-          merged[key] = val;
-          changed = true;
-        }
+    if (!projectId) return;
+    const _canon: Record<string, string> = canonJson ?? {};
+    let filled = false;
+
+    // Try guardrails_config first
+    const gcStory = project?.guardrails_config?.overrides?.story_setup as Record<string, string> | undefined;
+    if (gcStory) {
+      const hasGcContent = Object.values(gcStory).some(v => typeof v === 'string' && v.trim().length > 0);
+      if (hasGcContent) {
+        setStorySetup(prev => {
+          const merged = { ...prev };
+          for (const [key, val] of Object.entries(gcStory)) {
+            if (typeof val === 'string' && val.trim() && (!merged[key] || !merged[key].trim())) {
+              merged[key] = val;
+              filled = true;
+            }
+          }
+          return filled ? merged : prev;
+        });
+        if (filled) return;
       }
-      return changed ? merged : prev;
-    });
-  }, [project]);
+    }
+
+    // Fallback: derive from canon_json
+    if (Object.keys(_canon).length > 0) {
+      setStorySetup(prev => {
+        const merged = { ...prev };
+        for (const [key] of Object.entries(prev)) {
+          const cv = _canon[key];
+          if (typeof cv === 'string' && cv.trim() && (!merged[key] || !merged[key].trim())) {
+            merged[key] = cv.trim().slice(0, key === 'premise' ? 600 : 300);
+            filled = true;
+          }
+        }
+        return filled ? merged : prev;
+      });
+    }
+  }, [project, canonJson, projectId]);
   const [inferLoading, setInferLoading] = useState(false);
   const [storyAutoFilled, setStoryAutoFilled] = useState(false);
   const inferFiredRef = useRef(false);
