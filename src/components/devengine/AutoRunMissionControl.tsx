@@ -442,6 +442,7 @@ export function AutoRunMissionControl({
   onRepairBaseline,
   latestAnalysis, currentDocText, currentDocMeta,
   availableDocuments, project, approvedVersionMap = {},
+  canonJson,
 }: AutoRunMissionControlProps) {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -470,43 +471,44 @@ export function AutoRunMissionControl({
   // ── Pre-load story_setup: guardrails_config first, canon_json as fallback ──
   useEffect(() => {
     if (!projectId) return;
-    const _canon: Record<string, string> = canonJson ?? {};
-    let filled = false;
+    // Fallback: derive from canon_json (use canonJson directly to keep it in scope)
+  if (!projectId) return;
+  const gcStory = project?.guardrails_config?.overrides?.story_setup as Record<string, string> | undefined;
+  let filled = false;
 
-    // Try guardrails_config first
-    const gcStory = project?.guardrails_config?.overrides?.story_setup as Record<string, string> | undefined;
-    if (gcStory) {
-      const hasGcContent = Object.values(gcStory).some(v => typeof v === 'string' && v.trim().length > 0);
-      if (hasGcContent) {
-        setStorySetup(prev => {
-          const merged = { ...prev };
-          for (const [key, val] of Object.entries(gcStory)) {
-            if (typeof val === 'string' && val.trim() && (!merged[key] || !merged[key].trim())) {
-              merged[key] = val;
-              filled = true;
-            }
-          }
-          return filled ? merged : prev;
-        });
-        if (filled) return;
-      }
-    }
-
-    // Fallback: derive from canon_json
-    if (Object.keys(_canon).length > 0) {
+  if (gcStory) {
+    const hasGcContent = Object.values(gcStory).some(v => typeof v === 'string' && v.trim().length > 0);
+    if (hasGcContent) {
       setStorySetup(prev => {
         const merged = { ...prev };
-        for (const [key] of Object.entries(prev)) {
-          const cv = _canon[key];
-          if (typeof cv === 'string' && cv.trim() && (!merged[key] || !merged[key].trim())) {
-            merged[key] = cv.trim().slice(0, key === 'premise' ? 600 : 300);
+        for (const [key, val] of Object.entries(gcStory)) {
+          if (typeof val === 'string' && val.trim() && (!merged[key] || !merged[key].trim())) {
+            merged[key] = val;
             filled = true;
           }
         }
         return filled ? merged : prev;
       });
+      if (filled) return;
     }
-  }, [project, canonJson, projectId]);
+  }
+
+  // Fallback: derive from canon_json
+  const canonData: Record<string, string> = canonJson ?? {};
+  if (Object.keys(canonData).length > 0) {
+    setStorySetup(prev => {
+      const merged = { ...prev };
+      for (const [key] of Object.entries(prev)) {
+        const cv = canonData[key];
+        if (typeof cv === 'string' && cv.trim() && (!merged[key] || !merged[key].trim())) {
+          merged[key] = cv.trim().slice(0, key === 'premise' ? 600 : 300);
+          filled = true;
+        }
+      }
+      return filled ? merged : prev;
+    });
+  }
+}, [project, canonJson, projectId]);
   const [inferLoading, setInferLoading] = useState(false);
   const [storyAutoFilled, setStoryAutoFilled] = useState(false);
   const inferFiredRef = useRef(false);
