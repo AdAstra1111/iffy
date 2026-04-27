@@ -312,6 +312,50 @@ Deno.serve(async (req) => {
           canon_json: { ...canonJson, autopilot },
           updated_by: userId,
         }).eq("project_id", projectId);
+
+        // ── STORY_SETUP POPULATION: extract from concept_brief and write to guardrails_config ──
+        // This ensures story_setup is available for the very first episode_grid generation
+        // without requiring a separate canon extraction pass.
+        try {
+          const { data: cbDoc } = await sb.from("project_documents")
+            .select("plaintext, extracted_text, latest_version_id")
+            .eq("project_id", projectId).eq("doc_type", "concept_brief").maybeSingle();
+          const cbText = cbDoc?.plaintext || cbDoc?.extracted_text || "";
+          if (!cbText) throw new Error("no concept_brief text");
+          const { data: cbVer } = cbDoc?.latest_version_id
+            ? await sb.from("project_document_versions").select("plaintext").eq("id", cbDoc.latest_version_id).maybeSingle()
+            : { data: null };
+          const fullText = cbVer?.plaintext || cbText;
+
+          const storySetup: Record<string, string> = {};
+          const loglineMatch = fullText.match(/(?:^|\n)##?\s*Logline[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (loglineMatch?.[1]) storySetup.logline = loglineMatch[1].trim().slice(0, 300);
+          const premiseMatch = fullText.match(/(?:^|\n)##?\s*Premise[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (premiseMatch?.[1]) storySetup.premise = premiseMatch[1].trim().slice(0, 600);
+          const protMatch = fullText.match(/(?:^|\n)##?\s*(?:Protagonist|Character)[s]?[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (protMatch?.[1]) storySetup.protagonist = protMatch[1].trim().slice(0, 200);
+          const antMatch = fullText.match(/(?:^|\n)##?\s*Antagonist[s]?[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (antMatch?.[1]) storySetup.antagonist = antMatch[1].trim().slice(0, 200);
+          const stakesMatch = fullText.match(/(?:^|\n)##?\s*Stakes[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (stakesMatch?.[1]) storySetup.stakes = stakesMatch[1].trim().slice(0, 400);
+          const genreMatch = fullText.match(/(?:^|\n)\*\*Genre\*\*[:\s]*(.*?)(?=(?:\n\*\*|\n##?|---|\n\n|$))/is);
+          if (genreMatch?.[1]) storySetup.tone_genre = genreMatch[1].trim().slice(0, 300);
+          const compMatch = fullText.match(/(?:^|\n)##?\s*(?:Comparables|Why Us)[:\s]*(.*?)(?=(?:\n##?|---|\n\n|$))/is);
+          if (compMatch?.[1]) storySetup.comparables = compMatch[1].trim().slice(0, 300);
+
+          if (Object.keys(storySetup).length > 0) {
+            const { data: proj } = await sb.from("projects")
+              .select("guardrails_config").eq("id", projectId).maybeSingle();
+            const gc = (proj?.guardrails_config || {}) as any;
+            gc.overrides = gc.overrides || {};
+            gc.overrides.story_setup = storySetup;
+            await sb.from("projects").update({ guardrails_config: gc }).eq("id", projectId);
+            console.log(`[devseed-autopilot] story_setup populated from concept_brief`, { fields: Object.keys(storySetup) });
+          }
+        } catch (ssErr: any) {
+          console.warn(`[devseed-autopilot] story_setup population failed (non-fatal):`, ssErr.message);
+        }
+
         return jsonRes({ ok: true, done: true, autopilot }, 200, req);
       }
 
