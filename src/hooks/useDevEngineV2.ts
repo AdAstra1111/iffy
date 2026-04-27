@@ -541,17 +541,17 @@ export function useDevEngineV2(projectId: string | undefined) {
   }
 
   // Latest analysis for selected version
-  const latestAnalysis = runs.filter(r => r.run_type === 'ANALYZE').pop()?.output_json || null;
+  const latestAnalysis = (runs ?? []).filter(r => r.run_type === 'ANALYZE').pop()?.output_json || null;
   // Notes: use allDocRuns filtered by version_id to get notes scoped to the selected version.
   // Without version_id filter, notes from other versions incorrectly appear/disappear.
-  const latestNotes = allDocRuns.filter(r =>
+  const latestNotes = (allDocRuns ?? []).filter(r =>
     r.run_type === 'NOTES' && r.version_id === selectedVersionId
   ).pop()?.output_json || null;
 
   const isLoading = analyze.isPending || generateNotes.isPending || rewrite.isPending || convert.isPending || createPaste.isPending || beatSheetToScript.isPending;
 
   // Behavior-aware convergence
-  const rewriteCount = allDocRuns.filter(r => r.run_type === 'REWRITE').length;
+  const rewriteCount = (allDocRuns ?? []).filter(r => r.run_type === 'REWRITE').length;
   const currentBehavior: DevelopmentBehavior = (latestAnalysis?.development_behavior as DevelopmentBehavior) || 'market';
 
   const blockersRemaining = latestAnalysis?.convergence?.blockers_remaining ?? latestAnalysis?.blocking_issues?.length ?? null;
@@ -568,16 +568,28 @@ export function useDevEngineV2(projectId: string | undefined) {
 
   const isConverged = convergenceStatus === 'Converged';
 
+  // ── UNIVERSAL NULL GUARDS ──
+  // Defensive wrapping: ensure all returned arrays/objects are NEVER undefined.
+  // This eliminates all downstream Cannot read properties of undefined crashes
+  // across the entire component tree, regardless of loading state or new code added.
+  const _documents: DevDocument[] = (documents as DevDocument[]) ?? ([] as DevDocument[]);
+  const _approvedVersionMap: Record<string, string> = (approvedVersionMap as Record<string, string>) ?? {};
+  const _versions: any[] = (versions as any[]) ?? [];
+  const _runs: DevRun[] = (runs as DevRun[]) ?? [];
+  const _allDocRuns: DevRun[] = (allDocRuns as DevRun[]) ?? [];
+  const _convergenceHistory: ConvergencePoint[] = (convergenceHistory as ConvergencePoint[]) ?? [];
+  const _driftEvents: DriftEvent[] = (driftEvents as DriftEvent[]) ?? [];
+
   return {
-    documents, docsLoading, versions, versionsLoading,
+    documents: _documents, docsLoading, versions: _versions, versionsLoading,
     selectedDoc, selectedVersion, selectedDocId, selectedVersionId,
     selectDocument, setSelectedVersionId,
-    runs, allDocRuns, convergenceHistory,
+    runs: _runs, allDocRuns: _allDocRuns, convergenceHistory: _convergenceHistory,
     latestAnalysis, latestNotes, latestConvergence, isConverged, convergenceStatus, isLoading,
     analyze, generateNotes, rewrite, convert, createPaste, deleteDocument, deleteVersion, beatSheetToScript,
     // Drift
-    driftEvents, latestDrift, acknowledgeDrift, resolveDrift,
+    driftEvents: _driftEvents, latestDrift, acknowledgeDrift, resolveDrift,
     // Approval
-    approvedVersionMap,
+    approvedVersionMap: _approvedVersionMap,
   };
 }

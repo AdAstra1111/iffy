@@ -115,6 +115,8 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   const [autoRunLoading, setAutoRunLoading] = useState(false);
   // statusCheckedRef: true once the initial auto-run status fetch completes (prevents handoff race)
   const statusCheckedRef = useRef(false);
+  // initializedRef: true once Phase 0 (voice setup) completes — prevents premature status fetch
+  const initializedRef = useRef(false);
   // handoffInFlight prevents concurrent handoff calls within a single mount cycle
   const handoffInFlightRef = useRef(false);
 
@@ -167,6 +169,8 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
         }
       } catch {
         setVoiceStatus('none');
+      } finally {
+        if (mountedRef.current) initializedRef.current = true;
       }
     };
 
@@ -202,7 +206,9 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   // to prevent Clean/Advanced state desync.
   const hasExternalJob = externalAutoRunJob !== undefined;
 
+  // Phase 2 fetch only fires AFTER Phase 0 (voice) completes — prevents premature status race
   const fetchAutoRunStatus = useCallback(async () => {
+    if (!initializedRef.current) return;
     if (hasExternalJob) { statusCheckedRef.current = true; return; }
     try {
       const result = await callAutoRun('debug-why-blocked', { projectId });
@@ -298,128 +304,122 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
     })();
   }, [projectId]);
 
-  // ═══ DevSeed tick loop ═══
-  const runTicks = useCallback(async () => {
-    if (abortRef.current) return;
-    setTicking(true);
-    try {
-      let iterations = 0;
-      const MAX = 20;
-      while (iterations < MAX && !abortRef.current) {
-        iterations++;
-        const { data, error } = await supabase.functions.invoke('devseed-autopilot', {
-          body: { action: 'tick', projectId },
-        });
-        if (error) { console.error('[autopilot tick]', error.message); break; }
-        const result = data as any;
-        if (result?.autopilot && mountedRef.current) setAutopilot(result.autopilot);
-        if (result?.done || result?.message === 'not_running') break;
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    } finally {
-      if (mountedRef.current) setTicking(false);
-    }
-  }, [projectId]);
-
-  // ═══ PHASE 1→2 HANDOFF: DB-driven (survives refresh) ═══
-  // Triggers when: devseed complete AND no auto-run job exists yet
-  // Guard: handoffInFlightRef prevents concurrent calls within same mount
+  // ── DB-driven Phase 1→2 handoff: drives devseed completion independently of tick loop ──
+  // Reads devseed status directly from canon_json.autopilot. Eliminates the 20-iteration
+  // tick loop cap and the tick/start race that prevented handoff on slow stages.
   useEffect(() => {
-    if (autopilot?.status !== 'complete') return;
-    // CRITICAL: Wait until initial status check has completed to avoid race
-    if (!statusCheckedRef.current) return;
-    // If a job already exists in any non-terminal state, skip handoff
-    if (autoRunJob && !['failed', 'stopped'].includes(autoRunJob.status)) return;
-    // Also skip if we already have a completed job
-    if (autoRunJob?.status === 'completed') return;
-    // In-flight guard for this mount cycle
-    if (handoffInFlightRef.current) return;
-    handoffInFlightRef.current = true;
+    if (!projectId) return;
+    let stale = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
-    const doHandoff = async () => {
-      const detectExistingJob = async () => {
-        const settleDelays = [0, 400, 1200];
-        for (const delayMs of settleDelays) {
-          if (delayMs > 0) {
-            await new Promise(resolve => setTimeout(resolve, delayMs));
-          }
-          try {
-            const freshStatus = await callAutoRun('status', { projectId });
-            if (freshStatus?.job && !['failed', 'stopped'].includes(freshStatus.job.status)) {
-              return freshStatus.job;
-            }
-          } catch {
-            // No existing job yet — keep checking through the settle window.
-          }
-        }
-        return null;
-      };
-
-      const existingJob = await detectExistingJob();
-      if (existingJob) {
-        console.info('[ProjectAutopilot] Handoff detected existing Auto-Run job, skipping duplicate start', existingJob.id);
-        if (mountedRef.current) setAutoRunJob(existingJob);
-        handoffInFlightRef.current = false;
-        return;
-      }
-
-      // Canon baseline population (non-blocking, best-effort, idempotent)
-      populateCanonBaseline(projectId).catch(() => {});
-
-      // Start Auto-Run with explicit allow_defaults for unblocked progression
-      setAutoRunLoading(true);
+    const poll = async () => {
+      if (stale) return;
       try {
-        const result = await callAutoRun('start', {
-          projectId,
-          allow_defaults: true,
-        });
-        const existingJobId = result?.job_id || result?.existing_job_id;
-        if (result?._resumable && existingJobId) {
-          console.info('[ProjectAutopilot] Reattaching to existing Auto-Run job', existingJobId);
-          try {
-            const status = await callAutoRun('status', { jobId: existingJobId, projectId });
-            if (mountedRef.current && status?.job) setAutoRunJob(status.job);
-            if (status?.job?.status === 'paused') {
-              const resumeResult = await callAutoRun('resume', { jobId: existingJobId, followLatest: true });
-              if (mountedRef.current && resumeResult?.job) setAutoRunJob(resumeResult.job);
-            }
-            callAutoRun('run-next', { jobId: existingJobId }).then(tickResult => {
-              if (mountedRef.current && tickResult?.job) setAutoRunJob(tickResult.job);
-            }).catch(() => {});
-          } catch {
-            const status = await callAutoRun('status', { projectId });
-            if (mountedRef.current && status?.job) setAutoRunJob(status.job);
-          }
-        } else if (result?.job) {
-          if (mountedRef.current) {
-            setAutoRunJob(result.job);
-          }
-          // Fire non-blocking tick to begin advancing
-          callAutoRun('run-next', { jobId: result.job.id }).then(tickResult => {
-            if (mountedRef.current && tickResult?.job) setAutoRunJob(tickResult.job);
-          }).catch(() => {});
+        const { data: canonRow } = await (supabase as any)
+          .from('project_canon')
+          .select('canon_json')
+          .eq('project_id', projectId)
+          .single();
+        if (stale || !mountedRef.current) return;
+        const autopilotState = canonRow?.canon_json?.autopilot as AutopilotState | undefined;
+        if (!autopilotState) return;
+
+        // Sync autopilot state for UI
+        if (autopilotState.status === 'running') {
+          if (mountedRef.current) setAutopilot(autopilotState);
         }
-      } catch (err: any) {
-        // Job may already exist — try fetching status as final fallback
-        try {
-          const status = await callAutoRun('status', { projectId });
-          if (mountedRef.current && status?.job) {
-            console.info('[ProjectAutopilot] Recovered via status fallback after start error');
-            setAutoRunJob(status.job);
-          } else {
-            console.error('[ProjectAutopilot] Auto-Run start failed:', err?.message);
-          }
-        } catch {
-          console.error('[ProjectAutopilot] Auto-Run start failed (no fallback):', err?.message);
+
+        // Fire handoff when devseed is complete
+        if (
+          autopilotState.status === 'complete' &&
+          statusCheckedRef.current &&
+          initializedRef.current &&
+          (!autoRunJob || ['failed', 'stopped', 'completed'].includes(autoRunJob.status)) &&
+          !handoffInFlightRef.current
+        ) {
+          handoffInFlightRef.current = true;
+          await doHandoff();
         }
-      } finally {
-        if (mountedRef.current) setAutoRunLoading(false);
-        handoffInFlightRef.current = false;
+      } catch {
+        // canon may not exist yet — ignore
       }
     };
 
-    doHandoff();
-  }, [autopilot?.status, autoRunJob, projectId]);
+    poll();
+    intervalId = setInterval(poll, 3000);
+    return () => { stale = true; if (intervalId) clearInterval(intervalId); };
+  }, [projectId, autoRunJob?.status]);
+
+  // ── doHandoff: called by DB-driven handoff poll ──
+  const doHandoff = useCallback(async () => {
+    const detectExistingJob = async () => {
+      const settleDelays = [0, 400, 1200];
+      for (const delayMs of settleDelays) {
+        if (delayMs > 0) await new Promise(resolve => setTimeout(resolve, delayMs));
+        try {
+          const freshStatus = await callAutoRun('status', { projectId });
+          if (freshStatus?.job && !['failed', 'stopped'].includes(freshStatus.job.status)) {
+            return freshStatus.job;
+          }
+        } catch {
+          // No existing job yet
+        }
+      }
+      return null;
+    };
+
+    const existingJob = await detectExistingJob();
+    if (existingJob) {
+      console.info('[ProjectAutopilot] Handoff detected existing Auto-Run job, skipping duplicate start', existingJob.id);
+      if (mountedRef.current) setAutoRunJob(existingJob);
+      handoffInFlightRef.current = false;
+      return;
+    }
+
+    populateCanonBaseline(projectId).catch(() => {});
+    setAutoRunLoading(true);
+    try {
+      const result = await callAutoRun('start', { projectId, allow_defaults: true });
+      const existingJobId = result?.job_id || result?.existing_job_id;
+      if (result?._resumable && existingJobId) {
+        console.info('[ProjectAutopilot] Reattaching to existing Auto-Run job', existingJobId);
+        try {
+          const status = await callAutoRun('status', { jobId: existingJobId, projectId });
+          if (mountedRef.current && status?.job) setAutoRunJob(status.job);
+          if (status?.job?.status === 'paused') {
+            const resumeResult = await callAutoRun('resume', { jobId: existingJobId, followLatest: true });
+            if (mountedRef.current && resumeResult?.job) setAutoRunJob(resumeResult.job);
+          }
+          callAutoRun('run-next', { jobId: existingJobId }).then(tickResult => {
+            if (mountedRef.current && tickResult?.job) setAutoRunJob(tickResult.job);
+          }).catch(() => {});
+        } catch {
+          const status = await callAutoRun('status', { projectId });
+          if (mountedRef.current && status?.job) setAutoRunJob(status.job);
+        }
+      } else if (result?.job) {
+        if (mountedRef.current) setAutoRunJob(result.job);
+        callAutoRun('run-next', { jobId: result.job.id }).then(tickResult => {
+          if (mountedRef.current && tickResult?.job) setAutoRunJob(tickResult.job);
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      try {
+        const status = await callAutoRun('status', { projectId });
+        if (mountedRef.current && status?.job) {
+          console.info('[ProjectAutopilot] Recovered via status fallback after start error');
+          setAutoRunJob(status.job);
+        } else {
+          console.error('[ProjectAutopilot] Auto-Run start failed:', err?.message);
+        }
+      } catch {
+        console.error('[ProjectAutopilot] Auto-Run start failed (no fallback):', err?.message);
+      }
+    } finally {
+      if (mountedRef.current) setAutoRunLoading(false);
+      handoffInFlightRef.current = false;
+    }
+  }, [projectId]);
 
   // ═══ Start / Resume / Pause (DevSeed) ═══
   const handleStart = useCallback(async () => {
@@ -445,11 +445,10 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
         return;
       }
       if (data?.autopilot && mountedRef.current) setAutopilot(data.autopilot);
-      runTicks();
     } catch (err: any) {
       toast.error('Failed to start autopilot');
     }
-  }, [projectId, pitchIdeaId, runTicks]);
+  }, [projectId, pitchIdeaId]);
 
   const handleResume = useCallback(async () => {
     abortRef.current = false;
@@ -459,11 +458,10 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
       });
       if (error) { toast.error('Failed to resume: ' + error.message); return; }
       if (data?.autopilot && mountedRef.current) setAutopilot(data.autopilot);
-      runTicks();
     } catch {
       toast.error('Failed to resume autopilot');
     }
-  }, [projectId, pitchIdeaId, runTicks]);
+  }, [projectId, pitchIdeaId]);
 
   const handlePause = useCallback(async () => {
     setPausing(true);

@@ -620,7 +620,7 @@ export default function ProjectDevelopmentEngine() {
               previousPlaintext: prevVer?.plaintext || null,
               previousVersionId: prevVer?.id || null,
               actorUserId: user?.id || '',
-              existingDocTypes: documents.map(d => d.doc_type),
+              existingDocTypes: (documents || []).map(d => d.doc_type),
             });
             qcRef.invalidateQueries({ queryKey: ['change-report', projectId, selectedDocId] });
           } catch { /* non-fatal */ }
@@ -937,8 +937,8 @@ export default function ProjectDevelopmentEngine() {
       blockerTexts: blockers,
       highImpactTexts: highImpact,
       projectFormat,
-      existingDocTypes: documents.map((d: any) => d.doc_type),
-      approvedDocTypes: documents.filter((d: any) => !!(approvedVersionMap as any)?.[d.id]).map((d: any) => d.doc_type),
+      existingDocTypes: (documents || []).map((d: any) => d.doc_type),
+      approvedDocTypes: (documents || []).filter((d: any) => !!(approvedVersionMap as any)?.[d.id]).map((d: any) => d.doc_type),
       seasonEpisodeCount: effectiveSeasonEpisodes ?? undefined,
     });
 
@@ -1519,7 +1519,7 @@ export default function ProjectDevelopmentEngine() {
       // Trigger deterministic script change derivatives
       if (selectedDoc && isScriptDocType(selectedDoc.doc_type) && projectId) {
         const { data: { user } } = await supabase.auth.getUser();
-        const existingDocTypes = documents.map(d => d.doc_type);
+        const existingDocTypes = (documents || []).map(d => d.doc_type);
         deriveScriptChangeArtifacts({
           projectId,
           sourceDocId: selectedDocId!,
@@ -1867,7 +1867,7 @@ export default function ProjectDevelopmentEngine() {
             <OutputDocumentsSection
               projectId={projectId}
               projectFormat={normalizedFormat}
-              existingDocTypes={documents.map(d => d.doc_type).filter(Boolean) as string[]}
+              existingDocTypes={(documents || []).map(d => d.doc_type).filter(Boolean) as string[]}
             />
           )}
 
@@ -1876,7 +1876,7 @@ export default function ProjectDevelopmentEngine() {
             <StagePlanPanel
               projectFormat={(project as any).format}
               currentDocType={selectedDeliverableType || undefined}
-              existingDocTypes={documents.map(d => d.doc_type)}
+              existingDocTypes={(documents || []).map(d => d.doc_type)}
             />
           )}
 

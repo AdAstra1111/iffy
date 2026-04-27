@@ -76,7 +76,9 @@ export function useSeedPackStatus(projectId: string | undefined): SeedPackStatus
     staleTime: 5_000,
   });
 
-  const docs = data || SEED_DOC_TYPES.map(dt => ({ doc_type: dt, doc_id: null, has_current_version: false, char_count: 0, approval_status: null, status: 'missing' as const }));
+  // Return undefined while loading — DevEngineSimpleView handles undefined as loading state.
+  // Previously this fallback converted refetch null → all-missing, showing stale red X until refresh.
+  const docs: SeedDocInfo[] | undefined = isLoading ? undefined : (data ?? SEED_DOC_TYPES.map(dt => ({ doc_type: dt, doc_id: null, has_current_version: false, char_count: 0, approval_status: null, status: 'missing' as const })));
   const presentCount = docs.filter(d => d.status === 'present').length;
   const warningCount = docs.filter(d => d.status === 'short').length;
   const missingCount = docs.filter(d => d.status === 'missing').length;

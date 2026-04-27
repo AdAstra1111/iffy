@@ -1906,6 +1906,23 @@ function buildRewriteSystem(deliverable: string, format: string, behavior: strin
 - Do not reduce the scope or omit beats not mentioned in the notes.`;
   }
 
+  // Idea stage format enforcement — must not produce screenplay format
+  // Idea documents are concise premise-stage prose, not screenplays.
+  // Without this block the LLM can freely generate INT./EXT. and dialogue
+  // during cleanup/rewrite passes, which then fails post-rewrite validation.
+  let ideaEnforcement = "";
+  if (deliverable === "idea") {
+    ideaEnforcement = `\n\nIDEA DOCUMENT FORMAT (MANDATORY — violations cause rejection):
+- This is an IDEA document — a concise premise-stage prose summary.
+- Do NOT use INT./EXT. scene headings, sluglines, or location/day headers.
+- Do NOT use ALL-CAPS character name cue lines (e.g. "AKARI", "KAITO" on their own line).
+- Do NOT use parenthetical directions or formatted dialogue blocks.
+- Do NOT include V.O./O.S./O.C. annotations.
+- Write in structured prose: typically logline + expanded premise + commercial framing.
+- The output is a concept document, NOT a screenplay or shooting script.
+- Keep length appropriate for an idea-stage summary (typically 1-3 paragraphs).`;
+  }
+
   // Screenplay enforcement for script deliverables
   let scriptEnforcement = "";
   if (deliverable === "script" || deliverable === "production_draft") {
@@ -2016,7 +2033,7 @@ Rules:
 
 REWRITE OBJECTIVES FOR THIS DOCUMENT PURPOSE:
 ${rewriteGoals}
-${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}
+${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${ideaEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}
 
 Return ONLY valid JSON:
 {

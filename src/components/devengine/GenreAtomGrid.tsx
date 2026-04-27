@@ -3,9 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import {
-  Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, Drawer, Drawer, DrawerClose
-} from '@/components/ui/drawer';
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from '@/components/ui/drawer';
 import { Loader2, RefreshCw, Sparkles, Clock, AlertTriangle, CheckCircle2, X, Clapperboard } from 'lucide-react';
 import type { GenreAtom } from '@/hooks/useGenreAtoms';
 

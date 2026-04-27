@@ -137,13 +137,14 @@ export function DevEngineSimpleView({
   // ── Resolve current doc from auto-run state ──
   const currentDocType = currentStep?.document || autoRunJob?.current_document || null;
   const currentDoc = useMemo(() => {
-    if (!currentDocType || !documents.length) return null;
+    if (!currentDocType || !documents?.length) return null;
     return documents.find((d: any) => d.doc_type === currentDocType) || null;
   }, [currentDocType, documents]);
 
   // ── Approved docs list ──
   const approvedDocs = useMemo(() => {
-    return documents.filter((d: any) => !!approvedVersionMap[d.id]);
+    if (!documents || !approvedVersionMap) return [];
+    return documents.filter((d: any) => !!(approvedVersionMap as any)?.[d.id]);
   }, [documents, approvedVersionMap]);
 
   // ── Whether the selected doc matches the current auto-run doc ──
@@ -218,7 +219,7 @@ export function DevEngineSimpleView({
                 variant="link"
                 size="sm"
                 className="text-[10px] p-0 h-auto mt-1"
-                onClick={() => { const url = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`; try { navigate(url); } catch { window.location.href = url; } }}
+                onClick={() => window.open(`/projects/${projectId}/development?tab=autorun#autorun-mission-control`, '_self') }
               >
                 Open Mission Control →
               </Button>
@@ -282,7 +283,7 @@ export function DevEngineSimpleView({
                 variant="outline"
                 size="sm"
                 className="w-full text-[10px] h-7 mt-1"
-                onClick={() => { const url = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`; try { navigate(url); } catch { window.location.href = url; } }}
+                onClick={() => window.open(`/projects/${projectId}/development?tab=autorun#autorun-mission-control`, '_self') }
               >
                 Open Mission Control <ArrowRight className="h-3 w-3 ml-1" />
               </Button>
@@ -312,7 +313,7 @@ export function DevEngineSimpleView({
 
             {/* Current Doc tab */}
             <TabsContent value="current" className="mt-2 space-y-2">
-              {!autoRunJob && documents.length > 0 ? (
+              {!autoRunJob && documents?.length ? (
                 // No active job — show all available project docs so user can see what's ready
                 <ScrollArea className="max-h-[400px]">
                   <p className="text-[9px] text-muted-foreground mb-2 px-0.5">
@@ -392,7 +393,7 @@ export function DevEngineSimpleView({
               ) : (
                 <ScrollArea className="max-h-[400px]">
                   {approvedDocs.map((doc: any) => {
-                    const approvedVersionId = approvedVersionMap[doc.id];
+                    const approvedVersionId = approvedVersionMap?.[doc.id];
                     const isSelected = selectedDocId === doc.id && selectedVersionId === approvedVersionId;
                     return (
                       <div
