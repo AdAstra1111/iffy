@@ -658,13 +658,14 @@ export function AutoRunMissionControl({
     if (!activated || inferFiredRef.current || !projectId) return;
     inferFiredRef.current = true;
     setInferLoading(true);
-    callInferCriteria(projectId).then(result => {
+    callInferCriteria(projectId).then(async result => {
       if (!result) return;
       const { criteria, sources } = result;
       // Inference wins: overwrite any field that has a real value from docs/LLM
       // (method !== 'default'). Default-method values fill blanks only.
+      let merged: Record<string, string> = {};
       setStorySetup(prev => {
-        const merged = { ...prev };
+        merged = { ...prev };
         for (const [key, val] of Object.entries(criteria)) {
           if (!val?.trim()) continue;
           const method = sources?.[key]?.method;
@@ -681,6 +682,10 @@ export function AutoRunMissionControl({
       });
       setStorySources(sources || {});
       setStoryAutoFilled(true);
+      // Also persist to guardrails_config so autorun and document generation read it
+      if (onSaveStorySetup && Object.keys(merged).length > 0) {
+        await onSaveStorySetup(merged);
+      }
     }).finally(() => setInferLoading(false));
   }, [activated, projectId]);
 
@@ -945,30 +950,34 @@ export function AutoRunMissionControl({
     }
   }, [invalidateAfterRegen, regen]);
 
-  const handleReInfer = useCallback(() => {
+  const handleReInfer = useCallback(async () => {
     setInferLoading(true);
     setStoryAutoFilled(false);
-    callInferCriteria(projectId).then(result => {
-      if (!result) { setInferLoading(false); return; }
-      const { criteria, sources } = result;
-      // Full overwrite on manual rebuild — replace all fields from docs
-      setStorySetup(prev => {
-        const merged = { ...prev };
-        for (const [key, val] of Object.entries(criteria)) {
-          if (!val?.trim()) continue;
-          const method = sources?.[key]?.method;
-          const isExtracted = method === 'extracted' || method === 'heading_extract';
-          const isInferred  = method === 'inferred'  || method === 'llm_infer';
-          if (isExtracted || isInferred || !merged[key]) {
-            merged[key] = val;
-          }
+    const result = await callInferCriteria(projectId);
+    if (!result) { setInferLoading(false); return; }
+    const { criteria, sources } = result;
+    // Full overwrite on manual rebuild — replace all fields from docs
+    let merged: Record<string, string> = {};
+    setStorySetup(prev => {
+      merged = { ...prev };
+      for (const [key, val] of Object.entries(criteria)) {
+        if (!val?.trim()) continue;
+        const method = sources?.[key]?.method;
+        const isExtracted = method === 'extracted' || method === 'heading_extract';
+        const isInferred  = method === 'inferred'  || method === 'llm_infer';
+        if (isExtracted || isInferred || !merged[key]) {
+          merged[key] = val;
         }
-        return merged;
-      });
-      setStorySources(sources || {});
-      setStoryAutoFilled(true);
-    }).finally(() => setInferLoading(false));
-  }, [projectId]);
+      }
+      return merged;
+    });
+    setStorySources(sources || {});
+    setStoryAutoFilled(true);
+    if (onSaveStorySetup && Object.keys(merged).length > 0) {
+      await onSaveStorySetup(merged);
+    }
+    setInferLoading(false);
+  }, [projectId, onSaveStorySetup]);
 
   // ── Not activated → Show activate button ──
   if (!activated) {
