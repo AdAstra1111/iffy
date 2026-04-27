@@ -464,6 +464,25 @@ export function AutoRunMissionControl({
     stakes: '', world_rules: '', comparables: '',
   });
   const [storySources, setStorySources] = useState<Record<string, { source_doc_type: string; method: InferMethod }>>({});
+
+  // ── Pre-load story_setup from guardrails_config on mount ──
+  useEffect(() => {
+    if (!project?.guardrails_config?.overrides?.story_setup) return;
+    const gcStory = project.guardrails_config.overrides.story_setup as Record<string, string>;
+    const hasContent = Object.values(gcStory).some(v => typeof v === 'string' && v.trim().length > 0);
+    if (!hasContent) return;
+    setStorySetup(prev => {
+      const merged = { ...prev };
+      let changed = false;
+      for (const [key, val] of Object.entries(gcStory)) {
+        if (typeof val === 'string' && val.trim() && (!merged[key] || !merged[key].trim())) {
+          merged[key] = val;
+          changed = true;
+        }
+      }
+      return changed ? merged : prev;
+    });
+  }, [project]);
   const [inferLoading, setInferLoading] = useState(false);
   const [storyAutoFilled, setStoryAutoFilled] = useState(false);
   const inferFiredRef = useRef(false);
