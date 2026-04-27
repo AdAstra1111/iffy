@@ -8115,6 +8115,37 @@ Deno.serve(async (req) => {
                   if (extractResult.updated || extractResult.reason === "already_populated") {
                     extractOk = true;
                     setupResolved.push("canon_os");
+                    // ── FIX: sync canon fields to guardrails_config.story_setup ──
+                    // canon_os_extract_from_seed_docs writes to canon_json but episode_grid
+                    // reads from guardrails_config.overrides.story_setup — sync them now.
+                    try {
+                      const { data: canonRow } = await supabase.from("project_canon")
+                        .select("canon_json").eq("project_id", job.project_id).maybeSingle();
+                      const cj = (canonRow?.canon_json || {}) as any;
+                      if (cj && typeof cj === "object") {
+                        const storySetup: Record<string, string> = {};
+                        if (cj.protagonist) storySetup.protagonist = String(cj.protagonist).slice(0, 200);
+                        if (cj.stakes) storySetup.stakes = String(cj.stakes).slice(0, 400);
+                        if (cj.logline) storySetup.logline = String(cj.logline).slice(0, 300);
+                        if (cj.premise) storySetup.premise = String(cj.premise).slice(0, 600);
+                        if (cj.antagonist) storySetup.antagonist = String(cj.antagonist).slice(0, 200);
+                        if (cj.tone_style) storySetup.tone_genre = String(cj.tone_style).slice(0, 300);
+                        if (cj.comparables) storySetup.comparables = Array.isArray(cj.comparables) ? cj.comparables.join(", ").slice(0, 300) : String(cj.comparables).slice(0, 300);
+                        if (cj.world_rules) storySetup.world_rules = Array.isArray(cj.world_rules) ? cj.world_rules.join("; ").slice(0, 400) : String(cj.world_rules).slice(0, 400);
+                        if (Object.keys(storySetup).length > 0) {
+                          const { data: proj } = await supabase.from("projects")
+                            .select("guardrails_config").eq("id", job.project_id).maybeSingle();
+                          const gc = (proj?.guardrails_config || {}) as any;
+                          gc.overrides = gc.overrides || {};
+                          gc.overrides.story_setup = storySetup;
+                          await supabase.from("projects")
+                            .update({ guardrails_config: gc }).eq("id", job.project_id);
+                          console.log(`[auto-run] ${gateLabel}: story_setup synced to guardrails_config`, { fields: Object.keys(storySetup) });
+                        }
+                      }
+                    } catch (syncErr: any) {
+                      console.warn(`[auto-run] ${gateLabel}: story_setup sync failed (non-fatal):`, syncErr.message);
+                    }
                     break;
                   }
                 }
@@ -8131,6 +8162,35 @@ Deno.serve(async (req) => {
               if (recheckOk) {
                 extractOk = true;
                 setupResolved.push("canon_os_found_on_recheck");
+                // ── FIX: sync canon fields to guardrails_config.story_setup (recheck path) ──
+                try {
+                  const { data: canonRow } = await supabase.from("project_canon")
+                    .select("canon_json").eq("project_id", job.project_id).maybeSingle();
+                  const cj = (canonRow?.canon_json || {}) as any;
+                  if (cj && typeof cj === "object") {
+                    const storySetup: Record<string, string> = {};
+                    if (cj.protagonist) storySetup.protagonist = String(cj.protagonist).slice(0, 200);
+                    if (cj.stakes) storySetup.stakes = String(cj.stakes).slice(0, 400);
+                    if (cj.logline) storySetup.logline = String(cj.logline).slice(0, 300);
+                    if (cj.premise) storySetup.premise = String(cj.premise).slice(0, 600);
+                    if (cj.antagonist) storySetup.antagonist = String(cj.antagonist).slice(0, 200);
+                    if (cj.tone_style) storySetup.tone_genre = String(cj.tone_style).slice(0, 300);
+                    if (cj.comparables) storySetup.comparables = Array.isArray(cj.comparables) ? cj.comparables.join(", ").slice(0, 300) : String(cj.comparables).slice(0, 300);
+                    if (cj.world_rules) storySetup.world_rules = Array.isArray(cj.world_rules) ? cj.world_rules.join("; ").slice(0, 400) : String(cj.world_rules).slice(0, 400);
+                    if (Object.keys(storySetup).length > 0) {
+                      const { data: proj } = await supabase.from("projects")
+                        .select("guardrails_config").eq("id", job.project_id).maybeSingle();
+                      const gc = (proj?.guardrails_config || {}) as any;
+                      gc.overrides = gc.overrides || {};
+                      gc.overrides.story_setup = storySetup;
+                      await supabase.from("projects")
+                        .update({ guardrails_config: gc }).eq("id", job.project_id);
+                      console.log(`[auto-run] ${gateLabel}: story_setup synced to guardrails_config (recheck)`, { fields: Object.keys(storySetup) });
+                    }
+                  }
+                } catch (syncErr: any) {
+                  console.warn(`[auto-run] ${gateLabel}: story_setup sync failed (recheck, non-fatal):`, syncErr.message);
+                }
                 break;
               }
 
