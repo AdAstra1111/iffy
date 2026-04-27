@@ -625,9 +625,11 @@ export function AutoRunMissionControl({
   }, [job?.status, job?.stop_reason, projectId, qc]);
   const seedPack = useSeedPackStatus(projectId);
   const seedStatus = useMemo(() => {
-    const present = seedPack.docs.filter(d => d.status !== 'missing').map(d => d.doc_type);
-    const missing = seedPack.docs.filter(d => d.status === 'missing').map(d => d.doc_type);
-    return { present, missing, allPresent: missing.length === 0, docs: seedPack.docs };
+    const docs = seedPack.docs;
+    if (!docs) return { present: [], missing: [], allPresent: false, docs: undefined as undefined };
+    const present = docs.filter(d => d.status !== 'missing').map(d => d.doc_type);
+    const missing = docs.filter(d => d.status === 'missing').map(d => d.doc_type);
+    return { present, missing, allPresent: missing.length === 0, docs };
   }, [seedPack.docs]);
 
   // Seed summary (deterministic, no LLM)
@@ -655,6 +657,7 @@ export function AutoRunMissionControl({
   }, [availableDocuments, approvedVersionMap]);
 
   const pipelineProgress = useMemo(() => {
+    if (!ladder?.length) return { satisfied: 0, total: 0, stages: [], existingDocTypes, approvedDocTypes };
     const satisfied = ladder.filter(stage => {
       if (!existingDocTypes.has(stage)) return false;
       // For approval-required stages, must also have an approved version
