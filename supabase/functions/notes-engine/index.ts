@@ -142,10 +142,33 @@ Deno.serve(async (req) => {
       const { note } = body;
       if (!note?.title || !note?.summary) return json({ error: "title and summary required" }, 400);
 
+      // ── NOTE ROUTING: auto-detect correct doc_type from category + content ──
+      // DOC_SCOPE deferral rules: character notes → character_bible, world-building → format_rules, act structure → beat_sheet
+      const rawDocType = note.doc_type || "concept_brief";
+      const rawCategory = (note.category || "story").toLowerCase();
+      const noteText = ((note.title || "") + " " + (note.summary || "")).toLowerCase();
+
+      // Character routing: category is character OR content mentions character-specific terms
+      const isCharacterNote = rawCategory === "character" ||
+        /backstory|character arc|relationship dynamics|character voice|character depth|arc design|motivation|cast|character design|back story|character development/.test(noteText);
+      // World-building routing: content mentions world rules, format constraints, platform specs
+      const isWorldNote = /world[- ]?build|format[- ]?rule|duration compliance|episode template|platform spec|production constraint|world bible|setting rule|world rule/.test(noteText);
+      // Act structure routing: content mentions act breaks, structural beats, turning points
+      const isActStructureNote = /act[- ]?break|turning point|structural beat|act architecture|pacing blueprint|beat progression|act structure/.test(noteText);
+
+      let routedDocType = normDocType(rawDocType);
+      if (isCharacterNote) {
+        routedDocType = normDocType("character_bible");
+      } else if (isWorldNote) {
+        routedDocType = normDocType("format_rules");
+      } else if (isActStructureNote) {
+        routedDocType = normDocType("beat_sheet");
+      }
+
       const insert = {
         project_id: projectId_,
         source: note.source || "user",
-        doc_type: normDocType(note.doc_type),
+        doc_type: routedDocType,
         document_id: note.document_id || null,
         version_id: note.version_id || null,
         anchor: note.anchor || null,
@@ -195,11 +218,27 @@ Deno.serve(async (req) => {
         .eq("source", source).eq("title", legacy.title).maybeSingle();
       if (byTitle) return json({ note: byTitle });
 
-      // Insert new
+      // Insert new — apply same routing logic as create_note
+      const rawDocType = legacy.doc_type || "concept_brief";
+      const rawCategory = (legacy.category || "story").toLowerCase();
+      const noteText = ((legacy.title || "") + " " + (legacy.summary || "")).toLowerCase();
+      const isCharacterNote = rawCategory === "character" ||
+        /backstory|character arc|relationship dynamics|character voice|character depth|arc design|motivation|cast|character design|back story|character development/.test(noteText);
+      const isWorldNote = /world[- ]?build|format[- ]?rule|duration compliance|episode template|platform spec|production constraint|world bible|setting rule|world rule/.test(noteText);
+      const isActStructureNote = /act[- ]?break|turning point|structural beat|act architecture|pacing blueprint|beat progression|act structure/.test(noteText);
+      let routedDocType = normDocType(rawDocType);
+      if (isCharacterNote) {
+        routedDocType = normDocType("character_bible");
+      } else if (isWorldNote) {
+        routedDocType = normDocType("format_rules");
+      } else if (isActStructureNote) {
+        routedDocType = normDocType("beat_sheet");
+      }
+
       const insert = {
         project_id: projectId_,
         source,
-        doc_type: normDocType(legacy.doc_type),
+        doc_type: routedDocType,
         document_id: legacy.document_id || null,
         version_id: legacy.version_id || null,
         anchor: legacy.anchor || null,

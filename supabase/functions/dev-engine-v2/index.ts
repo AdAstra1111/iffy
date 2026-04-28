@@ -6561,14 +6561,37 @@ ${docTextForScoring}`;
       // them as surprises — they're planned work, not new findings.
       let upstreamDeferredBlock = "";
       try {
+        // Legacy: read from development_notes (upstream deferred notes)
         const { data: upstreamDeferred } = await supabase
           .from("development_notes")
           .select("note_key, description, severity, target_deliverable_type, why_it_matters")
           .eq("project_id", projectId)
           .eq("target_deliverable_type", deliverableType)
           .eq("resolved", false);
+
+        // Modern: also read from project_notes for this doc type
+        const { data: modernNotes } = await supabase
+          .from("project_notes")
+          .select("id, title, summary, category, severity, doc_type, status")
+          .eq("project_id", projectId)
+          .eq("doc_type", deliverableType)
+          .in("status", ["open", "in_progress"]);
+
+        // Merge both sources into a unified deferred notes list
+        const allDeferred: { note_key: string; description: string; severity: string; source: string }[] = [];
         if (upstreamDeferred && upstreamDeferred.length > 0) {
-          const deferredLines = upstreamDeferred.map((n: any) =>
+          for (const n of upstreamDeferred) {
+            allDeferred.push({ note_key: n.note_key, description: n.description, severity: n.severity, source: "legacy" });
+          }
+        }
+        if (modernNotes && modernNotes.length > 0) {
+          for (const n of modernNotes) {
+            allDeferred.push({ note_key: n.title || n.id, description: n.summary || "", severity: n.severity || "med", source: "project_notes" });
+          }
+        }
+
+        if (allDeferred.length > 0) {
+          const deferredLines = allDeferred.map((n) =>
             `- [${n.severity}] ${n.note_key}: ${n.description}`
           ).join("\n");
           upstreamDeferredBlock = `\n\nNOTES CARRIED FORWARD FROM UPSTREAM DOCUMENTS (these were deferred here by earlier stages — they are EXPECTED work for this document, not new findings):\n${deferredLines}\nTreat these as pre-known issues. If this document has addressed them, mark resolved. If not, raise them as now-blockers with the same note_key.`;
@@ -8027,6 +8050,43 @@ MATERIAL TO REWRITE:\n${fullText}`;
           } catch (resolveErr: any) {
             console.warn("[dev-engine-v2] rewrite: mark-resolved failed (non-fatal):", resolveErr?.message);
           }
+        }
+      }
+
+      // ── AUTO-RESOLUTION: check if open concept_brief notes are now satisfied ──
+      // After a rewrite produces a new version, check if any open project_notes
+      // for concept_brief are satisfied by the new content and auto-resolve them.
+      if (effectiveDeliverable === "concept_brief" && rewrittenText && rewrittenText.length > 0) {
+        try {
+          const { data: openNotes } = await supabase
+            .from("project_notes")
+            .select("id, title, summary, category, severity")
+            .eq("project_id", projectId)
+            .eq("doc_type", "concept_brief")
+            .eq("status", "open");
+          if (openNotes && openNotes.length > 0) {
+            const plaintextLower = rewrittenText.toLowerCase();
+            const resolvedNoteIds: string[] = [];
+            for (const note of openNotes) {
+              const noteText = ((note.title || "") + " " + (note.summary || "")).toLowerCase();
+              // Simple keyword heuristic: if note mentions specific terms, check if they appear in new content
+              const needsTerms = noteText.split(/[\s,;.]+/).filter((t: string) => t.length > 4).slice(0, 8);
+              const satisfiedCount = needsTerms.filter((term: string) => plaintextLower.includes(term)).length;
+              // Resolve if ≥50% of the key terms from the note appear in the new version
+              // This is a generous heuristic — err on the side of resolving
+              if (needsTerms.length === 0 || satisfiedCount >= Math.ceil(needsTerms.length * 0.5)) {
+                resolvedNoteIds.push(note.id);
+              }
+            }
+            if (resolvedNoteIds.length > 0) {
+              await supabase.from("project_notes")
+                .update({ status: "resolved", resolved_by: "auto_resolve", resolved_at: new Date().toISOString() })
+                .in("id", resolvedNoteIds);
+              console.log(`[dev-engine-v2] rewrite: auto-resolved ${resolvedNoteIds.length} concept_brief notes:`, resolvedNoteIds);
+            }
+          }
+        } catch (autoResolveErr: any) {
+          console.warn("[dev-engine-v2] rewrite: auto-resolve check failed (non-fatal):", autoResolveErr?.message);
         }
       }
 
