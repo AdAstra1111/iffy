@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 import { getStalenessStatus } from '@/hooks/useAllAutoRunJobs';
 import type { AutoRunJob } from '@/hooks/useAllAutoRunJobs';
 
