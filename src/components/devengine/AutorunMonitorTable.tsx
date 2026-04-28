@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { getStalenessStatus } from '@/hooks/useAllAutoRunJobs';
+import { supabase } from '@/lib/supabase';
 import type { AutoRunJob } from '@/hooks/useAllAutoRunJobs';
 
 function relativeTime(dateStr: string | null | undefined): string {
@@ -69,6 +72,7 @@ interface Props {
 }
 
 export function AutorunMonitorTable({ jobs, filter }: Props) {
+  const queryClient = useQueryClient();
   const filtered = useMemo(() => {
     if (filter === 'all') return jobs;
     if (filter === 'running') return jobs.filter(j => getStalenessStatus(j) === 'active');
@@ -92,6 +96,7 @@ export function AutorunMonitorTable({ jobs, filter }: Props) {
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="w-8">Status</TableHead>
+            <TableHead className="w-10">Actions</TableHead>
             <TableHead>Project</TableHead>
             <TableHead>Mode</TableHead>
             <TableHead>Current Doc</TableHead>
@@ -107,6 +112,42 @@ export function AutorunMonitorTable({ jobs, filter }: Props) {
           {filtered.map(job => (
             <TableRow key={job.id}>
               <TableCell><StatusDot job={job} /></TableCell>
+              <TableCell>
+                {(() => {
+                  const isRunningOrPaused = job.status === 'running' || job.status === 'paused';
+                  if (isRunningOrPaused) {
+                    return (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs text-red-400 border-red-500/30 hover:bg-red-500/10 hover:border-red-500/50"
+                        onClick={async () => {
+                          await supabase
+                            .from('auto_run_jobs')
+                            .update({ status: 'stopped', stop_reason: 'user_stopped' })
+                            .eq('id', job.id);
+                          queryClient.invalidateQueries({ queryKey: ['all-auto-run-jobs'] });
+                        }}
+                      >
+                        Stop
+                      </Button>
+                    );
+                  }
+                  return (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground border-border/30 hover:bg-muted hover:text-foreground"
+                      onClick={async () => {
+                        await supabase.from('auto_run_jobs').delete().eq('id', job.id);
+                        queryClient.invalidateQueries({ queryKey: ['all-auto-run-jobs'] });
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  );
+                })()}
+              </TableCell>
               <TableCell>
                 <Link
                   to={`/projects/${job.project_id}`}

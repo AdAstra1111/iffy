@@ -53,6 +53,7 @@ export function Header() {
     { label: 'Reports', icon: BarChart3, path: '/reports' },
     { label: '⭐ Narrative DNA', icon: Dna, path: '/narrative-dna' },
     { label: '⭐ Engine Atlas', icon: Layers, path: '/narrative-engines' },
+    { label: 'Autorun Monitor', icon: Radio, path: '/autorun-monitor' },
   ];
 
   return (
