@@ -270,6 +270,7 @@ Deno.serve(async (req) => {
       // Normalize before lookup — database may store "Market Sheet" but exempt keys are lowercase
       const normalizedDocType = (docType || "").toLowerCase().replace(/[-\s]+/g, "_");
       const shouldCheckDrift = !CANON_DRIFT_EXEMPT_DOC_TYPES.has(normalizedDocType);
+      console.log(`[project-folder-engine] approve start { projectId: "${projectId}", versionId: "${documentVersionId}", docType: "${docType}", normalizedDocType: "${normalizedDocType}", shouldCheckDrift: ${shouldCheckDrift} }`);
       if (shouldCheckDrift) {
         try {
           const { data: vPlain } = await db.from("project_document_versions")
@@ -321,9 +322,11 @@ Deno.serve(async (req) => {
       }
 
       // Mark version as approved
+      console.log(`[project-folder-engine] markVersionApproved about to run for ${documentVersionId}`);
       if (version.approval_status !== "approved") {
         await markVersionApproved(db, documentVersionId, userId);
       }
+      console.log(`[project-folder-engine] markVersionApproved done for ${documentVersionId}`);
 
       // ── TRANSITION LEDGER: version_approved (fail-open — never block approval) ──
       await emitTransition(db, {
