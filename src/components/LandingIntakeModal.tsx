@@ -1,4 +1,33 @@
-import { useState, useEffect, useCallback } from 'react';
+// Track detected doc type
+  const [docType, setDocType] = useState<string>('script');
+
+  useEffect(() => {
+    if (upload) {
+      // Assume doc type classification has happened elsewhere and set here
+      const firstFile = upload.files[0];
+      classifyDocType(firstFile).then(type => setDocType(type));
+    }
+  }, [upload]);
+
+  // Dynamic Header
+  const getProcessingMessage = (type: string) => {
+    switch (type) {
+      case 'screenplay':
+        return 'Processing your script';
+      case 'treatment':
+        return 'Processing your treatment';
+      case 'concept_brief':
+        return 'Processing your concept brief';
+      case 'beat_sheet':
+        return 'Processing your beat sheet';
+      case 'character_bible':
+        return 'Processing your character bible';
+      default:
+        return 'Processing your document';
+    }
+  };
+
+
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, CheckCircle2, AlertCircle, X, FileText } from 'lucide-react';
@@ -90,7 +119,7 @@ export function LandingIntakeModal({ pendingUploadId, onDismiss }: LandingIntake
           className="glass-card rounded-xl p-6 w-full max-w-md mx-4 shadow-xl"
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-semibold text-lg text-foreground">Processing your script</h3>
+            <h3 className="font-display font-semibold text-lg text-foreground">{getProcessingMessage(docType)}</h3>
             {!running && (
               <button onClick={onDismiss} className="p-1 rounded-md text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
@@ -111,7 +140,20 @@ export function LandingIntakeModal({ pendingUploadId, onDismiss }: LandingIntake
             </div>
           )}
 
-          {/* Progress */}
+          {/* Extraction Summary */}
+      {progress?.step === 'done' && (
+        <div className="mt-3 pt-3 border-t border-border/40">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Extraction Summary</p>
+          <div className="space-y-1 text-xs">
+            {upload?.files.map((f, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0 mt-0.5" />
+                <span className="text-foreground">{f.name} → extracted</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
           {progress && (
             <div className="flex items-center gap-3 py-3">
               {stepIcons[progress.step] || stepIcons.uploading}

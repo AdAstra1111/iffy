@@ -33,6 +33,49 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
+// ── Doc Type Classification ─────────────────────────────────────────────────
+
+export type DocType = 'screenplay' | 'treatment' | 'concept_brief' | 'beat_sheet' | 'character_bible' | 'other';
+
+/**
+ * Classify a file by reading its first 2000 chars and running heuristic detection.
+ * Returns the detected doc type string.
+ */
+async function classifyDocType(file: File): Promise<DocType> {
+  try {
+    const text = await file.slice(0, 2000).text();
+    const lower = text.toLowerCase();
+
+    // Screenplay: INT./EXT. scene headings + general screenplay formatting
+    if (/^(int\.?|ext\.?|int\/ext\.?)\b/m.test(text) && (text.includes('\n') || /scene/i.test(text))) {
+      return 'screenplay';
+    }
+    // Treatment
+    if (lower.includes('treatment') && (/act one|act two|act three|act 1|act 2|act 3/i.test(text) || lower.includes('protagonist') || lower.includes('synopsis'))) {
+      return 'treatment';
+    }
+    // Beat sheet
+    const beatCount = (text.match(/\bbeat \b/gi) || []).length;
+    if (beatCount > 3 || /beat sheet|beat outline/i.test(lower)) {
+      return 'beat_sheet';
+    }
+    // Character bible
+    if (/character bible|character profile|character breakdown|character description|character sheet/i.test(lower)) {
+      return 'character_bible';
+    }
+    // Concept brief
+    if (/concept|logline|genre|tone|target audience|comparable/i.test(lower) && text.length < 3000) {
+      return 'concept_brief';
+    }
+    return 'screenplay'; // default to screenplay for graceful degradation
+  } catch {
+    return 'screenplay';
+  }
+}
+
+const isNonScreenplay = (dt: DocType): boolean =>
+  dt === 'treatment' || dt === 'concept_brief' || dt === 'beat_sheet' || dt === 'character_bible' || dt === 'other';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type DropStageStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
@@ -79,9 +122,12 @@ export const STAGE_DEFINITIONS: StageDef[] = [
   { key: 'scene_index',   label: 'Building scene index…',                functionName: 'extract-scene-index',                                                   retryable: true  },
 ];
 
-const INITIAL_STAGES: DropStage[] = STAGE_DEFINITIONS.map(s => ({
+const INITIAL_STAGES: DropStage[] = SCREENPLAY_STAGE_DEFINITIONS.map(s => ({
   key: s.key, label: s.label, status: 'pending', retryable: s.retryable,
 }));
+
+const getStageDefsForType = (docType: DocType): StageDef[] =>
+  docType === 'screenplay' ? SCREENPLAY_STAGE_DEFINITIONS : NON_SCREENPLAY_STAGE_DEFINITIONS;
 
 const FUNC_BASE = `/api/supabase-proxy/functions/v1`;
 
@@ -120,22 +166,49 @@ async function createIntakeRun(
   return data.id;
 }
 
-/** Pre-populate all stage rows for a run. */
-async function seedStageRuns(runId: string): Promise<void> {
-  const rows = STAGE_DEFINITIONS.map((s, i) => ({
-    run_id:        runId,
-    stage_key:     s.key,
-    stage_order:   i,
-    status:        'pending',
-    function_name: s.functionName,
-    action_name:   s.actionName ?? null,
-    retryable:     s.retryable,
-  }));
-  const { error } = await (supabase as any)
-    .from('screenplay_intake_stage_runs')
-    .insert(rows);
-  if (error) throw new Error(`stage_runs seed: ${error.message}`);
+// ── Stage Definitions ────────────────────────────────────────────────────────
+//
+// Canonical stage list. This is the single source of truth for:
+//   - stage_key values written to screenplay_intake_stage_runs
+//   - stage_order (index in this array)
+//   - retry semantics
+//
+// retryable=false means the stage cannot be meaningfully retried independently:
+//   - upload: file is already in storage; re-uploading would create a duplicate
+//   - project_create: project either exists or doesn't; non-repeatable
+//
+// All enrichment stages (scene_extract onward) are idempotent and retryable.
+
+interface StageDef {
+  key:           string;
+  label:         string;
+  functionName:  string;
+  actionName?:   string;
+  retryable:     boolean;
 }
+
+/** Screenplay pipeline — full enrichment stages */
+export const SCREENPLAY_STAGE_DEFINITIONS: StageDef[] = [
+  { key: 'upload',         label: 'Uploading script…',                    functionName: 'storage:scripts',    retryable: false },
+  { key: 'ingest',         label: 'Extracting text & detecting title…',   functionName: 'script-intake',      actionName: 'ingest_pdf',            retryable: true  },
+  { key: 'project_create', label: 'Creating project…',                    functionName: 'supabase:projects',  retryable: false },
+  { key: 'scene_extract',  label: 'Extracting scene graph…',              functionName: 'dev-engine-v2',      actionName: 'scene_graph_extract',   retryable: true  },
+  { key: 'entity_extract', label: 'Extracting entities & links…',         functionName: 'entity-links-engine', retryable: true  },
+  { key: 'nit_dialogue',   label: 'Linking characters (dialogue)…',       functionName: 'nit-sync',           actionName: 'sync_dialogue_characters', retryable: true },
+  { key: 'role_classify',  label: 'Classifying scene roles…',             functionName: 'dev-engine-v2',      actionName: 'scene_graph_classify_roles_heuristic', retryable: true },
+  { key: 'spine_sync',     label: 'Syncing spine links…',                 functionName: 'dev-engine-v2',      actionName: 'scene_graph_sync_spine_links', retryable: true },
+  { key: 'binding_derive', label: 'Deriving blueprint bindings…',         functionName: 'dev-engine-v2',      actionName: 'scene_derive_blueprint_bindings', retryable: true },
+  { key: 'scene_index',    label: 'Building scene index…',                functionName: 'extract-scene-index', retryable: true  },
+];
+
+/** Non-screenplay pipeline — upload → ingest → project_create → preflight */
+export const NON_SCREENPLAY_STAGE_DEFINITIONS: StageDef[] = [
+  { key: 'upload',         label: 'Uploading document…',                  functionName: 'storage:scripts',    retryable: false },
+  { key: 'ingest',         label: 'Extracting text…',                     functionName: 'script-intake',      actionName: 'ingest_pdf',            retryable: true  },
+  { key: 'project_create', label: 'Creating project…',                    functionName: 'supabase:projects',  retryable: false },
+  { key: 'classify',       label: 'Classifying document type…',           functionName: 'ai:classifier',      retryable: false },
+];
+
 
 /** Update a stage row. */
 async function updateStageRun(
@@ -189,13 +262,17 @@ export function useScriptDropProject() {
     if (!user)     { toast.error('Sign in required'); return; }
     if (isRunning) return;
 
+    // Classify doc type before building stage list
+    const docType = await classifyDocType(file);
+
     setIsRunning(true);
-    setStages(INITIAL_STAGES.map(s => ({ ...s, status: 'pending' })));
+    const stageDefs = getStageDefsForType(docType);
+    setStages(stageDefs.map(s => ({ key: s.key, label: s.label, status: 'pending', retryable: s.retryable })));
     setRunId(null);
     setProjectId(null);
 
     let currentRunId: string | null = null;
-    let currentStages = INITIAL_STAGES.map(s => ({ ...s }));
+    let currentStages = stageDefs.map(s => ({ ...s, status: 'pending' as DropStageStatus }));
 
     const mutStage = (key: string, status: DropStageStatus, detail?: string) => {
       currentStages = currentStages.map(s => s.key === key ? { ...s, status, detail } : s);
@@ -263,6 +340,8 @@ export function useScriptDropProject() {
 
       // ── Stage 1: Create project (placeholder title from filename) ──────────
       // Project must be created before ingest_pdf so we have an FK for docs.
+      // Project must be created before ingest_pdf so we have an FK for docs.
+      // For non-screenplay docs, format is 'film' — lane detection happens via classification.
       await markRunning('project_create');
       const placeholderTitle = file.name
         .replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() || 'Untitled';
@@ -272,7 +351,7 @@ export function useScriptDropProject() {
         .insert({
           user_id:          user.id,
           title:            placeholderTitle,
-          format:           'film',
+          format:           docType === 'screenplay' ? 'film' : 'film',
           genres:           [],
           budget_range:     '',
           target_audience:  '',
@@ -346,7 +425,21 @@ export function useScriptDropProject() {
         .update({ latest_version_id: ver.id })
         .eq('id', doc.id);
 
-      await markDone('project_create', { project_id: pid });
+      // For non-screenplay docs, stop after project_create — skip all enrichment stages.
+      // The project exists; IntakePreFlightCard will handle pipeline firing via reverse-engineer-script.
+      if (isNonScreenplay(docType)) {
+        await markDone('classify', { doc_type: docType });
+        await markDone('project_create', { project_id: pid });
+
+        if (currentRunId) {
+          await finaliseIntakeRun(currentRunId, currentStages).catch(() => {});
+        }
+
+        toast.success(`"${placeholderTitle}" created — ready for review`);
+        navigate(`/projects/${pid}`);
+        setIsRunning(false);
+        return;
+      }
 
       // ── Stage 2: Ingest PDF ────────────────────────────────────────────────
       await markRunning('ingest');
