@@ -17,6 +17,8 @@ async function callAutoRun(action: string, extra: Record<string, any> = {}) {
   }
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
   if (!supabaseUrl) throw new Error('Supabase URL not configured');
+  // Refresh session before every call to ensure a valid token
+  await supabase.auth.refreshSession();
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
   const url = `${supabaseUrl}/functions/v1/auto-run`;

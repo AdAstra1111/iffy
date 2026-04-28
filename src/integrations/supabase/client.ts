@@ -24,8 +24,9 @@ function createProxiedClient(url: string, key: string) {
   (client.functions as any).invoke = async function(fn: string, options: any = {}) {
     const proxyUrl = `/api/supabase-proxy/functions/v1/${fn}`;
     const body = options.body !== undefined ? options.body : options;
-    // Use the user's session access_token so edge functions can authenticate the user.
-    // Fall back to the anon key only if no session is available.
+    // Refresh session BEFORE getting token to ensure we have a valid one
+    // This prevents edge functions from receiving expired tokens
+    await client.auth.refreshSession();
     const { data: sessionData } = await client.auth.getSession();
     const authToken = sessionData?.session?.access_token || key;
     const headers: Record<string, string> = {
