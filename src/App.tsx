@@ -87,6 +87,7 @@ const CanonPlaceholder = lazy(() => import("./pages/CanonPlaceholder"));
 const AIContentPage = lazy(() => import("./pages/AIContentPage"));
 const AICastLibrary = lazy(() => import("./pages/AICastLibrary"));
 const ActorMarketplace = lazy(() => import("./pages/ActorMarketplace"));
+const AutorunMonitor = lazy(() => import("./pages/AutorunMonitor"));
 const ProjectCasting = lazy(() => import("./pages/ProjectCasting"));
 const CastingStudio = lazy(() => import("./pages/CastingStudio"));
 const CastingPipeline = lazy(() => import("./pages/CastingPipeline"));
@@ -192,7 +193,7 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/present" element={<ProtectedRoute><PresentationMode /></ProtectedRoute>} />
           <Route path="/projects/:id/pitch-deck" element={<ProtectedRoute><PitchDeckViewer /></ProtectedRoute>} />
           <Route path="/pricing" element={<ProtectedRoute><Pricing /></ProtectedRoute>} />
-          <Route path="/coverage-lab" element={<ProtectedRoute><CoverageLab /></ProtectedRoute>} />
+          <Route path="/autorun-monitor" element={<ProtectedRoute><AutorunMonitor /></ProtectedRoute>} />
           <Route path="/pitch-ideas" element={<ProtectedRoute><PitchIdeas /></ProtectedRoute>} />
           <Route path="/exemplars" element={<ProtectedRoute><ExemplarBrowser /></ProtectedRoute>} />
           <Route path="/ci-blueprint" element={<ProtectedRoute><CIBlueprintEngine /></ProtectedRoute>} />

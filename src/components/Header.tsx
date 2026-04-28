@@ -7,6 +7,9 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { GlobalSearch } from '@/components/GlobalSearch';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { GuidedTutorial } from '@/components/GuidedTutorial';
+import { Badge } from '@/components/ui/badge';
+import { useAllAutoRunJobs, getStalenessStatus } from '@/hooks/useAllAutoRunJobs';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -128,6 +131,21 @@ export function Header() {
           <GlobalSearch />
           <ThemeToggle />
           <NotificationBell />
+          {(() => {
+            const { data: jobs = [] } = useAllAutoRunJobs();
+            const stalledCount = jobs.filter(j => getStalenessStatus(j) === 'stalled').length;
+            if (stalledCount === 0) return null;
+            return (
+              <Link to="/autorun-monitor">
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/50 text-amber-400 bg-amber-500/10 text-xs ml-1"
+                >
+                  ⚠ {stalledCount}
+                </Badge>
+              </Link>
+            );
+          })()}
           <Button
             variant="outline"
             size="sm"
