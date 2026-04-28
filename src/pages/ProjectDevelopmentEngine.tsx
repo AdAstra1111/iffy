@@ -211,7 +211,9 @@ export default function ProjectDevelopmentEngine() {
   // Sync tab from URL when searchParams change (e.g. navigated with ?tab=autorun)
   useEffect(() => {
     const tabParam = searchParams.get('tab');
+    console.log('[DEBUG] useEffect searchParams fired, tabParam:', tabParam, 'current intelligenceTab:', intelligenceTab);
     if (tabParam && VALID_TABS.has(tabParam) && tabParam !== intelligenceTab) {
+      console.log('[DEBUG] Syncing tab to:', tabParam);
       setIntelligenceTab(tabParam);
     }
   }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
