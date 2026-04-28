@@ -18,6 +18,7 @@ export interface AutofillResult {
   pitchLogline?: string;
   pitchPremise?: string;
   guardrails_overrides?: Record<string, any>;
+  story_setup?: Record<string, string>;
 }
 
 /** Fetch current-version plaintext for seed doc types */
@@ -76,6 +77,7 @@ function extractBullets(section: string): string[] {
 export function extractAutofill(seedDocs: SeedDoc[]): AutofillResult {
   const result: AutofillResult = {};
   const guardrails: Record<string, any> = {};
+  const storySetup: Record<string, string> = {};
 
   for (const doc of seedDocs) {
     const text = doc.plaintext;
@@ -154,6 +156,38 @@ export function extractAutofill(seedDocs: SeedDoc[]): AutofillResult {
       if (rulesSection) {
         guardrails.canon_constraints = rulesSection.slice(0, 500);
       }
+
+      // Extract protagonist identity — key section in canon
+      const protSection = extractSection(text, /(?:#{1,3}\s*)?(?:Protagonist|Core\s*Concept|Central\s*Question|Story\s*Engine)/i);
+      if (protSection) {
+        const firstPara = protSection.split('\n').map(l => l.trim()).filter(l => l.length > 20)[0];
+        if (firstPara) storySetup.protagonist = firstPara.slice(0, 400);
+      }
+
+      // Extract relationship / character tension axis
+      const relSection = extractSection(text, /(?:#{1,3}\s*)?(?:Relationship|Tension\s*Axis|Character\s*Engine|Key\s*Relationship)/i);
+      if (relSection) {
+        const firstPara = relSection.split('\n').map(l => l.trim()).filter(l => l.length > 20)[0];
+        if (firstPara) storySetup.relationships = firstPara.slice(0, 400);
+      }
+
+      // Extract premise / core concept as story setup
+      const premiseSection = extractSection(text, /(?:#{1,3}\s*)?(?:Premise|Premise\s*Statement|Central\s*Premise)/i);
+      if (premiseSection && !storySetup.protagonist) {
+        const firstPara = premiseSection.split('\n').map(l => l.trim()).filter(l => l.length > 20)[0];
+        if (firstPara) storySetup.premise = firstPara.slice(0, 400);
+      }
+
+      // Extract logline if not already found
+      if (!result.pitchLogline) {
+        const logSection = extractSection(text, /(?:#{1,3}\s*)?(?:Logline|Log\s*Line|One[- ]?Liner)/i);
+        if (logSection) {
+          const line = logSection.split('\n').map(l => l.trim()).find(l => l.length > 10);
+          if (line) {
+            result.pitchLogline = line.replace(/^[-•*"]\s*/, '').replace(/"$/, '').slice(0, 300);
+          }
+        }
+      }
     }
 
     if (doc.doc_type === 'project_overview') {
@@ -174,6 +208,9 @@ export function extractAutofill(seedDocs: SeedDoc[]): AutofillResult {
 
   if (Object.keys(guardrails).length > 0) {
     result.guardrails_overrides = guardrails;
+  }
+  if (Object.keys(storySetup).length > 0) {
+    result.story_setup = storySetup;
   }
 
   return result;
@@ -205,10 +242,20 @@ export async function applyAutofillToProject(projectId: string, autofill: Autofi
   }
 
   // Merge guardrails
-  if (autofill.guardrails_overrides) {
+  if (autofill.guardrails_overrides || autofill.story_setup) {
     const gc = (proj?.guardrails_config as any) || {};
     gc.overrides = gc.overrides || {};
-    gc.overrides.autofill = { ...((gc.overrides as any).autofill || {}), ...autofill.guardrails_overrides };
+
+    if (autofill.guardrails_overrides) {
+      gc.overrides.autofill = { ...((gc.overrides as any).autofill || {}), ...autofill.guardrails_overrides };
+    }
+
+    // Populate story_setup — this feeds the dev engine's protagonist/relationship context
+    if (autofill.story_setup) {
+      const existingStorySetup = gc.overrides.story_setup || {};
+      gc.overrides.story_setup = { ...existingStorySetup, ...autofill.story_setup };
+    }
+
     updates.guardrails_config = gc;
   }
 

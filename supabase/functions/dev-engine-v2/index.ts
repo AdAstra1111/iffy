@@ -30165,6 +30165,17 @@ ${upstreamText}`;
       const necBlock = await loadNECGuardrailBlock(supabase, projectId);
       const constraintPack = await loadConstraintPack(supabase, projectId);
       console.log("[dev-engine-v2] series-scripts-tick: constraint injection", { path: "series-scripts-tick", hasNEC: !!necBlock, hasConstraintPack: !!constraintPack });
+
+      // Inject story_setup from guardrails_config (populated by autofill from seed pack)
+      const gc = (proj as any)?.guardrails_config || {};
+      const storySetup = gc?.overrides?.story_setup || {};
+      const storySetupBlock = Object.entries(storySetup)
+        .filter(([_, v]) => v && typeof v === 'string' && v.trim().length > 0)
+        .map(([k, v]) => `${k.toUpperCase()}: ${(v as string).trim()}`)
+        .join('\n');
+      if (storySetupBlock) {
+        console.log("[dev-engine-v2] series-scripts-tick: story_setup injected", { keys: Object.keys(storySetup) });
+      }
       const { ensureDocSlot, createVersion: createVer } = await import("../_shared/doc-os.ts");
       const OPENROUTER_API_KEY = resolveGateway().apiKey;
 
@@ -30206,6 +30217,7 @@ Output ONLY the screenplay text. No JSON wrapping, no markdown fences, no commen
           let contextBlocks: string[] = [];
           if (upstreamTexts.character_bible) contextBlocks.push(`CHARACTER BIBLE:\n${upstreamTexts.character_bible.slice(0, 4000)}`);
           if (upstreamTexts.format_rules) contextBlocks.push(`FORMAT RULES:\n${upstreamTexts.format_rules.slice(0, 2000)}`);
+          if (storySetupBlock) contextBlocks.push(`STORY SETUP (from seed):\n${storySetupBlock}`);
           if (upstreamTexts.canon) contextBlocks.push(`CANON & CONSTRAINTS:\n${upstreamTexts.canon.slice(0, 2000)}`);
           if (upstreamTexts.season_arc) contextBlocks.push(`SEASON ARC:\n${upstreamTexts.season_arc.slice(0, 3000)}`);
           if (logline) contextBlocks.push(`EPISODE GRID ENTRY:\n${logline}`);
