@@ -266,6 +266,7 @@ Deno.serve(async (req) => {
         "vertical_market_sheet", "market_sheet", "character_bible",
         "deck", "season_arc", "episode_grid", "blueprint",
         "season_script", "feature_script", "production_draft",
+        "treatment", "story_outline", "beat_sheet",
       ]);
       // Normalize before lookup — database may store "Market Sheet" but exempt keys are lowercase
       const normalizedDocType = (docType || "").toLowerCase().replace(/[-\s]+/g, "_");
