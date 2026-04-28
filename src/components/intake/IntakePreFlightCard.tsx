@@ -21,6 +21,7 @@ interface IntakePreFlightCardProps {
   extractedFields: ExtractedField[];
   gaps: string[];
   isGenerating: boolean;
+  generatingMessage?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -31,6 +32,7 @@ export function IntakePreFlightCard({
   extractedFields,
   gaps,
   isGenerating,
+  generatingMessage,
   onConfirm,
   onCancel,
 }: IntakePreFlightCardProps) {
@@ -165,7 +167,7 @@ export function IntakePreFlightCard({
             {isGenerating ? (
               <>
                 <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                Generating…
+                {generatingMessage || 'Generating…'}
               </>
             ) : (
               <>
