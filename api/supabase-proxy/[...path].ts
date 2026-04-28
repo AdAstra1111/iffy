@@ -98,8 +98,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // Default: forward to Supabase REST API
   const targetUrl = `${SUPABASE_URL}/${path}`;
-  const apikey = req.headers['x-supabase-key'] as string || SUPABASE_ANON_KEY;
-  const authorization = req.headers['authorization'] as string || `Bearer ${SUPABASE_ANON_KEY}`;
+  const apikey = req.headers['x-supabase-key'] as string || process.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
+  const authorization = req.headers['authorization'] as string || `Bearer ${process.env.VITE_SUPABASE_ANON_KEY || SUPABASE_ANON_KEY}`;
 
   try {
     const response = await fetch(targetUrl, {
