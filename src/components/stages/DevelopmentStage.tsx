@@ -296,6 +296,8 @@ export function DevelopmentStage({
             existingCount={documents.length}
             onUpload={onUpload}
             isUploading={isUploading}
+            projectId={projectId}
+            lane={project.assigned_lane}
           />
         </div>
       </div>

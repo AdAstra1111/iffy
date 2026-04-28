@@ -49,6 +49,7 @@ export type IntakeProgress = {
 export async function runLandingIntake(
   files: File[],
   onProgress?: (p: IntakeProgress) => void,
+  docType?: string,
 ): Promise<IntakeResult> {
   const report = (step: IntakeProgress['step'], message: string) => onProgress?.({ step, message });
 
@@ -103,8 +104,9 @@ export async function runLandingIntake(
 
   // 4. Extract documents via existing edge function
   report('extracting', 'Extracting text from documents…');
+  const effectiveDocType = docType || 'script';
   const { data: extractResult, error: extractError } = await supabase.functions.invoke('extract-documents', {
-    body: { projectId, documentPaths, docType: 'script' },
+    body: { projectId, documentPaths, docType: effectiveDocType },
   });
 
   if (extractError) {

@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { IntakePreFlightCard } from '@/components/intake/IntakePreFlightCard';
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.md', '.docx', '.doc', '.fdx', '.fountain'];
 const ACCEPTED_TYPES = [
@@ -51,15 +52,36 @@ interface AddDocumentsUploadProps {
   existingCount: number;
   onUpload: (files: File[], scriptInfo?: { isLatestDraft: boolean; scriptFiles: string[] }, docType?: string) => void;
   isUploading: boolean;
+  /** Project ID needed for non-script doc type pipeline trigger */
+  projectId?: string;
+  /** Lane needed for IntakePreFlightCard display */
+  lane?: string;
 }
 
-export function AddDocumentsUpload({ existingCount, onUpload, isUploading }: AddDocumentsUploadProps) {
+interface PreflightData {
+  files: File[];
+  docType: string;
+  documentId?: string;
+  classification?: {
+    doc_type: string;
+    confidence: string;
+    lane: string;
+    reasoning: string;
+    key_signals: string[];
+  };
+}
+
+export function AddDocumentsUpload({ existingCount, onUpload, isUploading, projectId, lane }: AddDocumentsUploadProps) {
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [classifyDialog, setClassifyDialog] = useState<File[] | null>(null);
   const [selectedDocType, setSelectedDocType] = useState<string>('');
+
+  // PreFlightCard state — shown after non-script upload succeeds
+  const [preflightData, setPreflightData] = useState<PreflightData | null>(null);
+  const [isGeneratingForType, setIsGeneratingForType] = useState(false);
 
   const maxNew = MAX_FILES - existingCount;
 
@@ -105,23 +127,62 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading }: Add
     setSelectedDocType('');
   };
 
-  const handleClassifyConfirm = () => {
+  /** Non-script doc types that show IntakePreFlightCard before pipeline fires */
+  const NON_SCRIPT_DOC_TYPES = new Set(['treatment', 'beat_sheet', 'concept_brief', 'character_bible', 'story_outline', 'episode_grid', 'market_sheet', 'pitch_document']);
+
+  const handleClassifyConfirm = async () => {
     if (!classifyDialog || !selectedDocType) return;
 
     if (selectedDocType === 'script_latest') {
       const scriptFileNames = classifyDialog.map(f => f.name);
       onUpload(classifyDialog, { isLatestDraft: true, scriptFiles: scriptFileNames });
+      resetDialog();
     } else if (selectedDocType === 'script_older') {
       const scriptFileNames = classifyDialog.map(f => f.name);
       onUpload(classifyDialog, { isLatestDraft: false, scriptFiles: scriptFileNames });
+      resetDialog();
     } else {
-      onUpload(classifyDialog, undefined, selectedDocType);
+      // Non-script doc type: upload first, then show PreFlightCard
+      try {
+        await onUpload(classifyDialog, undefined, selectedDocType);
+        setPreflightData({
+          files: classifyDialog,
+          docType: selectedDocType,
+          classification: {
+            doc_type: selectedDocType,
+            confidence: 'medium',
+            lane: lane || 'ambiguous',
+            reasoning: `Uploaded as ${selectedDocType}`,
+            key_signals: [],
+          },
+        });
+      } catch {
+        // error handled by parent
+      }
+      resetDialog();
     }
+  };
 
+  const resetDialog = () => {
     setClassifyDialog(null);
     setSelectedDocType('');
     setFiles([]);
     setIsExpanded(false);
+  };
+
+  const handlePreflightConfirm = async () => {
+    if (!preflightData) return;
+    setIsGeneratingForType(true);
+    // Pipeline trigger goes here — for now just close the card
+    // TODO: wire up reverse-engineer-script with docType
+    setPreflightData(null);
+    setIsGeneratingForType(false);
+  };
+
+
+  const handlePreflightCancel = () => {
+    setPreflightData(null);
+    setIsGeneratingForType(false);
   };
 
   const formatSize = (bytes: number) => {
@@ -297,6 +358,21 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading }: Add
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* IntakePreFlightCard overlay for non-script doc types */}
+      <AnimatePresence>
+        {preflightData && preflightData.classification && (
+          <IntakePreFlightCard
+            fileName={preflightData.files[0]?.name || 'document'}
+            classification={preflightData.classification}
+            extractedFields={[]}
+            gaps={[]}
+            isGenerating={isGeneratingForType}
+            onConfirm={handlePreflightConfirm}
+            onCancel={handlePreflightCancel}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }
