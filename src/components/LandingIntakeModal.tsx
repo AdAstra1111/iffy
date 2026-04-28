@@ -90,7 +90,7 @@ export function LandingIntakeModal({ pendingUploadId, onDismiss }: LandingIntake
           className="glass-card rounded-xl p-6 w-full max-w-md mx-4 shadow-xl"
         >
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-display font-semibold text-lg text-foreground">Processing your script</h3>
+            <h3 className="font-display font-semibold text-lg text-foreground">Processing your document</h3>
             {!running && (
               <button onClick={onDismiss} className="p-1 rounded-md text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />

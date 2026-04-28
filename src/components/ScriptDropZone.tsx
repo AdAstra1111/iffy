@@ -146,11 +146,11 @@ export function ScriptDropZone() {
               ? activeStage?.label ?? 'Processing…'
               : isDragging
               ? 'Drop to start'
-              : 'Drop a screenplay here'}
+              : 'Drop your document here'}
           </p>
           {!anyRunning && (
             <p className="text-xs text-muted-foreground mt-0.5">
-              PDF, FDX, Fountain, DOCX, TXT — creates a project with full scene graph
+              PDF, FDX, Fountain, DOCX, TXT — creates a project with full intelligence layer
             </p>
           )}
         </div>
