@@ -219,7 +219,7 @@ export function DevEngineSimpleView({
                 variant="link"
                 size="sm"
                 className="text-[10px] p-0 h-auto mt-1"
-                onClick={() => navigate(`/projects/${projectId}/development?tab=autorun`) }
+                onClick={() => { console.log('[DevEngineSimpleView] EmptyState navigate to autorun tab'); navigate(`/projects/${projectId}/development?tab=autorun`); }}
               >
                 Open Mission Control →
               </Button>
@@ -283,7 +283,7 @@ export function DevEngineSimpleView({
                 variant="outline"
                 size="sm"
                 className="w-full text-[10px] h-7 mt-1"
-                onClick={() => navigate(`/projects/${projectId}/development?tab=autorun`) }
+                onClick={() => { console.log('[DevEngineSimpleView] navigate to autorun tab'); navigate(`/projects/${projectId}/development?tab=autorun`); }}
               >
                 Open Mission Control <ArrowRight className="h-3 w-3 ml-1" />
               </Button>

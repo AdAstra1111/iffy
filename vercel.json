@@ -29,9 +29,6 @@
     },
     "api/re_status.ts": {
       "maxDuration": 300
-    },
-    "api/supabase-proxy/functions/v1/generate-document.ts": {
-      "maxDuration": 300
     }
   },
   "headers": [
