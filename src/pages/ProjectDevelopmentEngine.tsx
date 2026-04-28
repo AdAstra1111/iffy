@@ -994,7 +994,7 @@ export default function ProjectDevelopmentEngine() {
   const currentDocType = selectedDoc?.doc_type || '';
   const isFoundationDocStale = !!(
     selectedVersion && currentResolverHash &&
-    isDocStale(selectedVersion as any, currentResolverHash) &&
+    isDocStale(selectedVersion as any, currentResolverHash, currentDocType) &&
     ['concept_brief', 'beat_sheet', 'treatment', 'character_bible', 'long_synopsis'].includes(currentDocType)
   );
 
@@ -2034,7 +2034,7 @@ export default function ProjectDevelopmentEngine() {
                         ? currentScriptVersionId
                           ? (selectedVersion as any).depends_on_resolver_hash !== currentScriptVersionId
                           : false
-                        : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash)
+                        : currentResolverHash && isDocStale(selectedVersion as any, currentResolverHash, selectedDoc?.doc_type)
                     );
                     if (!shouldShow) return null;
                     const parentPlaintexts: Record<string, string> = {};
