@@ -160,9 +160,9 @@ export default function NewProject() {
               <Film className="h-4 w-4 text-primary" />
             </div>
             <div>
-              <h3 className="font-semibold text-foreground text-sm">Start from a screenplay</h3>
+              <h3 className="font-semibold text-foreground text-sm">Start from a document</h3>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Drop a script and IFFY will create a project, extract scenes, link characters, classify roles, and build the full scene intelligence layer automatically.
+                Drop a script, treatment, concept brief, or beat sheet — IFFY detects what it is, populates the relevant v1 documents, and builds the full intelligence layer automatically.
               </p>
             </div>
           </div>
