@@ -743,7 +743,7 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   };
 
   // Build Mission Control URL
-  const missionControlUrl = `/projects/${projectId}/development?tab=autorun#autorun-mission-control`;
+  const missionControlUrl = `/projects/${projectId}/development?tab=autorun`;
 
   // Defensive navigation wrapper
   const openMissionControl = () => {
