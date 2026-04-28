@@ -18,6 +18,9 @@
     "api/supabase-proxy/functions/v1/generate-document.ts": {
       "maxDuration": 300
     },
+    "api/supabase-proxy/functions/v1/promote-to-devseed.ts": {
+      "maxDuration": 300
+    },
     "api/nit-sync-proxy.ts": {
       "maxDuration": 300
     },
