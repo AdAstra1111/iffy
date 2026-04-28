@@ -83,6 +83,13 @@ const INITIAL_STAGES: DropStage[] = STAGE_DEFINITIONS.map(s => ({
   key: s.key, label: s.label, status: 'pending', retryable: s.retryable,
 }));
 
+/** Detect if plaintext is a screenplay (has INT./EXT. scene headings). */
+function isScreenplayText(text: string): { isScreenplay: boolean; sceneCount: number } {
+  const sluglinePattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.?|INTERIOR|EXTERIOR)[\s\-\.\/]( |\t)/gmi;
+  const matches = [...text.matchAll(sluglinePattern)];
+  return { isScreenplay: matches.length >= 3, sceneCount: matches.length };
+}
+
 const FUNC_BASE = `/api/supabase-proxy/functions/v1`;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -413,6 +420,36 @@ export function useScriptDropProject() {
             })
             .eq('id', currentRunId);
         } catch (_) { /* non-fatal — intake run update failure does not block import */ }
+      }
+
+      // ── Classify document type after ingest ────────────────────────────────
+      // Read plaintext back from the version record to determine if this is
+      // a screenplay (has scene headings) or a non-screenplay doc.
+      const { data: versionData } = await (supabase as any)
+        .from("project_document_versions")
+        .select("plaintext")
+        .eq("id", ver.id)
+        .single();
+      const plaintext = versionData?.plaintext || "";
+      const { isScreenplay, sceneCount } = isScreenplayText(plaintext);
+
+      if (!isScreenplay) {
+        // Non-screenplay document — skip all screenplay-specific enrichment stages
+        const skippedStages = ["scene_extract", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
+        for (const key of skippedStages) {
+          await markSkipped(key, `Document has ${sceneCount} detected scene headings — not a screenplay; skipping screenplay-specific enrichment`);
+        }
+        // Navigate to project immediately
+        if (currentRunId) {
+          await finaliseIntakeRun(currentRunId, currentStages).catch(() => {});
+        }
+        const anyFailed = currentStages.some(s => s.status === "failed");
+        toast.warning(anyFailed
+          ? `"${titleGuess}" created — some stages need attention`
+          : `"${titleGuess}" created — document ready for development`);
+        navigate(`/projects/${pid}`);
+        setIsRunning(false);
+        return;
       }
 
       // ── Enrichment stages — fail-tolerant after project exists ──────────────
