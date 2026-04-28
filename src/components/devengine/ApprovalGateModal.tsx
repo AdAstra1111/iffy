@@ -295,6 +295,7 @@ export function ApprovalGateModal({
       onClose();
     } catch (err: any) {
       const msg = err?.message || "Approval failed";
+      console.error("[ApprovalGate] LockApprove failed:", msg, err);
       setCascadeError(msg);
       toast.error(msg);
     } finally {
