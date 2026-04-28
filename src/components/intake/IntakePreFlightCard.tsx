@@ -23,7 +23,6 @@ interface IntakePreFlightCardProps {
   isGenerating: boolean;
   onConfirm: () => void;
   onCancel: () => void;
-  generatingMessage?: string; // new prop
 }
 
 export function IntakePreFlightCard({
@@ -166,7 +165,7 @@ export function IntakePreFlightCard({
             {isGenerating ? (
               <>
                 <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                {generatingMessage || 'Generating…'}
+                Generating…
               </>
             ) : (
               <>
