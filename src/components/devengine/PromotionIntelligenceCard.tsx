@@ -55,13 +55,21 @@ const LABELS: Record<string, { label: string; color: string; icon: typeof ArrowR
 // DOC_LABELS removed — rendering now uses NextAction model from next-action.ts
 
 async function callAutoRun(action: string, extra: Record<string, any> = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not authenticated');
+  let sessionToken = '';
+  try {
+    await supabase.auth.refreshSession({ force: true });
+    const { data: { session } } = await supabase.auth.getSession();
+    sessionToken = session?.access_token || '';
+  } catch {
+    const { data: { session } } = await supabase.auth.getSession();
+    sessionToken = session?.access_token || '';
+  }
+  if (!sessionToken) throw new Error('Not authenticated');
   const resp = await fetch(`/api/supabase-proxy/functions/v1/auto-run`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${session.access_token}`,
+      Authorization: `Bearer ${sessionToken}`,
     },
     body: JSON.stringify({ action, ...extra }),
   });
