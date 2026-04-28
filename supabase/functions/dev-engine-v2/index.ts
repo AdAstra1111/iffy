@@ -27403,7 +27403,15 @@ CRITICAL:
         .eq("project_id", projectId)
         .eq("is_active", true);
 
-      const scenesCount = sceneOrder?.length || 0;
+      let scenesCount = sceneOrder?.length || 0;
+      // Fallback: scan plaintext directly if DB has fewer than 3 scenes
+      // (scene_graph may not be populated for scripts loaded from external sources)
+      if (scenesCount < 3) {
+        const text = version?.plaintext || "";
+        const sluglinePattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.?|INTERIOR|EXTERIOR)[\s\-\.\/]( |\t)/gmi;
+        const matches = [...text.matchAll(sluglinePattern)];
+        if (matches.length >= 3) scenesCount = matches.length;
+      }
       const hasScenes = scenesCount >= 3;
 
       return new Response(JSON.stringify({

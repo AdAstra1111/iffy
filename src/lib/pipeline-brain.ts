@@ -16,6 +16,18 @@ import {
 } from '@/lib/stages/registry';
 import { getDeliverableLabel } from '@/lib/dev-os-config';
 
+// ── Output document canonical set ─────────────────────────────────────────────
+// Documents that are valid doc_types but NOT ladder stages.
+// They are generated on-demand and must be SILENTLY SKIPPED by PipelineBrain —
+// they are NOT "off-ladder" errors.  (Mirrors OUTPUT_DOC_TYPE_SET in documentLadders.ts)
+const OUTPUT_DOC_TYPE_SET: ReadonlySet<string> = new Set([
+  'market_sheet',
+  'vertical_market_sheet',
+  'deck',
+  'trailer_script',
+  'visual_project_bible',
+]);
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface StageStatus {
@@ -151,8 +163,11 @@ export function computePipelineState(
   }
 
   // Runtime guard: log any existing docs whose doc_type is NOT on the ladder for this format
+  // NOTE: output doc types (market_sheet, deck, etc.) are SILENTLY SKIPPED — they are
+  // valid doc_types that are generated on-demand, NOT ladder stages.
   for (const doc of existingDocs) {
     const mapped = mapDocTypeToLadderStage(doc.docType);
+    if (OUTPUT_DOC_TYPE_SET.has(doc.docType)) continue; // output docs are always fine
     if (!pipeline.includes(mapped) && !excludedStages.includes(mapped)) {
       console.warn(
         `[PipelineBrain] OFF-LADDER doc_type detected: docType="${doc.docType}" (mapped="${mapped}") not on ladder for format="${format}". This doc will be ignored in pipeline state.`
