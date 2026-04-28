@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { getStalenessStatus } from '@/hooks/useAllAutoRunJobs';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import type { AutoRunJob } from '@/hooks/useAllAutoRunJobs';
 
 function relativeTime(dateStr: string | null | undefined): string {
