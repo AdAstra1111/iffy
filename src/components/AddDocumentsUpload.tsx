@@ -1,4 +1,7 @@
-import { useState } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Plus, X, FileText, File, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -145,9 +148,12 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading, proje
       // Non-script doc type: upload first, then show PreFlightCard
       try {
         await onUpload(classifyDialog, undefined, selectedDocType);
+        // Query for the created document record
+        const docId = await getLatestDocumentId(projectId, selectedDocType);
         setPreflightData({
           files: classifyDialog,
           docType: selectedDocType,
+          documentId: docId,
           classification: {
             doc_type: selectedDocType,
             confidence: 'medium',
@@ -155,9 +161,11 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading, proje
             reasoning: `Uploaded as ${selectedDocType}`,
             key_signals: [],
           },
+          extractedFields: [],
+          gaps: ['Target audience not specified in document', 'Protagonist identity needs confirmation'],
         });
-      } catch {
-        // error handled by parent
+      } catch (e: any) {
+        toast.error(`Upload failed: ${e.message}`);
       }
       resetDialog();
     }
@@ -170,14 +178,84 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading, proje
     setIsExpanded(false);
   };
 
-  const handlePreflightConfirm = async () => {
-    if (!preflightData) return;
+  const handlePreflightConfirm = useCallback(async () => {
+    if (!preflightData || !projectId) return;
+
+    const docId = preflightData.documentId;
+    if (!docId) {
+      toast.error('Document not found — please re-upload');
+      return;
+    }
+
     setIsGeneratingForType(true);
-    // Pipeline trigger goes here — for now just close the card
-    // TODO: wire up reverse-engineer-script with docType
-    setPreflightData(null);
-    setIsGeneratingForType(false);
-  };
+    setPreflightGenerating(true);
+    setPreflightProgress('Starting extraction…');
+
+    try {
+      // 1. Call reverse-engineer-script — foreground dispatches job, returns job_id
+      const { data: reData, error: reError } = await supabase.functions.invoke('reverse-engineer-script', {
+        body: {
+          project_id: projectId,
+          script_document_id: docId,
+          doc_type: preflightData.docType,
+        },
+      });
+
+      if (reError || !reData?.job_id) {
+        throw new Error(reError?.message || reData?.error || 'Failed to start extraction');
+      }
+
+      const jobId = reData.job_id as string;
+      setPreflightProgress('Extracting & generating documents…');
+
+      // 2. Poll job status via re_status proxy
+      const pollIntervalMs = 2500;
+      const poll = async () => {
+        try {
+          const resp = await fetch('/api/re_status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId }),
+          });
+          if (!resp.ok) throw new Error(`Poll error ${resp.status}`);
+          const job = await resp.json();
+
+          if (job.status === 'running' && job.current_stage) {
+            setPreflightProgress(job.current_stage.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
+          }
+
+          if (job.status === 'done') {
+            setPreflightProgress('Done!');
+            if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+            pollTimerRef.current = null;
+            toast.success('Documents generated successfully');
+            setPreflightData(null);
+            setIsGeneratingForType(false);
+            setPreflightGenerating(false);
+            navigate(`/projects/${projectId}/development`);
+            return;
+          }
+          if (job.status === 'error') {
+            if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+            pollTimerRef.current = null;
+            throw new Error(job.error || 'Extraction job failed');
+          }
+        } catch (e: any) {
+          if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+          pollTimerRef.current = null;
+          throw new Error(e.message);
+        }
+        pollTimerRef.current = setTimeout(poll, pollIntervalMs);
+      };
+      poll();
+    } catch (e: any) {
+      toast.error(`Extraction failed: ${e.message}`);
+      setPreflightData(null);
+      setIsGeneratingForType(false);
+      setPreflightGenerating(false);
+      setPreflightProgress('');
+    }
+  }, [preflightData, projectId, navigate]);
 
 
   const handlePreflightCancel = () => {
@@ -365,9 +443,10 @@ export function AddDocumentsUpload({ existingCount, onUpload, isUploading, proje
           <IntakePreFlightCard
             fileName={preflightData.files[0]?.name || 'document'}
             classification={preflightData.classification}
-            extractedFields={[]}
-            gaps={[]}
+            extractedFields={preflightData.extractedFields || []}
+            gaps={preflightData.gaps || []}
             isGenerating={isGeneratingForType}
+            generatingMessage={preflightProgress}
             onConfirm={handlePreflightConfirm}
             onCancel={handlePreflightCancel}
           />
