@@ -33,7 +33,7 @@ async function callAutoRun(action: string, extra: Record<string, any> = {}) {
   try {
     resp = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
       body: JSON.stringify({ action, ...extra }),
     });
   } catch (fetchErr: any) {
