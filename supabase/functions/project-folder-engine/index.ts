@@ -267,7 +267,9 @@ Deno.serve(async (req) => {
         "deck", "season_arc", "episode_grid", "blueprint",
         "season_script", "feature_script", "production_draft",
       ]);
-      const shouldCheckDrift = !CANON_DRIFT_EXEMPT_DOC_TYPES.has(docType || "");
+      // Normalize before lookup — database may store "Market Sheet" but exempt keys are lowercase
+      const normalizedDocType = (docType || "").toLowerCase().replace(/[-\s]+/g, "_");
+      const shouldCheckDrift = !CANON_DRIFT_EXEMPT_DOC_TYPES.has(normalizedDocType);
       if (shouldCheckDrift) {
         try {
           const { data: vPlain } = await db.from("project_document_versions")

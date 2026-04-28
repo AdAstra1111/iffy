@@ -29,6 +29,7 @@ interface UseReverseEngineerReturn {
   getProjectJobs: (projectId: string) => Promise<ReverseEngineerJob[]>;
   isRunning: boolean;
   currentJob: ReverseEngineerJob | null;
+  pollError: string | null;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -43,16 +44,27 @@ async function pollViaProxy(body: { job_id?: string; project_id?: string }): Pro
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    // Surface HTTP errors instead of silently ignoring them
+    if (!res.ok) {
+      let errMsg = `Proxy error ${res.status}`;
+      try {
+        const errBody = await res.json();
+        errMsg = errBody?.error || errMsg;
+      } catch { /* ignore parse errors */ }
+      // Throw so polling loop can surface the error rather than silently continue
+      throw new Error(errMsg);
+    }
     return res.json();
-  } catch {
-    return null;
+  } catch (e: any) {
+    // Re-throw so callers can handle specific errors
+    throw new Error(`pollViaProxy failed: ${e?.message || e}`);
   }
 }
 
 export function useReverseEngineer(): UseReverseEngineerReturn {
   const [isRunning, setIsRunning] = useState(false);
   const [currentJob, setCurrentJob] = useState<ReverseEngineerJob | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** Start reverse-engineer job */
@@ -91,17 +103,20 @@ export function useReverseEngineer(): UseReverseEngineerReturn {
       const poll = async () => {
         try {
           const result = await pollViaProxy({ job_id: jobId });
+          setPollError(null);
           if (result && !('jobs' in result)) {
             const job = result as ReverseEngineerJob;
             setCurrentJob(job);
             if (job.status === 'done' || job.status === 'error') {
               setIsRunning(false);
               if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+              pollTimerRef.current = null;
               return;
             }
           }
-        } catch {
-          // transient error — keep polling
+        } catch (e: any) {
+          console.warn('[reverse-engineer] poll error:', e?.message);
+          setPollError(e?.message || 'Poll failed');
         }
         pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
       };
@@ -128,5 +143,5 @@ export function useReverseEngineer(): UseReverseEngineerReturn {
     return result.jobs;
   }, []);
 
-  return { reverseEngineerFromScript, pollJobStatus, getProjectJobs, isRunning, currentJob };
+  return { reverseEngineerFromScript, pollJobStatus, getProjectJobs, isRunning, currentJob, pollError };
 }

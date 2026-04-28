@@ -38,6 +38,7 @@ export interface ReverseEngineerContextValue {
   getProjectJobs: (projectId: string) => Promise<ReverseEngineerJob[]>;
   isRunning: boolean;
   currentJob: ReverseEngineerJob | null;
+  pollError: string | null;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -56,10 +57,17 @@ async function pollViaProxy(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      let errMsg = `Proxy error ${res.status}`;
+      try {
+        const errBody = await res.json();
+        errMsg = errBody?.error || errMsg;
+      } catch { /* ignore */ }
+      throw new Error(errMsg);
+    }
     return res.json();
-  } catch {
-    return null;
+  } catch (e: any) {
+    throw new Error(`pollViaProxy failed: ${e?.message || e}`);
   }
 }
 
@@ -72,6 +80,7 @@ const ReverseEngineerContext = createContext<ReverseEngineerContextValue | null>
 export function ReverseEngineerProvider({ children }: { children: ReactNode }) {
   const [isRunning, setIsRunning] = useState(false);
   const [currentJob, setCurrentJob] = useState<ReverseEngineerJob | null>(null);
+  const [pollError, setPollError] = useState<string | null>(null);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reverseEngineerFromScript = useCallback(async (
@@ -115,6 +124,7 @@ export function ReverseEngineerProvider({ children }: { children: ReactNode }) {
       const poll = async () => {
         try {
           const result = await pollViaProxy({ job_id: jobId });
+          setPollError(null);
           if (result && !('jobs' in result)) {
             const job = result as ReverseEngineerJob;
             setCurrentJob(job);
@@ -125,8 +135,9 @@ export function ReverseEngineerProvider({ children }: { children: ReactNode }) {
               return;
             }
           }
-        } catch {
-          // transient error — keep polling
+        } catch (e: any) {
+          console.warn('[reverse-engineer] poll error:', e?.message);
+          setPollError(e?.message || 'Poll failed');
         }
         pollTimerRef.current = setTimeout(poll, POLL_INTERVAL_MS);
       };
@@ -153,7 +164,7 @@ export function ReverseEngineerProvider({ children }: { children: ReactNode }) {
 
   return (
     <ReverseEngineerContext.Provider
-      value={{ reverseEngineerFromScript, pollJobStatus, getProjectJobs, isRunning, currentJob }}
+      value={{ reverseEngineerFromScript, pollJobStatus, getProjectJobs, isRunning, currentJob, pollError }}
     >
       {children}
     </ReverseEngineerContext.Provider>
