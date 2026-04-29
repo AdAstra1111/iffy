@@ -29724,7 +29724,7 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
 - Do NOT output any episode number above ${canonicalEpisodeCount}.`
             : "";
 
-          // ── CANON INJECTION (regen-tick) ──
+          // ── CANON INJECTION (regen-tick) — FULL depth, not just names ──
           let canonBlock = "";
           try {
             const { data: canonRow } = await supabase
@@ -29732,22 +29732,52 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
               .select("canon_json")
               .eq("project_id", projectId)
               .maybeSingle();
+            const { data: projRow } = await supabase
+              .from("projects")
+              .select("guardrails_config")
+              .eq("id", projectId)
+              .maybeSingle();
             const cj = canonRow?.canon_json || {};
+            const projGc = (projRow as any)?.guardrails_config || {};
+            const storySetup = projGc?.overrides?.story_setup || {};
             const canonParts: string[] = [];
             const canonTitle = cj.title || proj?.title || "";
             if (canonTitle) canonParts.push(`CANONICAL TITLE: "${canonTitle}" — use this exact title throughout. Do NOT rename or create alternate titles.`);
             if (cj.logline) canonParts.push(`CANONICAL LOGLINE: ${cj.logline}`);
+            if (cj.premise) canonParts.push(`CANONICAL PREMISE: ${cj.premise}`);
             if (Array.isArray(cj.characters) && cj.characters.length > 0) {
-              const charLines = cj.characters
+              // Full character profiles with backstory, psychology, relationships
+              const charProfiles = cj.characters
                 .filter((c: any) => c.name && c.name.trim())
-                .slice(0, 15)
-                .map((c: any) => `  - ${c.name}${c.role ? ` (${c.role})` : ""}`);
-              if (charLines.length > 0) {
-                canonParts.push(`CANONICAL CHARACTERS (use these exact names):\n${charLines.join("\n")}`);
+                .slice(0, 10)
+                .map((c: any) => {
+                  const parts: string[] = [`${c.name} (${c.role || "character"})`];
+                  if (c.backstory) parts.push(`  BACKSTORY: ${c.backstory.slice(0, 500)}`);
+                  if (c.psychology) parts.push(`  PSYCHOLOGY: ${c.psychology.slice(0, 400)}`);
+                  if (c.fatal_flaw) parts.push(`  FATAL FLAW: ${c.fatal_flaw}`);
+                  if (c.need) parts.push(`  NEED: ${c.need}`);
+                  if (c.want) parts.push(`  WANT: ${c.want}`);
+                  if (c.arc) parts.push(`  ARC: ${c.arc.slice(0, 300)}`);
+                  if (c.relationships) parts.push(`  RELATIONSHIPS: ${c.relationships}`);
+                  return parts.join("\n");
+                });
+              if (charProfiles.length > 0) {
+                canonParts.push(`CANONICAL CHARACTERS (MUST use these names + roles exactly):\n${charProfiles.join("\n\n")}`);
               }
             }
+            if (Array.isArray(cj.world_rules) && cj.world_rules.length > 0) {
+              canonParts.push(`WORLD RULES:\n${cj.world_rules.slice(0, 5).map((r: any) => `- ${typeof r === 'string' ? r : r.rule || JSON.stringify(r)}`).join("\n")}`);
+            }
             if (canonParts.length > 0) {
-              canonBlock = `\n## CANON LOCK (AUTHORITATIVE)\n${canonParts.join("\n")}\n`;
+              canonBlock = `\n## CANON LOCK (AUTHORITATIVE — do not contradict)\n${canonParts.join("\n")}\n`;
+            }
+            // Also inject story_setup from guardrails_config (populated by autofill)
+            const storySetupBlock = Object.entries(storySetup)
+              .filter(([_, v]) => v && typeof v === 'string' && v.trim().length > 0)
+              .map(([k, v]) => `${k.toUpperCase()}: ${(v as string).trim()}`)
+              .join('\n');
+            if (storySetupBlock) {
+              canonBlock += `\n## SEED INTELLIGENCE (from project brief)\n${storySetupBlock}\n`;
             }
           } catch { /* non-fatal */ }
 

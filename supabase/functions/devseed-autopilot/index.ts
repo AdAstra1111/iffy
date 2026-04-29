@@ -16,8 +16,17 @@
  *
  * State stored in: canon_json.autopilot (NO new tables)
  */
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import { resolveGateway } from "../_shared/llm.ts";
+
+// EdgeRuntime.waitUntil — run background work after response is sent
+const waitUntil = (work: Promise<unknown>) => {
+  try {
+    const Er = globalThis?.EdgeRuntime;
+    if (typeof Er?.waitUntil === "function") Er.waitUntil(work);
+  } catch { /* not in EdgeRuntime env */ }
+};
 
 // ── Dynamic CORS ──
 function getCorsHeaders(req: Request) {
@@ -569,6 +578,86 @@ async function executeApplySeedIntelPack(
   console.log("[devseed-autopilot] APPLY_SEED_INTEL_PACK done");
 }
 
+// Background polling helper — runs after HTTP response is sent
+async function pollRegenJobAndUpdateCanon(
+  sb: any, supabaseUrl: string, authHeader: string,
+  projectId: string, jobId: string, total: number, userId: string | null,
+) {
+  let done = false;
+  let iterations = 0;
+  const MAX_ITERATIONS = 50;
+  let backoff = 500;
+
+  try {
+    while (!done && iterations < MAX_ITERATIONS) {
+      iterations++;
+      const tickResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
+        body: JSON.stringify({ action: "regen-insufficient-tick", jobId, maxItemsPerTick: 3, userId }),
+      });
+      const tickData = await tickResp.json();
+      if (!tickResp.ok) {
+        await updateAutopilotStage(projectId, "regen_foundation", "error",
+          `tick failed: ${tickData.error || tickResp.status}`, userId, sb);
+        return;
+      }
+      done = tickData.done === true;
+      if (!done) await new Promise(r => setTimeout(r, backoff));
+      backoff = Math.min(backoff * 1.2, 3000);
+    }
+
+    // Fetch final status
+    const statusResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
+      body: JSON.stringify({ action: "regen-insufficient-status", jobId, userId }),
+    });
+    const statusData = await statusResp.json();
+    const items = statusData?.items || [];
+    const errorItems = items.filter((i: any) => i.status === "error");
+
+    if (!done) {
+      await updateAutopilotStage(projectId, "regen_foundation", "error",
+        `timed_out_after_${MAX_ITERATIONS}_ticks`, userId, sb);
+    } else if (errorItems.length > 0) {
+      await updateAutopilotStage(projectId, "regen_foundation", "error",
+        `${errorItems.length} items errored`, userId, sb);
+    } else {
+      const regenCount = items.filter((i: any) => i.status === "regenerated").length;
+      await updateAutopilotStage(projectId, "regen_foundation", "done",
+        `regenerated ${regenCount}/${total} docs`, userId, sb);
+    }
+  } catch (e: any) {
+    await updateAutopilotStage(projectId, "regen_foundation", "error",
+      e.message?.slice(0, 500) || "unknown error", userId, sb);
+  }
+}
+
+async function updateAutopilotStage(
+  projectId: string, stage: string, status: string, notes: string,
+  userId: string | null, sb: any,
+) {
+  try {
+    const { data: canonRow } = await sb
+      .from("project_canon").select("canon_json").eq("project_id", projectId).single();
+    const canonJson = canonRow?.canon_json || {};
+    const autopilot = canonJson.autopilot || {};
+    const stages = autopilot.stages || {};
+    if (stages[stage]) {
+      stages[stage].status = status;
+      stages[stage].notes = notes;
+      stages[stage].updated_at = nowISO();
+    }
+    await sb.from("project_canon").update({
+      canon_json: { ...canonJson, autopilot: { ...autopilot, stages } },
+      updated_by: userId,
+    }).eq("project_id", projectId);
+  } catch (e) {
+    console.error("[devseed-autopilot] updateAutopilotStage error:", e);
+  }
+}
+
 async function executeRegenFoundation(
   sb: any, supabaseUrl: string, authHeader: string,
   projectId: string, autopilot: AutopilotState, userId: string,
@@ -605,67 +694,27 @@ async function executeRegenFoundation(
     return;
   }
 
-  // Tick loop with bounded iterations
-  let done = false;
-  let iterations = 0;
-  const MAX_ITERATIONS = 50;
-  let backoff = 500;
+  // Mark stage running and persist immediately (fetch canonRow fresh to avoid overwrites)
+  const { data: canonRowForUpsert } = await sb
+    .from("project_canon").select("canon_json").eq("project_id", projectId).single();
+  autopilot.stages.regen_foundation.status = "running";
+  autopilot.stages.regen_foundation.updated_at = nowISO();
+  autopilot.stages.regen_foundation.notes = "background_regen";
+  autopilot.updated_at = nowISO();
+  await sb.from("project_canon").upsert({
+    project_id: projectId,
+    canon_json: { ...(canonRowForUpsert?.canon_json || {}), autopilot },
+    updated_by: userId,
+  }, { onConflict: "project_id" });
 
-  while (!done && iterations < MAX_ITERATIONS) {
-    iterations++;
-    const tickResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${authHeader}`,
-      },
-      body: JSON.stringify({
-        action: "regen-insufficient-tick",
-        jobId,
-        maxItemsPerTick: 3,
-        userId,
-      }),
-    });
+  // Dispatch background polling — return immediately so HTTP response isn't timed out
+  waitUntil(
+    pollRegenJobAndUpdateCanon(sb, supabaseUrl, authHeader, projectId, jobId, total, userId)
+  );
 
-    const tickData = await tickResp.json();
-    if (!tickResp.ok) {
-      throw new Error(tickData.error || "regen-insufficient-tick failed");
-    }
-
-    done = tickData.done === true;
-    if (!done) {
-      await new Promise(r => setTimeout(r, backoff));
-      backoff = Math.min(backoff * 1.2, 3000);
-    }
-  }
-
-  if (!done) {
-    autopilot.stages.regen_foundation.notes = `timed_out_after_${MAX_ITERATIONS}_ticks`;
-    throw new Error("Foundation regen timed out");
-  }
-
-  // Get final status
-  const statusResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${authHeader}`,
-    },
-    body: JSON.stringify({ action: "regen-insufficient-status", jobId }),
-  });
-
-  const statusData = await statusResp.json();
-  const items = statusData?.items || [];
-  const errorItems = items.filter((i: any) => i.status === "error");
-
-  if (errorItems.length > 0) {
-    autopilot.stages.regen_foundation.notes = `${errorItems.length} items errored`;
-    throw new Error(`Regen failed for: ${errorItems.map((i: any) => i.doc_type).join(", ")}`);
-  }
-
-  const regenCount = items.filter((i: any) => i.status === "regenerated").length;
-  autopilot.stages.regen_foundation.notes = `regenerated ${regenCount}/${total} docs`;
-  console.log(`[devseed-autopilot] regen_foundation done: ${regenCount}/${total}`);
+  // Return immediately — stage status will be updated by background worker
+  console.log(`[devseed-autopilot] regen_foundation dispatched job ${jobId}, returning immediately`);
+  return;
 }
 
 // ─── seed_writing_voice ────────────────────────────────────────────────────
