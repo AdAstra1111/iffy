@@ -28,7 +28,7 @@ export async function loadSeedDocs(projectId: string): Promise<SeedDoc[]> {
     .from('project_documents')
     .select('id, doc_type')
     .eq('project_id', projectId)
-    .in('doc_type', ['market_positioning', 'creative_brief', 'canon', 'nec', 'project_overview']);
+    .in('doc_type', ['market_positioning', 'creative_brief', 'canon', 'nec', 'project_overview', 'concept_brief']);
 
   if (!docs || docs.length === 0) return [];
 
@@ -186,6 +186,71 @@ export function extractAutofill(seedDocs: SeedDoc[]): AutofillResult {
           if (line) {
             result.pitchLogline = line.replace(/^[-•*"]\s*/, '').replace(/"$/, '').slice(0, 300);
           }
+        }
+      }
+    }
+
+    // ── concept_brief — rich character information (protagonist, antagonist, tension) ──
+    // concept_brief plaintext contains: LOGLINE, PREMISE, THEMES, CENTRAL QUESTION, WORLD BUILDING
+    // These sections have rich character info even without explicit "Protagonist" headings.
+    // We must extract from PREMISE (character names + roles + arcs) and WORLD BUILDING.
+    if (doc.doc_type === 'concept_brief') {
+      // Extract premise (usually contains protagonist + antagonist + arc description)
+      const premiseSection = extractSection(text, /(?:#{1,3}\s*)?(?:PREMISE|Premise\s*Statement|Central\s*Premise|Story\s*Premise)/i);
+      if (premiseSection) {
+        const firstPara = premiseSection.split('\n').map(l => l.trim()).filter(l => l.length > 30)[0];
+        if (firstPara) {
+          // If no protagonist extracted yet, use premise as protagonist context
+          if (!storySetup.protagonist) {
+            storySetup.protagonist = firstPara.slice(0, 500);
+          }
+          // Always populate premise if we have a good paragraph
+          storySetup.premise = firstPara.slice(0, 500);
+        }
+      }
+
+      // Extract logline (character names appear here)
+      const logSection = extractSection(text, /(?:#{1,3}\s*)?(?:LOGLINE|Logline|Log\s*Line|One[- ]?Liner)/i);
+      if (logSection) {
+        const line = logSection.split('\n').map(l => l.trim()).find(l => l.length > 20);
+        if (line) {
+          result.pitchLogline = line.replace(/^[-•*"]\s*/, '').replace(/"$/, '').slice(0, 300);
+          // If no protagonist yet, logline is a good fallback
+          if (!storySetup.protagonist) {
+            storySetup.protagonist = line.slice(0, 300);
+          }
+        }
+      }
+
+      // Extract central question — drives character engine
+      const cqSection = extractSection(text, /(?:#{1,3}\s*)?(?:CENTRAL\s*QUESTION|Central\s*Question|Story\s*Question|Dramatic\s*Question)/i);
+      if (cqSection) {
+        const firstPara = cqSection.split('\n').map(l => l.trim()).filter(l => l.length > 20)[0];
+        if (firstPara) storySetup.stakes = firstPara.slice(0, 400);
+      }
+
+      // Extract world building — sets character context
+      const wbSection = extractSection(text, /(?:#{1,3}\s*)?(?:WORLD\s*BUILDING|World\s*Building|Setting|Environment)/i);
+      if (wbSection) {
+        const firstPara = wbSection.split('\n').map(l => l.trim()).filter(l => l.length > 30)[0];
+        if (firstPara) storySetup.world = firstPara.slice(0, 400);
+      }
+
+      // Extract themes — drives character arcs
+      const themesSection = extractSection(text, /(?:#{1,3}\s*)?(?:THEMES?|Core\s*Themes?|Key\s*Themes?)/i);
+      if (themesSection) {
+        const bullets = extractBullets(themesSection).slice(0, 6);
+        if (bullets.length > 0) {
+          storySetup.themes = bullets.join(', ');
+        }
+      }
+
+      // Extract genre — used for story_setup tone inference
+      const genreSection = extractSection(text, /(?:#{1,3}\s*)?(?:GENRE|Subgenre)/i);
+      if (genreSection && !result.genres) {
+        const genreLines = extractBullets(genreSection).slice(0, 3);
+        if (genreLines.length > 0) {
+          result.genres = genreLines.map(g => g.toLowerCase().replace(/[^a-z\s-]/g, '').trim()).filter(Boolean);
         }
       }
     }
