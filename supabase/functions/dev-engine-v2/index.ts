@@ -6944,7 +6944,7 @@ ${(() => {
 
         // Fetch existing state canon_hash for comparison
         const { data: prevStateRow } = await supabase.from("project_dev_note_state")
-          .select("canon_hash").eq("project_id", projectId).eq("doc_type", notesEffectiveFormat)
+          .select("canon_hash").eq("project_id", projectId).eq("doc_type", deliverableType)
           .order("updated_at", { ascending: false }).limit(1).maybeSingle();
 
         // Fetch canon inputs for hash
@@ -6980,7 +6980,7 @@ ${(() => {
 
             const result = await upsertNoteState(supabase, {
               projectId,
-              docType: deliverableType || notesEffectiveFormat,
+              docType: deliverableType,
               episodeNumber,
               note,
               versionId,
@@ -7048,7 +7048,7 @@ ${(() => {
         // Detect conflicts and create decision sets
         const conflicts = detectConflicts(enrichedNotes);
         if (conflicts.length > 0) {
-          decisionSets = await upsertDecisionSets(supabase, projectId, notesEffectiveFormat, episodeNumber, enrichedNotes, conflicts);
+          decisionSets = await upsertDecisionSets(supabase, projectId, deliverableType, episodeNumber, enrichedNotes, conflicts);
         }
 
         // Detect loop bundles from enriched notes
