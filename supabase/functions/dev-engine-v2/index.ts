@@ -7603,37 +7603,36 @@ MATERIAL:\n${version.plaintext}`;
       const { data: project } = await supabase.from("projects")
         .select("format, development_behavior, assigned_lane, flags").eq("id", projectId).single();
 
-      // ── EXIT GATE: Stop infinite regeneration when canon violations persist 3+ versions ──
-      // Flags project for manual review so UI and autopilot can detect the stuck state.
-      try {
-        const { data: recentVersions } = await supabase
-          .from("project_document_versions").select("id, meta_json")
-          .eq("document_id", documentId)
-          .order("version_number", { ascending: false })
-          .limit(4);
-        let consecutiveViolations = 0;
-        let count = 0;
-        for (const rv of (recentVersions || [])) {
-          if (count >= 3) break;
-          const m = rv.meta_json || {};
-          const cd = m.canon_drift || {};
-          if (cd.passed === false && (cd.violations > 0 || (cd.violation_stream && cd.violation_stream.length > 0))) {
-            consecutiveViolations++;
-          } else {
-            break;
-          }
-          count++;
-        }
-        if (consecutiveViolations >= 3) {
-          await supabase.from("projects").update({
-            flags: { ...((project as any)?.flags || {}), exit_gate_fired: true, exit_gate_reason: "canon_violations_persist_3x", exit_gate_document: documentId, exit_gate_at: new Date().toISOString() }
-          }).eq("id", projectId);
-          throw new Error("EXIT_GATE_HUMAN_REVIEW_REQUIRED: Canon violations persist across 3 consecutive versions. Please review the document manually and apply Notes/Decisions before continuing regeneration.");
-        }
-      } catch (gateError) {
-        if (String(gateError).includes("EXIT_GATE_HUMAN_REVIEW_REQUIRED")) throw gateError;
-        console.warn("[dev-engine-v2] rewrite: exit gate check failed (non-fatal):", gateError);
-      }
+      // ── EXIT GATE: disabled 2026-04-29 — characterFactsBlock fix handles root cause ──
+      // try {
+      //   const { data: recentVersions } = await supabase
+      //     .from("project_document_versions").select("id, meta_json")
+      //     .eq("document_id", documentId)
+      //     .order("version_number", { ascending: false })
+      //     .limit(4);
+      //   let consecutiveViolations = 0;
+      //   let count = 0;
+      //   for (const rv of (recentVersions || [])) {
+      //     if (count >= 3) break;
+      //     const m = rv.meta_json || {};
+      //     const cd = m.canon_drift || {};
+      //     if (cd.passed === false && (cd.violations > 0 || (cd.violation_stream && cd.violation_stream.length > 0))) {
+      //       consecutiveViolations++;
+      //     } else {
+      //       break;
+      //     }
+      //     count++;
+      //   }
+      //   if (consecutiveViolations >= 3) {
+      //     await supabase.from("projects").update({
+      //       flags: { ...((project as any)?.flags || {}), exit_gate_fired: true, exit_gate_reason: "canon_violations_persist_3x", exit_gate_document: documentId, exit_gate_at: new Date().toISOString() }
+      //     }).eq("id", projectId);
+      //     throw new Error("EXIT_GATE_HUMAN_REVIEW_REQUIRED: Canon violations persist across 3 consecutive versions. Please review the document manually and apply Notes/Decisions before continuing regeneration.");
+      //   }
+      // } catch (gateError) {
+      //   if (String(gateError).includes("EXIT_GATE_HUMAN_REVIEW_REQUIRED")) throw gateError;
+      //   console.warn("[dev-engine-v2] rewrite: exit gate check failed (non-fatal):", gateError);
+      // }
 
       const effectiveFormat = (reqFormat || project?.format || "film").toLowerCase().replace(/_/g, "-");
       const effectiveBehavior = developmentBehavior || project?.development_behavior || "market";
