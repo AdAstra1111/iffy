@@ -5233,6 +5233,20 @@ serve(async (req) => {
         .select("plaintext, meta_json").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
 
+      // Fix: verify versionId is the latest for this document — if stale, use the latest version
+      // This prevents CI/GP from being stamped to an old version while new versions pile up without scores
+      const { data: doc } = await supabase.from("project_documents")
+        .select("latest_version_id, doc_type").eq("id", documentId).single();
+      if (doc?.latest_version_id && doc.latest_version_id !== versionId) {
+        console.warn(`[dev-engine-v2] analyze: stale versionId=${versionId.slice(0,8)} latest=${doc.latest_version_id.slice(0,8)} — using latest`);
+        const { data: latestVer } = await supabase.from("project_document_versions")
+          .select("plaintext, meta_json").eq("id", doc.latest_version_id).single();
+        if (latestVer) {
+          versionId = doc.latest_version_id;
+          version = latestVer;
+        }
+      }
+
       // Guard: refuse to analyze an empty or still-generating document.
       // An LLM analyzing an empty placeholder generates nonsensical "document is empty" blockers
       // that then persist as stale notes even after the real content arrives.
@@ -6966,7 +6980,7 @@ ${(() => {
 
             const result = await upsertNoteState(supabase, {
               projectId,
-              docType: notesEffectiveFormat,
+              docType: deliverableType || notesEffectiveFormat,
               episodeNumber,
               note,
               versionId,
@@ -7584,6 +7598,27 @@ MATERIAL:\n${version.plaintext}`;
       const { data: version } = await supabase.from("project_document_versions")
         .select("plaintext, version_number").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
+
+      // ── EXIT GATE: Stop infinite regeneration when canon violations persist across 3+ versions ──
+      // If 3 consecutive versions all had canon_drift violations, flag for human review.
+      // This prevents the system from looping forever on the same violations.
+      const { data: recentVersions } = await supabase
+        .from("project_document_versions").select("id, meta_json")
+        .eq("document_id", documentId).in("id", [versionId, ...((version as any)._recentIds || [])])
+        .order("version_number", { ascending: false }).limit(4);
+      let consecutiveViolations = 0;
+      for (const rv of (recentVersions || [])) {
+        const m = rv.meta_json || {};
+        const cd = m.canon_drift || {};
+        if (cd.passed === false && (cd.violations?.length > 0 || cd.violation_stream?.length > 0)) {
+          consecutiveViolations++;
+        } else {
+          break;
+        }
+      }
+      if (consecutiveViolations >= 3) {
+        throw new Error("EXIT_GATE_HUMAN_REVIEW_REQUIRED: Canon violations persist across 3 consecutive versions. Please review the document manually and apply Notes/Decisions before continuing regeneration.");
+      }
 
       const { data: project } = await supabase.from("projects")
         .select("format, development_behavior, assigned_lane").eq("id", projectId).single();
@@ -29757,7 +29792,33 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
             const cj = canonRow?.canon_json || {};
             const projGc = (projRow as any)?.guardrails_config || {};
             const storySetup = projGc?.overrides?.story_setup || {};
+            // Also fetch concept_brief PROTAGONIST section directly from plaintext — this is the
+            // authoritative source for character backstory, not project_canon which may have been
+            // autofilled from the raw idea. Beat sheet character facts must come from approved brief.
+            let conceptBriefProtagonist = "";
+            try {
+              const { data: cbDoc } = await supabase
+                .from("project_documents").select("id").eq("project_id", projectId).eq("doc_type", "concept_brief").maybeSingle();
+              if (cbDoc) {
+                const { data: cbVer } = await supabase
+                  .from("project_document_versions").select("plaintext")
+                  .eq("document_id", cbDoc.id).eq("is_current", true).maybeSingle();
+                if (cbVer?.plaintext) {
+                  const text = cbVer.plaintext;
+                  // Extract PROTAGONIST section
+                  const protMatch = text.match(/(?:^|\n)(#{1,3}\s*(?:PROTAGONIST|CORE\s*CONCEPT|CHARACTER)\s*\n)([\s\S]*?)(?:\n#{1,3}\s|\n\n|$)/im);
+                  if (protMatch) conceptBriefProtagonist = protMatch[1].trim().slice(0, 800);
+                  // Also extract PREMISE section for arc/conflict context
+                  const premMatch = text.match(/(?:^|\n)(#{1,3}\s*PREMISE\s*\n)([\s\S]*?)(?:\n#{1,3}\s|\n\n|$)/im);
+                  if (premMatch && !conceptBriefProtagonist) conceptBriefProtagonist = premMatch[2].trim().slice(0, 800);
+                }
+              }
+            } catch { /* non-fatal */ }
+
             const canonParts: string[] = [];
+            if (conceptBriefProtagonist) {
+              canonParts.push(`APPROVED PROTAGONIST (from concept_brief — authoritative):\n${conceptBriefProtagonist}`);
+            }
             const canonTitle = cj.title || proj?.title || "";
             if (canonTitle) canonParts.push(`CANONICAL TITLE: "${canonTitle}" — use this exact title throughout. Do NOT rename or create alternate titles.`);
             if (cj.logline) canonParts.push(`CANONICAL LOGLINE: ${cj.logline}`);
