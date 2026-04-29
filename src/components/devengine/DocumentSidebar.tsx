@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Plus, ClipboardPaste, GitBranch, Loader2, Trash2, ShieldCheck, GripVertical, Package, ChevronRight, AlertTriangle, Zap } from 'lucide-react';
+import { Plus, ClipboardPaste, GitBranch, Loader2, Trash2, ShieldCheck, GripVertical, Package, ChevronRight, AlertTriangle } from 'lucide-react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DELIVERABLE_LABELS } from '@/lib/dev-os-config';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -18,7 +18,7 @@ import { getDocFlowConfig } from '@/lib/docFlowMap';
 import { formatToLane, isOutputDocType } from '@/config/documentLadders';
 import { getLadderForFormat } from '@/lib/stages/registry';
 import { isSeriesFormat } from '@/lib/format-helpers';
-import { useReverseEngineer } from '@/hooks/useReverseEngineer';
+
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
@@ -96,21 +96,9 @@ export function DocumentSidebar({
   const [pasteTitle, setPasteTitle] = useState('');
   const [pasteType, setPasteType] = useState('idea');
   const [pasteText, setPasteText] = useState('');
-  const { reverseEngineerFromScript, isRunning: isReverseEngineering } = useReverseEngineer();
+
   const queryClient = useQueryClient();
 
-  // Find a script document for reverse engineering — permissive detection
-  const scriptDoc = useMemo(() => 
-    documents.find(d => {
-      const dt = (d.doc_type || '') as string;
-      const role = (d.doc_role || '') as string;
-      const title = (d.title || '') as string;
-      if (dt.includes('script')) return true;
-      if (dt === 'source_script') return true;
-      if (role === 'source_script') return true;
-      if (role === 'creative_primary' && title.toLowerCase().includes('script')) return true;
-      return false;
-    }), [documents]);
   // Resizable width
   const [width, setWidth] = useState(getStoredWidth);
   const dragging = useRef(false);
@@ -356,36 +344,6 @@ export function DocumentSidebar({
           <Package className="h-3 w-3 text-primary" />
           Project Package
         </Button>
-      )}
-
-      {/* Reverse Engineer from Script */}
-      {scriptDoc && projectId && (
-        <>
-          {isReverseEngineering && (
-            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 flex items-center gap-2 animate-pulse">
-              <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
-              <span className="text-[10px] text-amber-400">Reverse engineering pipeline… ~90 seconds</span>
-            </div>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full text-xs gap-1.5 h-7 justify-start border-amber-500/30 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
-            disabled={isReverseEngineering}
-            onClick={async () => {
-              try {
-                const { job_id } = await reverseEngineerFromScript(projectId, scriptDoc.id);
-                toast.success("Reverse-engineering started — you'll see live progress in the pipeline view");
-                queryClient.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-              } catch (e: any) {
-                toast.error(e?.message || 'Could not start reverse-engineering');
-              }
-            }}
-          >
-            <Zap className="h-3 w-3" />
-            Reverse Engineer
-          </Button>
-        </>
       )}
 
       {/* Versions */}
