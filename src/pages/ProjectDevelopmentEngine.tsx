@@ -1038,18 +1038,27 @@ export default function ProjectDevelopmentEngine() {
     return () => { cancelled = true; };
   }, [isFoundationDocStale, currentDocType, projectId]);
 
-  // Promote-to-Script gate: check concept_brief existence whenever doc changes
+  // Promote-to-Script gate: check concept_brief existence + sync gates
   useEffect(() => {
     if (!selectedDocId || !projectId) { setCanPromoteScript(null); return; }
     let cancelled = false;
     (async () => {
-      const result = await canPromoteToScript({
-        docType: selectedDoc?.doc_type,
-        linkedScriptId: null,
-        contentLength: versionText.length,
-        projectId,
-      }, supabase);
-      if (!cancelled) setCanPromoteScript(result.eligible);
+      // Gate 4: project must have a concept_brief document
+      const { data: cbDoc } = await supabase
+        .from('project_documents')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('doc_type', 'concept_brief')
+        .limit(1)
+        .maybeSingle();
+      if (!cancelled) {
+        const baseResult = canPromoteToScript({
+          docType: selectedDoc?.doc_type,
+          linkedScriptId: null,
+          contentLength: versionText.length,
+        });
+        setCanPromoteScript(baseResult.eligible && !!cbDoc);
+      }
     })();
     return () => { cancelled = true; };
   }, [selectedDocId, selectedDoc?.doc_type, versionText.length, projectId]);
