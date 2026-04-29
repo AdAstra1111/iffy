@@ -7784,6 +7784,7 @@ MATERIAL:\n${version.plaintext}`;
             .select("plaintext")
             .eq("document_id", cbDoc.id)
             .eq("is_current", true)
+            .eq("approval_status", "approved")
             .maybeSingle();
           const cbText = cbVersion?.plaintext || "";
           // Extract protagonist names from character bible — look for protagonist role entries
@@ -7881,6 +7882,7 @@ MATERIAL:\n${version.plaintext}`;
             .select("plaintext")
             .eq("document_id", cDoc.id)
             .eq("is_current", true)
+            .eq("approval_status", "approved")
             .maybeSingle();
           const cText = cVer?.plaintext;
           if (cText && cText.trim().length > 50) {
@@ -29020,7 +29022,7 @@ CRITICAL:
       if (allDocIds.length > 0) {
         const { data: vers } = await supabase.from("project_document_versions")
           .select("id, document_id, plaintext, approval_status, version_number")
-          .in("document_id", allDocIds).eq("is_current", true);
+          .in("document_id", allDocIds).eq("is_current", true).eq("approval_status", "approved");
         currentVersions = vers || [];
       }
       const verByDocId = new Map<string, any>();
@@ -29423,7 +29425,7 @@ No stubs, no placeholders, no TODO markers.`;
       if (allDocIds.length > 0) {
         const { data: vers } = await supabase.from("project_document_versions")
           .select("id, document_id, plaintext, approval_status, version_number, is_stale, stale_reason")
-          .in("document_id", allDocIds).eq("is_current", true);
+          .in("document_id", allDocIds).eq("is_current", true).eq("approval_status", "approved");
         currentVersions = vers || [];
       }
       const verByDocId = new Map<string, any>();
@@ -29651,7 +29653,7 @@ No stubs, no placeholders, no TODO markers.`;
       if (allDocIds.length > 0) {
         const { data: vers } = await supabase.from("project_document_versions")
           .select("id, document_id, plaintext, approval_status, version_number")
-          .in("document_id", allDocIds).eq("is_current", true);
+          .in("document_id", allDocIds).eq("is_current", true).eq("approval_status", "approved");
         currentVersions = vers || [];
       }
       const verByDocId = new Map<string, any>();
@@ -29923,7 +29925,7 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
               if (cbDoc) {
                 const { data: cbVer } = await supabase
                   .from("project_document_versions").select("plaintext")
-                  .eq("document_id", cbDoc.id).eq("is_current", true).maybeSingle();
+                  .eq("document_id", cbDoc.id).eq("is_current", true).eq("approval_status", "approved").maybeSingle();
                 if (cbVer?.plaintext) {
                   const text = cbVer.plaintext;
                   // Extract PROTAGONIST section (preferred)
@@ -30273,7 +30275,7 @@ ${upstreamText}`;
       if (existingDocIds.length > 0) {
         const { data: vers } = await supabase.from("project_document_versions")
           .select("id, document_id, plaintext")
-          .in("document_id", existingDocIds).eq("is_current", true);
+          .in("document_id", existingDocIds).eq("is_current", true).eq("approval_status", "approved");
         for (const v of (vers || [])) currentVersionsByDocId.set(v.document_id, v);
       }
 
@@ -30419,7 +30421,7 @@ ${upstreamText}`;
       let upstreamTexts: Record<string, string> = {};
       if (upstreamDocIds.length > 0) {
         const { data: upVers } = await supabase.from("project_document_versions")
-          .select("document_id, plaintext").in("document_id", upstreamDocIds).eq("is_current", true);
+          .select("document_id, plaintext").in("document_id", upstreamDocIds).eq("is_current", true).eq("approval_status", "approved");
         const docIdToType = new Map((upstreamDocs || []).map((d: any) => [d.id, d.doc_type]));
         for (const v of (upVers || [])) {
           const dt = docIdToType.get(v.document_id);
@@ -30694,7 +30696,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
           if (docIds.length === expectedCount) {
             const { data: vers } = await supabase.from("project_document_versions")
-              .select("plaintext, document_id").in("document_id", docIds).eq("is_current", true);
+              .select("plaintext, document_id").in("document_id", docIds).eq("is_current", true).eq("approval_status", "approved");
             const verMap = new Map((vers || []).map((v: any) => [v.document_id, v.plaintext]));
 
             const parts: string[] = [];
@@ -30838,7 +30840,8 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       const { data: epVersions } = await supabase.from("project_document_versions")
         .select("document_id, plaintext")
         .in("document_id", epDocIds)
-        .eq("is_current", true);
+        .eq("is_current", true)
+        .eq("approval_status", "approved");
 
       const verByDocId = new Map<string, string>();
       for (const v of (epVersions || [])) {

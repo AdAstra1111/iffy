@@ -1940,16 +1940,21 @@ async function nextUnsatisfiedStage(
       if (!hasApproved) {
         if (allowDefaults && userId) {
           // Full Autopilot: auto-approve the current version so we can proceed
+          // SAFETY GATE: only auto-approve if canon_drift passes (no violations) or is not evaluated
           for (const docId of docIds) {
             const { data: curVer } = await supabase.from("project_document_versions")
-              .select("id").eq("document_id", docId).eq("is_current", true).limit(1);
-            if (curVer?.[0]) {
+              .select("id, meta_json").eq("document_id", docId).eq("is_current", true).limit(1);
+            const canonDrift = curVer?.[0]?.meta_json?.canon_drift;
+            const hasViolations = canonDrift && canonDrift.passed === false && (canonDrift.violations > 0 || (canonDrift.findings && canonDrift.findings.some((f: any) => f.severity === "violation")));
+            if (curVer?.[0] && !hasViolations) {
               await supabase.from("project_document_versions").update({
                 approval_status: "approved",
                 approved_at: new Date().toISOString(),
                 approved_by: userId,
               }).eq("id", curVer[0].id);
-              console.log(`[auto-run] nextUnsatisfiedStage: auto-approved ${stage} (allow_defaults)`);
+              console.log(`[auto-run] nextUnsatisfiedStage: auto-approved ${stage} (allow_defaults, canon_drift=ok)`);
+            } else if (curVer?.[0]) {
+              console.log(`[auto-run] nextUnsatisfiedStage: BLOCKED auto-approve for ${stage} — canon violations present (allow_defaults, safety gate)`);
             }
           }
           // Stage is now satisfied, continue
@@ -3611,13 +3616,15 @@ async function finalizeBest(supabase: any, jobId: string, job: any, explicitCurr
     return false;
   }
 
-  // Find document for this version
+  // Find document for this version + canon_drift check
   const { data: ver } = await supabase
     .from("project_document_versions")
-    .select("document_id, is_current")
+    .select("document_id, is_current, meta_json")
     .eq("id", bestVersionId)
     .maybeSingle();
   if (!ver) return false;
+  const canonDrift = ver?.meta_json?.canon_drift;
+  const hasViolations = canonDrift && canonDrift.passed === false && (canonDrift.violations > 0 || (canonDrift.findings && canonDrift.findings.some((f: any) => f.severity === "violation")));
 
   // Double-check version belongs to the current working document
   if (currentDocId && ver.document_id !== currentDocId) {
@@ -3653,6 +3660,11 @@ async function finalizeBest(supabase: any, jobId: string, job: any, explicitCurr
     });
   } catch (scoreErr: any) {
     console.warn(`[auto-run][IEL] finalize_score_persist_failed { version_id: "${bestVersionId}", error: "${scoreErr?.message}" }`);
+  }
+  // SAFETY GATE: only auto-approve if canon_drift passes (no violations)
+  if (hasViolations) {
+    console.log(`[auto-run][IEL] candidate_accepted_withheld { document_id: "${ver.document_id}", accepted_version_id: "${bestVersionId}", ci: ${job.best_ci}, gp: ${job.best_gp}, job_id: "${jobId}", source: "finalize_best", reason: "canon_violations_block_auto_approval" }`);
+    return true; // still promoted to current, but NOT auto-approved
   }
   const { error: approvalErr } = await supabase.from("project_document_versions").update({
     approval_status: "approved",
