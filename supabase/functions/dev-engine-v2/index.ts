@@ -8887,23 +8887,6 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
           // Check consecutive violation staleness
           if (prevViolations > 0 && newViolations >= prevViolations) {
-            // Count consecutive passes with same or worse violation count
-            const consecutiveKey = `canon_violation_streak`;
-            const prevStreak = prevMeta[consecutiveKey] || 0;
-            const newStreak = prevStreak + 1;
-            if (newStreak >= 3) {
-              humanReviewFlag = true;
-              // Stamp streak on version meta
-              const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
-              await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
-              newVersion.meta_json = streakMeta;
-            } else {
-              // Stamp streak counter
-              const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
-              await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
-              newVersion.meta_json = streakMeta;
-            }
-          } else {
             // Violations reduced — reset streak
             const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
             await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
