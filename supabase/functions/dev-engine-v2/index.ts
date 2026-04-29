@@ -11635,6 +11635,23 @@ Return ONLY valid JSON:
           .eq("project_id", projectId).in("note_fingerprint", defers);
       }
 
+      // ── Persist chosen decision to decision_ledger so future generations respect it ──
+      try {
+        const decisionKey = `dec_${decision_id.slice(0, 8)}_${option_id.slice(0, 6)}`;
+        await supabase.from("decision_ledger").upsert({
+          project_id: projectId,
+          decision_key: decisionKey,
+          title: `Decision applied: ${chosenOption.title?.slice(0, 80) || decision_id}`,
+          decision_text: chosenOption.plan_text?.slice(0, 1000) || `Applied option ${option_id} via NotesPanel`,
+          status: "active",
+        }, {
+          onConflict: "project_id,decision_key",
+        });
+        console.log(`[apply_decision] persisted to decision_ledger: ${decisionKey}`);
+      } catch (ledgerErr) {
+        console.warn("[apply_decision] decision_ledger upsert failed (non-fatal):", ledgerErr);
+      }
+
       // Log run
       await supabase.from("development_runs").insert({
         project_id: projectId,
