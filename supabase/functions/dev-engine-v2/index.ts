@@ -5229,20 +5229,21 @@ serve(async (req) => {
 
 
 
-      const { data: version } = await supabase.from("project_document_versions")
-        .select("plaintext, meta_json").eq("id", versionId).single();
+      let effectiveVersionId = versionId;
+      let version = await supabase.from("project_document_versions")
+        .select("plaintext, meta_json").eq("id", effectiveVersionId).single().then(r => r.data);
       if (!version) throw new Error("Version not found");
 
       // Fix: verify versionId is the latest for this document — if stale, use the latest version
       // This prevents CI/GP from being stamped to an old version while new versions pile up without scores
       const { data: doc } = await supabase.from("project_documents")
         .select("latest_version_id, doc_type").eq("id", documentId).single();
-      if (doc?.latest_version_id && doc.latest_version_id !== versionId) {
-        console.warn(`[dev-engine-v2] analyze: stale versionId=${versionId.slice(0,8)} latest=${doc.latest_version_id.slice(0,8)} — using latest`);
+      if (doc?.latest_version_id && doc.latest_version_id !== effectiveVersionId) {
+        console.warn(`[dev-engine-v2] analyze: stale versionId=${effectiveVersionId.slice(0,8)} latest=${doc.latest_version_id.slice(0,8)} — using latest`);
         const { data: latestVer } = await supabase.from("project_document_versions")
           .select("plaintext, meta_json").eq("id", doc.latest_version_id).single();
         if (latestVer) {
-          versionId = doc.latest_version_id;
+          effectiveVersionId = doc.latest_version_id;
           version = latestVer;
         }
       }
