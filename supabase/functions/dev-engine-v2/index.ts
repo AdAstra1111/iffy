@@ -4,6 +4,7 @@ import { spineToReviewerAlignmentBlock, getSpineState, CLASS_A_SPINE_CHECK_DOC_T
 import { parseSections, findVerbatimInSections } from "../_shared/sectionRepairEngine.ts";
 import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
 import { isSectionRepairSupported } from "../_shared/deliverableSectionRegistry.ts";
+import { NOTE_SECTION_MAP, getSectionForNoteCategory, type ConceptBriefSectionKey } from "../_shared/sectionRegistry.ts";
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { isCharBibleDepthEnabled, CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
@@ -1088,6 +1089,24 @@ async function upsertNoteState(supabase: any, params: {
   const tier = inferNoteTier(note);
   const scope = extractNoteScope(note, anchor);
   const summary = note.description || note.note || note.id || "";
+
+  // ── Section routing for concept_brief notes ──────────────────────────
+  // Route note to a concept_brief section based on its category.
+  // If the category is not in NOTE_SECTION_MAP, flag as unmapped (configuration error).
+  let sectionKey: string | null = null;
+  if (docType === "concept_brief") {
+    const cat = note.category || note.note_key || null;
+    if (cat) {
+      const mapped = getSectionForNoteCategory(cat);
+      if (mapped !== null) {
+        sectionKey = mapped;
+      } else {
+        // Unmapped category — this is a configuration error. Flag it explicitly.
+        console.warn(`[upsertNoteState] UNMAPPED_CONCEPT_BRIEF_NOTE_CATEGORY: category="${cat}" note="${summary.slice(0, 80)}" project=${projectId} version=${versionId}. Add "${cat}" to NOTE_SECTION_MAP in _shared/sectionRegistry.ts.`);
+      }
+    }
+  }
+
   // Fix: constraint_key must not default to note ID — use anchor or category instead
   const constraintKey = note.constraint_key || note.canon_ref_key ||
     (note.anchor ? `anchor:${note.anchor}` : null) ||
@@ -1152,6 +1171,7 @@ async function upsertNoteState(supabase: any, params: {
       scope_json: scope,
       tier,
       anchor,
+      section: sectionKey,
       witness_json: witnessJson || existing.witness_json,
     }).eq("id", existing.id);
 
@@ -1168,6 +1188,7 @@ async function upsertNoteState(supabase: any, params: {
       scope_json: scope,
       tier,
       anchor,
+      section: sectionKey,
     }).eq("id", existing.id);
     return { fingerprint, clusterId, state: { ...existing, times_seen: (existing.times_seen || 1) + 1 }, suppressed: false };
   }
@@ -1182,6 +1203,7 @@ async function upsertNoteState(supabase: any, params: {
     anchor: anchor || null,
     scope_json: scope,
     tier,
+    section: sectionKey,
     status: "open",
     times_seen: 1,
     last_version_id: versionId,
