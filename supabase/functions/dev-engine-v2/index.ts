@@ -8474,6 +8474,58 @@ MATERIAL TO REWRITE:\n${fullText}`;
         ? rawChunkDocType
         : resolveScriptTypeForFormat(plan?.format || null);
 
+
+      // ── CHARACTER FACTS BLOCK for chunked rewrite (F1 fix):
+      // Inject protagonist/antagonist/Former Ally facts into both system prompt
+      // and user prompt so the model has authoritative character identity during rewrite.
+      let characterFactsBlock = "";
+      if (docType === "story_outline" || docType === "beat_sheet" || docType === "treatment") {
+        try {
+          let cfProjectId = plan?.project_id;
+          if (!cfProjectId) {
+            const { data: planRunRow } = await supabase.from("development_runs")
+              .select("project_id").eq("id", planRunId).maybeSingle();
+            cfProjectId = planRunRow?.project_id;
+          }
+          if (cfProjectId) {
+            const { data: cfCanonRow } = await supabase
+              .from("project_canon").select("canon_json").eq("project_id", cfProjectId).maybeSingle();
+            const cfCanon = cfCanonRow?.canon_json || {};
+            const cfParts: string[] = [];
+            if (cfCanon.protagonist && typeof cfCanon.protagonist === "string" && cfCanon.protagonist.trim()) {
+              cfParts.push(`Protagonist: ${cfCanon.protagonist.trim()}`);
+            } else if (Array.isArray(cfCanon.characters) && cfCanon.characters.length > 0) {
+              const cfProtag = cfCanon.characters.find((c: any) =>
+                c && (c.role === "protagonist" || c.role === "main_protagonist" || c.role === "primary_protagonist"));
+              if (cfProtag?.name) cfParts.push(`Protagonist: ${cfProtag.name}`);
+            }
+            if (Array.isArray(cfCanon.characters) && cfCanon.characters.length > 0) {
+              const antagonists = cfCanon.characters.filter((c: any) =>
+                c && (c.role === "antagonist" || c.role === "main_antagonist" || c.role === "villain" ||
+                  c.relationship === "enemy" || c.relationship === "adversary" ||
+                  (Array.isArray(c.relationships) && c.relationships.some((r: any) => r.type === "enemy"))));
+              for (const ant of antagonists) {
+                const rel = ant.relationship ||
+                  (Array.isArray(ant.relationships) && ant.relationships.find((r: any) => r.type === "enemy")?.type) || "enemy";
+                cfParts.push(`Antagonist: ${ant.name} (relationship: ${rel})`);
+              }
+              const formerAllies = cfCanon.characters.filter((c: any) =>
+                c && (c.relationship === "former_ally" || c.relationship === "frenemy" ||
+                  (Array.isArray(c.relationships) && c.relationships.some((r: any) => r.type === "former_ally"))));
+              for (const fa of formerAllies) {
+                const rel = fa.relationship || "former_ally";
+                cfParts.push(`Former Ally: ${fa.name} (relationship: ${rel})`);
+              }
+            }
+            if (cfParts.length > 0) {
+              characterFactsBlock = `\n\nCHARACTER FACTS (CANONICAL — do not contradict these in the rewrite):\n${cfParts.join("\n")}`;
+            }
+          }
+        } catch (cfErr: any) {
+          console.warn("[dev-engine-v2] rewrite-chunk: characterFactsBlock build failed (non-fatal):", cfErr?.message);
+        }
+      }
+
       let seasonScopeBlock = "";
       if (docType === "season_script") {
         try {
@@ -8511,7 +8563,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       console.log(`[dev-engine-v2] rewrite-chunk: injected_context_pack resolver_hash=${plan?.narrative_resolver_hash || "none"} narrative_chars=${chunkNarrativeBlock.length} constraint_chars=${chunkConstraintBlock.length} season_scope_chars=${seasonScopeBlock.length} has_nec=${chunkNarrativeBlock.includes("NEC_GUARDRAIL")} has_canon=${chunkNarrativeBlock.includes("CANON OS")} signals=${plan?.narrative_counts?.signals ?? "?"} decisions=${plan?.narrative_counts?.decisions ?? "?"} fallback_resolve=${fallbackResolve}`);
 
-      const notesContext = `PROTECT (non-negotiable):\n${JSON.stringify(plan.protect_items || [])}\n\nAPPROVED NOTES:\n${JSON.stringify(plan.approved_notes || [])}`;
+      const notesContext = `PROTECT (non-negotiable):\n${JSON.stringify(plan.protect_items || [])}\n\nAPPROVED NOTES:\n${JSON.stringify(plan.approved_notes || [])}${characterFactsBlock ? '\n\n' + characterFactsBlock : ''}`;
       const prevContext = previousChunkEnding
         ? `\n\nPREVIOUS CHUNK ENDING (for continuity):\n${previousChunkEnding}`
         : "";
@@ -8530,7 +8582,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
         : isSectionedDocType ? REWRITE_CHUNK_SYSTEM_SECTIONED
         : REWRITE_CHUNK_SYSTEM; // screenplay — correct for season_script, episode_script
       const augmentedChunkSystem = contextInjection
-        ? `${baseChunkSystem}\n\n${contextInjection}`
+        ? `${baseChunkSystem}\n\n${contextInjection}${characterFactsBlock}`
         : baseChunkSystem;
 
       const chunkMeta = Array.isArray(plan?.chunk_meta) ? plan.chunk_meta[chunkIndex] : null;
