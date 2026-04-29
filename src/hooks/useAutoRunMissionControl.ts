@@ -155,7 +155,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     queryKey: ['auto-run-mission-status', projectId],
     queryFn: async () => {
       if (!projectId || !isValidUUID(projectId)) return null;
-      return await callAutoRun('debug-why-blocked', { projectId });
+      return await callAutoRun('ping', { projectId });
     },
     enabled: isValidUUID(projectId) && activated,
     refetchOnWindowFocus: false,
@@ -182,7 +182,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     let cancelled = false;
     const discover = async () => {
       try {
-        const result = await callAutoRun('debug-why-blocked', { projectId });
+        const { data: { user } } = await supabase.auth.getUser();
+        const result = await callAutoRun('ping', { projectId, userId: user?.id });
         if (cancelled || !result?.job) return;
         setJob(result.job);
         setSteps(result.latest_steps || []);
@@ -223,7 +224,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
     pollInFlightRef.current = true;
     try {
-      // Use status for polling (debug-why-blocked not implemented in auto-run)
+      // Use ping for polling — debug-why-blocked action never existed in auto-run
       const result = await callAutoRun('status', { jobId: currentJobId, projectId });
 
       // ── Success path ──
