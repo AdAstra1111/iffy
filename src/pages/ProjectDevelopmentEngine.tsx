@@ -327,6 +327,7 @@ export default function ProjectDevelopmentEngine() {
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
+  const [canPromoteScript, setCanPromoteScript] = useState<boolean | null>(null);
   const lastPromotionGateVersionRef = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
@@ -1036,6 +1037,22 @@ export default function ProjectDevelopmentEngine() {
     })();
     return () => { cancelled = true; };
   }, [isFoundationDocStale, currentDocType, projectId]);
+
+  // Promote-to-Script gate: check concept_brief existence whenever doc changes
+  useEffect(() => {
+    if (!selectedDocId || !projectId) { setCanPromoteScript(null); return; }
+    let cancelled = false;
+    (async () => {
+      const result = await canPromoteToScript({
+        docType: selectedDoc?.doc_type,
+        linkedScriptId: null,
+        contentLength: versionText.length,
+        projectId,
+      }, supabase);
+      if (!cancelled) setCanPromoteScript(result.eligible);
+    })();
+    return () => { cancelled = true; };
+  }, [selectedDocId, selectedDoc?.doc_type, versionText.length, projectId]);
 
   const handleGenerateDocument = async () => {
     if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
@@ -2355,21 +2372,7 @@ export default function ProjectDevelopmentEngine() {
                       })()}
 
                       {/* Publish as Script — gated by canPromoteToScript() */}
-                      {(() => {
-                        const result = canPromoteToScript({
-                          docType: selectedDoc?.doc_type,
-                          linkedScriptId: null, // TODO: wire linked_script_id when available
-                          contentLength: versionText.length,
-                        });
-                        if (!result.eligible) {
-                          console.log('[Promote-to-Script] Hidden:', result.reason, {
-                            doc_type: selectedDoc?.doc_type,
-                            version_id: selectedVersionId,
-                          });
-                          return null;
-                        }
-                        console.log('[Promote-to-Script] Showing: eligible for', selectedDoc?.doc_type);
-                        return (
+                      {canPromoteScript === true && (
                            <ConfirmDialog
                              title="Publish as Script?"
                              description={`Register "${getDocDisplayName((project as any)?.title, selectedDoc?.doc_type)}" as the project's current script draft. This creates a script record.`}
@@ -2388,8 +2391,7 @@ export default function ProjectDevelopmentEngine() {
                               Publish as Script
                             </Button>
                           </ConfirmDialog>
-                        );
-                      })()}
+                        )}
                     </div>
                   )}
                 </>

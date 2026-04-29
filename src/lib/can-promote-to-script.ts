@@ -232,6 +232,8 @@ export interface PromoteToScriptInput {
   linkedScriptId?: string | null;
   /** Minimum text length to qualify as script-promotable content */
   contentLength?: number;
+  /** Project ID — if provided, checks that project has at least one concept_brief document */
+  projectId?: string | null;
 }
 
 export interface PromoteToScriptResult {
@@ -243,9 +245,15 @@ export interface PromoteToScriptResult {
  * canPromoteToScript — single shared gate for "Publish as Script" CTA visibility.
  * Returns true ONLY if the artifact is eligible for script promotion.
  * Doc type is determined ONLY by stored doc_type — never by content analysis.
+ * 
+ * If projectId is provided, verifies a concept_brief exists in the project first.
  */
-export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScriptResult {
+export async function canPromoteToScript(
+  input: PromoteToScriptInput,
+  supabase?: any,
+): Promise<PromoteToScriptResult> {
   const normalized = normalizeDocTypeKey(input.docType);
+
 
   // Gate 1: Already a script doc_type
   if (SCRIPT_DOC_TYPES.has(normalized)) {
@@ -255,6 +263,7 @@ export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScript
       reason: `already_script_doc_type: ${normalized}`,
     };
   }
+
 
   // Gate 2: Already has a linked script record
   if (input.linkedScriptId) {
@@ -272,6 +281,25 @@ export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScript
       reason: `content_too_short: ${input.contentLength} chars`,
     };
   }
+
+  // Gate 4: Project must have a concept_brief document
+  if (input.projectId && supabase) {
+    const { data: cbDoc } = await supabase
+      .from('project_documents')
+      .select('id')
+      .eq('project_id', input.projectId)
+      .eq('doc_type', 'concept_brief')
+      .limit(1)
+      .maybeSingle();
+    if (!cbDoc) {
+      console.log(`[Promote-to-Script] Blocked: missing_concept_brief in project "${input.projectId}"`);
+      return {
+        eligible: false,
+        reason: 'missing_concept_brief',
+      };
+    }
+  }
+
 
   return {
     eligible: true,
