@@ -1072,6 +1072,41 @@ function hashCanonInputs(bible: string, grid: string, formatRules: string): stri
   return h.toString(16);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Section-level scoring for concept_brief rewrites (Phase 1 Task 2.3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function scoreConceptBriefSection(
+  apiKey: string,
+  sectionKey: string,
+  content: string,
+): Promise<{ ci: number | null; gp: number | null; blockers: number }> {
+  // Lightweight heuristic scoring per section type.
+  // Full CI/GP require document-level context; this provides a proxy signal
+  // until section-level scoring rubrics are defined.
+  const minLength: Record<string, number> = {
+    logline: 80,
+    premise: 200,
+    protagonist: 150,
+    central_conflict: 120,
+    tone_and_style: 100,
+    audience: 100,
+    unique_hook: 80,
+    world_building_notes: 150,
+  };
+  const min = minLength[sectionKey] ?? 100;
+  const charLen = content.length;
+  const lengthScore = Math.min(charLen / min, 1.0);
+  const hasContent = content.trim().split(/\s+/).length >= 5 ? 1 : 0;
+  const qualitySignal = lengthScore * (0.6 + 0.4 * hasContent);
+  const ci = Math.round(qualitySignal * 85 + 10);
+  const gp = Math.round(ci - 5);
+  const blockers = qualitySignal < 0.5 ? 1 : 0;
+  return { ci, gp, blockers };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function upsertNoteState(supabase: any, params: {
   projectId: string;
   docType: string;
@@ -33213,6 +33248,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
         let docSequenceFailed = false;
         const docTargetResults: ExecTargetResult[] = [];
         const appliedSectionKeys: string[] = [];
+        let sectionScoresByKey: Record<string, { ci: number | null; gp: number | null; blockers: number }> | null = null;
 
         for (const target of orderedTargets) {
           if (docSequenceFailed) {
@@ -33327,6 +33363,16 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
             runningContent = replaceResult.new_content;
             appliedSectionKeys.push(target.section_key!);
 
+            // ── Section-level scoring (Phase 1 Task 2.3) ──
+            const sectionScores = await scoreConceptBriefSection(
+              execApiKey,
+              target.section_key!,
+              newSectionContent,
+            );
+            // Accumulate per-section scores for backfill
+            if (!sectionScoresByKey) sectionScoresByKey = {};
+            sectionScoresByKey[target.section_key!] = sectionScores;
+
             // Record success (version_id_after filled after consolidated write)
             docTargetResults.push({
               target_id: target.target_id,
@@ -33429,6 +33475,35 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
             writePerformed = true;
             documentsExecuted++;
+
+            // ── Backfill concept_brief_sections after section rewrite ──
+            if (currentDocType === "concept_brief" && appliedSectionKeys.length > 0) {
+              const parsed = parseSections(newVersion.plaintext, "concept_brief");
+              const canonDriftPassed = newVersion.meta_json?.canon_drift?.passed ?? true;
+              for (const sk of appliedSectionKeys) {
+                const sec = parsed.find((s: any) => s.section_key === sk);
+                if (!sec) continue;
+                const label = sec.label || sk;
+                // Use per-section scoring (Task 2.3) if available, else document-level
+                const secScore = sectionScoresByKey?.[sk];
+                const ci = secScore?.ci ?? patchCCE?.metaPatch?.ci ?? newVersion.meta_json?.ci ?? null;
+                const gp = secScore?.gp ?? patchCCE?.metaPatch?.gp ?? newVersion.meta_json?.gp ?? null;
+                const blockers = secScore?.blockers ?? 0;
+                await supabaseClient.from("concept_brief_sections").upsert({
+                  project_id: projectId,
+                  version_id: newVersion.id,
+                  section_key: sk,
+                  section_label: label,
+                  plaintext: sec.content,
+                  status: blockers > 0 ? "pending" : "complete",
+                  convergence_score_json: { ci, gp, blockers },
+                  canon_drift_json: { passed: canonDriftPassed },
+                  rewrite_attempts: 1,
+                  last_rewrite_at: new Date().toISOString(),
+                }, { onConflict: "version_id,section_key" });
+              }
+              console.log(`[dev-engine-v2] concept_brief_sections backfill: v${newVersion.version_number} sections=[${appliedSectionKeys.join(",")}]`);
+            }
 
             // Backfill version_id_after on all successful target results
             for (const r of docTargetResults) {
