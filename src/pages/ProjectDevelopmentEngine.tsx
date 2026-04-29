@@ -81,6 +81,7 @@ import { getStaleReasons, getConceptBriefCanonReasons, getStaleDocReasons } from
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
 import { StaleDocBanner } from '@/components/devengine/StaleDocBanner';
 import { ApprovalGateModal } from '@/components/devengine/ApprovalGateModal';
+import { CanonDeltaDialog } from '@/components/devengine/CanonDeltaDialog';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
 import { CanonicalEditor } from '@/components/devengine/CanonicalEditor';
 import { ProvenancePanel } from '@/components/devengine/ProvenancePanel';
@@ -1608,11 +1609,9 @@ export default function ProjectDevelopmentEngine() {
   const setAsDraft = useSetAsLatestDraft(projectId);
   const seasonTemplate = useSeasonTemplate(projectId);
 
-   import { CanonDeltaDialog } from '@/components/devengine/CanonDeltaDialog';
-// Integration of CanonDeltaDialog
-const [canonDeltaOpen, setCanonDeltaOpen] = useState(false);
-
+   // Approve version mutation
   const [approvalGateOpen, setApprovalGateOpen] = useState(false);
+  const [canonDeltaOpen, setCanonDeltaOpen] = useState(false);
   const [approvePending, setApprovePending] = useState(false);
   // Foundation docs that trigger the approval gate
   const FOUNDATION_DOC_TYPES = new Set(['concept_brief', 'beat_sheet', 'treatment', 'character_bible', 'long_synopsis']);
@@ -1635,25 +1634,14 @@ const [canonDeltaOpen, setCanonDeltaOpen] = useState(false);
     }
   };
 
-  const handleApproveVersionWithDialog = async () => {
-  if (!projectId || !selectedVersionId) {
-    toast.error('Select a version first');
-    return;
-  }
-
-  // Show CanonDeltaDialog first
-  setCanonDeltaOpen(true);
-};
+  const handleApproveVersion = async () => {
     if (!projectId || !selectedVersionId) {
       toast.error('Select a version first');
       return;
     }
-    // Foundation docs go through the approval gate
-    setCanonDeltaOpen(true);
-return;
-
-
-      setApprovalGateOpen(true);
+    // Foundation docs go through the CanonDeltaDialog
+    if (isFoundationDoc) {
+      setCanonDeltaOpen(true);
       return;
     }
     // Non-foundation docs approve directly
@@ -1668,27 +1656,7 @@ return;
     }
   };
 
-  <CanonDeltaDialog
-  projectId={projectId}
-  docType={selectedDoc?.doc_type || ''}
-  currentVersionId={selectedVersionId || ''}
-  onClose={() => setCanonDeltaOpen(false)}
-  onConfirm={async () => {
-    setCanonDeltaOpen(false);
-    // Existing approval logic (doApproveAndActivate)
-    setApprovePending(true);
-    try {
-      await doApproveAndActivate();
-      toast.success('Version approved & activated in Active Folder');
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to approve');
-    } finally {
-      setApprovePending(false);
-    }
-  }}
-/>
-
-
+  // Unapprove version mutation
   const [unapproving, setUnapproving] = useState(false);
   const handleUnapproveVersion = async () => {
     if (!projectId || !selectedVersionId) return;
@@ -2483,7 +2451,6 @@ return;
               <TabsTrigger value="cascade" className="text-xs">Cascade</TabsTrigger>
               <TabsTrigger value="provenance" className="text-xs">Provenance</TabsTrigger>
                <TabsTrigger value="scenes" className="text-xs">Scenes</TabsTrigger>
-<TabsTrigger value="canon-status" className="text-xs">Canon Status</TabsTrigger>
                <TabsTrigger value="quality" className="text-xs">Quality</TabsTrigger>
                <TabsTrigger value="docsets" className="text-xs">Doc Sets</TabsTrigger>
                {convergenceHistory.length > 0 && (
@@ -2919,11 +2886,7 @@ return;
               <DocumentPackagePanel projectId={projectId} />
             </TabsContent>
 
-            <TabsContent value="canon-status" className="mt-3 space-y-4">
-<CanonFeedStatusPanel projectId={projectId!} />
-</TabsContent>
-
-<TabsContent value="canon" className="mt-3">
+            <TabsContent value="canon" className="mt-3">
               <Card>
                 <CardContent className="p-4">
                   <CanonicalEditor projectId={projectId!} />
@@ -3244,29 +3207,27 @@ return;
 
       {/* ═══ SHARED OVERLAYS (visible in both modes) ═══ */}
 
-      {/* Approval Gate Modal — foundation docs */}
-      {approvalGateOpen && selectedDoc && selectedVersionId && projectId && (() => {
-        const parentPlaintexts: Record<string, string> = {};
-        if (ideaPlaintextForCanon) parentPlaintexts['idea'] = ideaPlaintextForCanon;
-        if (conceptBriefPlaintextForCanon) parentPlaintexts['concept_brief'] = conceptBriefPlaintextForCanon;
-        const gateReasons = Object.keys(parentPlaintexts).length > 0
-          ? getStaleDocReasons(selectedDoc.doc_type || '', selectedVersion?.plaintext || '', parentPlaintexts)
-          : [];
-        return (
-          <ApprovalGateModal
-            open={approvalGateOpen}
-            onClose={() => setApprovalGateOpen(false)}
-            projectId={projectId}
-            docType={selectedDoc.doc_type || ''}
-            versionId={selectedVersionId}
-            staleReasons={gateReasons}
-            onApproveAndActivate={doApproveAndActivate}
-            onApproved={() => {
+      {/* CanonDeltaDialog — foundation docs approval flow */}
+      {canonDeltaOpen && selectedDoc && selectedVersionId && projectId && (
+        <CanonDeltaDialog
+          projectId={projectId}
+          docType={selectedDoc.doc_type || ''}
+          currentVersionId={selectedVersionId}
+          onClose={() => setCanonDeltaOpen(false)}
+          onConfirm={async () => {
+            setCanonDeltaOpen(false);
+            setApprovePending(true);
+            try {
+              await doApproveAndActivate();
               toast.success('Version approved & activated in Active Folder');
-            }}
-          />
-        );
-      })()}
+            } catch (err: any) {
+              toast.error(err.message || 'Failed to approve');
+            } finally {
+              setApprovePending(false);
+            }
+          }}
+        />
+      )}
 
       {/* Drift Override Dialog */}
       <Dialog open={driftOverrideOpen} onOpenChange={setDriftOverrideOpen}>
