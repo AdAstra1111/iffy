@@ -33484,11 +33484,41 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
                 const sec = parsed.find((s: any) => s.section_key === sk);
                 if (!sec) continue;
                 const label = sec.label || sk;
-                // Use per-section scoring (Task 2.3) if available, else document-level
+                // ── Phase 3 Task 3.1: Convergence Exit Gate ──
+                // Check if this section has failed to converge after 3 attempts
+                const { data: existingSection } = await supabaseClient
+                  .from("concept_brief_sections")
+                  .select("rewrite_attempts")
+                  .eq("section_key", sk)
+                  .eq("project_id", projectId)
+                  .order("created_at", { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                const prevAttempts = existingSection?.rewrite_attempts ?? 0;
+                const newAttempts = prevAttempts + 1;
+
                 const secScore = sectionScoresByKey?.[sk];
                 const ci = secScore?.ci ?? patchCCE?.metaPatch?.ci ?? newVersion.meta_json?.ci ?? null;
                 const gp = secScore?.gp ?? patchCCE?.metaPatch?.gp ?? newVersion.meta_json?.gp ?? null;
                 const blockers = secScore?.blockers ?? 0;
+
+                if (blockers > 0 && newAttempts >= 3) {
+                  // Convergence failure — hard stop, do not retry
+                  docSequenceFailed = true;
+                  docTargetResults.push({
+                    target_id: `${currentDocId}::section::${sk}`,
+                    target_type: "section",
+                    document_id: currentDocId,
+                    doc_type: currentDocType,
+                    version_id_before: sourceVersionId,
+                    version_id_after: null,
+                    status: "failed",
+                    message: `SECTION_CONVERGENCE_FAILED: section=${sk} attempts=${newAttempts} blockers=${blockers}. Human review required.`,
+                  });
+                  console.error(`[dev-engine-v2] SECTION_CONVERGENCE_FAILED: project=${projectId} section=${sk} attempts=${newAttempts} blockers=${blockers}`);
+                  continue;
+                }
+
                 await supabaseClient.from("concept_brief_sections").upsert({
                   project_id: projectId,
                   version_id: newVersion.id,
@@ -33498,7 +33528,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
                   status: blockers > 0 ? "pending" : "complete",
                   convergence_score_json: { ci, gp, blockers },
                   canon_drift_json: { passed: canonDriftPassed },
-                  rewrite_attempts: 1,
+                  rewrite_attempts: newAttempts,
                   last_rewrite_at: new Date().toISOString(),
                 }, { onConflict: "version_id,section_key" });
               }
