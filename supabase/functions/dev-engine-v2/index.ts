@@ -2029,6 +2029,7 @@ Rules:
 - Notes with category "user_direction" or severity "blocker" in APPROVED NOTES are also high priority — look for the "note" or "resolution_directive" field and implement what it says.
 - Match the target deliverable type format expectations.
 - OUTPUT THE FULL REWRITTEN MATERIAL — do NOT summarize or truncate.
+- OUTPUT ALL sections of the document — do NOT stop early. Every section must be complete including structural sections (CENTRAL QUESTION, WORLD BUILDING, FESTIVAL STRATEGY, BUDGET CONTEXTUALIZATION, and any other sections present in the material).
 - If repositioning (lane/format) appears in APPROVED STRATEGIC NOTES, reflect it. Otherwise do not stealth-reposition.
 
 REWRITE OBJECTIVES FOR THIS DOCUMENT PURPOSE:
@@ -7834,7 +7835,10 @@ MATERIAL:\n${version.plaintext}`;
             return `- [${n.severity}/${n.category || "general"}] (from ${n.source_doc_type || "unknown"}, via ${n.source_table}): ${n.summary || n.title}`;
           });
           upstreamNoteBlock = `\n\nUNRESOLVED UPSTREAM NOTES (from earlier pipeline stages — address these in your rewrite):\n${noteLines.join("\n")}`;
-          console.log(`[dev-engine-v2] rewrite: injected ${upstreamBlockers.length} unified upstream notes targeting ${effectiveDeliverable}`);
+          const noteBlockLen = upstreamNoteBlock.length;
+          console.log(`[dev-engine-v2] rewrite: injected ${upstreamBlockers.length} unified upstream notes targeting ${effectiveDeliverable} (noteBlockChars=${noteBlockLen})`);
+          console.log(`[dev-engine-v2] rewrite: prompt build — userPrompt_chars=${(protectItems ? JSON.stringify(protectItems).length : 0) + (approvedNotes ? JSON.stringify(approvedNotes).length : 0) + (decisionDirectives?.length || 0) + (globalDirContext?.length || 0) + noteBlockLen + (narrativeBlock?.length || 0) + (characterFactsBlock?.length || 0) + fullText.length}, material_chars=${fullText.length}`);
+        }
         }
       }
 
@@ -7961,6 +7965,7 @@ ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
       const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
+      console.log(`[dev-engine-v2] rewrite: raw_ai_response_chars=${raw.length}, rewritten_text_expected_full=${fullText.length}`);
       const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
@@ -8886,13 +8891,29 @@ MATERIAL TO REWRITE:\n${fullText}`;
             .join("\n");
           canonConstraintBlock = `\n\nCANON CONSTRAINTS (violations detected — must be corrected):\n${violationLines}\nThese violations must be FIXED, not just acknowledged.`;
 
-          // Check consecutive violation staleness
+          // ── EXIT GATE: 3-strike rule — restore 2026-04-29 ──
+          const prevStreak = prevMeta?.canon_violation_streak || 0;
           if (prevViolations > 0 && newViolations >= prevViolations) {
-            // Violations reduced — reset streak
+            // Violations same or worse — increment streak
+            const newStreak = prevStreak + 1;
+            const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
+            await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
+            newVersion.meta_json = streakMeta;
+            if (newStreak >= 3) {
+              humanReviewFlag = true;
+              console.log(`[dev-engine-v2] rewrite-assemble: exit gate FIRED — streak=${newStreak}, violations=${newViolations}`);
+            }
+          } else {
+            // Violations improved — reset streak
             const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
             await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
             newVersion.meta_json = resetMeta;
           }
+        } else {
+          // No violations — reset streak
+          const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
+          await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = resetMeta;
         }
       } catch (cceErr: any) {
         console.warn("[dev-engine-v2] rewrite-assemble CCE check failed (non-fatal):", cceErr?.message);
