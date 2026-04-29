@@ -562,6 +562,31 @@ CRITICAL RULES:
         updated_by: user.id,
       }).eq("thread_id", thread.id);
 
+      // Persist to decision_ledger so future generations respect this Writers Room decision
+      try {
+        const decisionKey = `wr_${noteHash.slice(0, 8)}_${Date.now().toString(36)}`;
+        const optTitle = selectedOption?.title || selectedOption?.pitch || "Writers Room decision";
+        const optPlan = selectedOption?.plan || selectedOption?.pitch || "";
+        await admin.from("decision_ledger").upsert({
+          project_id: projectId,
+          decision_key: decisionKey,
+          title: optTitle.slice(0, 200),
+          decision_text: optPlan.slice(0, 1000),
+          decision_value: selectedOption || null,
+          scope: "writers_room",
+          targets: { document_id: documentId, note_hash: noteHash, thread_id: thread.id },
+          source: "notes_writers_room",
+          source_note_id: noteHash,
+          source_issue_id: thread.id,
+          status: "active",
+          created_by: user.id,
+        }, {
+          onConflict: "project_id,decision_key",
+        });
+      } catch (ledgerErr) {
+        console.warn("[notes-writers-room] decision_ledger upsert failed (non-fatal):", ledgerErr);
+      }
+
       return ok({ success: true });
     }
 
