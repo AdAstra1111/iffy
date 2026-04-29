@@ -28621,7 +28621,9 @@ CRITICAL:
         rewriteScopePlan.target_scene_numbers.length < totalScenesInAssembly;
 
       // Create new version via doc-os + CCE drift check
-      const sceneRwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";
+      const sceneRwProject = await supabase.from("projects").select("assigned_lane, format").eq("id", projectId).single();
+      const sceneRwLane = sceneRwProject?.data?.assigned_lane || "independent-film";
+      const sceneRwFormat = sceneRwProject?.data?.format || "film";
       const sceneRwTvCtx = await loadTeamVoiceContext(supabase, projectId, sceneRwLane);
       const sceneRwMetaJson = sceneRwTvCtx.metaStamp ? { ...sceneRwTvCtx.metaStamp } : undefined;
       const { data: sceneRwDocRow } = await supabase.from("project_documents").select("doc_type").eq("id", sourceDocId).single();
@@ -28630,6 +28632,7 @@ CRITICAL:
       const newVersion = await createVersion(supabase, {
         documentId: sourceDocId,
         docType: sceneRwDocType,
+        format: sceneRwFormat,
         plaintext: assembledText,
         label: trulySelective ? `Selective scene rewrite (${outputs.length}/${totalScenesInAssembly} scenes)` : `Scene rewrite`,
         createdBy: user.id,
