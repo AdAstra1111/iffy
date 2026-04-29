@@ -7599,29 +7599,40 @@ MATERIAL:\n${version.plaintext}`;
         .select("plaintext, version_number").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
 
-      // ── EXIT GATE: Stop infinite regeneration when canon violations persist across 3+ versions ──
-      // If 3 consecutive versions all had canon_drift violations, flag for human review.
-      // This prevents the system from looping forever on the same violations.
-      const { data: recentVersions } = await supabase
-        .from("project_document_versions").select("id, meta_json")
-        .eq("document_id", documentId).in("id", [versionId, ...((version as any)._recentIds || [])])
-        .order("version_number", { ascending: false }).limit(4);
-      let consecutiveViolations = 0;
-      for (const rv of (recentVersions || [])) {
-        const m = rv.meta_json || {};
-        const cd = m.canon_drift || {};
-        if (cd.passed === false && (cd.violations?.length > 0 || cd.violation_stream?.length > 0)) {
-          consecutiveViolations++;
-        } else {
-          break;
-        }
-      }
-      if (consecutiveViolations >= 3) {
-        throw new Error("EXIT_GATE_HUMAN_REVIEW_REQUIRED: Canon violations persist across 3 consecutive versions. Please review the document manually and apply Notes/Decisions before continuing regeneration.");
-      }
-
       const { data: project } = await supabase.from("projects")
-        .select("format, development_behavior, assigned_lane").eq("id", projectId).single();
+        .select("format, development_behavior, assigned_lane, flags").eq("id", projectId).single();
+
+      // ── EXIT GATE: Stop infinite regeneration when canon violations persist 3+ versions ──
+      // Flags project for manual review so UI and autopilot can detect the stuck state.
+      try {
+        const { data: recentVersions } = await supabase
+          .from("project_document_versions").select("id, meta_json")
+          .eq("document_id", documentId)
+          .order("version_number", { ascending: false })
+          .limit(4);
+        let consecutiveViolations = 0;
+        let count = 0;
+        for (const rv of (recentVersions || [])) {
+          if (count >= 3) break;
+          const m = rv.meta_json || {};
+          const cd = m.canon_drift || {};
+          if (cd.passed === false && (cd.violations?.length > 0 || cd.violation_stream?.length > 0)) {
+            consecutiveViolations++;
+          } else {
+            break;
+          }
+          count++;
+        }
+        if (consecutiveViolations >= 3) {
+          await supabase.from("projects").update({
+            flags: { ...((project as any)?.flags || {}), exit_gate_fired: true, exit_gate_reason: "canon_violations_persist_3x", exit_gate_document: documentId, exit_gate_at: new Date().toISOString() }
+          }).eq("id", projectId);
+          throw new Error("EXIT_GATE_HUMAN_REVIEW_REQUIRED: Canon violations persist across 3 consecutive versions. Please review the document manually and apply Notes/Decisions before continuing regeneration.");
+        }
+      } catch (gateError) {
+        if (String(gateError).includes("EXIT_GATE_HUMAN_REVIEW_REQUIRED")) throw gateError;
+        console.warn("[dev-engine-v2] rewrite: exit gate check failed (non-fatal):", gateError);
+      }
 
       const effectiveFormat = (reqFormat || project?.format || "film").toLowerCase().replace(/_/g, "-");
       const effectiveBehavior = developmentBehavior || project?.development_behavior || "market";
@@ -29805,12 +29816,19 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
                   .eq("document_id", cbDoc.id).eq("is_current", true).maybeSingle();
                 if (cbVer?.plaintext) {
                   const text = cbVer.plaintext;
-                  // Extract PROTAGONIST section
+                  // Extract PROTAGONIST section (preferred)
                   const protMatch = text.match(/(?:^|\n)(#{1,3}\s*(?:PROTAGONIST|CORE\s*CONCEPT|CHARACTER)\s*\n)([\s\S]*?)(?:\n#{1,3}\s|\n\n|$)/im);
                   if (protMatch) conceptBriefProtagonist = protMatch[1].trim().slice(0, 800);
-                  // Also extract PREMISE section for arc/conflict context
-                  const premMatch = text.match(/(?:^|\n)(#{1,3}\s*PREMISE\s*\n)([\s\S]*?)(?:\n#{1,3}\s|\n\n|$)/im);
-                  if (premMatch && !conceptBriefProtagonist) conceptBriefProtagonist = premMatch[2].trim().slice(0, 800);
+                  // Also extract LOGLINE — character name + situation are always here even without PROTAGONIST heading
+                  if (!conceptBriefProtagonist) {
+                    const logMatch = text.match(/(?:^|\n)(#{1,3}\s*LOGLINE\s*\n)([\s\S]{0,600}?)(?:\n#{1,3}\s|\n\n|$)/im);
+                    if (logMatch) conceptBriefProtagonist = `LOGLINE: ${logMatch[2].trim()}`;
+                  }
+                  // Fall back to PREMISE
+                  if (!conceptBriefProtagonist) {
+                    const premMatch = text.match(/(?:^|\n)(#{1,3}\s*PREMISE\s*\n)([\s\S]*?)(?:\n#{1,3}\s|\n\n|$)/im);
+                    if (premMatch) conceptBriefProtagonist = `PREMISE: ${premMatch[2].trim()}`;
+                  }
                 }
               }
             } catch { /* non-fatal */ }
