@@ -1608,7 +1608,10 @@ export default function ProjectDevelopmentEngine() {
   const setAsDraft = useSetAsLatestDraft(projectId);
   const seasonTemplate = useSeasonTemplate(projectId);
 
-   // Approve version mutation
+   import { CanonDeltaDialog } from '@/components/devengine/CanonDeltaDialog';
+// Integration of CanonDeltaDialog
+const [canonDeltaOpen, setCanonDeltaOpen] = useState(false);
+
   const [approvalGateOpen, setApprovalGateOpen] = useState(false);
   const [approvePending, setApprovePending] = useState(false);
   // Foundation docs that trigger the approval gate
@@ -1632,13 +1635,24 @@ export default function ProjectDevelopmentEngine() {
     }
   };
 
-  const handleApproveVersion = async () => {
+  const handleApproveVersionWithDialog = async () => {
+  if (!projectId || !selectedVersionId) {
+    toast.error('Select a version first');
+    return;
+  }
+
+  // Show CanonDeltaDialog first
+  setCanonDeltaOpen(true);
+};
     if (!projectId || !selectedVersionId) {
       toast.error('Select a version first');
       return;
     }
     // Foundation docs go through the approval gate
-    if (isFoundationDoc) {
+    setCanonDeltaOpen(true);
+return;
+
+
       setApprovalGateOpen(true);
       return;
     }
@@ -1654,7 +1668,27 @@ export default function ProjectDevelopmentEngine() {
     }
   };
 
-  // Unapprove version mutation
+  <CanonDeltaDialog
+  projectId={projectId}
+  docType={selectedDoc?.doc_type || ''}
+  currentVersionId={selectedVersionId || ''}
+  onClose={() => setCanonDeltaOpen(false)}
+  onConfirm={async () => {
+    setCanonDeltaOpen(false);
+    // Existing approval logic (doApproveAndActivate)
+    setApprovePending(true);
+    try {
+      await doApproveAndActivate();
+      toast.success('Version approved & activated in Active Folder');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to approve');
+    } finally {
+      setApprovePending(false);
+    }
+  }}
+/>
+
+
   const [unapproving, setUnapproving] = useState(false);
   const handleUnapproveVersion = async () => {
     if (!projectId || !selectedVersionId) return;
@@ -2449,6 +2483,7 @@ export default function ProjectDevelopmentEngine() {
               <TabsTrigger value="cascade" className="text-xs">Cascade</TabsTrigger>
               <TabsTrigger value="provenance" className="text-xs">Provenance</TabsTrigger>
                <TabsTrigger value="scenes" className="text-xs">Scenes</TabsTrigger>
+<TabsTrigger value="canon-status" className="text-xs">Canon Status</TabsTrigger>
                <TabsTrigger value="quality" className="text-xs">Quality</TabsTrigger>
                <TabsTrigger value="docsets" className="text-xs">Doc Sets</TabsTrigger>
                {convergenceHistory.length > 0 && (
@@ -2884,7 +2919,11 @@ export default function ProjectDevelopmentEngine() {
               <DocumentPackagePanel projectId={projectId} />
             </TabsContent>
 
-            <TabsContent value="canon" className="mt-3">
+            <TabsContent value="canon-status" className="mt-3 space-y-4">
+<CanonFeedStatusPanel projectId={projectId!} />
+</TabsContent>
+
+<TabsContent value="canon" className="mt-3">
               <Card>
                 <CardContent className="p-4">
                   <CanonicalEditor projectId={projectId!} />
