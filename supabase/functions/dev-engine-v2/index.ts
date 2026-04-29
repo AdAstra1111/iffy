@@ -29763,8 +29763,12 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
             if (cj.logline) canonParts.push(`CANONICAL LOGLINE: ${cj.logline}`);
             if (cj.premise) canonParts.push(`CANONICAL PREMISE: ${cj.premise}`);
             if (Array.isArray(cj.characters) && cj.characters.length > 0) {
+              // Find protagonist entry first (needed for relationship derivation)
+              const protagonistEntry = (cj.characters as any[]).find((c: any) =>
+                c.role === "protagonist" || c.role === "lead"
+              );
               // Full character profiles with backstory, psychology, relationships
-              const charProfiles = cj.characters
+              const charProfiles = (cj.characters as any[])
                 .filter((c: any) => c.name && c.name.trim())
                 .slice(0, 10)
                 .map((c: any) => {
@@ -29778,6 +29782,31 @@ CANONICAL EPISODE COUNT (HARD REQUIREMENT):
                   if (c.relationships) parts.push(`  RELATIONSHIPS: ${c.relationships}`);
                   return parts.join("\n");
                 });
+              // Derive LOCKED RELATIONSHIPS from role field (mirrors CCE extractCanonConstraints)
+              // This ensures antagonist/rival/mentor/love-interest roles are in the prompt
+              const protagonistName = protagonistEntry?.name || "";
+              const relationshipLines: string[] = [];
+              for (const char of (cj.characters || []).slice(0, 12)) {
+                const c = char as Record<string, any>;
+                const charName = c.name || "";
+                if (!charName || charName === protagonistName) continue;
+                const role = (c.role || "") as string;
+                const roleLower = role.toLowerCase();
+                let derivedRel = "";
+                if (/love[_-]?interest/i.test(roleLower)) derivedRel = `love interest / romantic partner of ${protagonistName}`;
+                else if (/mentor/i.test(roleLower)) derivedRel = `mentor to ${protagonistName}`;
+                else if (/handler/i.test(roleLower)) derivedRel = `handler / supervisor of ${protagonistName}`;
+                else if (/mother|father|parent/i.test(roleLower)) derivedRel = `parent of ${protagonistName}`;
+                else if (/brother|sister|sibling/i.test(roleLower)) derivedRel = `sibling of ${protagonistName}`;
+                else if (/husband|wife|spouse/i.test(roleLower)) derivedRel = `spouse of ${protagonistName}`;
+                else if (/friend|companion|ally/i.test(roleLower)) derivedRel = `friend / ally of ${protagonistName}`;
+                else if (/rival|enemy|nemesis|antagonist|adversary/i.test(roleLower)) derivedRel = `antagonist / rival of ${protagonistName}`;
+                if (derivedRel) relationshipLines.push(`  - ${charName}: ${derivedRel}`);
+              }
+              if (relationshipLines.length > 0) {
+                canonParts.push(`LOCKED RELATIONSHIPS (do NOT contradict these):\n${relationshipLines.join("\n")}`);
+              }
+
               if (charProfiles.length > 0) {
                 canonParts.push(`CANONICAL CHARACTERS (MUST use these names + roles exactly):\n${charProfiles.join("\n\n")}`);
               }
