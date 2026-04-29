@@ -232,6 +232,8 @@ export interface PromoteToScriptInput {
   linkedScriptId?: string | null;
   /** Minimum text length to qualify as script-promotable content */
   contentLength?: number;
+  /** True if the concept_brief has canon_drift.violations > 0 (passed=false) */
+  conceptBriefCanonViolations?: boolean;
 }
 
 export interface PromoteToScriptResult {
@@ -270,6 +272,17 @@ export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScript
     return {
       eligible: false,
       reason: `content_too_short: ${input.contentLength} chars`,
+    };
+  }
+
+  // Gate 4: concept_brief must not have canon drift violations (F4)
+  // If concept_brief has canon_drift.passed=false, concept itself has violations
+  // that must be resolved before any downstream doc (beat_sheet→script) is promoted.
+  if (input.conceptBriefCanonViolations) {
+    console.log('[Promote-to-Script] Blocked: concept_brief has canon drift violations');
+    return {
+      eligible: false,
+      reason: 'concept_brief_canon_violations',
     };
   }
 

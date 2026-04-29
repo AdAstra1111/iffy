@@ -7617,7 +7617,7 @@ MATERIAL:\n${version.plaintext}`;
           if (count >= 3) break;
           const m = rv.meta_json || {};
           const cd = m.canon_drift || {};
-          if (cd.passed === false && (cd.violations?.length > 0 || cd.violation_stream?.length > 0)) {
+          if (cd.passed === false && (cd.violations > 0 || (cd.violation_stream && cd.violation_stream.length > 0))) {
             consecutiveViolations++;
           } else {
             break;
@@ -7902,10 +7902,59 @@ MATERIAL:\n${version.plaintext}`;
         ? `\nOUTPUT FORMAT REQUIRED: Episode beats — each episode as ## EPISODE N: block with numbered beats. Beat format: N. [BEAT_TYPE] description. Beat 1 = HOOK, final beat = CLIFFHANGER. No prose. No screenplay.\n`
         : "";
 
+      // ── CHARACTER FACTS BLOCK (F1): extract protagonist + antagonist + relationship facts
+      // from canon_json so the model has authoritative character identity during rewrite.
+      // This fixes the source-feed bug where protagonist/antagonist came from wrong docs.
+      let characterFactsBlock = "";
+      try {
+        const { data: cfCanonRow } = await supabase
+          .from("project_canon")
+          .select("canon_json")
+          .eq("project_id", projectId)
+          .maybeSingle();
+        const cfCanon = cfCanonRow?.canon_json || {};
+        const cfParts: string[] = [];
+        // Protagonist — primary authority from canon_json
+        if (cfCanon.protagonist && typeof cfCanon.protagonist === "string" && cfCanon.protagonist.trim()) {
+          cfParts.push(`Protagonist: ${cfCanon.protagonist.trim()}`);
+        } else if (Array.isArray(cfCanon.characters) && cfCanon.characters.length > 0) {
+          const cfProtag = cfCanon.characters.find((c: any) =>
+            c && (c.role === "protagonist" || c.role === "main_protagonist" || c.role === "primary_protagonist")
+          );
+          if (cfProtag?.name) cfParts.push(`Protagonist: ${cfProtag.name}`);
+        }
+        // Antagonists + relationships — use role + explicit relationship fields
+        if (Array.isArray(cfCanon.characters) && cfCanon.characters.length > 0) {
+          const antagonists = cfCanon.characters.filter((c: any) =>
+            c && (c.role === "antagonist" || c.role === "main_antagonist" || c.role === "villain" ||
+              c.relationship === "enemy" || c.relationship === "adversary" ||
+              (Array.isArray(c.relationships) && c.relationships.some((r: any) => r.type === "enemy")))
+          );
+          for (const ant of antagonists) {
+            const rel = ant.relationship || (Array.isArray(ant.relationships) && ant.relationships.find((r: any) => r.type === "enemy")?.type) || "enemy";
+            cfParts.push(`Antagonist: ${ant.name} (relationship: ${rel})`);
+          }
+          // Former allies / frenemies
+          const formerAllies = cfCanon.characters.filter((c: any) =>
+            c && (c.relationship === "former_ally" || c.relationship === "frenemy" ||
+              (Array.isArray(c.relationships) && c.relationships.some((r: any) => r.type === "former_ally")))
+          );
+          for (const fa of formerAllies) {
+            const rel = fa.relationship || "former_ally";
+            cfParts.push(`Former Ally: ${fa.name} (relationship: ${rel})`);
+          }
+        }
+        if (cfParts.length > 0) {
+          characterFactsBlock = `\n\nCHARACTER FACTS (CANONICAL — do not contradict these in the rewrite):\n${cfParts.join("\n")}`;
+        }
+      } catch (cfErr: any) {
+        console.warn("[dev-engine-v2] rewrite: character facts block build failed (non-fatal):", cfErr?.message);
+      }
+
       const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
-${narrativeBlock}
+${narrativeBlock}${characterFactsBlock}
 TARGET FORMAT: ${targetDocType || "same as source"}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
@@ -8049,6 +8098,29 @@ MATERIAL TO REWRITE:\n${fullText}`;
         console.warn(`Version ${nextVersion} conflict, retrying...`);
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
+
+      // ── CANON VIOLATION EXIT GATE (F2): if CCE detected violations in the new version,
+      // return immediately. Do NOT continue to the auto-rewrite regeneration loop.
+      // The violations are already persisted in the version's meta_json by writeVersionSafe.
+      {
+        const newCd = newVersion?.meta_json?.canon_drift;
+        if (newCd && newCd.passed === false && newCd.violations > 0) {
+          console.warn(`[dev-engine-v2] rewrite: canonViolationExitGate fired — ${newCd.violations} violations in new version ${newVersion.version_number}. Returning without regeneration.`);
+          return new Response(JSON.stringify({
+            success: true,
+            rewrite: {
+              rewritten_text: `[${rewrittenText.length} chars — stored in version]`,
+              change_summary: parsed.changes_summary || "",
+            },
+            newVersion,
+            canon_violation_exit_gate: true,
+            canon_violations: newCd.violations,
+            canon_violations_message: `Canon violations detected (${newCd.violations}). Version saved but auto-regeneration stopped. Review violations in Convergence Panel before continuing.`,
+          }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
 
       // ── Style eval on rewrite output ──
       const rwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";

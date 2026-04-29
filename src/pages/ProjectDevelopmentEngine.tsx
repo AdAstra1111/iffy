@@ -991,6 +991,7 @@ export default function ProjectDevelopmentEngine() {
   // Parent plaintexts for universal stale contradiction detection
   const [ideaPlaintextForCanon, setIdeaPlaintextForCanon] = useState<string | null>(null);
   const [conceptBriefPlaintextForCanon, setConceptBriefPlaintextForCanon] = useState<string | null>(null);
+  const [conceptBriefCanonViolations, setConceptBriefCanonViolations] = useState<boolean>(false);
 
   const isConceptBrief = selectedDoc?.doc_type === 'concept_brief';
   const currentDocType = selectedDoc?.doc_type || '';
@@ -1036,6 +1037,35 @@ export default function ProjectDevelopmentEngine() {
     })();
     return () => { cancelled = true; };
   }, [isFoundationDocStale, currentDocType, projectId]);
+
+  // F4: Fetch concept_brief canon drift to gate promote-to-script
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+    (async () => {
+      // Fetch concept_brief document
+      const { data: cbDoc } = await supabase
+        .from('project_documents')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('doc_type', 'concept_brief')
+        .limit(1)
+        .maybeSingle();
+      if (cancelled || !cbDoc) { setConceptBriefCanonViolations(false); return; }
+      // Fetch its current version's canon_drift
+      const { data: cbVer } = await supabase
+        .from('project_document_versions')
+        .select('meta_json')
+        .eq('document_id', cbDoc.id)
+        .eq('is_current', true)
+        .maybeSingle();
+      if (cancelled) return;
+      const cd = cbVer?.meta_json?.canon_drift;
+      const hasViolations = cd && cd.passed === false && (cd.violations > 0 || (cd.violation_stream && cd.violation_stream.length > 0));
+      if (!cancelled) setConceptBriefCanonViolations(!!hasViolations);
+    })();
+    return () => { cancelled = true; };
+  }, [projectId]);
 
   const handleGenerateDocument = async () => {
     if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
@@ -2360,6 +2390,7 @@ export default function ProjectDevelopmentEngine() {
                           docType: selectedDoc?.doc_type,
                           linkedScriptId: null, // TODO: wire linked_script_id when available
                           contentLength: versionText.length,
+                          conceptBriefCanonViolations,
                         });
                         if (!result.eligible) {
                           console.log('[Promote-to-Script] Hidden:', result.reason, {
