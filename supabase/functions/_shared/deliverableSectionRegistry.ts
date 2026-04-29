@@ -64,6 +64,11 @@ const CONCEPT_BRIEF_SECTIONS: SectionDefinition[] = [
   { section_key: "tone_and_style", label: "Tone & Style", match_mode: "heading_regex", match_pattern: "^#+\\s*tone", allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
   { section_key: "audience", label: "Audience", match_mode: "heading_regex", match_pattern: "^#+\\s*audience|^#+\\s*target\\s*audience", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
   { section_key: "unique_hook", label: "Unique Hook", match_mode: "heading_regex", match_pattern: "^#+\\s*unique\\s*hook|^#+\\s*hook|^#+\\s*usp", allows_partial_rewrite: true, repair_mode: "replace_section", order: 6 },
+  { section_key: "genre", label: "Genre", match_mode: "heading_regex", match_pattern: "^#+\\s*genre", allows_partial_rewrite: true, repair_mode: "replace_section", order: 7 },
+  { section_key: "subgenre", label: "Subgenre", match_mode: "heading_regex", match_pattern: "^#+\\s*subgenre", allows_partial_rewrite: true, repair_mode: "replace_section", order: 8 },
+  { section_key: "themes", label: "Themes", match_mode: "heading_regex", match_pattern: "^#+\\s*themes?", allows_partial_rewrite: true, repair_mode: "replace_section", order: 9 },
+  { section_key: "festival_strategy", label: "Festival Strategy", match_mode: "heading_regex", match_pattern: "^#+\\s*festival\\s*strategy", allows_partial_rewrite: true, repair_mode: "replace_section", order: 10 },
+  { section_key: "budget_contextualization", label: "Budget Contextualization", match_mode: "heading_regex", match_pattern: "^#+\\s*budget\\s*contextualization", allows_partial_rewrite: true, repair_mode: "replace_section", order: 11 },
 ];
 
 const FORMAT_RULES_SECTIONS: SectionDefinition[] = [
