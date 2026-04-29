@@ -243,15 +243,13 @@ export interface PromoteToScriptResult {
  * canPromoteToScript — single shared gate for "Publish as Script" CTA visibility.
  * Returns true ONLY if the artifact is eligible for script promotion.
  * Doc type is determined ONLY by stored doc_type — never by content analysis.
- *
- * NOTE: The concept_brief existence check is done by the caller via useEffect + supabase query.
- * This function performs only the cheap, synchronous gates.
  */
 export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScriptResult {
   const normalized = normalizeDocTypeKey(input.docType);
 
   // Gate 1: Already a script doc_type
   if (SCRIPT_DOC_TYPES.has(normalized)) {
+    console.log(`[Promote-to-Script] Blocked: already_script_doc_type "${normalized}"`);
     return {
       eligible: false,
       reason: `already_script_doc_type: ${normalized}`,
@@ -260,13 +258,14 @@ export function canPromoteToScript(input: PromoteToScriptInput): PromoteToScript
 
   // Gate 2: Already has a linked script record
   if (input.linkedScriptId) {
+    console.log(`[Promote-to-Script] Blocked: linked_script_exists "${input.linkedScriptId}"`);
     return {
       eligible: false,
       reason: `linked_script_exists: ${input.linkedScriptId}`,
     };
   }
 
-  // Gate 3: Content threshold
+  // Gate 3: Content threshold (must have meaningful content)
   if (input.contentLength !== undefined && input.contentLength < 100) {
     return {
       eligible: false,
