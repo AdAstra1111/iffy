@@ -775,6 +775,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
             body: {
               action: 'start',
               projectId: project.id,
+              userId,
               pitchIdeaId: idea.id,
               options: {
                 apply_seed_intel_pack: true,
@@ -796,7 +797,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
           while (!tickDone && tickIterations < MAX_TICK_ITERATIONS && !autopilotAbortRef.current) {
             tickIterations++;
             const { data: tickData, error: tickErr } = await supabase.functions.invoke('devseed-autopilot', {
-              body: { action: 'tick', projectId: project.id },
+              body: { action: 'tick', projectId: project.id, userId },
             });
             if (tickErr) {
               console.error('[DevSeed] autopilot tick error:', tickErr.message);

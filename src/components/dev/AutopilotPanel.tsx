@@ -433,10 +433,14 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   const handleStart = useCallback(async () => {
     abortRef.current = false;
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id || null;
+
       const { data, error } = await supabase.functions.invoke('devseed-autopilot', {
         body: {
           action: 'start',
           projectId,
+          userId,
           pitchIdeaId: pitchIdeaId || undefined,
           options: {
             apply_seed_intel_pack: true,
@@ -453,6 +457,26 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
         return;
       }
       if (data?.autopilot && mountedRef.current) setAutopilot(data.autopilot);
+
+
+      // Tick loop — advance DevSeed stages until done or aborted
+      let tickDone = false;
+      let tickIterations = 0;
+      const MAX_TICK_ITERATIONS = 25;
+      while (!tickDone && tickIterations < MAX_TICK_ITERATIONS && !abortRef.current) {
+        tickIterations++;
+        const { data: tickData, error: tickErr } = await supabase.functions.invoke('devseed-autopilot', {
+          body: { action: 'tick', projectId, userId },
+        });
+        if (tickErr) {
+          console.error('[DevSeed] autopilot tick error:', tickErr.message);
+          break;
+        }
+        const result = tickData as any;
+        if (result?.autopilot && mountedRef.current) setAutopilot(result.autopilot);
+        tickDone = result?.done === true || result?.message === 'not_running';
+        if (!tickDone) await new Promise(r => setTimeout(r, 1000));
+      }
     } catch (err: any) {
       toast.error('Failed to start autopilot');
     }
@@ -461,11 +485,30 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
   const handleResume = useCallback(async () => {
     abortRef.current = false;
     try {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id || null;
+
       const { data, error } = await supabase.functions.invoke('devseed-autopilot', {
-        body: { action: 'start', projectId, pitchIdeaId: pitchIdeaId || undefined },
+        body: { action: 'start', projectId, userId, pitchIdeaId: pitchIdeaId || undefined },
       });
       if (error) { toast.error('Failed to resume: ' + error.message); return; }
       if (data?.autopilot && mountedRef.current) setAutopilot(data.autopilot);
+
+      // Tick loop — same as handleStart
+      let tickDone = false;
+      let tickIterations = 0;
+      const MAX_TICK_ITERATIONS = 25;
+      while (!tickDone && tickIterations < MAX_TICK_ITERATIONS && !abortRef.current) {
+        tickIterations++;
+        const { data: tickData, error: tickErr } = await supabase.functions.invoke('devseed-autopilot', {
+          body: { action: 'tick', projectId, userId },
+        });
+        if (tickErr) { console.error('[DevSeed] autopilot tick error:', tickErr.message); break; }
+        const result = tickData as any;
+        if (result?.autopilot && mountedRef.current) setAutopilot(result.autopilot);
+        tickDone = result?.done === true || result?.message === 'not_running';
+        if (!tickDone) await new Promise(r => setTimeout(r, 1000));
+      }
     } catch {
       toast.error('Failed to resume autopilot');
     }
