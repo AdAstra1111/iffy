@@ -9003,6 +9003,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       try {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
+      const { data: project } = await supabase.from("projects")
         .select("id, title, format, assigned_lane").eq("id", projectId).single();
       if (!project) throw new Error("Project not found");
 
@@ -28284,7 +28285,7 @@ CRITICAL:
       // ── Always create a NEW rewrite_run (never reuse) ──
       const { data: run, error: runErr } = await supabase.from("rewrite_runs").insert({
         project_id: projectId,
-        user_id: user.id,
+        user_id: user?.id || "system",
         source_doc_id: sourceDocId,
         source_version_id: sourceVersionId,
         status: "queued",
@@ -36746,3 +36747,14 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
     });
   }
 });
+
+
+    // ═══ DEBUG ENDPOINT — remove after testing ═══
+    if (action === "debug-treatment-rewrite") {
+      console.log("[DEBUG] treatment-rewrite called with:", JSON.stringify({ projectId, documentId, versionId, approvedNotesLength: (approvedNotes||[]).length, protectItemsLength: (protectItems||[]).length }));
+      return new Response(JSON.stringify({ 
+        ok: true, 
+        received: { projectId, documentId, versionId, approvedNotesCount: (approvedNotes||[]).length, protectItemsCount: (protectItems||[]).length },
+        note: "DEBUG endpoint — not the real treatment-rewrite"
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
