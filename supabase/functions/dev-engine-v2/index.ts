@@ -28274,9 +28274,13 @@ CRITICAL:
       const selectiveMode = Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0;
 
       // ── Always create a NEW rewrite_run (never reuse) ──
+      // Get project owner as fallback for user_id when running as service role
+      const { data: proj } = await supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle();
+      const effectiveUserId = user?.id || proj?.owner_id || "00000000-0000-0000-0000-000000000000";
+
       const { data: run, error: runErr } = await supabase.from("rewrite_runs").insert({
         project_id: projectId,
-        user_id: user?.id || "system",
+        user_id: effectiveUserId,
         source_doc_id: sourceDocId,
         source_version_id: sourceVersionId,
         status: "queued",
@@ -28379,7 +28383,7 @@ CRITICAL:
       // Insert jobs with run_id
       const jobRows = finalScenes.map(s => ({
         project_id: projectId,
-        user_id: user?.id || "system",
+        user_id: effectiveUserId,
         source_doc_id: sourceDocId,
         source_version_id: sourceVersionId,
         target_doc_type: targetDocType || "script",
@@ -28589,7 +28593,7 @@ CRITICAL:
         // Save output keyed by run_id + scene_number
         const { error: outErr } = await supabase.from("rewrite_scene_outputs").upsert({
           project_id: projectId,
-          user_id: user?.id || "system",
+          user_id: effectiveUserId,
           source_version_id: sourceVersionId,
           run_id: effectiveRunId,
           scene_id: job.scene_id,
