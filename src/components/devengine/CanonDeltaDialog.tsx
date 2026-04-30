@@ -1,9 +1,7 @@
 // CanonDeltaDialog — shows canon field differences between approved and current versions
-// NOTE: Data (approvedVersion, currentVersion) should be passed as props from the parent.
-import React, { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import React from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 
 interface VersionData {
   id: string;
@@ -28,48 +26,44 @@ export function CanonDeltaDialog({
   approvedVersion?: VersionData;
   currentVersion?: VersionData;
 }) {
-  const [checkboxAcknowledged, setCheckboxAcknowledged] = useState(false);
-  const hasDiff = approvedVersion && currentVersion;
+  const hasDiff = !!(approvedVersion && currentVersion);
 
   return (
     <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent aria-describedby="canon-delta-description">
-        <DialogHeader>
+      <DialogContent aria-describedby="canon-delta-description" className="flex flex-col gap-0 p-0">
+        <DialogHeader className="px-6 pt-5 pb-4 border-b border-border/50">
           <DialogTitle>Canon Field Delta</DialogTitle>
           <DialogDescription id="canon-delta-description">
             Review any canon field changes between the approved version and this draft before promoting.
           </DialogDescription>
         </DialogHeader>
-        {hasDiff ? (
-          <p className="text-sm text-muted-foreground text-center py-4">
+
+        <div className="px-6 py-5">
+          <p className="text-sm text-muted-foreground text-center">
             No canon field differences detected.
           </p>
-        ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            No canon field differences detected.
-          </p>
-        )}
+        </div>
+
         {hasDiff && (
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="delta-ack"
-              checked={checkboxAcknowledged}
-              onCheckedChange={(checked) => setCheckboxAcknowledged(!!checked)}
-            />
-            <label htmlFor="delta-ack" className="text-sm text-muted-foreground">
-              I understand the impact of these changes on canon
-            </label>
+          <div className="px-6 pb-4">
+            <div className="flex items-center space-x-2">
+              <input type="checkbox" id="delta-ack" className="accent-primary" />
+              <label htmlFor="delta-ack" className="text-sm text-muted-foreground">
+                I understand the impact of these changes on canon
+              </label>
+            </div>
           </div>
         )}
+
+        <div className="flex gap-2 px-6 pb-5 border-t border-border/50 pt-4">
+          <Button onClick={onClose} variant="outline" className="flex-1">
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} className="flex-1">
+            Confirm Approval
+          </Button>
+        </div>
       </DialogContent>
-      <DialogFooter>
-        <Button onClick={onConfirm} disabled={hasDiff && !checkboxAcknowledged}>
-          Confirm Approval
-        </Button>
-        <Button onClick={onClose} variant="outline">
-          Cancel
-        </Button>
-      </DialogFooter>
     </Dialog>
   );
 }
