@@ -8283,8 +8283,15 @@ MATERIAL TO REWRITE:\n${fullText}`;
         let currentChunk = "";
         const chunks: string[] = [];
         for (const line of lines) {
-          const isSectionHeader = /^##\s/.test(line.trim());
-          if (isSectionHeader && currentChunk.length >= CHUNK_TARGET) {
+          const trimmed = line.trim();
+          const isSectionHeader = /^##\s/.test(trimmed);
+          // Always split at section headers — act/outline sections are the unit, not arbitrary size
+          if (isSectionHeader && currentChunk.trim().length > 0) {
+            chunks.push(currentChunk.trim());
+            currentChunk = "";
+          }
+          // Also split if we've hit the size target AND we're past any header
+          if (currentChunk.length >= CHUNK_TARGET && currentChunk.trim().length > 0) {
             chunks.push(currentChunk.trim());
             currentChunk = "";
           }
