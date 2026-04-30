@@ -38,6 +38,7 @@ const About = lazy(() => import("./pages/About"));
 const HowItWorks = lazy(() => import("./pages/HowItWorks"));
 const FAQ = lazy(() => import("./pages/FAQ"));
 const HowIFFYThinks = lazy(() => import("./pages/HowIFFYThinks"));
+const ErrorsPage = lazy(() => import("./pages/__Errors__"));
 const AcceptInvite = lazy(() => import("./pages/AcceptInvite"));
 const Notifications = lazy(() => import("./pages/Notifications"));
 const MarketIntelligence = lazy(() => import("./pages/MarketIntelligence"));
@@ -166,6 +167,7 @@ const AnimatedRoutes = () => {
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/projects/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
           <Route path="/projects/:id" element={<ProtectedRoute><ProjectShell><ProjectDetail /></ProjectShell></ProtectedRoute>} />
+          <Route path="/__errors__" element={<ErrorsPage />} />
           <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
           <Route path="/trends/story" element={<ProtectedRoute><StoryTrends /></ProtectedRoute>} />
           <Route path="/trends/cast" element={<ProtectedRoute><CastTrends /></ProtectedRoute>} />
