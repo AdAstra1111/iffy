@@ -50,7 +50,7 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
 
   // Map job stages to doc rows for live progress display
   // structure_1/2/3 + synthesise → concept_brief; beat_sheet → beat_sheet; character_bible → character_bible; storing_docs → market_sheet
-  const STAGE_ORDER = ['structure_1', 'structure_2', 'structure_3', 'synthesise', 'idea', 'beat_sheet', 'character_bible', 'treatment', 'storing_docs'];
+  const STAGE_ORDER = ['structure_1', 'structure_2', 'structure_3', 'synthesise', 'idea', 'beat_sheet', 'character_bible', 'treatment', 'story_outline', 'market_sheet', 'infer_criteria', 'storing_docs'];
   const stageToDocKey: Record<string, string> = {
     structure_1:     'concept_brief',
     structure_2:     'concept_brief',
@@ -60,6 +60,9 @@ export function ReverseEngineerCallout({ projectId, documents }: ReverseEngineer
     beat_sheet:      'beat_sheet',
     character_bible: 'character_bible',
     treatment:       'treatment',
+    story_outline:   'story_outline',
+    market_sheet:    'market_sheet',
+    infer_criteria: 'market_sheet',
     storing_docs:    'market_sheet',
   };
 
