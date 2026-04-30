@@ -1110,42 +1110,6 @@ export default function ProjectDevelopmentEngine() {
         qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
         setIsGeneratingDocument(false);
         return;
-        let pollCount = 0;
-        const pollJob = async () => {
-          const { data: job } = await supabase
-            .from('narrative_units')
-            .select('payload_json')
-            .eq('project_id', projectId)
-            .eq('payload_json->>job_type', 'reverse_engineer')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
-          if (!job) return;
-          const payload = job.payload_json || {};
-          const stages = payload.stages || {};
-          const totalStages = Object.keys(stages).length;
-          const doneStages = Object.values(stages).filter((s: any) => s.status === 'done').length;
-          const progress = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : 5;
-          setRegenerationProgress(Math.max(5, Math.min(progress, 95)));
-          const current = payload.current_stage;
-          if (current && current !== 'done' && stages[current]?.label) {
-            setRegenerationLabel(stages[current].label);
-          }
-          if (payload.status === 'done' || payload.status === 'error') {
-            setRegenerationProgress(100);
-            setRegenerationLabel(payload.status === 'done' ? 'Complete!' : 'Failed');
-            setTimeout(() => {
-              setRegenerationProgress(undefined);
-              setRegenerationLabel('');
-              qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-              qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
-            }, 2000);
-            return;
-          }
-          pollCount++;
-          if (pollCount < 60) setTimeout(pollJob, 3000);
-        };
-        setTimeout(pollJob, 2000);
       } else {
         // Refresh session before invocation — long-running edge functions can expire the token mid-call
         await supabase.auth.refreshSession();
