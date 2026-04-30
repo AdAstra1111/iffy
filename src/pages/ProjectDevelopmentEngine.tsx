@@ -1312,7 +1312,6 @@ export default function ProjectDevelopmentEngine() {
           versionId: selectedVersionId,
           approvedNotes: enrichedNotes,
           protectItems,
-          additionalContext: provenance?.rewriteModeSelected,
         },
       });
       if (trErr) {
