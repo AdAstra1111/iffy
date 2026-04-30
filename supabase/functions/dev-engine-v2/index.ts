@@ -8993,6 +8993,173 @@ MATERIAL TO REWRITE:\n${fullText}`;
       });
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
+    // TREATMENT-REWRITE — act-by-act regeneration with notes/decisions
+    // ═══════════════════════════════════════════════════════════════════
+    if (action === "treatment-rewrite") {
+      const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
+      if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
+
+      const { data: project } = await supabase.from("projects")
+        .select("id, title, format, assigned_lane").eq("id", projectId).single();
+      if (!project) throw new Error("Project not found");
+
+      const { data: doc } = await supabase.from("project_documents")
+        .select("doc_type, title").eq("id", documentId).single();
+      if (!doc) throw new Error("Document not found");
+
+      const { data: version } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", versionId).single();
+      if (!version) throw new Error("Version not found");
+
+      const fullText = version.plaintext || "";
+
+      // Split by ## ACT headers
+      const lines = fullText.split("\n");
+      const actSections: { header: string; content: string; label: string }[] = [];
+      let currentHeader = "";
+      let currentContent: string[] = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        const isHeader = /^##\s+ACT\s+[0-9]+[A-Z]?\s+.*$/im.test(trimmed) && trimmed.startsWith("##");
+        if (isHeader) {
+          if (currentHeader) {
+            actSections.push({
+              header: currentHeader,
+              content: currentContent.join("\n").trim(),
+              label: currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+            });
+          }
+          currentHeader = trimmed;
+          currentContent = [];
+        } else {
+          currentContent.push(line);
+        }
+      }
+      if (currentHeader) {
+        actSections.push({
+          header: currentHeader,
+          content: currentContent.join("\n").trim(),
+          label: currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+        });
+      }
+      if (actSections.length === 0) actSections.push({ header: "## ACT 1", content: fullText, label: "Act 1" });
+
+      console.log("[dev-engine-v2][treatment-rewrite] acts_found=" + actSections.length);
+
+      const lane = project.assigned_lane || "independent-film";
+      const format = project.format || "film";
+      const narrativeCtx = await resolveNarrativeContext(supabase, projectId, { lane, format, includeSignals: true });
+      const narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+      const constraintPackBlock = await loadConstraintPack(supabase, projectId);
+
+      let characterFactsBlock = "";
+      try {
+        const { data: cfRow } = await supabase.from("project_canon")
+          .select("canon_json").eq("project_id", projectId).maybeSingle();
+        const cfCanon = cfRow?.canon_json || {};
+        const cfParts: string[] = [];
+        if (cfCanon.protagonist && typeof cfCanon.protagonist === "string" && cfCanon.protagonist.trim()) {
+          cfParts.push("Protagonist: " + cfCanon.protagonist.trim());
+        }
+        if (Array.isArray(cfCanon.characters)) {
+          const protag = cfCanon.characters.find((c: any) =>
+            c && (c.role === "protagonist" || c.role === "main_protagonist" || c.role === "primary_protagonist"));
+          if (protag?.name) cfParts.push("Protagonist: " + protag.name);
+          const antagonists = cfCanon.characters.filter((c: any) =>
+            c && (c.role === "antagonist" || c.role === "main_antagonist" || c.role === "villain"));
+          for (const ant of antagonists) cfParts.push("Antagonist: " + ant.name);
+        }
+        if (cfParts.length > 0) {
+          characterFactsBlock = "\n\nCHARACTER FACTS (canonical - do not contradict):\n" + cfParts.join("\n");
+        }
+      } catch {}
+
+      const notesBlock = approvedNotes && approvedNotes.length > 0
+        ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n: any) { return "- " + (typeof n === "string" ? n : n.note_key || JSON.stringify(n)); }).join("\n")
+        : "";
+
+      const ACT_LENGTH_GUIDANCE: Record<string, string> = {
+        "act_1": "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident.",
+        "act_2a": "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles.",
+        "act_2b": "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment.",
+        "act_3": "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image.",
+        "default": "4-6 pages (1,000-1,500 words). Vivid present-tense prose. Full scenes, atmosphere, character interiority.",
+      };
+
+      const sectionKey = function(label: string): string {
+        const l = label.toLowerCase();
+        if (l.includes("act 1") || l.includes("setup")) return "act_1";
+        if (l.includes("act 2a") || l.includes("rising")) return "act_2a";
+        if (l.includes("act 2b") || l.includes("complication") || l.includes("crisis")) return "act_2b";
+        if (l.includes("act 3") || l.includes("climax") || l.includes("resolution")) return "act_3";
+        return "default";
+      };
+
+      const systemPromptParts = [
+        "You are a professional development document writer.",
+        "Generate the " + (doc.doc_type || "treatment").replace(/_/g, " ") + " for: " + (project.title || "this project") + ".",
+        "Production type: " + format + ".",
+        "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Begin with the act header.",
+        narrativeBlock,
+        constraintPackBlock,
+        characterFactsBlock,
+        "FORMAT: This is a TREATMENT. Vivid prose narrative in acts. NO INT./EXT. sluglines. Present-tense prose. Full scenes.",
+        notesBlock,
+        additionalContext ? ("\n\nCREATIVE DIRECTION:\n" + additionalContext) : "",
+      ].filter(Boolean);
+
+      const systemPromptBase = systemPromptParts.join("\n\n");
+
+      const rewrittenActs: string[] = [];
+      for (let i = 0; i < actSections.length; i++) {
+        const section = actSections[i];
+        const sk = sectionKey(section.label);
+        const lengthGuidance = ACT_LENGTH_GUIDANCE[sk] || ACT_LENGTH_GUIDANCE["default"];
+
+        const userPrompt = "Rewrite this act for the treatment.\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Keep the act header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
+
+        try {
+          const model = new AiMediaKitModel("sonnet");
+          const response = await model.complete({ prompt: userPrompt, systemPrompt: systemPromptBase, maxTokens: 4000 });
+          const rewritten = response.text?.trim() || (section.header + "\n\n" + section.content);
+          rewrittenActs.push(rewritten);
+          console.log("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " label=" + section.label + " chars=" + rewritten.length);
+        } catch (err: any) {
+          console.warn("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " failed: " + String(err?.message || err));
+          rewrittenActs.push(section.header + "\n\n" + section.content);
+        }
+      }
+
+      const assembledText = rewrittenActs.join("\n\n");
+
+      const newVersionNumber = (version.version_number || 1) + 1;
+      const { data: newVersion } = await supabase.from("project_document_versions").insert({
+        document_id: documentId,
+        version_number: newVersionNumber,
+        plaintext: assembledText,
+        is_current: true,
+        meta_json: { run_type: "TREATMENT_REWRITE", acts_count: actSections.length, notes_applied: approvedNotes?.length || 0 },
+      }).select().single();
+
+      await supabase.from("project_document_versions").update({ is_current: false })
+        .eq("document_id", documentId).neq("id", newVersion?.id);
+
+      await supabase.from("development_runs").insert({
+        project_id: projectId, document_id: documentId, version_id: newVersion?.id,
+        user_id: user.id, run_type: "TREATMENT_REWRITE",
+        output_json: { total_acts: actSections.length, notes_applied: approvedNotes?.length || 0 },
+      });
+
+      return new Response(JSON.stringify({
+        success: true, newVersion, totalActs: actSections.length,
+        actLabels: actSections.map(function(s: any) { return s.label; }),
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+
     // CONVERT
     if (action === "convert") {
       const { projectId, documentId, versionId, targetOutput, protectItems, assimilationContext } = body;
