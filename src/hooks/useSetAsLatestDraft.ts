@@ -19,6 +19,7 @@ export function useSetAsLatestDraft(projectId: string | undefined) {
 
   return useMutation({
     mutationFn: async ({ title, text, documentId, versionId, docType }: SetAsDraftParams) => {
+      try {
       if (!projectId) throw new Error('No project ID');
       if (!text || text.trim().length < 100) throw new Error('Document text is too short to register as a script draft');
 
@@ -61,12 +62,14 @@ export function useSetAsLatestDraft(projectId: string | undefined) {
             sourceFlow: 'publish_as_script',
           });
         } catch (err) {
-          console.error('Approve+activate after publish failed:', err);
-          // Non-fatal
+          console.error('[publish-as-script] approveAndActivate failed:', err);
+          // Non-fatal — still completes the publish
         }
       }
-
-      // 5. Auto-analysis removed — user starts Auto-Run manually from the project page.
+      } catch(e) {
+        console.error('[useSetAsLatestDraft] error:', e);
+        throw e;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-scripts', projectId] });
