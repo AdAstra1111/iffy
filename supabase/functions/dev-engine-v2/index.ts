@@ -8995,7 +8995,8 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
     // ═══════════════════════════════════════════════════════════════════
     // ═══════════════════════════════════════════════════════════════════
-    // TREATMENT-REWRITE — act-by-act regeneration with notes/decisions
+    // TREATMENT-REWRITE — section-aware regeneration (all sections, not just acts)
+    // Fixed: duplicate return removed (af4f721 fix)
     // ═══════════════════════════════════════════════════════════════════
     if (action === "treatment-rewrite") {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
