@@ -8999,10 +8999,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
     // Fixed: duplicate return removed (af4f721 fix)
     // ═══════════════════════════════════════════════════════════════════
     if (action === "treatment-rewrite") {
+      console.log("[treatment-rewrite] starting", { projectId, documentId, versionId });
+      try {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
-
-      const { data: project } = await supabase.from("projects")
         .select("id, title, format, assigned_lane").eq("id", projectId).single();
       if (!project) throw new Error("Project not found");
 
@@ -9279,12 +9279,20 @@ MATERIAL TO REWRITE:\n${fullText}`;
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
         user_id: user.id, run_type: "TREATMENT_REWRITE",
         output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
+      }).then(function() {
+        console.log("[treatment-rewrite] development_runs inserted ok");
+      }).catch(function(insErr: any) {
+        console.error("[treatment-rewrite] development_runs insert failed:", insErr?.message, insErr?.code, JSON.stringify(insErr?.details || insErr?.hint));
       });
 
       return new Response(JSON.stringify({
         success: true, versionId: newVersion.id, totalSections: rewrittenSections.length,
         sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch(trErr: any) {
+        console.error("[treatment-rewrite] failed:", trErr?.message, trErr?.stack);
+        throw new Error("TREATMENT_REWRITE_FAILED: " + (trErr?.message || "unknown"));
+      }
     }
 
 
