@@ -1214,7 +1214,7 @@ export default function ProjectDevelopmentEngine() {
     }
 
     // Combine approved notes with decision directives
-    const enrichedNotes = approved.map((note: any) => {
+    let enrichedNotes = approved.map((note: any) => {
       const directive = decisionDirectives.find(d => d.note_id === note.id);
       if (directive) {
         return {
