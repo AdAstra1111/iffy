@@ -9283,9 +9283,6 @@ MATERIAL TO REWRITE:\n${fullText}`;
       return new Response(JSON.stringify({
         success: true, versionId: newVersion.id, totalSections: rewrittenSections.length,
         sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });return new Response(JSON.stringify({
-        success: true, versionId: newVersion.id, totalActs: actSections.length,
-        actLabels: actSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
