@@ -4,7 +4,6 @@ import { spineToReviewerAlignmentBlock, getSpineState, CLASS_A_SPINE_CHECK_DOC_T
 import { parseSections, findVerbatimInSections } from "../_shared/sectionRepairEngine.ts";
 import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
 import { isSectionRepairSupported } from "../_shared/deliverableSectionRegistry.ts";
-import { NOTE_SECTION_MAP, getSectionForNoteCategory, type ConceptBriefSectionKey } from "../_shared/sectionRegistry.ts";
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { isCharBibleDepthEnabled, CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
@@ -1072,41 +1071,6 @@ function hashCanonInputs(bible: string, grid: string, formatRules: string): stri
   return h.toString(16);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Section-level scoring for concept_brief rewrites (Phase 1 Task 2.3)
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function scoreConceptBriefSection(
-  apiKey: string,
-  sectionKey: string,
-  content: string,
-): Promise<{ ci: number | null; gp: number | null; blockers: number }> {
-  // Lightweight heuristic scoring per section type.
-  // Full CI/GP require document-level context; this provides a proxy signal
-  // until section-level scoring rubrics are defined.
-  const minLength: Record<string, number> = {
-    logline: 80,
-    premise: 200,
-    protagonist: 150,
-    central_conflict: 120,
-    tone_and_style: 100,
-    audience: 100,
-    unique_hook: 80,
-    world_building_notes: 150,
-  };
-  const min = minLength[sectionKey] ?? 100;
-  const charLen = content.length;
-  const lengthScore = Math.min(charLen / min, 1.0);
-  const hasContent = content.trim().split(/\s+/).length >= 5 ? 1 : 0;
-  const qualitySignal = lengthScore * (0.6 + 0.4 * hasContent);
-  const ci = Math.round(qualitySignal * 85 + 10);
-  const gp = Math.round(ci - 5);
-  const blockers = qualitySignal < 0.5 ? 1 : 0;
-  return { ci, gp, blockers };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function upsertNoteState(supabase: any, params: {
   projectId: string;
   docType: string;
@@ -1124,24 +1088,6 @@ async function upsertNoteState(supabase: any, params: {
   const tier = inferNoteTier(note);
   const scope = extractNoteScope(note, anchor);
   const summary = note.description || note.note || note.id || "";
-
-  // ── Section routing for concept_brief notes ──────────────────────────
-  // Route note to a concept_brief section based on its category.
-  // If the category is not in NOTE_SECTION_MAP, flag as unmapped (configuration error).
-  let sectionKey: string | null = null;
-  if (docType === "concept_brief") {
-    const cat = note.category || note.note_key || null;
-    if (cat) {
-      const mapped = getSectionForNoteCategory(cat);
-      if (mapped !== null) {
-        sectionKey = mapped;
-      } else {
-        // Unmapped category — this is a configuration error. Flag it explicitly.
-        console.warn(`[upsertNoteState] UNMAPPED_CONCEPT_BRIEF_NOTE_CATEGORY: category="${cat}" note="${summary.slice(0, 80)}" project=${projectId} version=${versionId}. Add "${cat}" to NOTE_SECTION_MAP in _shared/sectionRegistry.ts.`);
-      }
-    }
-  }
-
   // Fix: constraint_key must not default to note ID — use anchor or category instead
   const constraintKey = note.constraint_key || note.canon_ref_key ||
     (note.anchor ? `anchor:${note.anchor}` : null) ||
@@ -1206,7 +1152,6 @@ async function upsertNoteState(supabase: any, params: {
       scope_json: scope,
       tier,
       anchor,
-      section: sectionKey,
       witness_json: witnessJson || existing.witness_json,
     }).eq("id", existing.id);
 
@@ -1223,7 +1168,6 @@ async function upsertNoteState(supabase: any, params: {
       scope_json: scope,
       tier,
       anchor,
-      section: sectionKey,
     }).eq("id", existing.id);
     return { fingerprint, clusterId, state: { ...existing, times_seen: (existing.times_seen || 1) + 1 }, suppressed: false };
   }
@@ -1238,7 +1182,6 @@ async function upsertNoteState(supabase: any, params: {
     anchor: anchor || null,
     scope_json: scope,
     tier,
-    section: sectionKey,
     status: "open",
     times_seen: 1,
     last_version_id: versionId,
@@ -2086,7 +2029,6 @@ Rules:
 - Notes with category "user_direction" or severity "blocker" in APPROVED NOTES are also high priority — look for the "note" or "resolution_directive" field and implement what it says.
 - Match the target deliverable type format expectations.
 - OUTPUT THE FULL REWRITTEN MATERIAL — do NOT summarize or truncate.
-- OUTPUT ALL sections of the document — do NOT stop early. Every section must be complete including structural sections (CENTRAL QUESTION, WORLD BUILDING, FESTIVAL STRATEGY, BUDGET CONTEXTUALIZATION, and any other sections present in the material).
 - If repositioning (lane/format) appears in APPROVED STRATEGIC NOTES, reflect it. Otherwise do not stealth-reposition.
 
 REWRITE OBJECTIVES FOR THIS DOCUMENT PURPOSE:
@@ -7892,10 +7834,7 @@ MATERIAL:\n${version.plaintext}`;
             return `- [${n.severity}/${n.category || "general"}] (from ${n.source_doc_type || "unknown"}, via ${n.source_table}): ${n.summary || n.title}`;
           });
           upstreamNoteBlock = `\n\nUNRESOLVED UPSTREAM NOTES (from earlier pipeline stages — address these in your rewrite):\n${noteLines.join("\n")}`;
-          const noteBlockLen = upstreamNoteBlock.length;
-          console.log(`[dev-engine-v2] rewrite: injected ${upstreamBlockers.length} unified upstream notes targeting ${effectiveDeliverable} (noteBlockChars=${noteBlockLen})`);
-          console.log(`[dev-engine-v2] rewrite: prompt build — userPrompt_chars=${(protectItems ? JSON.stringify(protectItems).length : 0) + (approvedNotes ? JSON.stringify(approvedNotes).length : 0) + (decisionDirectives?.length || 0) + (globalDirContext?.length || 0) + noteBlockLen + (narrativeBlock?.length || 0) + (characterFactsBlock?.length || 0) + fullText.length}, material_chars=${fullText.length}`);
-        }
+          console.log(`[dev-engine-v2] rewrite: injected ${upstreamBlockers.length} unified upstream notes targeting ${effectiveDeliverable}`);
         }
       }
 
@@ -8022,7 +7961,6 @@ ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
       const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
-      console.log(`[dev-engine-v2] rewrite: raw_ai_response_chars=${raw.length}, rewritten_text_expected_full=${fullText.length}`);
       const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
@@ -8161,37 +8099,6 @@ MATERIAL TO REWRITE:\n${fullText}`;
         console.warn(`Version ${nextVersion} conflict, retrying...`);
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
-
-      // ── Backfill concept_brief_sections for single-pass rewrite ──
-      // The section rewrite path (appliedSectionKeys > 0) handles its own backfill.
-      // This block handles full-document single-pass rewrites (no chunking, no section keys).
-      // After writeVersionSafe succeeds, parse all sections from the new plaintext and
-      // upsert concept_brief_sections if no records exist for this version yet.
-      if (effectiveDeliverable === "concept_brief" && newVersion) {
-        const { data: existingSections } = await supabase
-          .from("concept_brief_sections")
-          .select("section_key")
-          .eq("version_id", newVersion.id)
-          .limit(1);
-        if (!existingSections || existingSections.length === 0) {
-          const { parseSections } = await import("../_shared/sectionRepairEngine.ts");
-          const parsed = parseSections(newVersion.plaintext, "concept_brief");
-          if (parsed.length > 0) {
-            const rows = parsed.map((s: any) => ({
-              project_id: projectId,
-              version_id: newVersion.id,
-              section_key: s.section_key,
-              section_label: s.label || s.section_key,
-              status: "complete" as const,
-              plaintext: s.content,
-              rewrite_attempts: 0,
-              last_rewrite_at: new Date().toISOString(),
-            }));
-            await supabase.from("concept_brief_sections").upsert(rows, { onConflict: "version_id,section_key" });
-            console.log(`[dev-engine-v2] concept_brief_sections backfill: v${newVersion.version_number} ${parsed.length} sections (single-pass rewrite)`);
-          }
-        }
-      }
 
       // ── CANON VIOLATION EXIT GATE (F2): if CCE detected violations in the new version,
       // return immediately. Do NOT continue to the auto-rewrite regeneration loop.
@@ -8938,35 +8845,6 @@ MATERIAL TO REWRITE:\n${fullText}`;
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
 
-      // ── B1 Fix: update latest_version_id so "Latest" badge resolves correctly ──
-      await supabase.from("project_documents").update({ latest_version_id: newVersion.id }).eq("id", documentId);
-
-      // ── B2 Fix: parse all sections from assembledText and upsert to concept_brief_sections ──
-      if (effectiveDeliverable === "concept_brief") {
-        const parsed = parseSections(assembledText, "concept_brief");
-        const docCI = cceResult?.metaPatch?.ci ?? null;
-        const docGP = cceResult?.metaPatch?.gp ?? null;
-        const canonDriftPassed = cceResult?.driftResult
-          ? cceResult.driftResult.findings.filter((f: any) => f.severity === "violation").length === 0
-          : true;
-        for (const sec of parsed) {
-          const label = sec.label || sec.section_key;
-          await supabase.from("concept_brief_sections").upsert({
-            project_id: projectId,
-            version_id: newVersion.id,
-            section_key: sec.section_key,
-            section_label: label,
-            plaintext: sec.content,
-            status: "complete",
-            convergence_score_json: { ci: docCI, gp: docGP, blockers: 0 },
-            canon_drift_json: { passed: canonDriftPassed },
-            rewrite_attempts: 0,
-            last_rewrite_at: new Date().toISOString(),
-          }, { onConflict: "version_id,section_key" });
-        }
-        console.log(`[dev-engine-v2] rewrite-assemble: concept_brief_sections backfill v${newVersion.version_number} (${parsed.length} sections)`);
-      }
-
       // ── CANON DRIFT CORRECTION LOOP — Fix 1 ──
       // After version is created, check canon drift. If violations > 0, inject as negative constraints
       // for the next rewrite pass. Track violation_count per version. After 3 consecutive passes
@@ -9008,29 +8886,13 @@ MATERIAL TO REWRITE:\n${fullText}`;
             .join("\n");
           canonConstraintBlock = `\n\nCANON CONSTRAINTS (violations detected — must be corrected):\n${violationLines}\nThese violations must be FIXED, not just acknowledged.`;
 
-          // ── EXIT GATE: 3-strike rule — restore 2026-04-29 ──
-          const prevStreak = prevMeta?.canon_violation_streak || 0;
+          // Check consecutive violation staleness
           if (prevViolations > 0 && newViolations >= prevViolations) {
-            // Violations same or worse — increment streak
-            const newStreak = prevStreak + 1;
-            const streakMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: newStreak };
-            await supabase.from("project_document_versions").update({ meta_json: streakMeta }).eq("id", newVersion.id);
-            newVersion.meta_json = streakMeta;
-            if (newStreak >= 3) {
-              humanReviewFlag = true;
-              console.log(`[dev-engine-v2] rewrite-assemble: exit gate FIRED — streak=${newStreak}, violations=${newViolations}`);
-            }
-          } else {
-            // Violations improved — reset streak
+            // Violations reduced — reset streak
             const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
             await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
             newVersion.meta_json = resetMeta;
           }
-        } else {
-          // No violations — reset streak
-          const resetMeta = { ...(newVersion.meta_json || {}), canon_violation_streak: 0 };
-          await supabase.from("project_document_versions").update({ meta_json: resetMeta }).eq("id", newVersion.id);
-          newVersion.meta_json = resetMeta;
         }
       } catch (cceErr: any) {
         console.warn("[dev-engine-v2] rewrite-assemble CCE check failed (non-fatal):", cceErr?.message);
@@ -27798,63 +27660,101 @@ CRITICAL:
       if (!projectId || !sourceVersionId) throw new Error("projectId, sourceVersionId required");
       const approvedNotes: any[] = notes || [];
 
-// 0. Look up source document type
-const { data: sourceDoc } = await supabase.from("project_documents")
-  .select("doc_type").eq("id", sourceDocId).limit(1).maybeSingle();
-const sourceDocType = sourceDoc?.doc_type || "unknown";
-
       // 1. Get scene list
+      const { data: sceneOrder } = await supabase.from("scene_graph_order")
+        .select("scene_id, order_key")
+        .eq("project_id", projectId)
+        .eq("is_active", true)
+        .order("order_key", { ascending: true });
+
       let scenes: Array<{ scene_number: number; scene_id: string | null; heading: string; summary: string; characters: string[] }> = [];
 
-      // ── Treatment: split by ACT structure, NOT film scenes ──────────────────
-      if (sourceDocType === "treatment") {
+      if (sceneOrder && sceneOrder.length >= 3) {
+        const sceneIds = sceneOrder.map(s => s.scene_id);
+        const { data: versions } = await supabase.from("scene_graph_versions")
+          .select("scene_id, slugline, summary, characters_present, version_number")
+          .in("scene_id", sceneIds)
+          .order("version_number", { ascending: false });
+        const latestMap = new Map<string, { slugline: string; summary: string; characters: string[] }>();
+        for (const v of (versions || [])) {
+          if (!latestMap.has(v.scene_id)) {
+            latestMap.set(v.scene_id, {
+              slugline: v.slugline || "",
+              summary: v.summary || "",
+              characters: v.characters_present || [],
+            });
+          }
+        }
+        scenes = sceneOrder.map((s, i) => {
+          const ver = latestMap.get(s.scene_id);
+          return {
+            scene_number: i + 1,
+            scene_id: s.scene_id,
+            heading: ver?.slugline || `SCENE ${i + 1}`,
+            summary: ver?.summary || "",
+            characters: ver?.characters || [],
+          };
+        });
+      } else {
+        // Fallback: split from plaintext — but strategy depends on doc_type
+        // For sectioned dev types (treatment, story_outline, etc.), use ## headers.
+        // For script-like types, use INT./EXT. sluglines.
+        const { data: srcDoc } = await supabase.from("project_documents")
+          .select("doc_type").eq("id", sourceDocId).maybeSingle();
+        const srcDocType = srcDoc?.doc_type || "";
+        const isSectionedFallbackType = new Set([
+          "treatment", "story_outline", "beat_sheet", "character_bible",
+          "long_treatment", "long_character_bible", "concept_brief"
+        ]).has(srcDocType);
+
         const { data: version } = await supabase.from("project_document_versions")
           .select("plaintext").eq("id", sourceVersionId).single();
         const text = version?.plaintext || "";
 
-        const actRegex = /^#{1,3}\s*[Aa]ct\s+(?:One|Two|Three|1|2|3)\s*$/gm;
-        const actBoundaries: Array<{ index: number; heading: string }> = [];
-        let match;
-        while ((match = actRegex.exec(text)) !== null) {
-          actBoundaries.push({ index: match.index, heading: match[0].trim() });
-        }
-
-        if (actBoundaries.length === 0) {
-          // No act markers — fallback: natural paragraph grouping (3 paras per unit)
-          const paras = text.split(/\n\n+/).filter((p: string) => p.trim().length > 200);
-          let cursor = 0;
-          const chunkSize = 3;
-          for (let i = 0; i < paras.length; i += chunkSize) {
-            const chunk = paras.slice(i, i + chunkSize).join("\\n\\n");
-            const start = text.indexOf(chunk, cursor);
-            scenes.push({
-              scene_number: scenes.length + 1,
-              scene_id: null,
-              heading: `Section ${scenes.length + 1}`,
-              summary: chunk.substring(0, 300),
-              characters: [],
-            });
-            cursor = start + chunk.length;
+        let boundaries: Array<{ index: number; heading: string }> = [];
+        if (isSectionedFallbackType) {
+          // Split on ## section headers (act-level blocks for treatments/outlines)
+          const sectionRegex = /^##\s+.+/gm;
+          let match;
+          while ((match = sectionRegex.exec(text)) !== null) {
+            boundaries.push({ index: match.index, heading: match[0].trim() });
           }
-        } else {
-          actBoundaries.sort((a, b) => a.index - b.index);
-          scenes = actBoundaries.map((b, i) => {
-            const start = b.index;
-            const end = actBoundaries[i + 1]?.index ?? text.length;
-            const actText = text.substring(start, end).trim();
-            return {
-              scene_number: i + 1,
-              scene_id: null,
-              heading: b.heading,
-              summary: actText.substring(0, 500),
-              characters: [],
-            };
-          });
+          // If no ## headers found, fall back to act-level heuristics (e.g. "ACT ONE", "ACT 2")
+          if (boundaries.length === 0) {
+            const actRegex = /^(ACT\s+(?:ONE|TWO|THREE|FOUR|\d+)|ACT\s+[IVX]+)[\s\-.]/gim;
+            while ((match = actRegex.exec(text)) !== null) {
+              boundaries.push({ index: match.index, heading: match[0].trim() });
+            }
+          }
         }
-      } else {
-        // ── All other doc types: use scene_graph_order ───────────────────────
 
-      if (scenes.length === 0) {      if (scenes.length === 0) {
+        if (boundaries.length === 0) {
+          // Fall back to INT./EXT. sluglines for script-like docs
+          const headingRegex = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*.+/gm;
+          let match;
+          while ((match = headingRegex.exec(text)) !== null) {
+            boundaries.push({ index: match.index, heading: match[0].trim() });
+          }
+        }
+
+        scenes = boundaries.map((b, i) => {
+          const start = b.index;
+          const end = boundaries[i + 1]?.index ?? text.length;
+          const sceneText = text.substring(start, end).trim();
+          // Extract character names (ALL CAPS words in dialogue position — script convention)
+          const charMatches = sceneText.match(/^\s{10,}([A-Z][A-Z\s\.]+)\s*$/gm) || [];
+          const chars = [...new Set(charMatches.map(c => c.trim()))];
+          return {
+            scene_number: i + 1,
+            scene_id: null,
+            heading: b.heading.substring(0, 200),
+            summary: sceneText.substring(0, 300),
+            characters: chars.slice(0, 10),
+          };
+        });
+      }
+
+      if (scenes.length === 0) {
         return new Response(JSON.stringify({ error: "No scenes found", totalScenes: 0 }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
@@ -33301,7 +33201,6 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
         let docSequenceFailed = false;
         const docTargetResults: ExecTargetResult[] = [];
         const appliedSectionKeys: string[] = [];
-        let sectionScoresByKey: Record<string, { ci: number | null; gp: number | null; blockers: number }> | null = null;
 
         for (const target of orderedTargets) {
           if (docSequenceFailed) {
@@ -33416,16 +33315,6 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
             runningContent = replaceResult.new_content;
             appliedSectionKeys.push(target.section_key!);
 
-            // ── Section-level scoring (Phase 1 Task 2.3) ──
-            const sectionScores = await scoreConceptBriefSection(
-              execApiKey,
-              target.section_key!,
-              newSectionContent,
-            );
-            // Accumulate per-section scores for backfill
-            if (!sectionScoresByKey) sectionScoresByKey = {};
-            sectionScoresByKey[target.section_key!] = sectionScores;
-
             // Record success (version_id_after filled after consolidated write)
             docTargetResults.push({
               target_id: target.target_id,
@@ -33528,65 +33417,6 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
             writePerformed = true;
             documentsExecuted++;
-
-            // ── Backfill concept_brief_sections after section rewrite ──
-            if (currentDocType === "concept_brief" && appliedSectionKeys.length > 0) {
-              const parsed = parseSections(newVersion.plaintext, "concept_brief");
-              const canonDriftPassed = newVersion.meta_json?.canon_drift?.passed ?? true;
-              for (const sk of appliedSectionKeys) {
-                const sec = parsed.find((s: any) => s.section_key === sk);
-                if (!sec) continue;
-                const label = sec.label || sk;
-                // ── Phase 3 Task 3.1: Convergence Exit Gate ──
-                // Check if this section has failed to converge after 3 attempts
-                const { data: existingSection } = await supabaseClient
-                  .from("concept_brief_sections")
-                  .select("rewrite_attempts")
-                  .eq("section_key", sk)
-                  .eq("project_id", projectId)
-                  .order("created_at", { ascending: false })
-                  .limit(1)
-                  .maybeSingle();
-                const prevAttempts = existingSection?.rewrite_attempts ?? 0;
-                const newAttempts = prevAttempts + 1;
-
-                const secScore = sectionScoresByKey?.[sk];
-                const ci = secScore?.ci ?? patchCCE?.metaPatch?.ci ?? newVersion.meta_json?.ci ?? null;
-                const gp = secScore?.gp ?? patchCCE?.metaPatch?.gp ?? newVersion.meta_json?.gp ?? null;
-                const blockers = secScore?.blockers ?? 0;
-
-                if (blockers > 0 && newAttempts >= 3) {
-                  // Convergence failure — hard stop, do not retry
-                  docSequenceFailed = true;
-                  docTargetResults.push({
-                    target_id: `${currentDocId}::section::${sk}`,
-                    target_type: "section",
-                    document_id: currentDocId,
-                    doc_type: currentDocType,
-                    version_id_before: sourceVersionId,
-                    version_id_after: null,
-                    status: "failed",
-                    message: `SECTION_CONVERGENCE_FAILED: section=${sk} attempts=${newAttempts} blockers=${blockers}. Human review required.`,
-                  });
-                  console.error(`[dev-engine-v2] SECTION_CONVERGENCE_FAILED: project=${projectId} section=${sk} attempts=${newAttempts} blockers=${blockers}`);
-                  continue;
-                }
-
-                await supabaseClient.from("concept_brief_sections").upsert({
-                  project_id: projectId,
-                  version_id: newVersion.id,
-                  section_key: sk,
-                  section_label: label,
-                  plaintext: sec.content,
-                  status: blockers > 0 ? "pending" : "complete",
-                  convergence_score_json: { ci, gp, blockers },
-                  canon_drift_json: { passed: canonDriftPassed },
-                  rewrite_attempts: newAttempts,
-                  last_rewrite_at: new Date().toISOString(),
-                }, { onConflict: "version_id,section_key" });
-              }
-              console.log(`[dev-engine-v2] concept_brief_sections backfill: v${newVersion.version_number} sections=[${appliedSectionKeys.join(",")}]`);
-            }
 
             // Backfill version_id_after on all successful target results
             for (const r of docTargetResults) {
