@@ -8162,6 +8162,37 @@ MATERIAL TO REWRITE:\n${fullText}`;
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
 
+      // ── Backfill concept_brief_sections for single-pass rewrite ──
+      // The section rewrite path (appliedSectionKeys > 0) handles its own backfill.
+      // This block handles full-document single-pass rewrites (no chunking, no section keys).
+      // After writeVersionSafe succeeds, parse all sections from the new plaintext and
+      // upsert concept_brief_sections if no records exist for this version yet.
+      if (effectiveDeliverable === "concept_brief" && newVersion) {
+        const { data: existingSections } = await supabase
+          .from("concept_brief_sections")
+          .select("section_key")
+          .eq("version_id", newVersion.id)
+          .limit(1);
+        if (!existingSections || existingSections.length === 0) {
+          const { parseSections } = await import("../_shared/sectionRepairEngine.ts");
+          const parsed = parseSections(newVersion.plaintext, "concept_brief");
+          if (parsed.length > 0) {
+            const rows = parsed.map((s: any) => ({
+              project_id: projectId,
+              version_id: newVersion.id,
+              section_key: s.section_key,
+              section_label: s.label || s.section_key,
+              status: "complete" as const,
+              plaintext: s.content,
+              rewrite_attempts: 0,
+              last_rewrite_at: new Date().toISOString(),
+            }));
+            await supabase.from("concept_brief_sections").upsert(rows, { onConflict: "version_id,section_key" });
+            console.log(`[dev-engine-v2] concept_brief_sections backfill: v${newVersion.version_number} ${parsed.length} sections (single-pass rewrite)`);
+          }
+        }
+      }
+
       // ── CANON VIOLATION EXIT GATE (F2): if CCE detected violations in the new version,
       // return immediately. Do NOT continue to the auto-rewrite regeneration loop.
       // The violations are already persisted in the version's meta_json by writeVersionSafe.
