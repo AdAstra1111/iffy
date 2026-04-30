@@ -7552,10 +7552,11 @@ MATERIAL:\n${version.plaintext}`;
     if (action === "rewrite") {
       const { projectId, documentId, versionId, approvedNotes, protectItems, targetDocType, deliverableType, developmentBehavior, format: reqFormat, selectedOptions, globalDirections, userNotes, additionalContext, rewriteNotes } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
+      const effectiveDocType = deliverableType || targetDocType;
 
       // ── STAGE IDENTITY GATE — block rewrite on malformed stage artifacts ──
       {
-        const effectiveDocType = deliverableType || targetDocType;
+        effectiveDocType = deliverableType || targetDocType;
         if (effectiveDocType && ["idea", "concept_brief"].includes(effectiveDocType)) {
           const { data: rwVer } = await supabase.from("project_document_versions")
             .select("plaintext, meta_json").eq("id", versionId).maybeSingle();
@@ -7951,11 +7952,15 @@ MATERIAL:\n${version.plaintext}`;
         console.warn("[dev-engine-v2] rewrite: character facts block build failed (non-fatal):", cfErr?.message);
       }
 
+      const treatmentFormatGuidance = effectiveDocType === "treatment"
+        ? "\n\nFORMAT GUIDANCE: This is a TREATMENT document. Write vivid prose narrative organized by ## ACT section headers. Do NOT use INT./EXT. sluglines or screenplay format. Each ## ACT section: 4-7 pages (~1,500-2,000 words) of present-tense prose with full scenes, atmosphere, character interiority. Do NOT summarise."
+        : "";
+
       const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}${characterFactsBlock}
-TARGET FORMAT: ${targetDocType || "same as source"}${effectiveDocType === "treatment" ? "\n\nFORMAT GUIDANCE: This is a TREATMENT document. Write vivid prose narrative organized by ## ACT section headers. Do NOT use INT./EXT. sluglines or screenplay format. Each ## ACT section: 4-7 pages (~1,500-2,000 words) of present-tense prose with full scenes, atmosphere, character interiority. Do NOT summarise." : ""
+TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
