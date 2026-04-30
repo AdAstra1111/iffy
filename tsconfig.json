@@ -10,6 +10,9 @@
       ]
     },
     "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "target": "es2015",
+    "downlevelIteration": true,
     "strictNullChecks": false
   },
   "files": [],

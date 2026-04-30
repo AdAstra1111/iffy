@@ -2197,7 +2197,7 @@ Target format guidelines:
 - BLUEPRINT: High-level structural blueprint with act breaks, key beats, character arcs, tone anchors
 - ARCHITECTURE / STORY_OUTLINE: Feature-length story outline in PROSE format. This is NOT a screenplay — do NOT use INT./EXT. sluglines, character cues, or formatted dialogue. Write 12-20 scene summaries in present-tense prose paragraphs. Each scene: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Use narrative prose throughout (e.g. "Elias arrives at the outpost at dawn…"). This is ONE SECTION — write it fully at feature-film quality and length. Do NOT summarise. Do NOT truncate.
 - BEAT_SHEET: Feature-film beat sheet. This section covers ONE ACT. Write 10-15 named beats (e.g. "Opening Image", "Catalyst", "Midpoint Twist"), each with: beat name in bold, 4-6 sentence description of what happens, emotional/structural purpose. This is ONE SECTION — write every beat in full. Do NOT summarise.
-- TREATMENT: Prose narrative treatment. This section covers ONE ACT of a feature film. Write 4-7 pages of vivid, present-tense prose. Every scene described in full, with atmosphere, character interiority, tension. Aim for 1,500-2,000 words per section. Do NOT summarise.
+- TREATMENT: Prose narrative treatment written as acts. Each ## ACT section covers one act (4-7 pages, ~1,500-2,000 words). Vivid present-tense prose, full scenes, atmosphere, character interiority. Do NOT use INT./EXT. sluglines. Do NOT summarise.
 - CHARACTER_BIBLE: Character bible. This section covers ONE CHARACTER GROUP (protagonists/antagonists/supporting/relationships). Write each character profile in full: backstory, psychology, want/need/wound/flaw, arc across the story, relationship dynamics, sample dialogue voice, casting reference. Minimum 600 words per character.
 - ONE_PAGER: One-page pitch document: logline, synopsis, key talent notes, comparable titles, market positioning
 - OUTLINE: Beat-by-beat outline with numbered scenes
@@ -2363,7 +2363,7 @@ const docTypeMap: Record<string, string> = {
   DECK: "deck",
   DOCUMENTARY_OUTLINE: "documentary_outline",
   "DOCUMENTARY OUTLINE": "documentary_outline",
-  TREATMENT: "treatment",
+  TREATMENT: "treatment", 
   STORY_OUTLINE: "story_outline",
   "STORY OUTLINE": "story_outline",
   ONE_PAGER: "concept_brief",
@@ -7834,7 +7834,6 @@ MATERIAL:\n${version.plaintext}`;
             return `- [${n.severity}/${n.category || "general"}] (from ${n.source_doc_type || "unknown"}, via ${n.source_table}): ${n.summary || n.title}`;
           });
           upstreamNoteBlock = `\n\nUNRESOLVED UPSTREAM NOTES (from earlier pipeline stages — address these in your rewrite):\n${noteLines.join("\n")}`;
-          console.log(`[dev-engine-v2] rewrite: injected ${upstreamBlockers.length} unified upstream notes targeting ${effectiveDeliverable}`);
         }
       }
 
