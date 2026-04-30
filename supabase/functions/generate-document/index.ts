@@ -323,15 +323,22 @@ Deno.serve(async (req) => {
           candidates.find((v: any) => v.approval_status === "approved" && v.is_current === true) ||
           candidates.find((v: any) => v.approval_status === "approved") ||
           (doc.latest_version_id ? candidates.find((v: any) => v.id === doc.latest_version_id) : null) ||
-          candidates[0] ||
           null;
+        // Fallback to longest version if primary chain returned null or empty plaintext
+        const resolvedVersion = (!version || !version.plaintext || version.plaintext.trim().length < 200)
+          ? candidates.reduce((best: any, v) => {
+              if (!v.plaintext || v.plaintext.trim().length < 200) return best;
+              if (!best || v.plaintext.length > best.plaintext.length) return v;
+              return best;
+            }, null)
+          : version;
 
-        if (version) {
+        if (resolvedVersion) {
           inputsUsed[doc.doc_type] = {
-            version_id: version.id,
-            version_number: version.version_number,
+            version_id: resolvedVersion.id,
+            version_number: resolvedVersion.version_number,
           };
-          let plaintext = version.plaintext || "(empty)";
+          let plaintext = resolvedVersion.plaintext || "(empty)";
           // Per-doc cap to keep prompt size stable
           if (plaintext.length > MAX_PER_DOC_CHARS) {
             const headChars = Math.floor(MAX_PER_DOC_CHARS * 0.6);
@@ -339,7 +346,7 @@ Deno.serve(async (req) => {
             plaintext = plaintext.slice(0, headChars) + "\n\n[...content trimmed for context budget...]\n\n" + plaintext.slice(-tailChars);
           }
           upstreamBlocks.set(doc.doc_type, plaintext);
-          upstreamContent += `\n\n--- ${doc.doc_type.toUpperCase()} (v${version.version_number}) ---\n${plaintext}`;
+          upstreamContent += `\n\n--- ${doc.doc_type.toUpperCase()} (v${resolvedVersion.version_number}) ---\n${plaintext}`;
         }
       }
     }
