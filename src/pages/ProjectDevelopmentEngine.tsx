@@ -3213,7 +3213,7 @@ export default function ProjectDevelopmentEngine() {
           projectId={projectId}
           docType={selectedDoc.doc_type || ''}
           currentVersionId={selectedVersionId}
-          approvedVersion={approvedVersionMap.get(selectedDoc.doc_type || '')}
+          approvedVersion={undefined}
           currentVersion={selectedVersion}
           onClose={() => setCanonDeltaOpen(false)}
           onConfirm={async () => {
