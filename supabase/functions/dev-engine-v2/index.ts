@@ -36745,16 +36745,3 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
     return new Response(JSON.stringify({ error: msg }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  }
-});
-
-
-    // ═══ DEBUG ENDPOINT — remove after testing ═══
-    if (action === "debug-treatment-rewrite") {
-      console.log("[DEBUG] treatment-rewrite called with:", JSON.stringify({ projectId, documentId, versionId, approvedNotesLength: (approvedNotes||[]).length, protectItemsLength: (protectItems||[]).length }));
-      return new Response(JSON.stringify({ 
-        ok: true, 
-        received: { projectId, documentId, versionId, approvedNotesCount: (approvedNotes||[]).length, protectItemsCount: (protectItems||[]).length },
-        note: "DEBUG endpoint — not the real treatment-rewrite"
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
