@@ -28388,7 +28388,7 @@ CRITICAL:
       // Insert jobs with run_id
       const jobRows = finalScenes.map(s => ({
         project_id: projectId,
-        user_id: user.id,
+        user_id: user?.id || "system",
         source_doc_id: sourceDocId,
         source_version_id: sourceVersionId,
         target_doc_type: targetDocType || "script",
@@ -28598,7 +28598,7 @@ CRITICAL:
         // Save output keyed by run_id + scene_number
         const { error: outErr } = await supabase.from("rewrite_scene_outputs").upsert({
           project_id: projectId,
-          user_id: user.id,
+          user_id: user?.id || "system",
           source_version_id: sourceVersionId,
           run_id: effectiveRunId,
           scene_id: job.scene_id,
