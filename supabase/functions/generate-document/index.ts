@@ -58,14 +58,15 @@ const DOC_DEPENDENCY_MAP: Record<string, string[]> = {
 
 const UPSTREAM_DEPS: Record<string, string[]> = {
   concept_brief: ["idea"],
-  beat_sheet: ["character_bible", "concept_brief"],
+  beat_sheet: ["character_bible", "concept_brief", "treatment", "story_outline"],
   logline: ["idea_brief"],
   one_pager: ["idea_brief", "logline"],
   long_synopsis: ["one_pager", "logline"],
   treatment: ["long_synopsis", "character_bible", "concept_brief", "market_sheet"],
   character_bible: ["idea_brief", "logline", "concept_brief"],
   feature_outline: ["treatment", "character_bible"],
-  screenplay_draft: ["feature_outline", "character_bible", "treatment"],
+  screenplay_draft: ["beat_sheet", "character_bible", "treatment"],
+  story_outline: ["concept_brief", "character_bible", "treatment"],
   series_overview: ["idea_brief", "logline", "concept_brief", "market_sheet"],
   season_arc: ["series_overview", "character_bible", "concept_brief", "market_sheet"],
   episode_grid: ["season_arc", "character_bible", "concept_brief"],
@@ -698,7 +699,7 @@ Output the COMPLETE final document with all 12 sections. Preserve the exact head
       if (!upstreamContent.trim()) {
         return new Response(JSON.stringify({
           error: "no_source_documents",
-          message: "Cannot generate Beat Sheet: requires a Character Bible and Concept Brief. Generate those documents first before generating the Beat Sheet.",
+          message: "Cannot generate Beat Sheet: requires a Character Bible, Concept Brief, Treatment, and Story Outline. Generate those documents first before generating the Beat Sheet.",
         }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
     } else if (docType === "visual_project_bible") {
@@ -1092,6 +1093,16 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
       let contentFocus = "";
       if (docType === "format_rules") {
         contentFocus = "\n\n⚠️ FORMAT RULES SCOPE: Generate ONLY technical/production constraints (aspect ratio, beat cadence, visual grammar rules, dialogue density limits, location discipline, budget constraints). UPSTREAM CHARACTER CONTENT IS IRRELEVANT — do not include character names, descriptions, arcs, backstory, or any narrative elements in this document.";
+      }
+
+      // ── beat_sheet: read Treatment for tone + atmosphere, Story Outline for scene structure ──
+      if (docType === "beat_sheet") {
+        contentFocus = "\n\n⚠️ BEAT SHEET INSTRUCTIONS: Read the TREATMENT for tonal guidance, atmosphere, emotional texture, and narrative voice. Read the STORY OUTLINE for scene-level structure, causality, and what happens in each scene. The Beat Sheet translates Story Outline scenes into dramatic beats — it should NOT introduce new story logic or contradict Treatment tone. Use Beat Sheet format (numbered beats with descriptions).";
+      }
+
+      // ── screenplay_draft / feature_script: read Beat Sheet for structural beats ──
+      if (docType === "screenplay_draft" || docType === "feature_script") {
+        contentFocus = "\n\n⚠️ SCREENPLAY INSTRUCTIONS: Read the BEAT SHEET for scene-by-scene structural beats — what happens in each beat is your spine. Read the TREATMENT for tone, atmosphere, and emotional texture. Read the CHARACTER BIBLE for authentic dialogue voice. Do not invent new story events or contradict the Beat Sheet structure.";
       }
 
 
