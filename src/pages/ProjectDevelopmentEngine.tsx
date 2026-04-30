@@ -2247,8 +2247,8 @@ export default function ProjectDevelopmentEngine() {
                       </div>
                     )
                   )}
-                  {/* Scene-level rewrite panel — fires for any doc type when scene scope is set */}
-                  {sceneRewrite.total > 0 && selectedDocId && selectedVersionId && (
+                  {/* Scene-level rewrite panel — fires for script types + beat_sheet when scene scope is set */}
+                  {sceneRewrite.total > 0 && selectedDocId && selectedVersionId && (isScriptDocType(selectedDoc?.doc_type) || selectedDoc?.doc_type === 'beat_sheet') && (
                     <SceneRewritePanel
                       projectId={projectId!}
                       documentId={selectedDocId}
