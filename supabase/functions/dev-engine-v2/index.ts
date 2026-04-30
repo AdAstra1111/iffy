@@ -9118,13 +9118,19 @@ MATERIAL TO REWRITE:\n${fullText}`;
       console.log("[dev-engine-v2][treatment-rewrite] sections_found=" + flatSections.length);
 
       const newVersionNumber = (version.version_number || 1) + 1;
-      const { data: newVersion } = await supabase.from("project_document_versions").insert({
+      const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+      const effUserId = user?.id || proj?.user_id || null;
+      const insertRes = await supabase.from("project_document_versions").insert({
         document_id: documentId,
         version_number: newVersionNumber,
         plaintext: "",
-        is_current: true,
+        is_current: false,
+        created_by: effUserId,
         meta_json: { run_type: "TREATMENT_REWRITE", sections_count: flatSections.length },
-      }).select().single();
+      }).select();
+      console.log("[treatment-rewrite] insert err=" + JSON.stringify(insertRes.error));
+      if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
+      const { data: newVersion } = insertRes;
 
       await supabase.from("project_document_versions").update({ is_current: false })
         .eq("document_id", documentId).neq("id", newVersion?.id);
@@ -9277,7 +9283,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
-        user_id: user.id, run_type: "TREATMENT_REWRITE",
+        user_id: effUserId, run_type: "TREATMENT_REWRITE",
         output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       });
 
@@ -28274,9 +28280,8 @@ CRITICAL:
       const selectiveMode = Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0;
 
       // ── Always create a NEW rewrite_run (never reuse) ──
-      // Get project owner as fallback for user_id when running as service role
-      const { data: proj } = await supabase.from("projects").select("owner_id").eq("id", projectId).maybeSingle();
-      const effectiveUserId = user?.id || proj?.owner_id || "00000000-0000-0000-0000-000000000000";
+      const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+      const effectiveUserId = user?.id || proj?.user_id || null;
 
       const { data: run, error: runErr } = await supabase.from("rewrite_runs").insert({
         project_id: projectId,
