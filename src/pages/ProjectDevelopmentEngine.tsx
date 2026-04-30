@@ -1325,9 +1325,16 @@ export default function ProjectDevelopmentEngine() {
       if (trErr) {
         toast.error('Treatment rewrite failed: ' + (trErr?.message || trErr));
       } else {
+        const response = typeof trErr === 'object' && trErr !== null ? trErr : null;
+        const newVersionId = response?.versionId || null;
+        if (newVersionId) {
+          postOperationVersionId.current = newVersionId;
+          setSelectedVersionId(newVersionId);
+        } else {
+          postOperationVersionId.current = '__next__';
+        }
         toast.success('Treatment rewrite complete');
         qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-        // Also reset and refetch to ensure version tray updates reactively
         qc.resetQueries({ queryKey: ['dev-v2-versions', selectedDocId], exact: true });
       }
       afterRewrite();
