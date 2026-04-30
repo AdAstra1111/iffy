@@ -66,10 +66,10 @@ export function useSetAsLatestDraft(projectId: string | undefined) {
           // Non-fatal — still completes the publish
         }
       }
-      } catch(e) {
-        console.error('[useSetAsLatestDraft] error:', e);
-        throw e;
-      }
+    } catch(e) {
+      console.error('[useSetAsLatestDraft] error:', e);
+      throw e;
+    }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project-scripts', projectId] });
