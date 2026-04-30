@@ -8994,11 +8994,11 @@ MATERIAL TO REWRITE:\n${fullText}`;
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // SECTIONED-REWRITE — section-aware regeneration for sectioned doc types
+    // Handles: treatment, story_outline, character_bible, long_treatment, long_character_bible
     // ═══════════════════════════════════════════════════════════════════
-    // TREATMENT-REWRITE — section-aware regeneration (all sections, not just acts)
-    // Fixed: duplicate return removed (af4f721 fix)
-    // ═══════════════════════════════════════════════════════════════════
-    if (action === "treatment-rewrite") {
+    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "character_bible", "long_treatment", "long_character_bible"]);
+    if (sectionedRewriteTypes.has(action)) {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
 
@@ -9014,14 +9014,49 @@ MATERIAL TO REWRITE:\n${fullText}`;
         .select("plaintext, version_number").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
 
-            const fullText = version.plaintext || "";
+      const fullText = version.plaintext || "";
 
-      // ── SECTION-AWARE PARSER: split by ALL ## headers, then sub-split THE STORY ──
-      const allSections: { header: string; content: string; label: string }[] = [];
-      const preambleContent: string[] = [];
+      // ── SECTION-AWARE PARSER: handles both TREATMENT (## → ## THE STORY/ACT) and CHARACTER_BIBLE (## → ACT) ──
+      function splitByActs(content: string, label: string, sk: string): { header: string; content: string; label: string; sk: string }[] {
+        const actLines = content.split("\n");
+        const result: { header: string; content: string; label: string; sk: string }[] = [];
+        let actHeader = "";
+        let actContent: string[] = [];
+        for (const actLine of actLines) {
+          const trimmed = actLine.trim();
+          const isActHeader = /^##\s+ACT\s+/i.test(trimmed);
+          if (isActHeader) {
+            if (actHeader || actContent.length > 0) {
+              result.push({
+                header: actHeader,
+                content: actContent.join("\n").trim(),
+                label: actHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+                sk,
+              });
+            }
+            actHeader = trimmed;
+            actContent = [];
+          } else {
+            actContent.push(actLine);
+          }
+        }
+        if (actHeader || actContent.length > 0) {
+          result.push({
+            header: actHeader || `## ${label}`,
+            content: actContent.join("\n").trim(),
+            label: actHeader ? actHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim() : label,
+            sk,
+          });
+        }
+        return result;
+      }
+
+      const allSections: { header: string; content: string; label: string; sk: string }[] = [];
+      const preambleLines: string[] = [];
       let currentHeader = "";
       let currentContent: string[] = [];
-      let foundFirstHeader = false;
+      let foundFirstSection = false;
+      const isCharacterBible = doc.doc_type === "character_bible";
 
       const lines = fullText.split("\n");
       for (const line of lines) {
@@ -9029,87 +9064,50 @@ MATERIAL TO REWRITE:\n${fullText}`;
         const isHeader = trimmed.startsWith("## ");
         if (isHeader) {
           if (currentHeader || currentContent.length > 0) {
-            allSections.push({
-              header: currentHeader,
-              content: currentContent.join("\n").trim(),
-              label: currentHeader ? currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim() : "PREAMBLE",
-            });
+            const label = currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim();
+            // For character_bible: split each character section by ACT headers
+            // For treatment: THE STORY sections get act-split; others go as-is
+            if (isCharacterBible) {
+              const charSections = splitByActs(currentContent.join("\n"), label, "character");
+              allSections.push(...charSections);
+            } else {
+              allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk: "section" });
+            }
           }
           currentHeader = trimmed;
           currentContent = [];
-          foundFirstHeader = true;
+          foundFirstSection = true;
         } else {
-          if (!foundFirstHeader) {
-            preambleContent.push(line);
+          if (!foundFirstSection) {
+            preambleLines.push(line);
           } else {
             currentContent.push(line);
           }
         }
       }
+      // Last section
       if (currentHeader || currentContent.length > 0) {
-        allSections.push({
-          header: currentHeader,
-          content: currentContent.join("\n").trim(),
-          label: currentHeader ? currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim() : "PREAMBLE",
-        });
-      }
-
-      const preambleText = preambleContent.join("\n").trim();
-      if (preambleText) {
-        allSections.unshift({ header: "## PREAMBLE", content: preambleText, label: "PREAMBLE" });
-      }
-
-      const flatSections: { header: string; content: string; label: string; sk: string }[] = [];
-      const THE_STORY_LABELS = new Set(["THE STORY", "STORY", "THESTORY"]);
-
-      for (const section of allSections) {
-        const normalizedLabel = section.label.toUpperCase().replace(/\s+/g, "");
-        if (THE_STORY_LABELS.has(normalizedLabel)) {
-          const actLines = section.content.split("\n");
-          let actCurrentHeader = "";
-          let actCurrentContent: string[] = [];
-
-          for (const actLine of actLines) {
-            const actTrimmed = actLine.trim();
-            const isActHeader = /^##\s+ACT\s+/i.test(actTrimmed);
-            if (isActHeader) {
-              if (actCurrentHeader || actCurrentContent.length > 0) {
-                flatSections.push({
-                  header: actCurrentHeader,
-                  content: actCurrentContent.join("\n").trim(),
-                  label: actCurrentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
-                  sk: "act",
-                });
-              }
-              actCurrentHeader = actTrimmed;
-              actCurrentContent = [];
-            } else {
-              actCurrentContent.push(actLine);
-            }
-          }
-          if (actCurrentHeader || actCurrentContent.length > 0) {
-            flatSections.push({
-              header: actCurrentHeader,
-              content: actCurrentContent.join("\n").trim(),
-              label: actCurrentHeader ? actCurrentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim() : "ACT",
-              sk: "act",
-            });
-          }
+        const label = currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim();
+        if (isCharacterBible) {
+          const charSections = splitByActs(currentContent.join("\n"), label, "character");
+          allSections.push(...charSections);
         } else {
-          flatSections.push({
-            header: section.header,
-            content: section.content,
-            label: section.label,
-            sk: section.label.toLowerCase().includes("character") ? "characters"
-               : section.label.toLowerCase().includes("tone") ? "tone"
-               : section.label.toLowerCase().includes("why") ? "why_now"
-               : section.label.toLowerCase().includes("world") ? "world"
-               : section.label.toLowerCase().includes("logline") ? "logline"
-               : section.label.toLowerCase() === "preamble" ? "preamble"
-               : "other",
-          });
+          allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk: "section" });
         }
       }
+
+      const preambleText = preambleLines.join("\n").trim();
+      if (preambleText) {
+        allSections.unshift({ header: "## PREAMBLE", content: preambleText, label: "PREAMBLE", sk: "preamble" });
+      }
+
+      if (allSections.length === 0) {
+        allSections.push({ header: "## CONTENT", content: fullText, label: "CONTENT", sk: isCharacterBible ? "character" : "section" });
+      }
+
+      console.log(`[dev-engine-v2][${action}] sections_found=${allSections.length}`);
+
+      const flatSections: { header: string; content: string; label: string; sk: string }[] = allSections;
 
       if (flatSections.length === 0) {
         flatSections.push({ header: "## ACT 1", content: fullText, label: "ACT 1", sk: "act" });

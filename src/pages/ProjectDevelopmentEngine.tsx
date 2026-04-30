@@ -1272,13 +1272,13 @@ export default function ProjectDevelopmentEngine() {
       }).catch(e => console.warn('[decisions] record failed:', e));
     };
 
-    // Treatment rewrite uses dedicated treatment-rewrite action (act-by-act regeneration)
-    if (selectedDoc?.doc_type === 'treatment' && selectedDocId && selectedVersionId) {
+    // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
+    if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
       // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
       setTreatmentRewritePending(true);
       const { error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
         body: {
-          action: 'treatment-rewrite',
+          action: 'sectioned-rewrite',
           projectId,
           documentId: selectedDocId,
           versionId: selectedVersionId,
