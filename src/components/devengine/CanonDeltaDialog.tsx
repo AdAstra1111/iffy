@@ -53,16 +53,18 @@ export function CanonDeltaDialog({
             ))}
           </div>
         )}
-        <div className="flex items-center space-x-2">
-          <Checkbox
-            id="delta-ack"
-            checked={checkboxAcknowledged}
-            onCheckedChange={(checked) => setCheckboxAcknowledged(!!checked)}
-          />
-          <label htmlFor="delta-ack" className="text-sm text-muted-foreground">
-            I understand the impact of these changes on canon
-          </label>
-        </div>
+        {approvedVersion && currentVersion && (
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="delta-ack"
+              checked={checkboxAcknowledged}
+              onCheckedChange={(checked) => setCheckboxAcknowledged(!!checked)}
+            />
+            <label htmlFor="delta-ack" className="text-sm text-muted-foreground">
+              I understand the impact of these changes on canon
+            </label>
+          </div>
+        )}
       </DialogContent>
       <DialogFooter>
         <Button
