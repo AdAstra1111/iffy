@@ -1,4 +1,5 @@
 import { lazy, Suspense } from "react";
+import "@/lib/errorCapture"; // Global error capture — see lib/errorCapture.ts
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";

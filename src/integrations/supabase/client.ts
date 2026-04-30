@@ -1,6 +1,21 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
+// ── Global error capture ──────────────────────────────────────────────────────
+// Logs to window.__IFFY_ERRORS__ for diagnostics on any device
+function captureErr(type: string, msg: string, details?: any) {
+  (window as any).__IFFY_ERRORS__ = (window as any).__IFFY_ERRORS__ || [];
+  (window as any).__IFFY_ERRORS__.push({ type, message: msg, details, timestamp: new Date().toISOString(), url: window.location.href });
+}
+try {
+  window.addEventListener('error', (e) => {
+    captureErr('UNCAUGHT', e.message, { filename: e.filename, lineno: e.lineno, stack: e.error?.stack });
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    captureErr('UNHANDLED_REJECTION', String(e.reason), { stack: e.reason?.stack });
+  });
+} catch (_) { /* harmless */ }
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
   || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -10,18 +25,29 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 function createProxiedClient(url: string, key: string) {
-  const client = createClient<Database>(url, key, {
-    auth: {
-      storage: localStorage,
-      persistSession: true,
-      autoRefreshToken: true,
-    },
-  });
+  try {
+    captureErr('CLIENT_INIT', 'createProxiedClient starting', { url, keyLen: key.length });
+  } catch (_) { /* if window not available yet */ }
+
+  let client: SupabaseClient;
+  try {
+    client = createClient<Database>(url, key, {
+      auth: {
+        storage: localStorage,
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+    });
+    captureErr('CLIENT_INIT', 'createClient succeeded', { hasFrom: typeof client.from === 'function' });
+  } catch (err: any) {
+    captureErr('CLIENT_INIT_FAILED', err.message, { stack: err.stack });
+    throw err;
+  }
 
   // Override supabase.functions.invoke to route through Vercel proxy
   // This avoids changing any frontend call sites
-  const originalInvoke = (client.functions as any).invoke.bind(client.functions);
   (client.functions as any).invoke = async function(fn: string, options: any = {}) {
+    try { captureErr('INVOKE', `calling ${fn}`, { options: typeof options }); } catch (_) {}
     const proxyUrl = `/api/supabase-proxy/functions/v1/${fn}`;
     const body = options.body !== undefined ? options.body : options;
     // Refresh session BEFORE getting token to ensure we have a valid one
@@ -34,7 +60,6 @@ function createProxiedClient(url: string, key: string) {
       'x-supabase-key': key,
       'Authorization': `Bearer ${authToken}`,
     };
-    // Pass through custom headers if provided
     if (options.headers) {
       Object.assign(headers, options.headers);
     }
@@ -43,7 +68,7 @@ function createProxiedClient(url: string, key: string) {
         method: 'POST',
         headers,
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(600000), // 600s timeout for long-running edge functions
+        signal: AbortSignal.timeout(600000),
       });
       const text = await response.text();
       let data: any;
@@ -53,9 +78,14 @@ function createProxiedClient(url: string, key: string) {
       }
       return { data, error: null };
     } catch (error: any) {
+      try { captureErr('INVOKE_ERROR', `invoke ${fn} threw`, { message: error.message }); } catch (_) {}
       return { data: null, error: { message: error.message, context: null } };
     }
   };
+
+  try {
+    captureErr('CLIENT_INIT', 'createProxiedClient complete', {});
+  } catch (_) {}
 
   return client;
 }
