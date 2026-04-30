@@ -352,6 +352,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'character_bible', 'production_draft', 'long_treatment', 'long_character_bible']);
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'story_outline', 'character_bible', 'long_treatment', 'long_character_bible']);
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw'>('structured');
@@ -1324,7 +1325,11 @@ export default function ProjectDevelopmentEngine() {
           rewriteModeReason = 'user_selected_scene';
         }
       } else {
-        if (probe?.has_scenes) {
+        // Section-based doc types ALWAYS use chunk rewrite — scene rewrite would produce screenplay format
+        if (selectedDoc?.doc_type && SECTIONED_REWRITE_TYPES.has(selectedDoc.doc_type)) {
+          effectiveMode = 'chunk';
+          rewriteModeReason = 'sectioned_doc_type';
+        } else if (probe?.has_scenes) {
           effectiveMode = 'scene';
           rewriteModeReason = 'auto_probe_scene';
         } else {
