@@ -10,9 +10,6 @@ interface VersionData {
 }
 
 // CanonDeltaDialog — shows canon field differences between approved and current versions
-// NOTE: Data (approvedVersion, currentVersion) should be passed as props from the parent.
-// The parent should fetch this data using its own useQuery/useDevEngineV2 hook.
-// This component only handles diff display and user acknowledgment.
 export function CanonDeltaDialog({
   projectId,
   docType,
@@ -67,10 +64,7 @@ export function CanonDeltaDialog({
         )}
       </DialogContent>
       <DialogFooter>
-        <Button
-          onClick={onConfirm}
-          disabled={!checkboxAcknowledged}
-        >
+        <Button onClick={onConfirm} disabled={!checkboxAcknowledged}>
           Confirm Approval
         </Button>
         <Button onClick={onClose} variant="outline">
@@ -80,23 +74,36 @@ export function CanonDeltaDialog({
     </Dialog>
   );
 
-  function calculateFieldDiffs(approvedMeta: Record<string, unknown> | undefined, currentMeta: Record<string, unknown> | undefined) {
+  function calculateFieldDiffs(
+    approvedMeta: Record<string, unknown> | undefined,
+    currentMeta: Record<string, unknown> | undefined
+  ) {
     if (!approvedMeta || !currentMeta) return [];
-    // Compare top-level string fields between approved and current
-    const diffs: Array<{type: string; field: string; oldValue?: string; newValue?: string}> = [];
-    const approvedFields = Object.entries(approvedMeta).filter(([, v]) => typeof v === 'string');
+    const diffs: Array<{
+      type: string;
+      field: string;
+      oldValue?: string;
+      newValue?: string;
+    }> = [];
+    const approvedFields = Object.entries(approvedMeta).filter(
+      ([, v]) => typeof v === 'string'
+    );
     const currentFields = Object.entries(currentMeta);
     const currentMap = new Map(currentFields);
-
     for (const [key, oldVal] of approvedFields) {
       const newVal = currentMap.get(key);
       if (newVal === undefined) {
         diffs.push({ type: 'removed', field: key });
       } else if (newVal !== oldVal) {
-        diffs.push({ type: 'changed', field: key, oldValue: oldVal as string, newValue: newVal as string });
+        diffs.push({
+          type: 'changed',
+          field: key,
+          oldValue: oldVal as string,
+          newValue: newVal as string,
+        });
       }
     }
-    for (const [key, newVal] of currentFields) {
+    for (const [key] of currentFields) {
       if (!currentMap.has(key) && !(key in Object.fromEntries(approvedFields))) {
         diffs.push({ type: 'new', field: key });
       }
@@ -108,17 +115,23 @@ export function CanonDeltaDialog({
 function FieldDiff({ diff }: { diff: any }) {
   return (
     <div className="py-1 text-sm">
-      {diff.type === 'new' && <span className="text-green-600 font-medium">+ NEW: {diff.field}</span>}
+      {diff.type === 'new' && (
+        <span className="text-green-600 font-medium">+ NEW: {diff.field}</span>
+      )}
       {diff.type === 'changed' && (
         <span className="text-yellow-600 font-medium">
           ~ CHANGED: {diff.field}
           <br />
-          <span className="text-muted-foreground">  before: </span>{diff.oldValue}
+          <span className="text-muted-foreground">  before: </span>
+          {diff.oldValue}
           <br />
-          <span className="text-muted-foreground">  after: </span>{diff.newValue}
+          <span className="text-muted-foreground">  after: </span>
+          {diff.newValue}
         </span>
       )}
-      {diff.type === 'removed' && <span className="text-red-600 font-medium">- REMOVED: {diff.field}</span>}
+      {diff.type === 'removed' && (
+        <span className="text-red-600 font-medium">- REMOVED: {diff.field}</span>
+      )}
     </div>
   );
 }
