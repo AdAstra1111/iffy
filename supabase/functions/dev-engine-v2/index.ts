@@ -7955,7 +7955,7 @@ MATERIAL:\n${version.plaintext}`;
 
 APPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}${characterFactsBlock}
-TARGET FORMAT: ${targetDocType || "same as source"}
+TARGET FORMAT: ${targetDocType || "same as source"}${sourceDocType === "treatment" ? "\n\nFORMAT GUIDANCE: This is a TREATMENT document. Write vivid prose narrative organized by ## ACT section headers. Do NOT use INT./EXT. sluglines or screenplay format. Each ## ACT section: 4-7 pages (~1,500-2,000 words) of present-tense prose with full scenes, atmosphere, character interiority. Do NOT summarise." : ""
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
