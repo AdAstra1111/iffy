@@ -683,6 +683,7 @@ export default function ProjectDevelopmentEngine() {
   }, [isSeriesFormat, project, effectiveSeasonEpisodes, latestAnalysis]);
 
   const [selectedDeliverableType, setSelectedDeliverableType] = useState<DeliverableType>('feature_script');
+  const [treatmentRewritePending, setTreatmentRewritePending] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<number>>(new Set());
   const [targetPages, setTargetPages] = useState(100);
   const [notesDecisions, setNotesDecisions] = useState<Record<string, string>>({});
@@ -1287,6 +1288,12 @@ export default function ProjectDevelopmentEngine() {
       enrichedNotes.push(...directionNotes);
     }
 
+    // Safety fallback: if enrichedNotes is empty but allPrioritizedMoves has items,
+    // use all items directly (handles case where selectedNotes state lagged behind at click time)
+    if (enrichedNotes.length === 0 && allPrioritizedMoves.length > 0) {
+      enrichedNotes = allPrioritizedMoves.map((n: any) => ({ ...n }));
+    }
+
     // Record decisions after rewrite
     const afterRewrite = () => {
       recordResolutions({
@@ -1304,6 +1311,7 @@ export default function ProjectDevelopmentEngine() {
     // Treatment rewrite uses dedicated treatment-rewrite action (act-by-act regeneration)
     if (selectedDoc?.doc_type === 'treatment' && selectedDocId && selectedVersionId) {
       // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
+      setTreatmentRewritePending(true);
       const { error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
         body: {
           action: 'treatment-rewrite',
@@ -1313,12 +1321,14 @@ export default function ProjectDevelopmentEngine() {
           approvedNotes: enrichedNotes,
           protectItems,
         },
-      });
+      }).finally(() => setTreatmentRewritePending(false));
       if (trErr) {
         toast.error('Treatment rewrite failed: ' + (trErr?.message || trErr));
       } else {
         toast.success('Treatment rewrite complete');
-        queryClient.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+        // Also reset and refetch to ensure version tray updates reactively
+        qc.resetQueries({ queryKey: ['dev-v2-versions', selectedDocId], exact: true });
       }
       afterRewrite();
       return;
@@ -2221,7 +2231,7 @@ export default function ProjectDevelopmentEngine() {
                   {/* Progress indicators */}
                   <OperationProgress isActive={analyze.isPending} stages={DEV_ANALYZE_STAGES} onStop={() => analyze.reset()} onRestart={handleRunEngine} />
                   <OperationProgress isActive={generateNotes.isPending} stages={DEV_NOTES_STAGES} onStop={() => generateNotes.reset()} onRestart={() => generateNotes.mutate(latestAnalysis)} />
-                  <OperationProgress isActive={rewrite.isPending} stages={DEV_REWRITE_STAGES} onStop={() => rewrite.reset()} onRestart={() => handleRewrite()} />
+                  <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
                   <OperationProgress isActive={isBgGenerating || isGeneratingDocument} stages={DEV_GENERATE_STAGES} stallTimeoutMs={300_000} />
                   <OperationProgress isActive={convert.isPending} stages={DEV_CONVERT_STAGES} onStop={() => convert.reset()} onRestart={() => {
                     // PIPELINE AUTHORITY: use Pipeline Brain (promotionIntel), never LLM output
@@ -2727,9 +2737,9 @@ export default function ProjectDevelopmentEngine() {
                     Object.keys(notesDecisions).length > 0 ? notesDecisions : undefined,
                     latestNotes?.global_directions || [],
                   )}
-                  disabled={isLoading || rewrite.isPending || rewritePipeline.status !== 'idle' || (selectedNotes.size === 0 && Object.values(notesDecisions).filter(Boolean).length === 0)}
+                  disabled={isLoading || rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle' || (selectedNotes.size === 0 && Object.values(notesDecisions).filter(Boolean).length === 0)}
                 >
-                  {(rewrite.isPending || rewritePipeline.status !== 'idle') ? (
+                  {(rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle') ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
