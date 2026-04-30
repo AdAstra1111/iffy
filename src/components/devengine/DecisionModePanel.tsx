@@ -88,6 +88,14 @@ export function DecisionModePanel({
   React.useEffect(() => { customDirectionsRef.current = customDirections; }, [customDirections]);
   const [isLoadingOptions, setIsLoadingOptions] = useState(false);
   const [continueVersionId, setContinueVersionId] = useState<string>('latest');
+  // Compute the actual newest version by version_number for display and resolution
+  const newestVersionId = useMemo(() => {
+    if (!availableVersions?.length) return null;
+    const newest = availableVersions.reduce((a, b) =>
+      a.version_number > b.version_number ? a : b
+    );
+    return newest.id;
+  }, [availableVersions]);
   const { source: canonSource, sourceLabel: canonSourceLabel, evidence: canonEvidence } = useCanonicalState(projectId);
 
   // Sync external decisions — only reset selections when decisions actually change
@@ -207,7 +215,17 @@ export function DecisionModePanel({
         await onAutoRunContinue(opts, gd);
       } else {
         if (!documentId || !versionId) return;
-        const effectiveVersionId = continueVersionId === 'latest' ? versionId : continueVersionId;
+        // Resolve 'latest' to the actual newest version by version_number — not the editor panel version
+        const latestVersionId = (() => {
+          if (continueVersionId === 'latest' && availableVersions?.length) {
+            const newest = availableVersions.reduce((a, b) =>
+              a.version_number > b.version_number ? a : b
+            );
+            return newest.id;
+          }
+          return continueVersionId;
+        })();
+        const effectiveVersionId = latestVersionId;
         await callDevEngine('rewrite', {
           projectId, documentId, versionId: effectiveVersionId,
           selectedOptions: opts, globalDirections: gd,
@@ -357,7 +375,7 @@ export function DecisionModePanel({
                     <SelectItem value="latest">Latest version</SelectItem>
                     {availableVersions.map(v => (
                       <SelectItem key={v.id} value={v.id}>
-                        v{v.version_number}{v.label ? ` · ${v.label}` : ''}
+                        {v.id === newestVersionId ? '★ ' : ''}v{v.version_number}{v.label ? ` · ${v.label}` : ''}
                       </SelectItem>
                     ))}
                   </SelectContent>
