@@ -1,0 +1,65 @@
+// Auto-generated from stage-ladders.json — DO NOT EDIT manually.
+// Edit stage-ladders.json and regenerate this file.
+export const STAGE_LADDERS = {
+    FORMAT_LADDERS: {
+        "film": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "feature_script", "production_draft"],
+        "feature": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "feature_script", "production_draft"],
+        "tv-series": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "episode_beats", "episode_script", "season_master_script", "production_draft"],
+        "limited-series": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "episode_beats", "episode_script", "season_master_script", "production_draft"],
+        "digital-series": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "episode_beats", "episode_script", "season_master_script", "production_draft"],
+        "vertical-drama": ["idea", "concept_brief", "character_bible", "format_rules", "season_arc", "episode_grid", "vertical_episode_beats", "season_script"],
+        "documentary": ["idea", "concept_brief", "documentary_outline"],
+        "documentary-series": ["idea", "concept_brief", "documentary_outline"],
+        "hybrid-documentary": ["idea", "concept_brief", "documentary_outline", "treatment"],
+        "short": ["idea", "concept_brief", "feature_script"],
+        "animation": ["idea", "concept_brief", "treatment", "character_bible", "beat_sheet", "feature_script"],
+        "anim-series": ["idea", "concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "episode_beats", "episode_script", "season_master_script", "production_draft"],
+        "reality": ["idea", "concept_brief", "treatment", "beat_sheet", "episode_beats", "episode_script"],
+    },
+    DOC_TYPE_ALIASES: {
+        "logline": "idea",
+        "one_pager": "concept_brief",
+        "blueprint": "treatment",
+        "series_bible": "treatment",
+        "treatment": "treatment",
+        "season_outline": "treatment",
+        "outline": "treatment",
+        "architecture": "story_outline",
+        "plot_architecture": "story_outline",
+        "episode_beat_sheet": "beat_sheet",
+        "episode_beats": "episode_beats",
+        "script": "feature_script", // NOTE: VD projects must override to season_script at runtime
+        "feature_script": "feature_script", // NOTE: VD projects must override to season_script at runtime
+        "pilot_script": "episode_script",
+        "episode_script": "episode_script",
+        "season_script": "season_script",
+        "episode_1_script": "episode_script",
+        "writers_room": "series_writer",
+        "notes": "concept_brief",
+        "draft": "feature_script",
+        "coverage": "production_draft",
+        "complete_season_script": "season_script",
+        "vertical_episode_beats": "vertical_episode_beats",
+    },
+    // Format-specific aliases — checked BEFORE DOC_TYPE_ALIASES in canonicalDocType()
+    FORMAT_SPECIFIC_ALIASES: {
+        "vertical-drama": {
+            "episode_beats": "vertical_episode_beats",
+        },
+    },
+    FORMAT_SCRIPT_TYPES: {
+        "film": "feature_script",
+        "feature": "feature_script",
+        "short": "feature_script",
+        "animation": "feature_script",
+        "tv-series": "episode_script",
+        "limited-series": "episode_script",
+        "digital-series": "episode_script",
+        "vertical-drama": "season_script",
+        "anim-series": "episode_script",
+        "reality": "episode_script",
+        "documentary": "feature_script",
+        "documentary-series": "feature_script",
+        "hybrid-documentary": "feature_script",
+    },
+};
