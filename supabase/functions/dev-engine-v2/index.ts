@@ -9049,6 +9049,31 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       console.log("[dev-engine-v2][treatment-rewrite] acts_found=" + actSections.length);
 
+      // Insert pending chunks so SectionedDocProgress can poll progress
+      const newVersionNumber = (version.version_number || 1) + 1;
+      const { data: newVersion } = await supabase.from("project_document_versions").insert({
+        document_id: documentId,
+        version_number: newVersionNumber,
+        plaintext: "",
+        is_current: true,
+        meta_json: { run_type: "TREATMENT_REWRITE", acts_count: actSections.length },
+      }).select().single();
+
+      await supabase.from("project_document_versions").update({ is_current: false })
+        .eq("document_id", documentId).neq("id", newVersion?.id);
+
+      const chunkInserts = actSections.map(function(s: any, idx: number) {
+        return {
+          version_id: newVersion.id,
+          chunk_index: idx,
+          chunk_key: sectionKey(s.label),
+          status: "pending",
+          char_count: s.content.length,
+          meta_json: { label: s.label },
+        };
+      });
+      await supabase.from("project_document_chunks").insert(chunkInserts);
+
       const lane = project.assigned_lane || "independent-film";
       const format = project.format || "film";
       const narrativeCtx = await resolveNarrativeContext(supabase, projectId, { lane, format, includeSignals: true });
@@ -9121,31 +9146,42 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
         const userPrompt = "Rewrite this act for the treatment.\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Keep the act header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
 
+        // Update chunk to running
+        const chunkKey = sectionKey(section.label);
+        const existingChunks = await supabase.from("project_document_chunks")
+          .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
+        if (existingChunks.data && existingChunks.data.length > 0) {
+          await supabase.from("project_document_chunks").update({ status: "running" }).eq("id", existingChunks.data[0].id);
+        }
+
         try {
           const model = new AiMediaKitModel("sonnet");
           const response = await model.complete({ prompt: userPrompt, systemPrompt: systemPromptBase, maxTokens: 4000 });
           const rewritten = response.text?.trim() || (section.header + "\n\n" + section.content);
           rewrittenActs.push(rewritten);
           console.log("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " label=" + section.label + " chars=" + rewritten.length);
+          // Update chunk to done with content
+          if (existingChunks.data && existingChunks.data.length > 0) {
+            await supabase.from("project_document_chunks").update({
+              status: "done", content: rewritten, char_count: rewritten.length,
+            }).eq("id", existingChunks.data[0].id);
+          }
         } catch (err: any) {
           console.warn("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " failed: " + String(err?.message || err));
           rewrittenActs.push(section.header + "\n\n" + section.content);
+          if (existingChunks.data && existingChunks.data.length > 0) {
+            await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
+          }
         }
       }
 
       const assembledText = rewrittenActs.join("\n\n");
 
-      const newVersionNumber = (version.version_number || 1) + 1;
-      const { data: newVersion } = await supabase.from("project_document_versions").insert({
-        document_id: documentId,
-        version_number: newVersionNumber,
+      // Save assembled text to the version record
+      await supabase.from("project_document_versions").update({
         plaintext: assembledText,
-        is_current: true,
         meta_json: { run_type: "TREATMENT_REWRITE", acts_count: actSections.length, notes_applied: approvedNotes?.length || 0 },
-      }).select().single();
-
-      await supabase.from("project_document_versions").update({ is_current: false })
-        .eq("document_id", documentId).neq("id", newVersion?.id);
+      }).eq("id", newVersion.id);
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
@@ -9154,7 +9190,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       });
 
       return new Response(JSON.stringify({
-        success: true, newVersion, totalActs: actSections.length,
+        success: true, versionId: newVersion.id, totalActs: actSections.length,
         actLabels: actSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

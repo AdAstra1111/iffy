@@ -1301,6 +1301,30 @@ export default function ProjectDevelopmentEngine() {
       }).catch(e => console.warn('[decisions] record failed:', e));
     };
 
+    // Treatment rewrite uses dedicated treatment-rewrite action (act-by-act regeneration)
+    if (selectedDoc?.doc_type === 'treatment' && selectedDocId && selectedVersionId) {
+      // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
+      const { error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
+        body: {
+          action: 'treatment-rewrite',
+          projectId,
+          documentId: selectedDocId,
+          versionId: selectedVersionId,
+          approvedNotes: enrichedNotes,
+          protectItems,
+          additionalContext: provenance?.rewriteModeSelected,
+        },
+      });
+      if (trErr) {
+        toast.error('Treatment rewrite failed: ' + (trErr?.message || trErr));
+      } else {
+        toast.success('Treatment rewrite complete');
+        queryClient.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+      }
+      afterRewrite();
+      return;
+    }
+
     if (textLength > 30000 && selectedDocId && selectedVersionId) {
       const selected = sceneRewrite.selectedRewriteMode;
 
