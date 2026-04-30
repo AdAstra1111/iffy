@@ -132,6 +132,8 @@ export function useCommitSectionPatch() {
         deep: false,
       });
       qc.invalidateQueries({ queryKey: ['document-versions', variables.documentId] });
+      // Invalidate package-status so LATEST badge refreshes (bugfix: latest_version_id was stale)
+      qc.invalidateQueries({ queryKey: ['package-status', variables.projectId] });
       toast.success(`Version v${result.versionNumber} committed — section patch applied`);
     },
     onError: (e: Error) => {
