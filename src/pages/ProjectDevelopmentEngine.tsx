@@ -3207,8 +3207,8 @@ export default function ProjectDevelopmentEngine() {
 
       {/* ═══ SHARED OVERLAYS (visible in both modes) ═══ */}
 
-      {/* CanonDeltaDialog — DISABLED FOR DEBUGGING */}
-      {/* canonDeltaOpen && selectedDoc && selectedVersionId && projectId && (
+      {/* CanonDeltaDialog — foundation docs approval flow */}
+      {canonDeltaOpen && selectedDoc && selectedVersionId && projectId && (
         <CanonDeltaDialog
           projectId={projectId}
           docType={selectedDoc.doc_type || ''}
@@ -3229,7 +3229,7 @@ export default function ProjectDevelopmentEngine() {
             }
           }}
         />
-      ) */}
+      )}
 
       {/* Drift Override Dialog */}
       <Dialog open={driftOverrideOpen} onOpenChange={setDriftOverrideOpen}>
