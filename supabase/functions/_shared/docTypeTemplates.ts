@@ -356,13 +356,13 @@ If you find yourself writing about any character — STOP. That content belongs 
 
 ## THE STORY
 
-### ACT ONE
+## ACT ONE
 [Establish protagonist in their ordinary world. Introduce the central conflict. Inciting incident that propels them into the story. End on the moment of commitment — the point of no return.]
 
-### ACT TWO
+## ACT TWO
 [The protagonist pursues their goal. Obstacles multiply. The cost rises. Midpoint reversal. The protagonist is forced to change tactics or confront a deeper truth. Darkest moment before the final turn.]
 
-### ACT THREE
+## ACT THREE
 [The protagonist brings everything to bear on the central conflict. Climactic confrontation. Resolution — what is won, what is lost, what is transformed. Final image.]
 
 ## CHARACTERS

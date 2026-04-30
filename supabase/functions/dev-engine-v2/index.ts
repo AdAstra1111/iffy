@@ -9013,60 +9013,126 @@ MATERIAL TO REWRITE:\n${fullText}`;
         .select("plaintext, version_number").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");
 
-      const fullText = version.plaintext || "";
+            const fullText = version.plaintext || "";
 
-      // Split by ## ACT headers
-      const lines = fullText.split("\n");
-      const actSections: { header: string; content: string; label: string }[] = [];
+      // ── SECTION-AWARE PARSER: split by ALL ## headers, then sub-split THE STORY ──
+      const allSections: { header: string; content: string; label: string }[] = [];
+      const preambleContent: string[] = [];
       let currentHeader = "";
       let currentContent: string[] = [];
+      let foundFirstHeader = false;
 
+      const lines = fullText.split("\n");
       for (const line of lines) {
         const trimmed = line.trim();
-        const isHeader = /^##\s+ACT\s+[0-9]+[A-Z]?\s+.*$/im.test(trimmed) && trimmed.startsWith("##");
+        const isHeader = trimmed.startsWith("## ");
         if (isHeader) {
-          if (currentHeader) {
-            actSections.push({
+          if (currentHeader || currentContent.length > 0) {
+            allSections.push({
               header: currentHeader,
               content: currentContent.join("\n").trim(),
-              label: currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+              label: currentHeader ? currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim() : "PREAMBLE",
             });
           }
           currentHeader = trimmed;
           currentContent = [];
+          foundFirstHeader = true;
         } else {
-          currentContent.push(line);
+          if (!foundFirstHeader) {
+            preambleContent.push(line);
+          } else {
+            currentContent.push(line);
+          }
         }
       }
-      if (currentHeader) {
-        actSections.push({
+      if (currentHeader || currentContent.length > 0) {
+        allSections.push({
           header: currentHeader,
           content: currentContent.join("\n").trim(),
-          label: currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+          label: currentHeader ? currentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)$/, "").trim() : "PREAMBLE",
         });
       }
-      if (actSections.length === 0) actSections.push({ header: "## ACT 1", content: fullText, label: "Act 1" });
 
-      console.log("[dev-engine-v2][treatment-rewrite] acts_found=" + actSections.length);
+      const preambleText = preambleContent.join("\n").trim();
+      if (preambleText) {
+        allSections.unshift({ header: "## PREAMBLE", content: preambleText, label: "PREAMBLE" });
+      }
 
-      // Insert pending chunks so SectionedDocProgress can poll progress
+      const flatSections: { header: string; content: string; label: string; sk: string }[] = [];
+      const THE_STORY_LABELS = new Set(["THE STORY", "STORY", "THESTORY"]);
+
+      for (const section of allSections) {
+        const normalizedLabel = section.label.toUpperCase().replace(/\s+/g, "");
+        if (THE_STORY_LABELS.has(normalizedLabel)) {
+          const actLines = section.content.split("\n");
+          let actCurrentHeader = "";
+          let actCurrentContent: string[] = [];
+
+          for (const actLine of actLines) {
+            const actTrimmed = actLine.trim();
+            const isActHeader = /^##\s+ACT\s+/i.test(actTrimmed);
+            if (isActHeader) {
+              if (actCurrentHeader || actCurrentContent.length > 0) {
+                flatSections.push({
+                  header: actCurrentHeader,
+                  content: actCurrentContent.join("\n").trim(),
+                  label: actCurrentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim(),
+                  sk: "act",
+                });
+              }
+              actCurrentHeader = actTrimmed;
+              actCurrentContent = [];
+            } else {
+              actCurrentContent.push(actLine);
+            }
+          }
+          if (actCurrentHeader || actCurrentContent.length > 0) {
+            flatSections.push({
+              header: actCurrentHeader,
+              content: actCurrentContent.join("\n").trim(),
+              label: actCurrentHeader ? actCurrentHeader.replace(/^##\s+/, "").replace(/\s*\(.*\)\s*$/, "").trim() : "ACT",
+              sk: "act",
+            });
+          }
+        } else {
+          flatSections.push({
+            header: section.header,
+            content: section.content,
+            label: section.label,
+            sk: section.label.toLowerCase().includes("character") ? "characters"
+               : section.label.toLowerCase().includes("tone") ? "tone"
+               : section.label.toLowerCase().includes("why") ? "why_now"
+               : section.label.toLowerCase().includes("world") ? "world"
+               : section.label.toLowerCase().includes("logline") ? "logline"
+               : section.label.toLowerCase() === "preamble" ? "preamble"
+               : "other",
+          });
+        }
+      }
+
+      if (flatSections.length === 0) {
+        flatSections.push({ header: "## ACT 1", content: fullText, label: "ACT 1", sk: "act" });
+      }
+
+      console.log("[dev-engine-v2][treatment-rewrite] sections_found=" + flatSections.length);
+
       const newVersionNumber = (version.version_number || 1) + 1;
       const { data: newVersion } = await supabase.from("project_document_versions").insert({
         document_id: documentId,
         version_number: newVersionNumber,
         plaintext: "",
         is_current: true,
-        meta_json: { run_type: "TREATMENT_REWRITE", acts_count: actSections.length },
+        meta_json: { run_type: "TREATMENT_REWRITE", sections_count: flatSections.length },
       }).select().single();
 
       await supabase.from("project_document_versions").update({ is_current: false })
         .eq("document_id", documentId).neq("id", newVersion?.id);
 
-      const chunkInserts = actSections.map(function(s: any, idx: number) {
+      const chunkInserts = flatSections.map(function(s: any, idx: number) {
         return {
           version_id: newVersion.id,
           chunk_index: idx,
-          chunk_key: sectionKey(s.label),
+          chunk_key: s.sk,
           status: "pending",
           char_count: s.content.length,
           meta_json: { label: s.label },
@@ -9106,28 +9172,40 @@ MATERIAL TO REWRITE:\n${fullText}`;
         ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n: any) { return "- " + (typeof n === "string" ? n : n.note_key || JSON.stringify(n)); }).join("\n")
         : "";
 
-      const ACT_LENGTH_GUIDANCE: Record<string, string> = {
-        "act_1": "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident.",
-        "act_2a": "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles.",
-        "act_2b": "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment.",
-        "act_3": "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image.",
-        "default": "4-6 pages (1,000-1,500 words). Vivid present-tense prose. Full scenes, atmosphere, character interiority.",
+      const SECTION_LENGTH_GUIDANCE: Record<string, string> = {
+        preamble: "Keep very short (1-3 sentences). LOGLINE should be one active sentence with protagonist, conflict, and concrete stakes.",
+        logline: "Keep very short (1 sentence). Active voice. Protagonist + specific conflict + concrete stakes.",
+        world: "1-2 paragraphs. Establish the world — time, place, social/cultural context. Not backstory.",
+        act_1: "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident. End on the moment of commitment.",
+        act_2a: "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles.",
+        act_2b: "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment.",
+        act_3: "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image.",
+        characters: "1-2 paragraphs per character. Who they are, what they want, what they're afraid of, how the story changes them.",
+        tone: "1 paragraph. Tonal reference points, visual approach, pacing. How the story looks and feels.",
+        why_now: "1 paragraph. Cultural/emotional resonance. Why this story matters now.",
+        other: "Keep concise. Write vivid prose. No INT./EXT. sluglines.",
       };
-
-      const sectionKey = function(label: string): string {
+      const getLengthGuidance = function(sk: string, label: string): string {
         const l = label.toLowerCase();
-        if (l.includes("act 1") || l.includes("setup")) return "act_1";
-        if (l.includes("act 2a") || l.includes("rising")) return "act_2a";
-        if (l.includes("act 2b") || l.includes("complication") || l.includes("crisis")) return "act_2b";
-        if (l.includes("act 3") || l.includes("climax") || l.includes("resolution")) return "act_3";
-        return "default";
+        if (l.includes("act 1") || l.includes("act one")) return SECTION_LENGTH_GUIDANCE["act_1"];
+        if (l.includes("act 2a") || l.includes("act two a")) return SECTION_LENGTH_GUIDANCE["act_2a"];
+        if (l.includes("act 2b") || l.includes("act two b")) return SECTION_LENGTH_GUIDANCE["act_2b"];
+        if (l.includes("act 2")) return SECTION_LENGTH_GUIDANCE["act_2a"];
+        if (l.includes("act 3") || l.includes("act three")) return SECTION_LENGTH_GUIDANCE["act_3"];
+        if (sk === "logline") return SECTION_LENGTH_GUIDANCE["logline"];
+        if (sk === "world") return SECTION_LENGTH_GUIDANCE["world"];
+        if (sk === "characters") return SECTION_LENGTH_GUIDANCE["characters"];
+        if (sk === "tone") return SECTION_LENGTH_GUIDANCE["tone"];
+        if (sk === "why_now") return SECTION_LENGTH_GUIDANCE["why_now"];
+        if (sk === "preamble") return SECTION_LENGTH_GUIDANCE["preamble"];
+        return SECTION_LENGTH_GUIDANCE[sk] || SECTION_LENGTH_GUIDANCE["other"];
       };
 
       const systemPromptParts = [
         "You are a professional development document writer.",
         "Generate the " + (doc.doc_type || "treatment").replace(/_/g, " ") + " for: " + (project.title || "this project") + ".",
         "Production type: " + format + ".",
-        "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Begin with the act header.",
+        "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Preserve the section header exactly as given.",
         narrativeBlock,
         constraintPackBlock,
         characterFactsBlock,
@@ -9138,16 +9216,31 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       const systemPromptBase = systemPromptParts.join("\n\n");
 
-      const rewrittenActs: string[] = [];
-      for (let i = 0; i < actSections.length; i++) {
-        const section = actSections[i];
-        const sk = sectionKey(section.label);
-        const lengthGuidance = ACT_LENGTH_GUIDANCE[sk] || ACT_LENGTH_GUIDANCE["default"];
+      const rewrittenSections: { header: string; content: string; label: string; sk: string }[] = [];
 
-        const userPrompt = "Rewrite this act for the treatment.\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Keep the act header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
+      for (let i = 0; i < flatSections.length; i++) {
+        const section = flatSections[i];
+        const lengthGuidance = getLengthGuidance(section.sk, section.label);
 
-        // Update chunk to running
-        const chunkKey = sectionKey(section.label);
+        let sectionTypeHint = "";
+        if (section.sk === "logline" || section.sk === "preamble") {
+          sectionTypeHint = "SECTION TYPE: LOGLINE. Keep very short — one active sentence. Protagonist + conflict + concrete stakes. Do not overwrite with heavy prose.";
+        } else if (section.sk === "world") {
+          sectionTypeHint = "SECTION TYPE: THE WORLD. 1-2 paragraphs establishing the story world. Ground the reader in time, place, social/cultural context.";
+        } else if (section.sk === "act" || section.sk.match(/^act_[123]/)) {
+          sectionTypeHint = "SECTION TYPE: " + section.label.toUpperCase() + ". Rewrite this act section with vivid present-tense prose, full scenes, atmosphere, and character interiority.";
+        } else if (section.sk === "characters") {
+          sectionTypeHint = "SECTION TYPE: CHARACTERS. Describe each character — who they are, what they want, what they're afraid of, what they need to learn, how the story changes them.";
+        } else if (section.sk === "tone") {
+          sectionTypeHint = "SECTION TYPE: TONE & VISUAL LANGUAGE. Describe how the story looks and feels. Tonal reference points, visual approach, pacing.";
+        } else if (section.sk === "why_now") {
+          sectionTypeHint = "SECTION TYPE: WHY NOW. Why this story matters now — cultural/emotional resonance, market context.";
+        } else {
+          sectionTypeHint = "SECTION TYPE: " + section.label.toUpperCase() + ".";
+        }
+
+        const userPrompt = sectionTypeHint + "\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Preserve the section header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
+
         const existingChunks = await supabase.from("project_document_chunks")
           .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
         if (existingChunks.data && existingChunks.data.length > 0) {
@@ -9158,38 +9251,39 @@ MATERIAL TO REWRITE:\n${fullText}`;
           const model = new AiMediaKitModel("sonnet");
           const response = await model.complete({ prompt: userPrompt, systemPrompt: systemPromptBase, maxTokens: 4000 });
           const rewritten = response.text?.trim() || (section.header + "\n\n" + section.content);
-          rewrittenActs.push(rewritten);
-          console.log("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " label=" + section.label + " chars=" + rewritten.length);
-          // Update chunk to done with content
+          rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
+          console.log("[dev-engine-v2][treatment-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({
               status: "done", content: rewritten, char_count: rewritten.length,
             }).eq("id", existingChunks.data[0].id);
           }
         } catch (err: any) {
-          console.warn("[dev-engine-v2][treatment-rewrite] act=" + (i+1) + " failed: " + String(err?.message || err));
-          rewrittenActs.push(section.header + "\n\n" + section.content);
+          console.warn("[dev-engine-v2][treatment-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
+          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
           }
         }
       }
 
-      const assembledText = rewrittenActs.join("\n\n");
+      const assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
 
-      // Save assembled text to the version record
       await supabase.from("project_document_versions").update({
         plaintext: assembledText,
-        meta_json: { run_type: "TREATMENT_REWRITE", acts_count: actSections.length, notes_applied: approvedNotes?.length || 0 },
+        meta_json: { run_type: "TREATMENT_REWRITE", sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       }).eq("id", newVersion.id);
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
         user_id: user.id, run_type: "TREATMENT_REWRITE",
-        output_json: { total_acts: actSections.length, notes_applied: approvedNotes?.length || 0 },
+        output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       });
 
       return new Response(JSON.stringify({
+        success: true, versionId: newVersion.id, totalSections: rewrittenSections.length,
+        sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });return new Response(JSON.stringify({
         success: true, versionId: newVersion.id, totalActs: actSections.length,
         actLabels: actSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
