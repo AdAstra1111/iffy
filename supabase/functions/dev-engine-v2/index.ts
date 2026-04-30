@@ -9120,20 +9120,21 @@ MATERIAL TO REWRITE:\n${fullText}`;
       const newVersionNumber = (version.version_number || 1) + 1;
       const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
       const effUserId = user?.id || proj?.user_id || null;
-      const insertRes = await supabase.from("project_document_versions").insert({
+      const insertRes = await supabase.from("project_document_versions").upsert({
         document_id: documentId,
         version_number: newVersionNumber,
         plaintext: "",
         is_current: false,
         created_by: effUserId,
         meta_json: { run_type: "TREATMENT_REWRITE", sections_count: flatSections.length },
-      }).select();
+      }, { onConflict: "document_id,version_number" }).select();
       console.log("[treatment-rewrite] insert err=" + JSON.stringify(insertRes.error));
       if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
-      const { data: newVersion } = insertRes;
+      const newVersion = insertRes.data[0];
+      if (!newVersion?.id) throw new Error("No version returned from insert");
 
       await supabase.from("project_document_versions").update({ is_current: false })
-        .eq("document_id", documentId).neq("id", newVersion?.id);
+        .eq("document_id", documentId).neq("id", newVersion.id);
 
       const chunkInserts = flatSections.map(function(s: any, idx: number) {
         return {
@@ -9255,9 +9256,11 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }
 
         try {
-          const model = new AiMediaKitModel("sonnet");
-          const response = await model.complete({ prompt: userPrompt, systemPrompt: systemPromptBase, maxTokens: 4000 });
-          const rewritten = response.text?.trim() || (section.header + "\n\n" + section.content);
+          const _gw = resolveGateway();
+          const _apiKey = _gw.apiKey;
+          if (!_apiKey) throw new Error("No AI gateway key configured");
+          const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase, userPrompt, 0.3, 4000);
+          const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
           rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
           console.log("[dev-engine-v2][treatment-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
           if (existingChunks.data && existingChunks.data.length > 0) {
@@ -9276,10 +9279,14 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       const assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
 
-      await supabase.from("project_document_versions").update({
+      console.log("[treatment-rewrite] assembledText length=" + assembledText.length + " newVersion.id=" + newVersion.id);
+      console.log("[treatment-rewrite] UPDATE target id=" + newVersion.id);
+      const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,
         meta_json: { run_type: "TREATMENT_REWRITE", sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       }).eq("id", newVersion.id);
+      console.log("[treatment-rewrite] update error=" + JSON.stringify(updateResult.error) + " count=" + (updateResult.count || 0));
+      if (updateResult.error) console.error("[treatment-rewrite] UPDATE FAILED:", updateResult.error);
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
