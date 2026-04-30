@@ -8907,6 +8907,35 @@ MATERIAL TO REWRITE:\n${fullText}`;
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
 
+      // ── B1 Fix: update latest_version_id so "Latest" badge resolves correctly ──
+      await supabase.from("project_documents").update({ latest_version_id: newVersion.id }).eq("id", documentId);
+
+      // ── B2 Fix: parse all sections from assembledText and upsert to concept_brief_sections ──
+      if (effectiveDeliverable === "concept_brief") {
+        const parsed = parseSections(assembledText, "concept_brief");
+        const docCI = cceResult?.metaPatch?.ci ?? null;
+        const docGP = cceResult?.metaPatch?.gp ?? null;
+        const canonDriftPassed = cceResult?.driftResult
+          ? cceResult.driftResult.findings.filter((f: any) => f.severity === "violation").length === 0
+          : true;
+        for (const sec of parsed) {
+          const label = sec.label || sec.section_key;
+          await supabase.from("concept_brief_sections").upsert({
+            project_id: projectId,
+            version_id: newVersion.id,
+            section_key: sec.section_key,
+            section_label: label,
+            plaintext: sec.content,
+            status: "complete",
+            convergence_score_json: { ci: docCI, gp: docGP, blockers: 0 },
+            canon_drift_json: { passed: canonDriftPassed },
+            rewrite_attempts: 0,
+            last_rewrite_at: new Date().toISOString(),
+          }, { onConflict: "version_id,section_key" });
+        }
+        console.log(`[dev-engine-v2] rewrite-assemble: concept_brief_sections backfill v${newVersion.version_number} (${parsed.length} sections)`);
+      }
+
       // ── CANON DRIFT CORRECTION LOOP — Fix 1 ──
       // After version is created, check canon drift. If violations > 0, inject as negative constraints
       // for the next rewrite pass. Track violation_count per version. After 3 consecutive passes
