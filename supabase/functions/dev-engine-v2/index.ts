@@ -27798,70 +27798,63 @@ CRITICAL:
       if (!projectId || !sourceVersionId) throw new Error("projectId, sourceVersionId required");
       const approvedNotes: any[] = notes || [];
 
-      // 1. Get scene list
-      const { data: sceneOrder } = await supabase.from("scene_graph_order")
-        .select("scene_id, order_key")
-        .eq("project_id", projectId)
-        .eq("is_active", true)
-        .order("order_key", { ascending: true });
+// 0. Look up source document type
+const { data: sourceDoc } = await supabase.from("project_documents")
+  .select("doc_type").eq("id", sourceDocId).limit(1).maybeSingle();
+const sourceDocType = sourceDoc?.doc_type || "unknown";
 
+      // 1. Get scene list
       let scenes: Array<{ scene_number: number; scene_id: string | null; heading: string; summary: string; characters: string[] }> = [];
 
-      if (sceneOrder && sceneOrder.length >= 3) {
-        const sceneIds = sceneOrder.map(s => s.scene_id);
-        const { data: versions } = await supabase.from("scene_graph_versions")
-          .select("scene_id, slugline, summary, characters_present, version_number")
-          .in("scene_id", sceneIds)
-          .order("version_number", { ascending: false });
-        const latestMap = new Map<string, { slugline: string; summary: string; characters: string[] }>();
-        for (const v of (versions || [])) {
-          if (!latestMap.has(v.scene_id)) {
-            latestMap.set(v.scene_id, {
-              slugline: v.slugline || "",
-              summary: v.summary || "",
-              characters: v.characters_present || [],
-            });
-          }
-        }
-        scenes = sceneOrder.map((s, i) => {
-          const ver = latestMap.get(s.scene_id);
-          return {
-            scene_number: i + 1,
-            scene_id: s.scene_id,
-            heading: ver?.slugline || `SCENE ${i + 1}`,
-            summary: ver?.summary || "",
-            characters: ver?.characters || [],
-          };
-        });
-      } else {
-        // Fallback: split from plaintext
+      // ── Treatment: split by ACT structure, NOT film scenes ──────────────────
+      if (sourceDocType === "treatment") {
         const { data: version } = await supabase.from("project_document_versions")
           .select("plaintext").eq("id", sourceVersionId).single();
         const text = version?.plaintext || "";
-        const headingRegex = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s*.+/gm;
-        let match;
-        const boundaries: Array<{ index: number; heading: string }> = [];
-        while ((match = headingRegex.exec(text)) !== null) {
-          boundaries.push({ index: match.index, heading: match[0].trim() });
-        }
-        scenes = boundaries.map((b, i) => {
-          const start = b.index;
-          const end = boundaries[i + 1]?.index ?? text.length;
-          const sceneText = text.substring(start, end).trim();
-          // Extract character names (ALL CAPS words in dialogue position)
-          const charMatches = sceneText.match(/^\s{10,}([A-Z][A-Z\s\.]+)\s*$/gm) || [];
-          const chars = [...new Set(charMatches.map(c => c.trim()))];
-          return {
-            scene_number: i + 1,
-            scene_id: null,
-            heading: b.heading.substring(0, 200),
-            summary: sceneText.substring(0, 300),
-            characters: chars.slice(0, 10),
-          };
-        });
-      }
 
-      if (scenes.length === 0) {
+        const actRegex = /^#{1,3}\s*[Aa]ct\s+(?:One|Two|Three|1|2|3)\s*$/gm;
+        const actBoundaries: Array<{ index: number; heading: string }> = [];
+        let match;
+        while ((match = actRegex.exec(text)) !== null) {
+          actBoundaries.push({ index: match.index, heading: match[0].trim() });
+        }
+
+        if (actBoundaries.length === 0) {
+          // No act markers — fallback: natural paragraph grouping (3 paras per unit)
+          const paras = text.split(/\n\n+/).filter((p: string) => p.trim().length > 200);
+          let cursor = 0;
+          const chunkSize = 3;
+          for (let i = 0; i < paras.length; i += chunkSize) {
+            const chunk = paras.slice(i, i + chunkSize).join("\\n\\n");
+            const start = text.indexOf(chunk, cursor);
+            scenes.push({
+              scene_number: scenes.length + 1,
+              scene_id: null,
+              heading: `Section ${scenes.length + 1}`,
+              summary: chunk.substring(0, 300),
+              characters: [],
+            });
+            cursor = start + chunk.length;
+          }
+        } else {
+          actBoundaries.sort((a, b) => a.index - b.index);
+          scenes = actBoundaries.map((b, i) => {
+            const start = b.index;
+            const end = actBoundaries[i + 1]?.index ?? text.length;
+            const actText = text.substring(start, end).trim();
+            return {
+              scene_number: i + 1,
+              scene_id: null,
+              heading: b.heading,
+              summary: actText.substring(0, 500),
+              characters: [],
+            };
+          });
+        }
+      } else {
+        // ── All other doc types: use scene_graph_order ───────────────────────
+
+      if (scenes.length === 0) {      if (scenes.length === 0) {
         return new Response(JSON.stringify({ error: "No scenes found", totalScenes: 0 }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
