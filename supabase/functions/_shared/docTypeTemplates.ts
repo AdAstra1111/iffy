@@ -349,35 +349,30 @@ If you find yourself writing about any character — STOP. That content belongs 
       return `# TREATMENT: ${title}
 
 ## LOGLINE
-[One sentence — protagonist, conflict, stakes]
+[IMPORT — copy exactly from concept_brief.logline. Do not reinterpret or paraphrase.]
 
 ## THE WORLD
-[Establish the world of the story — time, place, social/cultural context. 1–2 paragraphs. Not backstory — the living, breathing world the audience enters.]
+[EVOLVE from concept_brief.world — 1–2 paragraphs establishing setting, time, place, social context. Build on what's established, add texture. Do not contradict concept_brief.]
 
 ## THE STORY
 
 ## ACT ONE
-[Establish protagonist in their ordinary world. Introduce the central conflict. Inciting incident that propels them into the story. End on the moment of commitment — the point of no return.]
+[GENERATE — 750–1,250 words. Establish protagonist in their ordinary world. Introduce the central conflict. Inciting incident that propels them into the story. End on the moment of commitment — the point of no return.]
 
 ## ACT TWO
-[The protagonist pursues their goal. Obstacles multiply. The cost rises. Midpoint reversal. The protagonist is forced to change tactics or confront a deeper truth. Darkest moment before the final turn.]
+[GENERATE — 1,000–1,500 words. The protagonist pursues their goal. Obstacles multiply. The cost rises. Midpoint reversal. The protagonist is forced to change tactics or confront a deeper truth. Darkest moment before the final turn.]
 
 ## ACT THREE
-[The protagonist brings everything to bear on the central conflict. Climactic confrontation. Resolution — what is won, what is lost, what is transformed. Final image.]
+[GENERATE — 750–1,250 words. The protagonist brings everything to bear on the central conflict. Climactic confrontation. Resolution — what is won, what is lost, what is transformed. Final image.]
 
 ## CHARACTERS
-
-### [Lead Character Name]
-[Who they are at the start. What they want. What they're afraid of. What they need to learn. How the story changes them.]
-
-### [Secondary Character Name]
-[Role in the story. Relationship to lead. Dramatic function.]
+[EVOLVE from character_bible core descriptions — add texture, relationship dynamics. Do not invent new character facts not in the character_bible.]
 
 ## TONE & VISUAL LANGUAGE
-[How this story looks and feels. Tonal reference points. Visual approach. Pacing.]
+[EVOLVE from concept_brief.tone — reference visual approach, pacing, tonal notes. Build on what's established, do not reinterpret.]
 
 ## WHY NOW
-[Why this story matters now. Cultural/emotional resonance. Market context — brief.]`;
+[IMPORT — copy exactly from concept_brief.why_now. Thematic relevance, cultural/emotional resonance.]`;
 
     // ─────────────────────────────────────────────────────────────────────────────
     case "topline_narrative":
@@ -401,6 +396,53 @@ If you find yourself writing about any character — STOP. That content belongs 
 2. **[Pillar 2 — e.g. Betrayal]:** [How this theme is dramatised in the story]
 3. **[Pillar 3 — e.g. Redemption]:** [How this theme is dramatised in the story]`;
 
+    // ─────────────────────────────────────────────────────────────────────────────
+    case "story_outline":
+      return `# STORY OUTLINE: ${title}
+
+## LOGLINE
+[IMPORT from concept_brief.logline — one sentence. Copy exactly. Do not regenerate.]
+
+## TONE
+[IMPORT from treatment.tone — 1 paragraph. Copy exactly. Do not reinterpret.]
+
+## SCENE SUMMARIES
+[GENERATE — each scene = 3–5 sentences with dramatic purpose + emotional shift. Format:]
+## Scene [N]: [title]
+**What happens:** [3–5 sentences]
+**Dramatic purpose:** [the character's goal, obstacle, discovery]
+**Connection:** [how this scene connects to the next scene]
+
+[Continue for all scenes in the story.]
+
+## STRUCTURAL NOTE
+[EVOLVE from treatment act structure — reference the three-act spine. Do not contradict treatment's act divisions.]`;
+    // ─────────────────────────────────────────────────────────────────────────────
+    case "beat_sheet":
+      return `# BEAT SHEET: ${title}
+
+## LOGLINE
+[IMPORT from concept_brief.logline — one sentence. Copy exactly.]
+
+## TONE
+[IMPORT from treatment.tone — 1 paragraph. Copy exactly.]
+
+## THE WORLD
+[EVOLVE from concept_brief.world and treatment.world — brief (1 paragraph). Do not contradict either source.]
+
+## BEATS
+[GENERATE — 40–70 numbered beats. Use story_outline scene structure as the spine. Each beat must cite which story_outline scene it expands. Format:]
+## Beat [N]: [name]
+**Act:** [1 / 2A / 2B / 3]
+**Turning point:** [Yes / No]
+**Scene:** [Cite: Scene N from story_outline — brief scene title]
+**What happens:** [2–3 sentences]
+**Structural purpose:** [how this beat serves the story structure]
+
+[Continue for all beats.]
+
+## CANONICAL CONSTRAINT
+All facts (protagonist backstory, world rules, relationship dynamics) must come from concept_brief or character_bible. Do NOT invent new facts.`;
     // ─────────────────────────────────────────────────────────────────────────────
     case "episode_grid":
     case "vertical_episode_grid":

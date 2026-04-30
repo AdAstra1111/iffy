@@ -1097,12 +1097,12 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
 
       // ── beat_sheet: read Treatment for tone + atmosphere, Story Outline for scene structure ──
       if (docType === "beat_sheet") {
-        contentFocus = "\n\n⚠️ BEAT SHEET INSTRUCTIONS: Read the TREATMENT for tonal guidance, atmosphere, emotional texture, and narrative voice. Read the STORY OUTLINE for scene-level structure, causality, and what happens in each scene. The Beat Sheet translates Story Outline scenes into dramatic beats — it should NOT introduce new story logic or contradict Treatment tone. Use Beat Sheet format (numbered beats with descriptions).";
+        contentFocus = "\n\n## IMPORT/EVOLVE/GENERATE — MANDATORY\n- LOGLINE: IMPORT from concept_brief.logline. Copy exactly. Do NOT reinterpret or paraphrase.\n- TONE: IMPORT from treatment.tone. Copy exactly. Do NOT reinterpret.\n- THE WORLD: EVOLVE from concept_brief.world and treatment.world. Do not contradict either source.\n- BEATS: GENERATE from story_outline scenes. Use story_outline scene structure as the spine. Each beat must cite which story_outline scene it expands.\n- CHARACTER BACKSTORY, WORLD RULES, RELATIONSHIP FACTS: Only from concept_brief or character_bible. Do NOT invent new facts.\n- BEYOND THIS: Use Beat Sheet format (numbered beats with descriptions, act labels, turning point flags, structural purpose).";
       }
 
       // ── screenplay_draft / feature_script: read Beat Sheet for structural beats ──
       if (docType === "screenplay_draft" || docType === "feature_script") {
-        contentFocus = "\n\n⚠️ SCREENPLAY INSTRUCTIONS: Read the BEAT SHEET for scene-by-scene structural beats — what happens in each beat is your spine. Read the TREATMENT for tone, atmosphere, and emotional texture. Read the CHARACTER BIBLE for authentic dialogue voice. Do not invent new story events or contradict the Beat Sheet structure.";
+        contentFocus = "\n\n## IMPORT/EVOLVE/GENERATE — MANDATORY\n- BEAT STRUCTURE: IMPORT from beat_sheet. Follow the beat sequence exactly. Do not reorder, skip, or add beats outside the beat_sheet structure.\n- SCENE SETTING: EVOLVE from treatment.world and story_outline scene settings. Do not contradict either source.\n- CHARACTER VOICE: IMPORT from character_bible dialogue style notes. Use as the voice guide.\n- DIALOGUE: GENERATE in authentic character voice drawn from character_bible. Do not use generic dialogue.\n- SCENE ACTION: EVOLVE from treatment.world and beat.purpose. Build physical world texture from the source material.\n- NEW STORY EVENTS: Forbidden. All events must come from beat_sheet. Do not invent new story facts.";
       }
 
 
