@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import React, { useState } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 
@@ -9,9 +9,10 @@ interface VersionData {
   version_number: number;
 }
 
-// CanonDeltaDialog component
-// NOTE: Data fetching (approvedVersion, currentVersion) is done in the parent (PDE)
-// to avoid useQuery context issues. This component only handles the display.
+// CanonDeltaDialog — shows canon field differences between approved and current versions
+// NOTE: Data (approvedVersion, currentVersion) should be passed as props from the parent.
+// The parent should fetch this data using its own useQuery/useDevEngineV2 hook.
+// This component only handles diff display and user acknowledgment.
 export function CanonDeltaDialog({
   projectId,
   docType,
@@ -29,34 +30,22 @@ export function CanonDeltaDialog({
   approvedVersion?: VersionData;
   currentVersion?: VersionData;
 }) {
-  const [scrollAcknowledged, setScrollAcknowledged] = useState(false);
   const [checkboxAcknowledged, setCheckboxAcknowledged] = useState(false);
-
   const diffs = calculateFieldDiffs(approvedVersion?.meta_json, currentVersion?.meta_json);
 
-  useEffect(() => {
-    const handleScroll = () => {
-      const scrollableDiv = document.getElementById('delta-scroll-area');
-      if (scrollableDiv && scrollableDiv.scrollTop + scrollableDiv.clientHeight >= scrollableDiv.scrollHeight) {
-        setScrollAcknowledged(true);
-      }
-    };
-    const scrollableDiv = document.getElementById('delta-scroll-area');
-    scrollableDiv?.addEventListener('scroll', handleScroll);
-    return () => scrollableDiv?.removeEventListener('scroll', handleScroll);
-  }, []);
-
-  const loadingApproved = !approvedVersion;
-  const loadingCurrent = !currentVersion;
-
   return (
-    <Dialog open={true} onClose={onClose}>
-      <DialogHeader>
-        <DialogTitle>Canon Field Delta</DialogTitle>
-      </DialogHeader>
-      <DialogContent>
-        {loadingApproved || loadingCurrent ? (
-          <p>Loading...</p>
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent aria-describedby="canon-delta-description">
+        <DialogHeader>
+          <DialogTitle>Canon Field Delta</DialogTitle>
+          <DialogDescription id="canon-delta-description">
+            Review any canon field changes between the approved version and this draft before promoting.
+          </DialogDescription>
+        </DialogHeader>
+        {diffs.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No canon field differences detected.
+          </p>
         ) : (
           <div id="delta-scroll-area" className="overflow-y-scroll h-[60vh]">
             {diffs.map((diff, index) => (
@@ -64,16 +53,21 @@ export function CanonDeltaDialog({
             ))}
           </div>
         )}
-        <Checkbox
-          label="I understand the impact"
-          checked={checkboxAcknowledged}
-          onChange={(e) => setCheckboxAcknowledged(e.target.checked)}
-        />
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="delta-ack"
+            checked={checkboxAcknowledged}
+            onCheckedChange={(checked) => setCheckboxAcknowledged(!!checked)}
+          />
+          <label htmlFor="delta-ack" className="text-sm text-muted-foreground">
+            I understand the impact of these changes on canon
+          </label>
+        </div>
       </DialogContent>
       <DialogFooter>
         <Button
           onClick={onConfirm}
-          disabled={!scrollAcknowledged && !checkboxAcknowledged}
+          disabled={!checkboxAcknowledged}
         >
           Confirm Approval
         </Button>
@@ -84,21 +78,45 @@ export function CanonDeltaDialog({
     </Dialog>
   );
 
-  function calculateFieldDiffs(approvedMeta, currentMeta) {
-    return [];
+  function calculateFieldDiffs(approvedMeta: Record<string, unknown> | undefined, currentMeta: Record<string, unknown> | undefined) {
+    if (!approvedMeta || !currentMeta) return [];
+    // Compare top-level string fields between approved and current
+    const diffs: Array<{type: string; field: string; oldValue?: string; newValue?: string}> = [];
+    const approvedFields = Object.entries(approvedMeta).filter(([, v]) => typeof v === 'string');
+    const currentFields = Object.entries(currentMeta);
+    const currentMap = new Map(currentFields);
+
+    for (const [key, oldVal] of approvedFields) {
+      const newVal = currentMap.get(key);
+      if (newVal === undefined) {
+        diffs.push({ type: 'removed', field: key });
+      } else if (newVal !== oldVal) {
+        diffs.push({ type: 'changed', field: key, oldValue: oldVal as string, newValue: newVal as string });
+      }
+    }
+    for (const [key, newVal] of currentFields) {
+      if (!currentMap.has(key) && !(key in Object.fromEntries(approvedFields))) {
+        diffs.push({ type: 'new', field: key });
+      }
+    }
+    return diffs;
   }
 }
 
 function FieldDiff({ diff }: { diff: any }) {
   return (
-    <div>
-      {diff.type === 'new' && <span className="text-green-600">NEW: {diff.field}</span>}
+    <div className="py-1 text-sm">
+      {diff.type === 'new' && <span className="text-green-600 font-medium">+ NEW: {diff.field}</span>}
       {diff.type === 'changed' && (
-        <span className="text-yellow-600">
-          CHANGED: {diff.field} ({diff.oldValue} &rarr; {diff.newValue})
+        <span className="text-yellow-600 font-medium">
+          ~ CHANGED: {diff.field}
+          <br />
+          <span className="text-muted-foreground">  before: </span>{diff.oldValue}
+          <br />
+          <span className="text-muted-foreground">  after: </span>{diff.newValue}
         </span>
       )}
-      {diff.type === 'removed' && <span className="text-red-600">REMOVED: {diff.field}</span>}
+      {diff.type === 'removed' && <span className="text-red-600 font-medium">- REMOVED: {diff.field}</span>}
     </div>
   );
 }
