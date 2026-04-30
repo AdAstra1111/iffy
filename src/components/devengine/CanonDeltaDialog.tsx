@@ -1,7 +1,5 @@
 // CanonDeltaDialog — shows canon field differences between approved and current versions
 // NOTE: Data (approvedVersion, currentVersion) should be passed as props from the parent.
-// approvedVersion: full VersionData object (with meta_json)
-// currentVersion: full VersionData object (with meta_json)
 import React, { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -31,6 +29,7 @@ export function CanonDeltaDialog({
   currentVersion?: VersionData;
 }) {
   const [checkboxAcknowledged, setCheckboxAcknowledged] = useState(false);
+  const hasDiff = approvedVersion && currentVersion;
 
   return (
     <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
@@ -41,10 +40,16 @@ export function CanonDeltaDialog({
             Review any canon field changes between the approved version and this draft before promoting.
           </DialogDescription>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground text-center py-4">
-          No canon field differences detected.
-        </p>
-        {approvedVersion && currentVersion && (
+        {hasDiff ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No canon field differences detected.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No canon field differences detected.
+          </p>
+        )}
+        {hasDiff && (
           <div className="flex items-center space-x-2">
             <Checkbox
               id="delta-ack"
@@ -58,7 +63,7 @@ export function CanonDeltaDialog({
         )}
       </DialogContent>
       <DialogFooter>
-        <Button onClick={onConfirm} disabled={!checkboxAcknowledged}>
+        <Button onClick={onConfirm} disabled={hasDiff && !checkboxAcknowledged}>
           Confirm Approval
         </Button>
         <Button onClick={onClose} variant="outline">
