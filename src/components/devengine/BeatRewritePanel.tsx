@@ -42,6 +42,51 @@ interface BeatRewritePanelProps {
 // ── Parser ───────────────────────────────────────────────────────────────────
 
 function parseBeatSheet(plaintext: string): Act[] {
+  // ── JSON MODE: detect and parse { "beats": [...] } format ──
+  try {
+    const trimmed = plaintext.trim();
+    if (trimmed.startsWith('{')) {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && Array.isArray(parsed.beats) && parsed.beats.length > 0) {
+        const actGroups: Record<string, any[]> = {};
+        for (const beat of parsed.beats) {
+          const act = beat.act_affiliation || beat.act || 'ACT 1';
+          if (!actGroups[act]) actGroups[act] = [];
+          actGroups[act].push(beat);
+        }
+        const actOrder = ['act_1', 'act_2a', 'act_2b', 'act_2', 'act_3', 'act_4'];
+        const sortedActNames = Object.keys(actGroups).sort((a, b) => {
+          const ai = actOrder.indexOf(a.toLowerCase());
+          const bi = actOrder.indexOf(b.toLowerCase());
+          if (ai === -1 && bi === -1) return a.localeCompare(b);
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
+        });
+        const acts: Act[] = sortedActNames.map(actName => {
+          const beats: Beat[] = (actGroups[actName] || []).map((b: any, i: number) => ({
+            id: String(b.number || b.id || i + 1),
+            name: b.name || `Beat ${i + 1}`,
+            act: b.act_affiliation || b.act || actName,
+            turningPoint: !!(b.turning_point || b.turningPoint),
+            turningPointLabel: String(b.turning_point || b.turningPoint || 'No'),
+            scene: b.scene || b.location || '',
+            description: b.description || b.desc || b.beat_description || JSON.stringify(b),
+            structuralPurpose: b.structural_purpose || b.structuralPurpose || '',
+            protagonistState: b.protagonist_state || b.protagonistState || '',
+            emotionalShift: b.emotional_shift || b.emotionalShift || '',
+            raw: JSON.stringify(b, null, 2),
+          }));
+          const label = actName.replace(/^act_/i, 'ACT ').replace(/_/g, ' ').trim();
+          return { name: label, beats };
+        });
+        console.log('[BeatRewritePanel] JSON parse: ' + acts.length + ' acts, ' + (acts.reduce((s, a) => s + a.beats.length, 0)) + ' beats');
+        return acts;
+      }
+    }
+  } catch (e) { /* Fall through to markdown parser */ }
+
+  // ── MARKDOWN MODE: existing parser for markdown-formatted beat sheets ──
   const lines = plaintext.split('\n');
   const acts: Act[] = [];
   let currentAct: Act | null = null;
