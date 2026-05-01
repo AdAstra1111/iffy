@@ -86,6 +86,106 @@ function parseBeatSheet(plaintext: string): Act[] {
     }
   } catch (e) { /* Fall through to markdown parser */ }
 
+  // ── ITEM NUMBER FORMAT: "ITEM N: Name\n  Field: Value" (output by reverse-engineer-script) ──
+  {
+    const itemPattern = /^ITEM\s+(\d+):\s*(.+)/i;
+    const fieldPattern = /^\s{2,}(\w[\w\s]*?):\s*(.+)/;
+    const lines = plaintext.split('\n');
+    const itemBuffer: { id: string; name: string; act: string; turningPoint: boolean; turningPointLabel: string; scene: string; description: string; structuralPurpose: string; protagonistState: string; emotionalShift: string; raw: string }[] = [];
+    let currentItem: Partial<typeof itemBuffer[0]> | null = null;
+    let currentRawLines: string[] = [];
+
+    for (const line of lines) {
+      const itemMatch = line.match(itemPattern);
+      if (itemMatch) {
+        if (currentItem && currentRawLines.length > 0) {
+          const raw = currentRawLines.join('\n');
+          itemBuffer.push({
+            id: currentItem.id || String(itemBuffer.length + 1),
+            name: currentItem.name || `Beat ${itemBuffer.length + 1}`,
+            act: currentItem.act || 'ACT 1',
+            turningPoint: currentItem.turningPoint || false,
+            turningPointLabel: currentItem.turningPointLabel || 'No',
+            scene: currentItem.scene || '',
+            description: currentItem.description || raw,
+            structuralPurpose: currentItem.structuralPurpose || '',
+            protagonistState: currentItem.protagonistState || '',
+            emotionalShift: currentItem.emotionalShift || '',
+            raw,
+          });
+        }
+        currentItem = { id: itemMatch[1], name: itemMatch[2].trim() };
+        currentRawLines = [line];
+        continue;
+      }
+      if (currentRawLines.length > 0) currentRawLines.push(line);
+      const fieldMatch = line.match(fieldPattern);
+      if (fieldMatch && currentItem) {
+        const [, key, val] = fieldMatch;
+        const k = key.trim().toLowerCase();
+        const v = val.trim();
+        if (k === 'act affiliation' || k === 'act') currentItem.act = v;
+        else if (k === 'turning point') { currentItem.turningPoint = !/no/i.test(v); currentItem.turningPointLabel = v; }
+        else if (k === 'scene' || k === 'location') currentItem.scene = v;
+        else if (k === 'description' || k === 'what happens') currentItem.description = v;
+        else if (k === 'structural purpose') currentItem.structuralPurpose = v;
+        else if (k === 'protagonist state') currentItem.protagonistState = v;
+        else if (k === 'emotional shift') currentItem.emotionalShift = v;
+      }
+    }
+    if (currentItem && currentRawLines.length > 0) {
+      const raw = currentRawLines.join('\n');
+      itemBuffer.push({
+        id: currentItem.id || String(itemBuffer.length + 1),
+        name: currentItem.name || `Beat ${itemBuffer.length + 1}`,
+        act: currentItem.act || 'ACT 1',
+        turningPoint: currentItem.turningPoint || false,
+        turningPointLabel: currentItem.turningPointLabel || 'No',
+        scene: currentItem.scene || '',
+        description: currentItem.description || raw,
+        structuralPurpose: currentItem.structuralPurpose || '',
+        protagonistState: currentItem.protagonistState || '',
+        emotionalShift: currentItem.emotionalShift || '',
+        raw,
+      });
+    }
+
+    if (itemBuffer.length > 0) {
+      const actGroups: Record<string, typeof itemBuffer[]> = {};
+      for (const beat of itemBuffer) {
+        const actKey = (beat.act || 'ACT 1').toUpperCase();
+        if (!actGroups[actKey]) actGroups[actKey] = [];
+        actGroups[actKey].push(beat);
+      }
+      const actOrder = ['ACT_1', 'ACT_2A', 'ACT_2B', 'ACT_2', 'ACT_3', 'ACT_4'];
+      const sortedActNames = Object.keys(actGroups).sort((a, b) => {
+        const ai = actOrder.indexOf(a.toUpperCase().replace(' ', '_'));
+        const bi = actOrder.indexOf(b.toUpperCase().replace(' ', '_'));
+        if (ai === -1 && bi === -1) return a.localeCompare(b);
+        if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi;
+      });
+      const acts: Act[] = sortedActNames.map(actName => ({
+        name: actName.replace(/^ACT_/i, 'ACT ').replace(/_/g, ' '),
+        beats: (actGroups[actName] || []).map((b, i) => ({
+          id: String(b.id || i + 1),
+          name: b.name,
+          act: b.act,
+          turningPoint: b.turningPoint,
+          turningPointLabel: b.turningPointLabel,
+          scene: b.scene,
+          description: b.description,
+          structuralPurpose: b.structuralPurpose,
+          protagonistState: b.protagonistState,
+          emotionalShift: b.emotionalShift,
+          raw: b.raw,
+        })),
+      }));
+      console.log('[BeatRewritePanel] ITEM format parse: ' + acts.length + ' acts, ' + itemBuffer.length + ' beats');
+      return acts;
+    }
+  }
+
+
   // ── MARKDOWN MODE: existing parser for markdown-formatted beat sheets ──
   const lines = plaintext.split('\n');
   const acts: Act[] = [];
