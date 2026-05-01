@@ -36842,39 +36842,67 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
       const fullText = version.plaintext || "";
 
-      // 2. 2-pass parse: split by ## Act headers → then ## Beat headers within each act
-      const acts = fullText.split(/##\s+Act.*\n/);
-      const beats: string[] = acts.flatMap(act => act.split(/##\s+Beat.*\n/).slice(1));
+      // 2. Dual-format beat parser: handles both ## Beat N: headers (classic) and
+      //    numbered markdown format (1. **Beat Name** \n prose) from RE pipeline.
+      function parseBeatsFromText(text: string): Array<{ beat: string; start: number; end: number }> {
+        // Try ## Beat header format first
+        const headerPattern = /^##\s+Beat\s+\d+/gm;
+        const headerStarts: number[] = [];
+        let hm: RegExpExecArray | null;
+        while ((hm = headerPattern.exec(text)) !== null) headerStarts.push(hm.index);
 
-      // 3. Find the target beat by beatId (or by position if beatId is a number/index)
-      const targetBeat = isNaN(Number(beatId)) ? beats.find(beat => beat.includes(`## Beat ${beatId}`)) : beats[Number(beatId)];
-      if (!targetBeat) throw new Error("Beat not found");
+        if (headerStarts.length > 0) {
+          return headerStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length,
+          }));
+        }
 
-      // 4. Build upstream context: fetch Story Outline scene content + Character Bible relevant characters
+        // Fallback: numbered markdown format "N. **Beat Name**"
+        const numberedPattern = /^\d+\.\s+\*\*/gm;
+        const numberedStarts: number[] = [];
+        let nm: RegExpExecArray | null;
+        while ((nm = numberedPattern.exec(text)) !== null) numberedStarts.push(nm.index);
+
+        return numberedStarts.map((start, i) => ({
+          beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
+          start,
+          end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
+        }));
+      }
+
+      const parsedBeats = parseBeatsFromText(fullText);
+
+      // 3. Find target beat — beatId is 1-indexed string ("1", "2", ...) from numbered parser
+      const beatIndex = Number(beatId) - 1;  // fix: 1-indexed → 0-indexed
+      const targetBeatEntry = parsedBeats[beatIndex];
+      if (!targetBeatEntry) throw new Error(`Beat not found (id: ${beatId}, parsed: ${parsedBeats.length} beats)`);
+      const targetBeat = targetBeatEntry.beat;
+
+      // 4. Scene reference — optional (numbered format has no **Scene:** field)
       const sceneMatch = targetBeat.match(/\*\*Scene:\*\* (.*)\n/);
       const sceneRef = sceneMatch ? sceneMatch[1] : null;
-      if (!sceneRef) throw new Error("Scene reference not found");
-
-      const { data: storyOutline } = await supabase.from("project_documents")
-        .select("plaintext").eq("title", sceneRef).single();
-      if (!storyOutline) throw new Error("Story Outline scene not found");
 
       const narrativeBlock = buildNarrativeContextBlock(await resolveNarrativeContext(supabase, projectId, { includeSignals: true }));
       const constraintPackBlock = await loadConstraintPack(supabase, projectId);
 
       // 5. Build per-beat rewrite prompt with upstream context + approved notes
-      const systemPrompt = [
+      const systemPromptParts: string[] = [
         "You are rewriting a script beat in markdown format.",
         narrativeBlock,
-        "Scene Content:",
-        storyOutline.plaintext,
-        "\nBeat Content:",
-        targetBeat,
-        "\nNotes:",
-        approvedNotes.map(note => `- ${note}`).join("\n")
-      ].join("\n\n").trim();
+      ];
+      if (sceneRef) {
+        const { data: storyOutline } = await supabase.from("project_documents")
+          .select("plaintext").eq("title", sceneRef).single();
+        if (storyOutline) systemPromptParts.push("Scene Content:", storyOutline.plaintext);
+      }
+      systemPromptParts.push("\nBeat Content:", targetBeat);
+      if (approvedNotes?.length > 0) {
+        systemPromptParts.push("\nNotes:", approvedNotes.map((note: string) => `- ${note}`).join("\n"));
+      }
+      const systemPrompt = systemPromptParts.join("\n\n").trim();
 
-      const lengthGuidance = "1-2 paragraphs. Maintain emotional arc and character consistency.";
       const beatPrompt = [
         "## Beat Rewrite", targetBeat,
         "## Constraints:",
@@ -36887,9 +36915,10 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       if (!_apiKey) throw new Error("No AI gateway key configured");
       const rewrittenBeat = await callAI(_apiKey, "sonnet", systemPrompt, beatPrompt, 0.3, 4000);
 
-      // 7. Replace only that beat in the document, preserve all others
-      beats[Number(beatId)] = rewrittenBeat.trim();
-      const updatedDocument = acts.map((act, index) => index > 0 ? `## Act ${index}\n` + beats.splice(0, act.split(/##\s+Beat.*\n/).length) : act).join("");
+      // 7. Simple string replacement — splice rewritten beat into original document
+      const updatedDocument = fullText.slice(0, targetBeatEntry.start)
+        + rewrittenBeat.trim() + "\n"
+        + fullText.slice(targetBeatEntry.end);
 
       const newVersionNumber = (version.version_number || 1) + 1;
       const { data: newVersion } = await supabase.from("project_document_versions").upsert({
@@ -36898,18 +36927,18 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
         plaintext: updatedDocument,
         is_current: false,
         created_by: body.user?.id || null,
-        meta_json: { run_type: "BEAT_REWRITE", updated_beat: targetBeat }
-      }, { onConflict: "document_id,version_number" }).select();
+        meta_json: { run_type: "BEAT_REWRITE", updated_beat_id: beatId }
+      }, { onConflict: "document_id,version_number" }).select().single();
       if (!newVersion) throw new Error("Failed to create new document version");
 
-      // 8. Return new versionId + act, beat_number, story_outline_scene_ref
+      // 8. Return new versionId + metadata
       return new Response(JSON.stringify({
         success: true,
         versionId: newVersion.id,
         metadata: {
-          act_number: acts.findIndex(act => act.includes(targetBeat)) + 1,
           beat_number: Number(beatId),
-          story_outline_scene_ref: sceneRef
+          beats_parsed: parsedBeats.length,
+          story_outline_scene_ref: sceneRef || null,
         }
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
