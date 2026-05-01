@@ -2737,7 +2737,7 @@ export default function ProjectDevelopmentEngine() {
               )}
 
               {/* ═══ UNIFIED BIG BUTTON: Apply All Notes & Decisions ═══ */}
-              {allPrioritizedMoves.length > 0 && (
+              {allPrioritizedMoves.length > 0 && selectedDoc?.doc_type !== 'beat_sheet' && (
                 <Button
                   size="lg"
                   className="w-full h-12 text-sm font-semibold gap-2"

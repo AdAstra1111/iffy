@@ -204,7 +204,7 @@ function parseBeatSheet(plaintext: string): Act[] {
     const actMatch     = raw.match(/\*\*Act:\*\*\s*(.+)/i);
     const tpMatch      = raw.match(/\*\*Turning point:\*\*\s*(.+)/i);
     const sceneMatch   = raw.match(/\*\*Scene:\*\*\s*(.+)/i);
-    const nameMatch    = raw.match(/##\s+Beat\s+\d+:\s*(.+)/i);
+    const nameMatch    = raw.match(/^#{1,3}\s+Beat\s+\d+[:\s]+(.+)/i);
     const descMatch    = raw.match(/\*\*What happens:\*\*\s*([\s\S]*?)(?=\*\*|$)/i);
     const spMatch      = raw.match(/\*\*Structural purpose:\*\*\s*(.+)/i);
     const psMatch     = raw.match(/\*\*Protagonist state:\*\*\s*(.+)/i);
@@ -243,13 +243,14 @@ function parseBeatSheet(plaintext: string): Act[] {
     // Beat header: ## Beat 1: Name, ### Beat 2: Name
     const beatMatch = trimmed.match(/^#{1,3}\s+Beat\s+(\d+)[:\s]+\s*(.+)/i);
     if (beatMatch) {
-      flushBeat();
+      flushBeat(); // flush previous beat before starting new one
       currentBeatMeta = { id: beatMatch[1], name: beatMatch[2].trim() };
       currentBeatLines = [line];
       continue;
     }
 
     if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
+      // Bug 1 fix: accumulate beat content after header
       currentBeatLines.push(line);
     }
   }
