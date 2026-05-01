@@ -220,8 +220,50 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
-  function buildPlaintext(data: any): string {
+  function buildPlaintext(data: any, docType?: string): string {
     if (!data || typeof data !== "object") return String(data ?? "");
+
+    // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
+    if (docType === "beat_sheet" && Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
+      const first = data[0];
+      const isBeat = ("number" in first || "name" in first) && ("act_affiliation" in first || "act" in first || "description" in first || "scene" in first);
+      if (isBeat) {
+        const actGroups: Record<string, any[]> = {};
+        for (const beat of data) {
+          const actKey = beat.act_affiliation || beat.act || "ACT 1";
+          if (!actGroups[actKey]) actGroups[actKey] = [];
+          actGroups[actKey].push(beat);
+        }
+        const actOrder = ["act_1","act_2a","act_2b","act_2","act_3","act_4"];
+        const sortedActs = Object.keys(actGroups).sort((a, b) => {
+          const ai = actOrder.indexOf(a.toLowerCase());
+          const bi = actOrder.indexOf(b.toLowerCase());
+          if (ai === -1 && bi === -1) return a.localeCompare(b);
+          if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi;
+        });
+        return sortedActs.map(actName => {
+          const beats = actGroups[actName];
+          const label = actName.replace(/^act_/i, "ACT ").replace(/_/g, " ").trim();
+          const actLines = [`## ${label}`];
+          for (const beat of beats) {
+            const num = beat.number ?? beat.id ?? "?";
+            const name = beat.name ?? beat.title ?? `Beat ${num}`;
+            actLines.push(`## Beat ${num}: ${name}`);
+            const tp = beat.turning_point || beat.turningPoint || "No";
+            actLines.push(`**Act:** ${label}`);
+            actLines.push(`**Turning point:** ${tp}`);
+            if (beat.scene || beat.location) actLines.push(`**Scene:** ${beat.scene || beat.location}`);
+            if (beat.description) actLines.push(`**What happens:** ${beat.description}`);
+            if (beat.structural_purpose || beat.structuralPurpose) actLines.push(`**Structural purpose:** ${beat.structural_purpose || beat.structuralPurpose}`);
+            if (beat.protagonist_state || beat.protagonistState) actLines.push(`**Protagonist state:** ${beat.protagonist_state || beat.protagonistState}`);
+            if (beat.emotional_shift || beat.emotionalShift) actLines.push(`**Emotional shift:** ${beat.emotional_shift || beat.emotionalShift}`);
+            if (beat.page_range) actLines.push(`**Page range:** ${beat.page_range}`);
+          }
+          return actLines.join("\n");
+        }).join("\n\n");
+      }
+    }
+
     if (Array.isArray(data)) {
       if (data.length === 0) return "";
       const first = data[0];
@@ -247,11 +289,11 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return Object.entries(data).map(([k, v]) => {
       if (v === null || v === undefined) return "";
       if (Array.isArray(v)) return `${k.toUpperCase().replace(/_/g," ")}\n${v.map((i: any) => typeof i === "object" ? JSON.stringify(i, null, 2) : `• ${i}`).join("\n")}`;
-      if (typeof v === "object") return buildPlaintext(v);
+      if (typeof v === "object") return buildPlaintext(v, docType);
       return `${k.toUpperCase().replace(/_/g," ")}\n${v}`;
     }).filter(Boolean).join("\n\n");
   }
-  const plaintext = buildPlaintext(data);
+  const plaintext = buildPlaintext(data, docType);
 
   // Fall back to project owner if userId not provided (e.g. direct API calls without auth)
   let effectiveUserId = userId;
