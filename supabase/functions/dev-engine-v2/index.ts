@@ -8997,7 +8997,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
     // SECTIONED-REWRITE — section-aware regeneration for sectioned doc types
     // Handles: treatment, story_outline, character_bible, long_treatment, long_character_bible
     // ═══════════════════════════════════════════════════════════════════
-    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "character_bible", "long_treatment", "long_character_bible"]);
+    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "character_bible", "long_treatment", "long_character_bible", "beat_sheet"]);
     if (sectionedRewriteTypes.has(action)) {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
@@ -9015,6 +9015,22 @@ MATERIAL TO REWRITE:\n${fullText}`;
       if (!version) throw new Error("Version not found");
 
       const fullText = version.plaintext || "";
+
+      // ── BEAT SHEET JSON MODE: detect and restructure { "beats": [...] } into flatSections ──
+      let isBeatSheetJSON = false;
+      let beatSheetJSON: any = null;
+      try {
+        const trimmed = fullText.trim();
+        if (trimmed.startsWith("{")) {
+          beatSheetJSON = JSON.parse(trimmed);
+          if (beatSheetJSON && Array.isArray(beatSheetJSON.beats) && beatSheetJSON.beats.length > 0) {
+            isBeatSheetJSON = true;
+            console.log(`[dev-engine-v2][beat-sheet] detected JSON beat sheet with ${beatSheetJSON.beats.length} beats`);
+          } else {
+            beatSheetJSON = null;
+          }
+        }
+      } catch (e) { /* Not JSON */ }
 
       // ── SECTION-AWARE PARSER: handles both TREATMENT (## → ## THE STORY/ACT) and CHARACTER_BIBLE (## → ACT) ──
       function splitByActs(content: string, label: string, sk: string): { header: string; content: string; label: string; sk: string }[] {
@@ -9107,7 +9123,40 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       console.log(`[dev-engine-v2][${action}] sections_found=${allSections.length}`);
 
-      const flatSections: { header: string; content: string; label: string; sk: string }[] = allSections;
+      // ── BEAT SHEET JSON PATH: build flatSections directly from parsed beats ──
+      let flatSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[];
+      if (isBeatSheetJSON) {
+        const actGroups: Record<string, any[]> = {};
+        for (const beat of beatSheetJSON.beats) {
+          const act = beat.act_affiliation || beat.act || "ACT 1";
+          if (!actGroups[act]) actGroups[act] = [];
+          actGroups[act].push(beat);
+        }
+        const beatSheetSections: { header: string; content: string; label: string; sk: string; beats: any[] }[] = [];
+        for (const [actName, beats] of Object.entries(actGroups)) {
+          const sectionLabel = actName.replace(/^act_/i, "ACT ").replace(/_/g, " ").trim();
+          beatSheetSections.push({
+            header: `## ${sectionLabel}`,
+            content: JSON.stringify(beats, null, 2),
+            label: sectionLabel,
+            sk: "beat_sheet_act",
+            beats,
+          });
+        }
+        beatSheetSections.sort((a, b) => {
+          const order = ["act_1","act_2a","act_2b","act_2","act_3","act_4"];
+          const ao = order.indexOf(a.label.toLowerCase().replace(" ", "_"));
+          const bo = order.indexOf(b.label.toLowerCase().replace(" ", "_"));
+          if (ao === -1 && bo === -1) return a.label.localeCompare(b.label);
+          if (ao === -1) return 1;
+          if (bo === -1) return -1;
+          return ao - bo;
+        });
+        flatSections = beatSheetSections;
+        console.log(`[dev-engine-v2][beat-sheet] grouped into ${flatSections.length} act sections`);
+      } else {
+        flatSections = allSections;
+      }
 
       if (flatSections.length === 0) {
         flatSections.push({ header: "## ACT 1", content: fullText, label: "ACT 1", sk: "act" });
@@ -9275,25 +9324,37 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }
       }
 
-      const assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
+      let assembledText: string;
+      if (isBeatSheetJSON) {
+        const allRewrittenBeats: any[] = [];
+        for (const s of rewrittenSections) { if (s.beats && Array.isArray(s.beats)) allRewrittenBeats.push(...s.beats); }
+        allRewrittenBeats.sort((a, b) => (a.number || 0) - (b.number || 0));
+        const outputBeatSheet = { title: beatSheetJSON.title || project.title || "Beat Sheet", total_beats: allRewrittenBeats.length, beats: allRewrittenBeats };
+        assembledText = JSON.stringify(outputBeatSheet, null, 2);
+        console.log("[beat-sheet] reassembled " + allRewrittenBeats.length + " beats from " + rewrittenSections.length + " sections");
+      } else {
+        assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
+      }
 
-      console.log("[treatment-rewrite] assembledText length=" + assembledText.length + " newVersion.id=" + newVersion.id);
-      console.log("[treatment-rewrite] UPDATE target id=" + newVersion.id);
+      const runType = isBeatSheetJSON ? "BEAT_SHEET_REWRITE" : "TREATMENT_REWRITE";
+      const extraMeta = isBeatSheetJSON ? { total_beats: (JSON.parse(assembledText)).beats?.length || 0 } : {};
       const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,
-        meta_json: { run_type: "TREATMENT_REWRITE", sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
+        meta_json: { run_type: runType, sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0, ...extraMeta },
       }).eq("id", newVersion.id);
-      console.log("[treatment-rewrite] update error=" + JSON.stringify(updateResult.error) + " count=" + (updateResult.count || 0));
-      if (updateResult.error) console.error("[treatment-rewrite] UPDATE FAILED:", updateResult.error);
+      console.log("[" + runType.toLowerCase() + "] update error=" + JSON.stringify(updateResult.error));
+      if (updateResult.error) console.error("[" + runType.toLowerCase() + "] UPDATE FAILED:", updateResult.error);
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
-        user_id: effUserId, run_type: "TREATMENT_REWRITE",
+        user_id: effUserId, run_type: runType,
         output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       });
 
       return new Response(JSON.stringify({
-        success: true, versionId: newVersion.id, totalSections: rewrittenSections.length,
+        success: true, versionId: newVersion.id,
+        totalSections: rewrittenSections.length,
+        totalBeats: isBeatSheetJSON ? (JSON.parse(assembledText)).beats?.length || 0 : 0,
         sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
