@@ -2,18 +2,18 @@
 // Edit stage-ladders.json and regenerate this file.
 export const STAGE_LADDERS = {
   FORMAT_LADDERS: {
-    "film":               ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","feature_script","production_draft"],
-    "feature":            ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","feature_script","production_draft"],
-    "tv-series":          ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
-    "limited-series":     ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
-    "digital-series":     ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
+    "film":               ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","feature_script","production_draft"],
+    "feature":            ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","feature_script","production_draft"],
+    "tv-series":          ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
+    "limited-series":     ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
+    "digital-series":     ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
     "vertical-drama":     ["idea","concept_brief","character_bible","format_rules","season_arc","episode_grid","vertical_episode_beats","season_script"],
     "documentary":        ["idea","concept_brief","documentary_outline"],
     "documentary-series": ["idea","concept_brief","documentary_outline"],
     "hybrid-documentary": ["idea","concept_brief","documentary_outline","treatment"],
     "short":              ["idea","concept_brief","feature_script"],
     "animation":          ["idea","concept_brief","treatment","character_bible","beat_sheet","feature_script"],
-    "anim-series":        ["idea","concept_brief","treatment","story_outline","character_bible","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
+    "anim-series":        ["idea","concept_brief","character_bible","treatment","story_outline","beat_sheet","episode_beats","episode_script","season_master_script","production_draft"],
     "reality":            ["idea","concept_brief","treatment","beat_sheet","episode_beats","episode_script"],
   } as Record<string, string[]>,
   DOC_TYPE_ALIASES: {
