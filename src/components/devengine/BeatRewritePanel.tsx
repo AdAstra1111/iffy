@@ -204,7 +204,7 @@ function parseBeatSheet(plaintext: string): Act[] {
     const actMatch     = raw.match(/\*\*Act:\*\*\s*(.+)/i);
     const tpMatch      = raw.match(/\*\*Turning point:\*\*\s*(.+)/i);
     const sceneMatch   = raw.match(/\*\*Scene:\*\*\s*(.+)/i);
-    const nameMatch    = raw.match(/^#{1,3}\s+Beat\s+\d+[:\s]+(.+)/i);
+    const nameMatch    = raw.match(/^#{1,3}\s+Beat\s+\d+[:\s]+(.+)/im);
     const descMatch    = raw.match(/\*\*What happens:\*\*\s*([\s\S]*?)(?=\*\*|$)/i);
     const spMatch      = raw.match(/\*\*Structural purpose:\*\*\s*(.+)/i);
     const psMatch     = raw.match(/\*\*Protagonist state:\*\*\s*(.+)/i);
