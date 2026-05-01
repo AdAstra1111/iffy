@@ -9271,11 +9271,50 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
       const systemPromptBase = systemPromptParts.join("\n\n");
 
-      const rewrittenSections: { header: string; content: string; label: string; sk: string }[] = [];
+      const rewrittenSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[] = [];
 
       for (let i = 0; i < flatSections.length; i++) {
         const section = flatSections[i];
+
+        // ── BEAT SHEET JSON PATH: rewrite beats as JSON, skip prose loop ──
+        if (isBeatSheetJSON) {
+          const beats = (section as any).beats || [];
+          if (beats.length > 0) {
+            const beatsJSON = JSON.stringify(beats, null, 2);
+            try {
+              const _gw = resolveGateway();
+              const _apiKey = _gw.apiKey;
+              if (!_apiKey) throw new Error("No AI gateway key configured");
+              const userPrompt = "REWRITE these " + beats.length + " beats. Keep ALL beat fields (number, name, page_range, turning_point, act_affiliation, dramatic_function, etc.) exactly as-is. ONLY rewrite description, name, emotional_shift, protagonist_state. Return EXACTLY " + beats.length + " beat objects in a JSON array.\n\n" + beatsJSON;
+              const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase, userPrompt, 0.3, 6000);
+              const parsed = JSON.parse(extractJSON(rewrittenRaw?.trim() || ""));
+              const parsedArray: any[] = Array.isArray(parsed) ? parsed : [];
+              if (parsedArray.length === beats.length && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
+                rewrittenSections.push({ header: section.header, content: JSON.stringify(parsedArray, null, 2), label: section.label, sk: section.sk, beats: parsedArray });
+                console.log("[beat-sheet-rewrite] section " + (i+1) + " (" + section.label + "): " + beats.length + " beats rewritten OK");
+              } else if (parsedArray.length > 0 && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
+                const numMap: Record<number, any> = {};
+                for (const b of parsedArray) numMap[b.number] = b;
+                const patched = beats.map((orig: any) => numMap[orig.number] || orig);
+                rewrittenSections.push({ header: section.header, content: JSON.stringify(patched, null, 2), label: section.label, sk: section.sk, beats: patched });
+                console.warn("[beat-sheet-rewrite] section " + (i+1) + ": patched " + parsedArray.length + " beats to expected " + beats.length);
+              } else {
+                console.warn("[beat-sheet-rewrite] section " + (i+1) + ": invalid LLM output, keeping original " + beats.length + " beats");
+                rewrittenSections.push({ header: section.header, content: beatsJSON, label: section.label, sk: section.sk, beats });
+              }
+            } catch (err: any) {
+              console.warn("[beat-sheet-rewrite] section " + (i+1) + " failed: " + String(err?.message || err) + ", keeping original beats");
+              rewrittenSections.push({ header: section.header, content: beatsJSON, label: section.label, sk: section.sk, beats });
+            }
+          } else {
+            rewrittenSections.push(section);
+          }
+          continue; // skip prose rewrite loop for beat sheet JSON
+        }
+
+        // ── STANDARD MARKDOWN PROSE REWRITE LOOP ──
         const lengthGuidance = getLengthGuidance(section.sk, section.label);
+
 
         let sectionTypeHint = "";
         if (section.sk === "logline" || section.sk === "preamble") {
