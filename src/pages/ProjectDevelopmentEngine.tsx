@@ -1274,13 +1274,17 @@ export default function ProjectDevelopmentEngine() {
     };
 
     // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
-    if ((SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) || selectedDoc?.doc_type === "beat_sheet") && selectedDocId && selectedVersionId) {
+    // NOTE: beat_sheet Apply All is handled exclusively by BeatRewritePanel's own "Apply All" button — skip sectioned rewrite
+    if (selectedDoc?.doc_type === 'beat_sheet') {
+      // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
+      return;
+    }
+    if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
       // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
       setTreatmentRewritePending(true);
-      const isBeatSheet = selectedDoc?.doc_type === 'beat_sheet';
       const { data: trData, error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
         body: {
-          action: isBeatSheet ? 'beat_sheet' : selectedDoc?.doc_type,
+          action: selectedDoc?.doc_type,
           projectId,
           documentId: selectedDocId,
           versionId: selectedVersionId,
@@ -1289,7 +1293,7 @@ export default function ProjectDevelopmentEngine() {
         },
       }).finally(() => setTreatmentRewritePending(false));
       if (trErr) {
-        toast.error(isBeatSheet ? ('Beat sheet rewrite failed: ' + (trErr?.message || trErr)) : (trErr?.message || trErr));
+        toast.error(trErr?.message || trErr);
       } else {
         const newVersionId = trData?.versionId || null;
         if (newVersionId) {
@@ -1298,7 +1302,7 @@ export default function ProjectDevelopmentEngine() {
         } else {
           postOperationVersionId.current = '__next__';
         }
-        toast.success(isBeatSheet ? 'Beat sheet rewrite complete' : 'Treatment rewrite complete');
+        toast.success('Treatment rewrite complete');
         qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
         qc.resetQueries({ queryKey: ['dev-v2-versions', selectedDocId], exact: true });
       }
@@ -2264,8 +2268,10 @@ export default function ProjectDevelopmentEngine() {
                       documentId={selectedDocId}
                       versionId={selectedVersionId}
                       version={selectedVersion as any}
-                      approvedNotes={[]}
-                      protectItems={[]}
+                      approvedNotes={enrichedNotes}
+                      protectItems={protectItems}
+                      onApplyAllStart={() => setTreatmentRewritePending(true)}
+                      onApplyAllDone={() => setTreatmentRewritePending(false)}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
                         setSelectedVersionId(newVersionId);

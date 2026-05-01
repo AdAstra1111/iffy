@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CheckCircle2, Loader2, AlertCircle, ChevronRight, ChevronDown, RotateCcw, Info } from 'lucide-react';
+import { CheckCircle2, Loader2, AlertCircle, ChevronRight, ChevronDown, RotateCcw, Info, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,8 @@ interface BeatRewritePanelProps {
   approvedNotes: any[];
   protectItems: string[];
   onComplete?: (newVersionId: string) => void;
+  onApplyAllStart?: () => void;
+  onApplyAllDone?: () => void;
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -504,12 +506,13 @@ function RewriteModal({
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function BeatRewritePanel({
-  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete,
+  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAllStart, onApplyAllDone,
 }: BeatRewritePanelProps) {
   const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
   const [rewriteTarget, setRewriteTarget] = useState<Beat | null>(null);
   const [beatStatuses, setBeatStatuses] = useState<Record<string, string>>({});
   const [rewriteDoneVersion, setRewriteDoneVersion] = useState<string | null>(null);
+  const [batchRewriteActive, setBatchRewriteActive] = useState(false);
 
   const plaintext = version?.plaintext || '';
   const acts = useMemo(() => parseBeatSheet(plaintext), [plaintext]);
@@ -536,6 +539,48 @@ export default function BeatRewritePanel({
     onComplete?.(newVersionId);
   };
 
+  const handleApplyAll = async () => {
+    const allBeats = acts.flatMap(a => a.beats);
+    if (allBeats.length === 0) return;
+    onApplyAllStart?.();
+    setBatchRewriteActive(true);
+    setBeatStatuses(Object.fromEntries(allBeats.map(b => [b.id, 'queued'])));
+
+    let latestVid = versionId;
+    for (const beat of allBeats) {
+      setBeatStatuses(prev => ({ ...prev, [beat.id]: 'running' }));
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+          body: JSON.stringify({
+            action: 'beat-rewrite',
+            projectId,
+            documentId,
+            versionId: latestVid,
+            beatId: beat.id,
+            approvedNotes: approvedNotes.filter(n => !n.target_beat_id || String(n.target_beat_id) === String(beat.id)),
+            protectItems: protectItems || [],
+          }),
+        });
+        const result = await resp.json();
+        if (result.success && result.versionId) {
+          latestVid = result.versionId;
+          setBeatStatuses(prev => ({ ...prev, [beat.id]: 'done' }));
+        } else {
+          setBeatStatuses(prev => ({ ...prev, [beat.id]: 'failed' }));
+        }
+      } catch {
+        setBeatStatuses(prev => ({ ...prev, [beat.id]: 'failed' }));
+      }
+    }
+
+    setBatchRewriteActive(false);
+    onApplyAllDone?.();
+    if (latestVid !== versionId) onComplete?.(latestVid);
+  };
+
   if (!plaintext) {
     return (
       <Card className="m-4">
@@ -552,6 +597,18 @@ export default function BeatRewritePanel({
         <div>
           <h3 className="text-sm font-semibold">Beat Sheet</h3>
           <p className="text-xs text-muted-foreground">{totalBeats} beats across {acts.length} acts</p>
+          <Button
+            size="sm"
+            variant="default"
+            className="mt-2 w-full gap-1.5"
+            onClick={handleApplyAll}
+            disabled={batchRewriteActive || acts.length === 0}
+          >
+            {batchRewriteActive
+              ? <Loader2 className="h-3 w-3 animate-spin"/>
+              : <Sparkles className="h-3 w-3"/>}
+            {batchRewriteActive ? `Processing ${totalBeats} beats...` : 'Apply All Notes & Decisions'}
+          </Button>
         </div>
         {rewriteDoneVersion && (
           <Badge variant="default" className="bg-green-600 gap-1 text-xs">
