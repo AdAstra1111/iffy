@@ -188,6 +188,71 @@ function parseBeatSheet(plaintext: string): Act[] {
   }
 
 
+  // ── NUMBERED MARKDOWN FORMAT: "## Act N Beats\n1. **Beat Name**\n    prose"
+  // Used by RE pipeline Beat Sheets — numbered list items, no ## Beat headers
+  {
+    const numberedLines = plaintext.split('\n');
+    const numActs: Act[] = [];
+    let currentAct: Act | null = null;
+    let currentBeatLines: string[] = [];
+    let currentBeatMeta: { id: string; name: string } | {} = {};
+
+    for (let i = 0; i < numberedLines.length; i++) {
+      const line = numberedLines[i];
+      const trimmed = line.trim();
+
+      // Act header: ## Act 1 Beats / ## Act 2 Beats (with 'Beats' plural)
+      const actMatch = trimmed.match(/^##\s+Act\s+(\d+)\s+Beats/i);
+      if (actMatch) {
+        // flush any pending beat
+        if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
+          const beat = parseBeatContent(currentBeatMeta as { id: string; name: string }, currentBeatLines, 'numbered');
+          if (beat && currentAct) currentAct.beats.push(beat);
+          currentBeatLines = [];
+          currentBeatMeta = {};
+        }
+        if (currentAct) numActs.push(currentAct);
+        currentAct = { id: actMatch[1], name: 'Act ' + actMatch[1], beats: [] };
+        continue;
+      }
+
+      // Beat header: "1. **Beat Name**" — numbered list item with bold name
+      const beatMatch = trimmed.match(/^(\d+)\.\s+\*\*(.+?)\*\*/);
+      if (beatMatch) {
+        // flush previous beat
+        if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
+          const beat = parseBeatContent(currentBeatMeta as { id: string; name: string }, currentBeatLines, 'numbered');
+          if (beat && currentAct) currentAct.beats.push(beat);
+        }
+        currentBeatMeta = { id: beatMatch[1], name: beatMatch[2].trim() };
+        currentBeatLines = [line];
+        continue;
+      }
+
+
+      // Accumulate indented prose lines for current beat
+      if ((currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) && (trimmed.startsWith('    ') || trimmed === '')) {
+        currentBeatLines.push(line);
+      }
+    }
+
+
+    // flush last beat
+    if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
+      const beat = parseBeatContent(currentBeatMeta as { id: string; name: string }, currentBeatLines, 'numbered');
+      if (beat && currentAct) currentAct.beats.push(beat);
+    }
+    if (currentAct) numActs.push(currentAct);
+
+    if (numActs.length > 0) {
+      console.log('[BeatRewritePanel] numbered format parse: ' + numActs.length + ' acts, ' +
+        numActs.reduce((sum, a) => sum + a.beats.length, 0) + ' beats');
+      return numActs;
+    }
+  }
+
+
+
   // ── MARKDOWN MODE: existing parser for markdown-formatted beat sheets ──
   const lines = plaintext.split('\n');
   const acts: Act[] = [];
@@ -598,18 +663,6 @@ export default function BeatRewritePanel({
         <div>
           <h3 className="text-sm font-semibold">Beat Sheet</h3>
           <p className="text-xs text-muted-foreground">{totalBeats} beats across {acts.length} acts</p>
-          <Button
-            size="sm"
-            variant="default"
-            className="mt-2 w-full gap-1.5"
-            onClick={handleApplyAll}
-            disabled={batchRewriteActive || acts.length === 0}
-          >
-            {batchRewriteActive
-              ? <Loader2 className="h-3 w-3 animate-spin"/>
-              : <Sparkles className="h-3 w-3"/>}
-            {batchRewriteActive ? `Processing ${totalBeats} beats...` : 'Apply All Notes & Decisions'}
-          </Button>
         </div>
         {rewriteDoneVersion && (
           <Badge variant="default" className="bg-green-600 gap-1 text-xs">
@@ -654,6 +707,25 @@ export default function BeatRewritePanel({
             ))
           )}
         </CardContent>
+        <CardFooter className="flex flex-col gap-2 px-4 pb-4">
+          <Button
+            size="sm"
+            variant="default"
+            className="w-full gap-1.5"
+            onClick={handleApplyAll}
+            disabled={batchRewriteActive || acts.length === 0}
+          >
+            {batchRewriteActive
+              ? <Loader2 className="h-3 w-3 animate-spin"/>
+              : <Sparkles className="h-3 w-3"/>}
+            {batchRewriteActive ? `Processing ${totalBeats} beats...` : 'Apply All Notes & Decisions'}
+          </Button>
+          {rewriteDoneVersion && (
+            <Badge variant="default" className="bg-green-600 gap-1 text-xs self-center">
+              <CheckCircle2 className="h-3 w-3"/>New version created
+            </Badge>
+          )}
+        </CardFooter>
       </Card>
 
       {/* Rewrite modal */}
