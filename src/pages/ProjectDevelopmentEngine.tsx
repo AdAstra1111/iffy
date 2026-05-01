@@ -1169,7 +1169,22 @@ export default function ProjectDevelopmentEngine() {
     handleRewrite(decisions, globalDirections);
   };
 
+  // beatSheetApprovedNotes — component-level memo for BeatRewritePanel render scope (line ~2271)
+  const beatSheetApprovedNotes = useMemo(() => {
+    if (selectedDoc?.doc_type !== 'beat_sheet') return [];
+    const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
+    const protectItems = latestNotes?.protect || latestAnalysis?.protect || [];
+    return approved;
+  }, [allPrioritizedMoves, selectedNotes, latestNotes, latestAnalysis, selectedDoc?.doc_type]);
+
+  // protectItems derived at component level for BeatRewritePanel
+  const protectItems = useMemo(() => {
+    return latestNotes?.protect || latestAnalysis?.protect || [];
+  }, [latestNotes, latestAnalysis]);
+
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
+    // beatSheetApprovedNotes — component-level for BeatRewritePanel render (line ~2271)
+    // handleRewrite has its own local enrichedNotes for decision directives
     const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
     const protectItems = latestNotes?.protect || latestAnalysis?.protect || [];
     const textLength = (selectedVersion?.plaintext || selectedDoc?.plaintext || '').length;
