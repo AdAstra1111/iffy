@@ -1277,9 +1277,10 @@ export default function ProjectDevelopmentEngine() {
     if ((SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) || selectedDoc?.doc_type === "beat_sheet") && selectedDocId && selectedVersionId) {
       // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
       setTreatmentRewritePending(true);
-      const { error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
+      const isBeatSheet = selectedDoc?.doc_type === 'beat_sheet';
+      const { data: trData, error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
         body: {
-          action: selectedDoc?.doc_type,
+          action: isBeatSheet ? 'beat_sheet' : selectedDoc?.doc_type,
           projectId,
           documentId: selectedDocId,
           versionId: selectedVersionId,
@@ -1288,17 +1289,16 @@ export default function ProjectDevelopmentEngine() {
         },
       }).finally(() => setTreatmentRewritePending(false));
       if (trErr) {
-        toast.error((trErr?.message || trErr));
+        toast.error(isBeatSheet ? ('Beat sheet rewrite failed: ' + (trErr?.message || trErr)) : (trErr?.message || trErr));
       } else {
-        const response = typeof trErr === 'object' && trErr !== null ? trErr : null;
-        const newVersionId = response?.versionId || null;
+        const newVersionId = trData?.versionId || null;
         if (newVersionId) {
           postOperationVersionId.current = newVersionId;
           setSelectedVersionId(newVersionId);
         } else {
           postOperationVersionId.current = '__next__';
         }
-        toast.success('Treatment rewrite complete');
+        toast.success(isBeatSheet ? 'Beat sheet rewrite complete' : 'Treatment rewrite complete');
         qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
         qc.resetQueries({ queryKey: ['dev-v2-versions', selectedDocId], exact: true });
       }
