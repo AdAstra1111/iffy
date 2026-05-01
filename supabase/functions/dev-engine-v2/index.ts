@@ -9224,7 +9224,19 @@ MATERIAL TO REWRITE:\n${fullText}`;
       } catch {}
 
       const notesBlock = approvedNotes && approvedNotes.length > 0
-        ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n: any) { return "- " + (typeof n === "string" ? n : n.note_key || JSON.stringify(n)); }).join("\n")
+        ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n: any) {
+          if (typeof n === "string") return "- " + n;
+          // Prefer resolution_directive (enriched decisions), then description/note fields
+          if (n.resolution_directive) return "- " + n.resolution_directive;
+          if (n.note_key) return "- [" + n.note_key + "] " + (n.description || n.note || JSON.stringify(n));
+          return "- " + (n.description || n.note || JSON.stringify(n));
+        }).join("\n")
+        : "";
+
+      const protectBlock = protectItems && protectItems.length > 0
+        ? "\n\nPROTECT THESE ELEMENTS (do not change unless explicitly authorised):\n" + protectItems.map(function(p: any) {
+          return "- " + (typeof p === "string" ? p : (p.name || p.id || JSON.stringify(p)));
+        }).join("\n")
         : "";
 
       const SECTION_LENGTH_GUIDANCE: Record<string, string> = {
@@ -9264,8 +9276,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
         narrativeBlock,
         constraintPackBlock,
         characterFactsBlock,
-        "FORMAT: This is a TREATMENT. Vivid prose narrative in acts. NO INT./EXT. sluglines. Present-tense prose. Full scenes.",
+        "FORMAT: This is a " + (doc.doc_type || "document").replace(/_/g, " ") + ". " + (isBeatSheetJSON ? "Structured beat sheet. Preserve all structural beat fields. Rewrite description/name/emotional_shift/protagonist_state only." : "Vivid prose narrative in acts. NO INT./EXT. sluglines. Present-tense prose. Full scenes."),
         notesBlock,
+        protectBlock,
+        additionalContext ? ("\n\nCREATIVE DIRECTION:\n" + additionalContext) : "",
         additionalContext ? ("\n\nCREATIVE DIRECTION:\n" + additionalContext) : "",
       ].filter(Boolean);
 
@@ -9285,8 +9299,11 @@ MATERIAL TO REWRITE:\n${fullText}`;
               const _gw = resolveGateway();
               const _apiKey = _gw.apiKey;
               if (!_apiKey) throw new Error("No AI gateway key configured");
-              const userPrompt = "REWRITE these " + beats.length + " beats. Keep ALL beat fields (number, name, page_range, turning_point, act_affiliation, dramatic_function, etc.) exactly as-is. ONLY rewrite description, name, emotional_shift, protagonist_state. Return EXACTLY " + beats.length + " beat objects in a JSON array.\n\n" + beatsJSON;
-              const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase, userPrompt, 0.3, 6000);
+              const userPrompt = (isBeatSheetJSON
+                ? "REWRITE these " + beats.length + " beats. Keep ALL beat fields (number, name, page_range, turning_point, act_affiliation, dramatic_function, etc.) exactly as-is. ONLY rewrite description, name, emotional_shift, protagonist_state. Return EXACTLY " + beats.length + " beat objects in a JSON array.\n\n"
+                : "Rewrite the following section applying the notes/decisions provided. Keep all structural fields exactly as-is. Write vivid prose.\n\n")
+                + "BEATS TO REWRITE:\n" + beatsJSON;
+              const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase + notesBlock + protectBlock, userPrompt, 0.3, 6000);
               const parsed = JSON.parse(extractJSON(rewrittenRaw?.trim() || ""));
               const parsedArray: any[] = Array.isArray(parsed) ? parsed : [];
               if (parsedArray.length === beats.length && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
