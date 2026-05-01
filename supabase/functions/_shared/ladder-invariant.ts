@@ -113,9 +113,10 @@ export function getCanonicalNextStage(params: {
  */
 export function assertFeatureFilmOrder(ladder: string[]): void {
   const stages = [
+    "concept_brief",
+    "character_bible",
     "treatment",
     "story_outline",
-    "character_bible",
     "beat_sheet",
     "feature_script",
     "production_draft",
