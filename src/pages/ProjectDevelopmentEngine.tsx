@@ -2283,7 +2283,7 @@ export default function ProjectDevelopmentEngine() {
                       documentId={selectedDocId}
                       versionId={selectedVersionId}
                       version={selectedVersion as any}
-                      approvedNotes={enrichedNotes}
+                      approvedNotes={beatSheetApprovedNotes}
                       protectItems={protectItems}
                       onApplyAllStart={() => setTreatmentRewritePending(true)}
                       onApplyAllDone={() => setTreatmentRewritePending(false)}
