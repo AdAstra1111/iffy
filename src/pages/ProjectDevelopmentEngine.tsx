@@ -1273,12 +1273,12 @@ export default function ProjectDevelopmentEngine() {
     };
 
     // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
-    if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
+    if ((SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) || selectedDoc?.doc_type === "beat_sheet") && selectedDocId && selectedVersionId) {
       // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
       setTreatmentRewritePending(true);
       const { error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
         body: {
-          action: 'sectioned-rewrite',
+          action: selectedDoc?.doc_type === "beat_sheet" ? 'beat-rewrite' : 'sectioned-rewrite',
           projectId,
           documentId: selectedDocId,
           versionId: selectedVersionId,

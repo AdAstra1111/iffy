@@ -626,10 +626,12 @@ Return ONLY valid JSON:
       "number": 1,
       "name": "string — short evocative title for this beat (1-6 words, use real character names)",
       "page_range": "string",
+      "act_affiliation": "string — Act 1, Act 2A, Act 2B, Act 3, or Act 4 (which act this beat belongs to)",
       "description": "string — full description of what happens in this beat",
       "emotional_shift": "string",
       "protagonist_state": "string",
-      "dramatic_function": "string"
+      "turning_point": "string — is this a structural turning point? If yes, name it (e.g. \"inciting incident\", \"midpoint\", \"climax\", \"second turning point\"). If no, use empty string.",
+      "dramatic_function": "string — short functional label for this beat within its act (e.g. \"inciting incident\", \"break into two\", \"midpoint reversal\", \"all is lost\", \"climax\", \"finale\")"
     }
   ],
   "structural_notes": "string",
@@ -651,11 +653,12 @@ Respond with ONLY JSON.`, 14000);
 
     const beatStructuralLabels = (call2 as any).beats
       ? (call2 as any).beats.map((b: any) => {
+          const act = (b.act_affiliation || "").toLowerCase();
           const fn = (b.dramatic_function || "").toLowerCase();
-          const act = fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
-                      fn.includes('midpoint') ? 'Midpoint' :
-                      fn.includes('climax') || fn.includes('finale') ? 'Finale' : 'Act 2';
-          return `Beat ${b.number} [${act}]`;
+          const actLabel = act || (fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
+                            fn.includes('midpoint') ? 'Midpoint' :
+                            fn.includes('climax') || fn.includes('finale') ? 'Finale' : 'Act 2');
+          return `Beat ${b.number} [${actLabel}]`;
         }).join("\n")
       : "";
     const callStoryOutline = await callLLM(`Given the full story arc (synthSummary) and structural beat labels, produce an abbreviated story sequence.

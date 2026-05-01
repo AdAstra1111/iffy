@@ -36715,6 +36715,87 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "beat-rewrite") {
+      const { projectId, documentId, versionId, beatId, approvedNotes, protectItems } = body;
+      // 1. Load current beat sheet version
+      const { data: version } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", versionId).single();
+      if (!version) throw new Error("Version not found");
+
+      const fullText = version.plaintext || "";
+
+      // 2. 2-pass parse: split by ## Act headers → then ## Beat headers within each act
+      const acts = fullText.split(/##\s+Act.*\n/);
+      const beats: string[] = acts.flatMap(act => act.split(/##\s+Beat.*\n/).slice(1));
+
+      // 3. Find the target beat by beatId (or by position if beatId is a number/index)
+      const targetBeat = isNaN(Number(beatId)) ? beats.find(beat => beat.includes(`## Beat ${beatId}`)) : beats[Number(beatId)];
+      if (!targetBeat) throw new Error("Beat not found");
+
+      // 4. Build upstream context: fetch Story Outline scene content + Character Bible relevant characters
+      const sceneMatch = targetBeat.match(/\*\*Scene:\*\* (.*)\n/);
+      const sceneRef = sceneMatch ? sceneMatch[1] : null;
+      if (!sceneRef) throw new Error("Scene reference not found");
+
+      const { data: storyOutline } = await supabase.from("project_documents")
+        .select("plaintext").eq("title", sceneRef).single();
+      if (!storyOutline) throw new Error("Story Outline scene not found");
+
+      const narrativeBlock = buildNarrativeContextBlock(await resolveNarrativeContext(supabase, projectId, { includeSignals: true }));
+      const constraintPackBlock = await loadConstraintPack(supabase, projectId);
+
+      // 5. Build per-beat rewrite prompt with upstream context + approved notes
+      const systemPrompt = [
+        "You are rewriting a script beat in markdown format.",
+        narrativeBlock,
+        "Scene Content:",
+        storyOutline.plaintext,
+        "\nBeat Content:",
+        targetBeat,
+        "\nNotes:",
+        approvedNotes.map(note => `- ${note}`).join("\n")
+      ].join("\n\n").trim();
+
+      const lengthGuidance = "1-2 paragraphs. Maintain emotional arc and character consistency.";
+      const beatPrompt = [
+        "## Beat Rewrite", targetBeat,
+        "## Constraints:",
+        constraintPackBlock
+      ].join("\n\n");
+
+      // 6. Call LLM to rewrite only that beat
+      const _gw = resolveGateway();
+      const _apiKey = _gw.apiKey;
+      if (!_apiKey) throw new Error("No AI gateway key configured");
+      const rewrittenBeat = await callAI(_apiKey, "sonnet", systemPrompt, beatPrompt, 0.3, 4000);
+
+      // 7. Replace only that beat in the document, preserve all others
+      beats[Number(beatId)] = rewrittenBeat.trim();
+      const updatedDocument = acts.map((act, index) => index > 0 ? `## Act ${index}\n` + beats.splice(0, act.split(/##\s+Beat.*\n/).length) : act).join("");
+
+      const newVersionNumber = (version.version_number || 1) + 1;
+      const { data: newVersion } = await supabase.from("project_document_versions").upsert({
+        document_id: documentId,
+        version_number: newVersionNumber,
+        plaintext: updatedDocument,
+        is_current: false,
+        created_by: body.user?.id || null,
+        meta_json: { run_type: "BEAT_REWRITE", updated_beat: targetBeat }
+      }, { onConflict: "document_id,version_number" }).select();
+      if (!newVersion) throw new Error("Failed to create new document version");
+
+      // 8. Return new versionId + act, beat_number, story_outline_scene_ref
+      return new Response(JSON.stringify({
+        success: true,
+        versionId: newVersion.id,
+        metadata: {
+          act_number: acts.findIndex(act => act.includes(targetBeat)) + 1,
+          beat_number: Number(beatId),
+          story_outline_scene_ref: sceneRef
+        }
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     throw new Error(`Unknown action: ${action}`);
   } catch (err: any) {
     console.error("dev-engine-v2 error:", err);
