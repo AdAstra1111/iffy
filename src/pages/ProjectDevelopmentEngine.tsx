@@ -11,6 +11,7 @@ import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
 import { SceneRewritePanel } from '@/components/devengine/SceneRewritePanel';
+import BeatRewritePanel from '@/components/devengine/BeatRewritePanel';
 import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
 import { DocSetManager } from '@/components/notes/DocSetManager';
 import { ProcessProgressBar } from '@/components/devengine/ProcessProgressBar';
@@ -2256,8 +2257,23 @@ export default function ProjectDevelopmentEngine() {
                       </div>
                     )
                   )}
-                  {/* Scene-level rewrite panel — fires for script types + beat_sheet when scene scope is set */}
-                  {sceneRewrite.total > 0 && selectedDocId && selectedVersionId && (isScriptDocType(selectedDoc?.doc_type) || selectedDoc?.doc_type === 'beat_sheet') && (
+                  {/* Beat-level rewrite panel — beats are individual rewriteable units */}
+                  {selectedDoc?.doc_type === 'beat_sheet' && selectedDocId && selectedVersionId && (
+                    <BeatRewritePanel
+                      projectId={projectId!}
+                      documentId={selectedDocId}
+                      versionId={selectedVersionId}
+                      version={selectedVersion as any}
+                      approvedNotes={[]}
+                      protectItems={[]}
+                      onComplete={(newVersionId) => {
+                        postOperationVersionId.current = newVersionId;
+                        setSelectedVersionId(newVersionId);
+                      }}
+                    />
+                  )}
+                  {/* Scene-level rewrite panel — fires for script types only */}
+                  {sceneRewrite.total > 0 && selectedDocId && selectedVersionId && isScriptDocType(selectedDoc?.doc_type) && (
                     <SceneRewritePanel
                       projectId={projectId!}
                       documentId={selectedDocId}

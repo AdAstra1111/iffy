@@ -36715,6 +36715,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    // DEPLOY: beat-rewrite
     if (action === "beat-rewrite") {
       const { projectId, documentId, versionId, beatId, approvedNotes, protectItems } = body;
       // 1. Load current beat sheet version
