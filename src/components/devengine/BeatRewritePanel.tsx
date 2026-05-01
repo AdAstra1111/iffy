@@ -43,6 +43,29 @@ interface BeatRewritePanelProps {
 
 // ── Parser ───────────────────────────────────────────────────────────────────
 
+// ── Beat content parser ──────────────────────────────────────────────────────
+function parseBeatContent(
+  meta: { id: string; name: string },
+  lines: string[],
+  _format?: string
+): Beat {
+  const raw = lines.join("\n").trim();
+  return {
+    id: meta.id,
+    name: meta.name,
+    act: "ACT 1",
+    turningPoint: false,
+    turningPointLabel: "No",
+    scene: "",
+    description: raw,
+    structuralPurpose: "",
+    protagonistState: "",
+    emotionalShift: "",
+    raw,
+  };
+}
+
+
 function parseBeatSheet(plaintext: string): Act[] {
   // ── JSON MODE: detect and parse { "beats": [...] } format ──
   try {
