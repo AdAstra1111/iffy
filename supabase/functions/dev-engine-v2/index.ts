@@ -8530,6 +8530,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
                 const rel = ant.relationship ||
                   (Array.isArray(ant.relationships) && ant.relationships.find((r: any) => r.type === "enemy")?.type) || "enemy";
                 cfParts.push(`Antagonist: ${ant.name} (relationship: ${rel})`);
+                cfParts.push(`${ant.name} is an ENEMY of the protagonist — ${ant.want || ant.fatal_flaw || "antagonist"}`);
               }
               const formerAllies = cfCanon.characters.filter((c: any) =>
                 c && (c.relationship === "former_ally" || c.relationship === "frenemy" ||
@@ -9416,6 +9417,30 @@ MATERIAL TO REWRITE:\n${fullText}`;
         user_id: effUserId, run_type: runType,
         output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       });
+
+      // FIX 1: Update latest_version_id after TREATMENT_REWRITE
+      // Root cause: latest_version_id was never updated post-write → stale pointer → regeneration loop.
+      await supabase.from("project_documents")
+        .update({ latest_version_id: newVersion.id })
+        .eq("id", documentId);
+
+
+      // FIX 2: Mark approved notes resolved after TREATMENT_REWRITE
+      // Root cause: notes inserted without resolution → next cycle re-raises same notes → no convergence.
+      if (approvedNotes && approvedNotes.length > 0) {
+        const approvedNoteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+        if (approvedNoteKeys.length > 0) {
+          try {
+            await supabase.from("development_notes")
+              .update({ resolved: true, resolved_in_version: newVersion.id })
+              .eq("document_id", documentId)
+              .eq("resolved", false)
+              .in("note_key", approvedNoteKeys);
+          } catch (err: any) {
+            console.warn("[treatment-rewrite] note resolution failed:", err?.message);
+          }
+        }
+      }
 
       return new Response(JSON.stringify({
         success: true, versionId: newVersion.id,
