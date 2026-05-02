@@ -40,10 +40,12 @@ const LAYER_INFO = {
   },
   music: {
     label: 'Music',
-    description: 'Mood-reactive score — programmatic or AIVA-generated',
+    description: 'Coming Soon — AIVA API pending. Silence placeholder in v1.',
     icon: '🎵',
-    requires: 'AIVA API key (pending)',
+    requires: 'AIVA API — commercial negotiation required',
     recommended: false,
+    disabled: true,
+    disabledReason: 'Coming Soon — AIVA API pending',
   },
   mix: {
     label: 'Mix & Master',
@@ -173,22 +175,45 @@ export default function AudioExportPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {(Object.entries(LAYER_INFO) as [keyof typeof LAYER_INFO, typeof LAYER_INFO[keyof typeof LAYER_INFO]][]).map(([key, info]) => (
-                <div key={key} className="flex items-start gap-4 p-4 rounded-lg border border-border/50 bg-card hover:bg-muted/30 transition-colors">
+              {(Object.entries(LAYER_INFO) as [keyof typeof LAYER_INFO, typeof LAYER_INFO[keyof typeof LAYER_INFO]][]).map(([key, info]) => {
+                const isDisabled = !!(info as any).disabled;
+                return (
+                <div
+                  key={key}
+                  className={cn(
+                    'flex items-start gap-4 p-4 rounded-lg border bg-card transition-colors',
+                    isDisabled
+                      ? 'border-border/30 bg-muted/20 opacity-60'
+                      : 'border-border/50 hover:bg-muted/30'
+                  )}
+                >
                   <Checkbox
                     id={`layer-${key}`}
                     checked={layers[key]}
-                    onCheckedChange={(checked) => setLayers(prev => ({ ...prev, [key]: !!checked }))}
-                    className="mt-1"
+                    onCheckedChange={(checked) => {
+                      if (isDisabled) return;
+                      setLayers(prev => ({ ...prev, [key]: !!checked }));
+                    }}
+                    disabled={isDisabled}
+                    className={cn('mt-1', isDisabled && 'cursor-not-allowed')}
+                    title={isDisabled ? (info as any).disabledReason : undefined}
                   />
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-lg">{info.icon}</span>
-                      <Label htmlFor={`layer-${key}`} className="font-semibold cursor-pointer">
+                      <Label
+                        htmlFor={`layer-${key}`}
+                        className={cn('font-semibold', isDisabled ? 'cursor-default' : 'cursor-pointer')}
+                      >
                         {info.label}
                       </Label>
-                      {info.recommended && (
+                      {info.recommended && !isDisabled && (
                         <Badge variant="outline" className="text-xs text-muted-foreground">recommended</Badge>
+                      )}
+                      {isDisabled && (
+                        <Badge variant="outline" className="text-xs text-amber-400 border-amber-400/30">
+                          {(info as any).disabledReason}
+                        </Badge>
                       )}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">{info.description}</p>
@@ -198,7 +223,8 @@ export default function AudioExportPage() {
                     </p>
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               {enabledLayers.length === 0 && (
                 <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm">

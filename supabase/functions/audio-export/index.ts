@@ -99,17 +99,17 @@ const QUALITY_TIERS = {
 } as const;
 
 // ── Layer availability check ─────────────────────────────────────────────────
+// ── Layer availability check ─────────────────────────────────────────────────
+// Music layer (Layer 3 — AIVA) is SILOED as of 2026-05-02 per Morpheus directive.
+// Do NOT enable music even if AIVA_API_KEY is set — commercial agreement required.
 function layerAvailable(layer: keyof AudioJobOptions["layers"], options: AudioJobOptions): { available: boolean; reason?: string } {
-  if (!options.layers[layer]) return { available: false, reason: "disabled by user" };
-  
   switch (layer) {
     case "dialogue":
       return { available: true }; // ElevenLabs key confirmed
     case "sound":
       return { available: true }; // Freesound (or placeholder without key)
     case "music":
-      if (!AIVA_API_KEY) return { available: false, reason: "AIVA_API_KEY not set" };
-      return { available: true };
+      return { available: false, reason: "AIVA API deferred — commercial negotiation required. Silenced in v1." };
     case "mix":
       return { available: true }; // ffmpeg-based
     default:
@@ -424,15 +424,9 @@ async function processJob(jobId: string, options: AudioJobOptions, layerChecks: 
       }
     }
     
-    // ── Layer 3: Music ──
-    if (layerChecks.music.available) {
-      step++;
-      await updateJob(jobId, { progress_pct: progressFor(step), message: "Generating music..." });
-      // Music: AIVA or programmatic (blocked on key in draft mode)
-      if (AIVA_API_KEY) {
-        // AIVA generation would go here
-      }
-    }
+    // ── Layer 3: Music — SILOED per Morpheus 2026-05-02 ──
+    // Music layer is deferred until AIVA commercial agreement is negotiated.
+    // No music generation or placeholder in v1.
     
     // ── Layer 4: Mix ──
     if (layerChecks.mix.available) {
