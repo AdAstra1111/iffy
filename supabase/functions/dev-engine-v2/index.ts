@@ -7552,10 +7552,11 @@ MATERIAL:\n${version.plaintext}`;
     if (action === "rewrite") {
       const { projectId, documentId, versionId, approvedNotes, protectItems, targetDocType, deliverableType, developmentBehavior, format: reqFormat, selectedOptions, globalDirections, userNotes, additionalContext, rewriteNotes } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
-      const effectiveDocType = deliverableType || targetDocType;
+      let effectiveDocType = deliverableType || targetDocType;
 
       // ── STAGE IDENTITY GATE — block rewrite on malformed stage artifacts ──
       {
+        // Re-read doc type (deliverableType may differ from targetDocType in some paths)
         effectiveDocType = deliverableType || targetDocType;
         if (effectiveDocType && ["idea", "concept_brief"].includes(effectiveDocType)) {
           const { data: rwVer } = await supabase.from("project_document_versions")
