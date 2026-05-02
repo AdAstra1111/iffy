@@ -7925,8 +7925,11 @@ MATERIAL:\n${version.plaintext}`;
             c && (c.role === "protagonist" || c.role === "main_protagonist" || c.role === "primary_protagonist")
           );
           if (cfProtag?.name) cfParts.push(`Protagonist: ${cfProtag.name}`);
+          // Add protagonist motivation
+          if (cfProtag?.want) cfParts.push(`${cfProtag.name} WANTS: ${cfProtag.want}`);
+          if (cfProtag?.need) cfParts.push(`${cfProtag.name} NEEDS: ${cfProtag.need}`);
         }
-        // Antagonists + relationships — use role + explicit relationship fields
+        // Antagonists + explicit directional relationships (not just role labels)
         if (Array.isArray(cfCanon.characters) && cfCanon.characters.length > 0) {
           const antagonists = cfCanon.characters.filter((c: any) =>
             c && (c.role === "antagonist" || c.role === "main_antagonist" || c.role === "villain" ||
@@ -7935,9 +7938,13 @@ MATERIAL:\n${version.plaintext}`;
           );
           for (const ant of antagonists) {
             const rel = ant.relationship || (Array.isArray(ant.relationships) && ant.relationships.find((r: any) => r.type === "enemy")?.type) || "enemy";
+            // Role label — insufficient alone, add directional relationship
             cfParts.push(`Antagonist: ${ant.name} (relationship: ${rel})`);
+            // Directional relationship with specific motivation
+            cfParts.push(`${ant.name} is an ENEMY of the protagonist — ${ant.want || ant.fatal_flaw || "antagonist"}`);
+            if (ant.need) cfParts.push(`${ant.name} NEEDS: ${ant.need}`);
           }
-          // Former allies / frenemies
+          // Former allies / frenemies — explicit about direction
           const formerAllies = cfCanon.characters.filter((c: any) =>
             c && (c.relationship === "former_ally" || c.relationship === "frenemy" ||
               (Array.isArray(c.relationships) && c.relationships.some((r: any) => r.type === "former_ally")))
@@ -7945,6 +7952,7 @@ MATERIAL:\n${version.plaintext}`;
           for (const fa of formerAllies) {
             const rel = fa.relationship || "former_ally";
             cfParts.push(`Former Ally: ${fa.name} (relationship: ${rel})`);
+            if (fa.want) cfParts.push(`${fa.name} WANTS: ${fa.want}`);
           }
         }
         if (cfParts.length > 0) {
