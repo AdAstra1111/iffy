@@ -7589,11 +7589,12 @@ MATERIAL:\n${version.plaintext}`;
       if (existingBlockers.length > 0 && (!approvedNotes || approvedNotes.length === 0) && (!selectedOptions || selectedOptions.length === 0)) {
         const uncoveredBlockers = existingBlockers.map((b: any) => b.id || b.note_key);
         return new Response(JSON.stringify({
-          error: "Blockers require decisions before rewrite",
+          error: "unresolved_blockers",
+          message: `This rewrite has ${existingBlockers.length} unresolved blocking issue(s) that must be addressed before rewriting. Please resolve or override the blockers first. Uncovered: ${uncoveredBlockers.join(', ')}`,
           uncovered_blockers: uncoveredBlockers,
           blocker_count: existingBlockers.length,
         }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
