@@ -12450,6 +12450,27 @@ Return ONLY valid JSON:
         schema_version: SCHEMA_VERSION,
       }).select().single();
 
+      // FIX: Update latest_version_id after apply_bundle_fix
+      if (newVersion?.id) {
+        await supabase.from("project_documents")
+          .update({ latest_version_id: newVersion.id })
+          .eq("id", documentId);
+      }
+
+      // FIX: Mark approved notes resolved after apply_bundle_fix
+      if (note_fingerprints && note_fingerprints.length > 0) {
+        try {
+          await supabase.from("development_notes")
+            .update({ resolved: true, resolved_in_version: newVersion.id })
+            .eq("project_id", projectId)
+            .eq("document_id", documentId)
+            .eq("resolved", false)
+            .in("note_key", note_fingerprints);
+        } catch (err: any) {
+          console.warn("[apply_bundle_fix] note resolution failed:", err?.message);
+        }
+      }
+
       return new Response(JSON.stringify({ run, newVersion, rewrite: { changes_summary: parsed.changes_summary } }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -36967,6 +36988,29 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       if (!newVersion) throw new Error("Failed to create new document version");
 
       // 8. Return new versionId + metadata
+      // FIX: Update latest_version_id after beat-rewrite
+      if (newVersion?.id) {
+        await supabase.from("project_documents")
+          .update({ latest_version_id: newVersion.id })
+          .eq("id", documentId);
+      }
+
+      // FIX: Mark approved notes resolved after beat-rewrite
+      if (approvedNotes && approvedNotes.length > 0) {
+        const noteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+        if (noteKeys.length > 0) {
+          try {
+            await supabase.from("development_notes")
+              .update({ resolved: true, resolved_in_version: newVersion.id })
+              .eq("document_id", documentId)
+              .eq("resolved", false)
+              .in("note_key", noteKeys);
+          } catch (err: any) {
+            console.warn("[beat-rewrite] note resolution failed:", err?.message);
+          }
+        }
+      }
+
       return new Response(JSON.stringify({
         success: true,
         versionId: newVersion.id,
