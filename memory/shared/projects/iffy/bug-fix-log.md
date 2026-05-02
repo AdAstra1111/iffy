@@ -1,5 +1,25 @@
 # IFFY Engineering Change Log
 
+## 2026-05-02 — Audio Export Layer Built (Trinity)
+
+- **Timestamp:** 2026-05-02 21:30 BST
+- **Type:** FEATURE_BUILD
+- **Severity:** HIGH
+- **Affected:** New service at `~/code/iffy-audio/` — standalone Audio Export Layer
+- **What:** Built 4-layer audio pipeline scaffolding (Dialogue/ElevenLabs, Sound/Freesound, Music/AIVA-blocked, Mix/ffmpeg)
+- **Details:**
+  - Layer 1 (ElevenLabs): ✅ Built — voice consistency engine for 60-episode series, confirmed key: `sk_1bd650b...`
+  - Layer 2 (Freesound): ✅ Built — scene classification engine + crossfade presets
+  - Layer 3 (AIVA): ⚠️ BLOCKED — API key pending from Sebastian
+  - Layer 4 (ffmpeg): ✅ Built — M4B assembly with chapter markers
+  - Project discovery: ✅ Project-agnostic — auto-selects first project with beat_sheet + character_bible
+  - Voice consistency: 14-episode cache blocks, 3-strategy approach (find/clone/map)
+- **Git:** New repo `~/code/iffy-audio/` — not deployed (standalone service)
+- **Deploy Badge:** N/A — standalone service, not IFFY main app
+- **Lessons Learned:** npm install failed on Mac mini (ECONNRESET). Can symlink @supabase/supabase-js from IFFY project. Pre-copy node_modules from IFFY if network unavailable.
+
+---
+
 ## 2026-05-02 — Two-Fix Deploy (Trinity)
 
 **Error 1: "Assignment to constant variable" (CONST REASSIGNMENT — ROOT CAUSE FOUND)**
