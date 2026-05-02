@@ -7,7 +7,7 @@ import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'reac
 import {
   LayoutGrid, FileText, BookOpen, Image, Film, Briefcase, Sparkles, Users, UserPlus,
   PanelRightOpen, PanelRightClose, ArrowLeft, Loader2,
-  CheckCircle2, AlertTriangle, ArrowRight, X, ImagePlus, BookOpenCheck,
+  CheckCircle2, AlertTriangle, ArrowRight, X, ImagePlus, BookOpenCheck, Volume2,
 } from 'lucide-react';
 import { ProcessingCenterButton } from '@/components/system/ProcessingCenter';
 import iffyLogo from '@/assets/iffy-logo-v3.png';
@@ -56,6 +56,7 @@ function buildRailLinks(projectId: string): RailLink[] {
     { icon: Image,      label: 'Visual Dev',  to: `${p}/visual-dev`,  modes: ['produce'] },
     { icon: Film,       label: 'Trailer',     to: `${p}/trailer`,     modes: ['produce'] },
     { icon: Sparkles,   label: 'AI Content',  to: `${p}/ai-content`,  modes: ['produce'] },
+    { icon: Volume2,   label: 'Audio Export', to: `${p}/audio-export`, modes: ['produce'] },
     { icon: Users,      label: 'Casting',     to: `${p}/casting`,     modes: ['produce'] },
     { icon: UserPlus,   label: 'Cast Studio', to: `${p}/casting-studio`, modes: ['produce'] },
     { icon: ImagePlus,     label: 'Poster',      to: `${p}/poster`,      modes: 'all' },
