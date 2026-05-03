@@ -50,6 +50,9 @@ import { buildNDGProjectGraph, summariseNDGGraph, type NDGInputData, type Sectio
 import { classifySceneRoles, type SceneForClassification } from "../_shared/sceneRoleClassifier.ts";
 import { classifySceneGraphState } from "../_shared/sceneGraphClassifier.ts";
 import type { SpineAxis } from "../_shared/narrativeSpine.ts";
+import { buildActBlueprint, renderActBlueprintBlock, buildPrecedingContext } from "../_shared/actBlueprintSynthesizer.ts";
+import type { ArcStateDeltas } from "../_shared/actBlueprintSynthesizer.ts";
+import { buildArcStateDeltaSystemInstruction, parseActRewriteResponse } from "../_shared/arcStateDeltaGenerator.ts";
 
 // ── Constraint Pack: unified loader for all generation prompts ──
 const CONSTRAINT_PACK_BUDGET = 6000;
@@ -9250,35 +9253,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }).join("\n")
         : "";
 
-      const SECTION_LENGTH_GUIDANCE: Record<string, string> = {
-        preamble: "Keep very short (1-3 sentences). LOGLINE should be one active sentence with protagonist, conflict, and concrete stakes.",
-        logline: "Keep very short (1 sentence). Active voice. Protagonist + specific conflict + concrete stakes.",
-        world: "1-2 paragraphs. Establish the world — time, place, social/cultural context. Not backstory.",
-        act_1: "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident. End on the moment of commitment.",
-        act_2a: "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles.",
-        act_2b: "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment.",
-        act_3: "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image.",
-        characters: "1-2 paragraphs per character. Who they are, what they want, what they're afraid of, how the story changes them.",
-        tone: "1 paragraph. Tonal reference points, visual approach, pacing. How the story looks and feels.",
-        why_now: "1 paragraph. Cultural/emotional resonance. Why this story matters now.",
-        other: "Keep concise. Write vivid prose. No INT./EXT. sluglines.",
-      };
-      const getLengthGuidance = function(sk: string, label: string): string {
-        const l = label.toLowerCase();
-        if (l.includes("act 1") || l.includes("act one")) return SECTION_LENGTH_GUIDANCE["act_1"];
-        if (l.includes("act 2a") || l.includes("act two a")) return SECTION_LENGTH_GUIDANCE["act_2a"];
-        if (l.includes("act 2b") || l.includes("act two b")) return SECTION_LENGTH_GUIDANCE["act_2b"];
-        if (l.includes("act 2")) return SECTION_LENGTH_GUIDANCE["act_2a"];
-        if (l.includes("act 3") || l.includes("act three")) return SECTION_LENGTH_GUIDANCE["act_3"];
-        if (sk === "logline") return SECTION_LENGTH_GUIDANCE["logline"];
-        if (sk === "world") return SECTION_LENGTH_GUIDANCE["world"];
-        if (sk === "characters") return SECTION_LENGTH_GUIDANCE["characters"];
-        if (sk === "tone") return SECTION_LENGTH_GUIDANCE["tone"];
-        if (sk === "why_now") return SECTION_LENGTH_GUIDANCE["why_now"];
-        if (sk === "preamble") return SECTION_LENGTH_GUIDANCE["preamble"];
-        return SECTION_LENGTH_GUIDANCE[sk] || SECTION_LENGTH_GUIDANCE["other"];
-      };
+      // ── TREATMENT DOC TYPE: per-act pipeline (non-beat-sheet) ──
+      const isTreatmentDoc = doc.doc_type === "treatment" || doc.doc_type === "long_treatment";
 
+      // ── BASE SYSTEM PROMPT PARTS (shared by both paths) ──
       const systemPromptParts = [
         "You are a professional development document writer.",
         "Generate the " + (doc.doc_type || "treatment").replace(/_/g, " ") + " for: " + (project.title || "this project") + ".",
@@ -9291,18 +9269,15 @@ MATERIAL TO REWRITE:\n${fullText}`;
         notesBlock,
         protectBlock,
         additionalContext ? ("\n\nCREATIVE DIRECTION:\n" + additionalContext) : "",
-        additionalContext ? ("\n\nCREATIVE DIRECTION:\n" + additionalContext) : "",
       ].filter(Boolean);
-
       const systemPromptBase = systemPromptParts.join("\n\n");
 
-      const rewrittenSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[] = [];
+      // ── BEAT SHEET JSON PATH ──
+      if (isBeatSheetJSON) {
+        const rewrittenSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[] = [];
 
-      for (let i = 0; i < flatSections.length; i++) {
-        const section = flatSections[i];
-
-        // ── BEAT SHEET JSON PATH: rewrite beats as JSON, skip prose loop ──
-        if (isBeatSheetJSON) {
+        for (let i = 0; i < flatSections.length; i++) {
+          const section = flatSections[i];
           const beats = (section as any).beats || [];
           if (beats.length > 0) {
             const beatsJSON = JSON.stringify(beats, null, 2);
@@ -9310,11 +9285,8 @@ MATERIAL TO REWRITE:\n${fullText}`;
               const _gw = resolveGateway();
               const _apiKey = _gw.apiKey;
               if (!_apiKey) throw new Error("No AI gateway key configured");
-              const userPrompt = (isBeatSheetJSON
-                ? "REWRITE these " + beats.length + " beats. Keep ALL beat fields (number, name, page_range, turning_point, act_affiliation, dramatic_function, etc.) exactly as-is. ONLY rewrite description, name, emotional_shift, protagonist_state. Return EXACTLY " + beats.length + " beat objects in a JSON array.\n\n"
-                : "Rewrite the following section applying the notes/decisions provided. Keep all structural fields exactly as-is. Write vivid prose.\n\n")
-                + "BEATS TO REWRITE:\n" + beatsJSON;
-              const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase + notesBlock + protectBlock, userPrompt, 0.3, 6000);
+              const bsUserPrompt = "REWRITE these " + beats.length + " beats. Keep ALL beat fields (number, name, page_range, turning_point, act_affiliation, dramatic_function, etc.) exactly as-is. ONLY rewrite description, name, emotional_shift, protagonist_state. Return EXACTLY " + beats.length + " beat objects in a JSON array.\n\nBEATS TO REWRITE:\n" + beatsJSON;
+              const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase + notesBlock + protectBlock, bsUserPrompt, 0.3, 6000);
               const parsed = JSON.parse(extractJSON(rewrittenRaw?.trim() || ""));
               const parsedArray: any[] = Array.isArray(parsed) ? parsed : [];
               if (parsedArray.length === beats.length && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
@@ -9332,17 +9304,279 @@ MATERIAL TO REWRITE:\n${fullText}`;
               }
             } catch (err: any) {
               console.warn("[beat-sheet-rewrite] section " + (i+1) + " failed: " + String(err?.message || err) + ", keeping original beats");
-              rewrittenSections.push({ header: section.header, content: beatsJSON, label: section.label, sk: section.sk, beats });
+              const beatsJSON2 = JSON.stringify(beats, null, 2);
+              rewrittenSections.push({ header: section.header, content: beatsJSON2, label: section.label, sk: section.sk, beats });
             }
           } else {
             rewrittenSections.push(section);
           }
-          continue; // skip prose rewrite loop for beat sheet JSON
         }
 
-        // ── STANDARD MARKDOWN PROSE REWRITE LOOP ──
-        const lengthGuidance = getLengthGuidance(section.sk, section.label);
+        const allRewrittenBeats: any[] = [];
+        for (const s of rewrittenSections) { if (s.beats && Array.isArray(s.beats)) allRewrittenBeats.push(...s.beats); }
+        allRewrittenBeats.sort((a, b) => (a.number || 0) - (b.number || 0));
+        const outputBeatSheet = { title: beatSheetJSON.title || project.title || "Beat Sheet", total_beats: allRewrittenBeats.length, beats: allRewrittenBeats };
+        const bsAssembledText = JSON.stringify(outputBeatSheet, null, 2);
+        console.log("[beat-sheet] reassembled " + allRewrittenBeats.length + " beats from " + rewrittenSections.length + " sections");
 
+        const bsExtraMeta = { total_beats: (JSON.parse(bsAssembledText)).beats?.length || 0 };
+        const bsUpdateResult = await supabase.from("project_document_versions").update({
+          plaintext: bsAssembledText,
+          meta_json: { run_type: "BEAT_SHEET_REWRITE", sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0, ...bsExtraMeta },
+        }).eq("id", newVersion.id);
+        if (bsUpdateResult.error) console.error("[beat-sheet-rewrite] UPDATE FAILED:", bsUpdateResult.error);
+
+        await supabase.from("development_runs").insert({
+          project_id: projectId, document_id: documentId, version_id: newVersion?.id,
+          user_id: effUserId, run_type: "BEAT_SHEET_REWRITE",
+          output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
+        });
+        await supabase.from("project_documents").update({ latest_version_id: newVersion.id }).eq("id", documentId);
+
+        if (approvedNotes && approvedNotes.length > 0) {
+          const bsNoteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+          if (bsNoteKeys.length > 0) {
+            try {
+              await supabase.from("development_notes").update({ resolved: true, resolved_in_version: newVersion.id })
+                .eq("document_id", documentId).eq("resolved", false).in("note_key", bsNoteKeys);
+            } catch (err: any) { console.warn("[beat-sheet-rewrite] note resolution failed:", err?.message); }
+          }
+        }
+
+        return new Response(JSON.stringify({
+          success: true, versionId: newVersion.id,
+          totalSections: rewrittenSections.length,
+          totalBeats: (JSON.parse(bsAssembledText)).beats?.length || 0,
+          sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ── TREATMENT PER-ACT PIPELINE (treatment / long_treatment doc types) ──
+      if (isTreatmentDoc) {
+        // Load canon_json for ActBlueprint canon constraints
+        let canonJson: Record<string, any> | null = null;
+        try {
+          const { data: canonRow } = await supabase.from("project_canon")
+            .select("canon_json").eq("project_id", projectId).maybeSingle();
+          canonJson = canonRow?.canon_json || null;
+        } catch (_e) { /* non-fatal */ }
+
+        // 4 canonical act keys in order
+        const ACT_SEQUENCE = [
+          { actKey: "act_1_setup",            actNumber: 1 },
+          { actKey: "act_2a_rising_action",   actNumber: 2 },
+          { actKey: "act_2b_complications",   actNumber: 3 },
+          { actKey: "act_3_climax_resolution", actNumber: 4 },
+        ];
+
+        // Reset treatment_acts rows for this treatment_id (fresh rewrite pass)
+        await supabase.from("treatment_acts").delete().eq("treatment_id", documentId);
+        // Insert 4 pending rows
+        const pendingRows = ACT_SEQUENCE.map(({ actKey, actNumber }) => ({
+          treatment_id: documentId,
+          act_number: actNumber,
+          act_key: actKey,
+          label: findSectionDef("treatment", actKey)?.label ?? actKey,
+          status: "pending" as const,
+        }));
+        await supabase.from("treatment_acts").insert(pendingRows);
+        console.log("[treatment-per-act] inserted 4 pending treatment_acts rows for treatment_id=" + documentId);
+
+        // Arc-state delta accumulator — passed forward act-by-act
+        type PriorActResult = {
+          actKey: string;
+          actNumber: number;
+          label: string;
+          content: string;
+          arcStateDeltas: ArcStateDeltas | null;
+        };
+        const priorActResults: PriorActResult[] = [];
+
+        const _gwPerAct = resolveGateway();
+        const perActApiKey = _gwPerAct.apiKey;
+        if (!perActApiKey) throw new Error("No AI gateway key configured");
+
+        for (const { actKey, actNumber } of ACT_SEQUENCE) {
+          console.log("[treatment-per-act] starting act=" + actKey + " (" + actNumber + "/4)");
+
+          // Mark row as rewriting
+          await supabase.from("treatment_acts")
+            .update({ status: "rewriting" })
+            .eq("treatment_id", documentId).eq("act_key", actKey);
+
+          // Build act blueprint (deterministic — no LLM)
+          const blueprint = buildActBlueprint(
+            actKey, actNumber, approvedNotes || [], canonJson, priorActResults,
+          );
+
+          // Persist blueprint to treatment_acts row (visible in UI before rewrite begins)
+          await supabase.from("treatment_acts").update({
+            act_blueprint: {
+              actKey: blueprint.actKey,
+              actNumber: blueprint.actNumber,
+              label: blueprint.label,
+              functionDescription: blueprint.functionDescription,
+              canonConstraints: blueprint.canonConstraints,
+              targetingNotes: blueprint.targetingNotes,
+              hasPrecedingContext: blueprint.precedingContext !== null,
+            },
+          }).eq("treatment_id", documentId).eq("act_key", actKey);
+
+          // Build per-act system prompt:
+          //   base + act blueprint block + arc-state delta instruction
+          const blueprintBlock = renderActBlueprintBlock(blueprint);
+          const arcDeltaInstruction = buildArcStateDeltaSystemInstruction();
+          const actSystemPrompt = [
+            systemPromptBase,
+            blueprintBlock,
+            arcDeltaInstruction,
+          ].join("\n\n");
+
+          // Find existing content for this act from current version (if any) to use as EXISTING text
+          const existingActContent = flatSections.find((s: any) => {
+            const sk = (s.sk || "").toLowerCase();
+            const lbl = (s.label || "").toLowerCase();
+            if (actKey === "act_1_setup") return sk.includes("act_1") || lbl.includes("act 1") || lbl.includes("setup");
+            if (actKey === "act_2a_rising_action") return sk.includes("act_2a") || lbl.includes("act 2a") || lbl.includes("rising");
+            if (actKey === "act_2b_complications") return sk.includes("act_2b") || lbl.includes("act 2b") || lbl.includes("complication");
+            if (actKey === "act_3_climax_resolution") return sk.includes("act_3") || lbl.includes("act 3") || lbl.includes("climax") || lbl.includes("resolution");
+            return false;
+          });
+
+          // Build user prompt for this act
+          const actLabel = blueprint.label;
+          const actFunctionDesc = blueprint.functionDescription;
+          let actUserPrompt = "REWRITE THIS ACT: " + actLabel.toUpperCase() + "\n";
+          actUserPrompt += "FUNCTION: " + actFunctionDesc + "\n\n";
+          if (existingActContent) {
+            actUserPrompt += "EXISTING CONTENT TO REWRITE:\n" + (existingActContent.header ? existingActContent.header + "\n" : "") + existingActContent.content + "\n\n";
+          }
+          actUserPrompt += "Write vivid present-tense prose. Full scenes, atmosphere, character interiority. Start with a ## section header: ## " + actLabel + ". No INT./EXT. sluglines.\n";
+          actUserPrompt += "IMPORTANT: After the act prose, output the arc-state delta JSON as instructed in the system prompt.";
+
+          try {
+            const rawResponse = await callAI(perActApiKey, BALANCED_MODEL, actSystemPrompt, actUserPrompt, 0.35, 6000);
+            const parsed = parseActRewriteResponse(rawResponse || "");
+
+            const actContent = parsed.actContent || ("## " + actLabel + "\n\n[Generation failed — original content preserved]");
+            const arcDeltas = parsed.arcStateDeltas;
+
+            console.log("[treatment-per-act] act=" + actKey + " chars=" + actContent.length + " delta_ok=" + parsed.deltaParseSuccess);
+            if (!parsed.deltaParseSuccess) {
+              console.warn("[treatment-per-act] arc-state delta parse failed for " + actKey + ": " + parsed.deltaParseError);
+            }
+
+            // Write to treatment_acts
+            await supabase.from("treatment_acts").update({
+              content: actContent,
+              arc_state_deltas: arcDeltas ? (arcDeltas as unknown as Record<string, unknown>) : null,
+              status: "done",
+              revised_at: new Date().toISOString(),
+              revised_by: effUserId,
+            }).eq("treatment_id", documentId).eq("act_key", actKey);
+
+            // Accumulate for next act's preceding context
+            priorActResults.push({
+              actKey,
+              actNumber,
+              label: actLabel,
+              content: actContent,
+              arcStateDeltas: arcDeltas,
+            });
+          } catch (actErr: any) {
+            console.error("[treatment-per-act] act=" + actKey + " FAILED: " + String(actErr?.message || actErr));
+            await supabase.from("treatment_acts").update({
+              status: "failed",
+              error_message: String(actErr?.message || actErr).slice(0, 500),
+            }).eq("treatment_id", documentId).eq("act_key", actKey);
+
+            // Use existing content as fallback so assembly can proceed
+            const fallbackContent = existingActContent
+              ? ((existingActContent.header ? existingActContent.header + "\n\n" : "") + existingActContent.content)
+              : ("## " + actKey + "\n\n[Act rewrite failed]");
+            priorActResults.push({
+              actKey, actNumber, label: actKey, content: fallbackContent, arcStateDeltas: null,
+            });
+          }
+        }
+
+        // Assemble full treatment from per-act results
+        const treatmentAssembledText = priorActResults.map(a => a.content).join("\n\n");
+        console.log("[treatment-per-act] assembled treatment: " + treatmentAssembledText.length + " chars from " + priorActResults.length + " acts");
+
+        const taUpdateResult = await supabase.from("project_document_versions").update({
+          plaintext: treatmentAssembledText,
+          meta_json: {
+            run_type: "TREATMENT_REWRITE",
+            pipeline: "per_act_v1",
+            acts_count: priorActResults.length,
+            notes_applied: approvedNotes?.length || 0,
+          },
+        }).eq("id", newVersion.id);
+        if (taUpdateResult.error) console.error("[treatment-per-act] UPDATE FAILED:", taUpdateResult.error);
+
+        await supabase.from("development_runs").insert({
+          project_id: projectId, document_id: documentId, version_id: newVersion?.id,
+          user_id: effUserId, run_type: "TREATMENT_REWRITE",
+          output_json: { pipeline: "per_act_v1", acts_count: priorActResults.length, notes_applied: approvedNotes?.length || 0 },
+        });
+
+        // FIX 1: Update latest_version_id
+        await supabase.from("project_documents").update({ latest_version_id: newVersion.id }).eq("id", documentId);
+
+        // FIX 2: Mark approved notes resolved
+        if (approvedNotes && approvedNotes.length > 0) {
+          const taApprovedNoteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+          if (taApprovedNoteKeys.length > 0) {
+            try {
+              await supabase.from("development_notes")
+                .update({ resolved: true, resolved_in_version: newVersion.id })
+                .eq("document_id", documentId).eq("resolved", false).in("note_key", taApprovedNoteKeys);
+            } catch (err: any) { console.warn("[treatment-per-act] note resolution failed:", err?.message); }
+          }
+        }
+
+        const failedActs = priorActResults.filter(a => {
+          // Check if treatment_acts row ended up failed
+          return false; // we pushed fallback — check via status field query if needed
+        });
+
+        return new Response(JSON.stringify({
+          success: true,
+          versionId: newVersion.id,
+          pipeline: "per_act_v1",
+          actsCount: priorActResults.length,
+          actLabels: priorActResults.map(a => a.label),
+          notesApplied: approvedNotes?.length || 0,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // ── STANDARD PROSE REWRITE LOOP (story_outline, character_bible, etc.) ──
+      // Uses findSectionDef for length guidance (SECTION_LENGTH_GUIDANCE removed — now in deliverableSectionRegistry)
+      const getLengthGuidanceFromRegistry = function(sk: string, label: string): string {
+        // Try direct section key match first
+        const def = findSectionDef(doc.doc_type || "treatment", sk);
+        if (def?.act_function_description) return def.act_function_description;
+        // Fall back to label-based match
+        const l = label.toLowerCase();
+        if (l.includes("act 1") || l.includes("act one")) return "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident. End on the moment of commitment.";
+        if (l.includes("act 2a") || l.includes("act two a")) return "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles.";
+        if (l.includes("act 2b") || l.includes("act two b")) return "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment.";
+        if (l.includes("act 2")) return "4-6 pages (1,000-1,500 words). Rising stakes and complications.";
+        if (l.includes("act 3") || l.includes("act three")) return "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image.";
+        if (sk === "logline" || sk === "preamble") return "Keep very short (1 sentence). Active voice. Protagonist + specific conflict + concrete stakes.";
+        if (sk === "world") return "1-2 paragraphs. Establish the world — time, place, social/cultural context. Not backstory.";
+        if (sk === "characters") return "1-2 paragraphs per character. Who they are, what they want, what they're afraid of, how the story changes them.";
+        if (sk === "tone") return "1 paragraph. Tonal reference points, visual approach, pacing. How the story looks and feels.";
+        if (sk === "why_now") return "1 paragraph. Cultural/emotional resonance. Why this story matters now.";
+        return "Keep concise. Write vivid prose. No INT./EXT. sluglines.";
+      };
+
+      const rewrittenSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[] = [];
+
+      for (let i = 0; i < flatSections.length; i++) {
+        const section = flatSections[i];
+        const lengthGuidance = getLengthGuidanceFromRegistry(section.sk, section.label);
 
         let sectionTypeHint = "";
         if (section.sk === "logline" || section.sk === "preamble") {
@@ -9373,17 +9607,17 @@ MATERIAL TO REWRITE:\n${fullText}`;
           const _gw = resolveGateway();
           const _apiKey = _gw.apiKey;
           if (!_apiKey) throw new Error("No AI gateway key configured");
-          const rewrittenRaw = await callAI(_apiKey, "sonnet", systemPromptBase, userPrompt, 0.3, 4000);
+          const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase, userPrompt, 0.3, 4000);
           const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
           rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
-          console.log("[dev-engine-v2][treatment-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
+          console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({
               status: "done", content: rewritten, char_count: rewritten.length,
             }).eq("id", existingChunks.data[0].id);
           }
         } catch (err: any) {
-          console.warn("[dev-engine-v2][treatment-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
+          console.warn("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
           rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
@@ -9391,42 +9625,27 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }
       }
 
-      let assembledText: string;
-      if (isBeatSheetJSON) {
-        const allRewrittenBeats: any[] = [];
-        for (const s of rewrittenSections) { if (s.beats && Array.isArray(s.beats)) allRewrittenBeats.push(...s.beats); }
-        allRewrittenBeats.sort((a, b) => (a.number || 0) - (b.number || 0));
-        const outputBeatSheet = { title: beatSheetJSON.title || project.title || "Beat Sheet", total_beats: allRewrittenBeats.length, beats: allRewrittenBeats };
-        assembledText = JSON.stringify(outputBeatSheet, null, 2);
-        console.log("[beat-sheet] reassembled " + allRewrittenBeats.length + " beats from " + rewrittenSections.length + " sections");
-      } else {
-        assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
-      }
+      const assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
 
-      const runType = isBeatSheetJSON ? "BEAT_SHEET_REWRITE" : "TREATMENT_REWRITE";
-      const extraMeta = isBeatSheetJSON ? { total_beats: (JSON.parse(assembledText)).beats?.length || 0 } : {};
       const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,
-        meta_json: { run_type: runType, sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0, ...extraMeta },
+        meta_json: { run_type: "TREATMENT_REWRITE", sections_count: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       }).eq("id", newVersion.id);
-      console.log("[" + runType.toLowerCase() + "] update error=" + JSON.stringify(updateResult.error));
-      if (updateResult.error) console.error("[" + runType.toLowerCase() + "] UPDATE FAILED:", updateResult.error);
+      console.log("[sectioned-rewrite] update error=" + JSON.stringify(updateResult.error));
+      if (updateResult.error) console.error("[sectioned-rewrite] UPDATE FAILED:", updateResult.error);
 
       await supabase.from("development_runs").insert({
         project_id: projectId, document_id: documentId, version_id: newVersion?.id,
-        user_id: effUserId, run_type: runType,
+        user_id: effUserId, run_type: "TREATMENT_REWRITE",
         output_json: { total_sections: rewrittenSections.length, notes_applied: approvedNotes?.length || 0 },
       });
 
       // FIX 1: Update latest_version_id after TREATMENT_REWRITE
-      // Root cause: latest_version_id was never updated post-write → stale pointer → regeneration loop.
       await supabase.from("project_documents")
         .update({ latest_version_id: newVersion.id })
         .eq("id", documentId);
 
-
       // FIX 2: Mark approved notes resolved after TREATMENT_REWRITE
-      // Root cause: notes inserted without resolution → next cycle re-raises same notes → no convergence.
       if (approvedNotes && approvedNotes.length > 0) {
         const approvedNoteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
         if (approvedNoteKeys.length > 0) {
@@ -9437,7 +9656,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
               .eq("resolved", false)
               .in("note_key", approvedNoteKeys);
           } catch (err: any) {
-            console.warn("[treatment-rewrite] note resolution failed:", err?.message);
+            console.warn("[sectioned-rewrite] note resolution failed:", err?.message);
           }
         }
       }
@@ -9445,7 +9664,6 @@ MATERIAL TO REWRITE:\n${fullText}`;
       return new Response(JSON.stringify({
         success: true, versionId: newVersion.id,
         totalSections: rewrittenSections.length,
-        totalBeats: isBeatSheetJSON ? (JSON.parse(assembledText)).beats?.length || 0 : 0,
         sectionLabels: rewrittenSections.map(function(s: any) { return s.label; }),
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
