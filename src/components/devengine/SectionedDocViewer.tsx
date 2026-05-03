@@ -110,7 +110,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
   const allExpanded = expandedIds.size === doneChunks.length;
 
   return (
-    <div className="relative z-10">
+    <div className="relative z-10 min-h-[200px]">
       {/* Selective rewrite partial-content banner */}
       {isSelectiveRewrite && (
         <div className="mb-3 flex items-start gap-2 p-2.5 rounded-md border border-amber-500/20 bg-amber-500/5">
@@ -148,7 +148,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
         </Button>
       </div>
 
-      <ScrollArea className="max-h-[70vh]">
+      <ScrollArea className="h-full max-h-[70vh]">
         <div className="flex flex-col gap-2">
           {doneChunks.map((chunk) => {
             const isExpanded = expandedIds.has(chunk.id);
