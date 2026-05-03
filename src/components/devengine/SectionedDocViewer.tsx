@@ -38,14 +38,14 @@ function formatSectionTitle(chunk: ChunkRow): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function cleanContent(raw: string): string {
+function cleanContent(raw: string, chunkKey: string): string {
   let text = raw.trim();
   // Strip markdown fences
   text = text.replace(/^```[\s\S]*?\n/, '').replace(/\n```\s*$/, '');
   // Strip ONLY the very first heading if it duplicates the chunk_key label
   // (avoids a doubled title). Preserve all subsequent section headers
   // (e.g. ## Act 2A: Rising Action — Beats) so section structure is visible.
-  const chunkKeyLabel = chunk_key
+  const chunkKeyLabel = chunkKey
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
   const escapedLabel = chunkKeyLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -153,7 +153,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
           {doneChunks.map((chunk) => {
             const isExpanded = expandedIds.has(chunk.id);
             const title = formatSectionTitle(chunk);
-            const content = chunk.content ? cleanContent(chunk.content) : '';
+            const content = chunk.content ? cleanContent(chunk.content, chunk.chunk_key) : '';
             const charCount = chunk.char_count ?? content.length;
 
             return (
