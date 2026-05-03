@@ -5129,10 +5129,14 @@ serve(async (req) => {
     if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-    // Use service client for DB operations
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    // Use service client for DB operations — anon key as apikey + service role JWT as Bearer auth
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
+    });
 
     // ── Centralized document existence check ──
     // Any action that sends a documentId must reference a valid project_documents row
