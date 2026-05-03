@@ -149,6 +149,7 @@ import { normalizeDecisionsForUI } from '@/lib/decisions/normalizeDecisionUI';
 import { useEnrichedPendingDecisions } from '@/hooks/useEnrichedPendingDecisions';
 import { FormattedDocContent } from '@/components/devengine/FormattedDocContent';
 import { SectionedDocViewer, useHasChunks } from '@/components/devengine/SectionedDocViewer';
+import { TreatmentActBlueprintPanel } from '@/components/devengine/TreatmentActBlueprintPanel';
 
 
 // ── Main Page ──
@@ -356,7 +357,7 @@ export default function ProjectDevelopmentEngine() {
   const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'story_outline', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']);
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId);
-  const [docViewMode, setDocViewMode] = useState<'structured' | 'raw'>('structured');
+  const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('structured');
 
   // Reset docViewMode when document or version changes
   useEffect(() => {
@@ -364,7 +365,7 @@ export default function ProjectDevelopmentEngine() {
     if (isSectionedDocType && hasChunks) {
       setDocViewMode('structured');
     } else {
-      setDocViewMode('raw');
+      setDocViewMode('blueprint');
     }
   }, [selectedDoc?.id, selectedVersionId, isSectionedDocType, hasChunks, isLoadingChunks]);
 
@@ -2331,7 +2332,7 @@ export default function ProjectDevelopmentEngine() {
                               </div>
                             )
                           ) : (<>
-                            {/* Structured / Raw toggle for sectioned doc types with chunks */}
+                            {/* View mode toggle for sectioned doc types */}
                             {isSectionedDocType && hasChunks && !isLoadingChunks && (
                               <div className="flex justify-end mb-2 gap-1">
                                 <Button
@@ -2350,8 +2351,27 @@ export default function ProjectDevelopmentEngine() {
                                 >
                                   Raw
                                 </Button>
+                                {(selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && (
+                                  <Button
+                                    variant={docViewMode === 'blueprint' ? 'secondary' : 'ghost'}
+                                    size="sm"
+                                    className="h-6 text-xs px-2"
+                                    onClick={() => setDocViewMode('blueprint')}
+                                  >
+                                    Act Blueprint
+                                  </Button>
+                                )}
                               </div>
                             )}
+
+                            {/* Act Blueprint view — treatment-specific */}
+                            {docViewMode === 'blueprint' && selectedDoc?.id && (selectedDoc.doc_type === 'treatment' || selectedDoc.doc_type === 'long_treatment') ? (
+                              <TreatmentActBlueprintPanel
+                                documentId={selectedDoc.id}
+                                versionId={selectedVersionId ?? undefined}
+                                docType={selectedDoc.doc_type}
+                              />
+                            ) : null}
 
                             {/* Structured view — read-only section cards */}
                             {isSectionedDocType && hasChunks && docViewMode === 'structured' && selectedVersionId ? (
@@ -2360,7 +2380,7 @@ export default function ProjectDevelopmentEngine() {
                                 versionLabel={(selectedVersion as any)?.label}
                                 onSwitchToRaw={() => setDocViewMode('raw')}
                               />
-                            ) : (
+                            ) : docViewMode !== 'blueprint' ? (
                               /* Raw view — editable text */
                               <>
                                 <FormattedDocContent

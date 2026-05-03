@@ -16,6 +16,21 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { CheckCircle, Loader2, Clock, XCircle, ChevronDown, ChevronUp, RotateCcw, AlertTriangle, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
+interface TreatmentActRow {
+  id: string;
+  act_number: number;
+  act_key: string;
+  label: string;
+  content: string | null;
+  content_hash: string | null;
+  act_blueprint: Record<string, any> | null;
+  arc_state_deltas: Record<string, any> | null;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  revised_at: string | null;
+}
+
 interface ChunkRow {
   id: string;
   chunk_index: number;
@@ -83,7 +98,197 @@ function cleanPreview(raw: string): string {
   return preview + (prose.length > 400 ? '…' : '');
 }
 
+// ─── Treatment Acts Progress ────────────────────────────────────────────────
+
+function isTreatmentDocType(docType: string) {
+  return docType === 'treatment' || docType === 'long_treatment';
+}
+
+function actStatusIcon(status: string) {
+  if (status === 'done') return <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />;
+  if (status === 'rewriting') return <Loader2 className="h-4 w-4 text-blue-400 animate-spin shrink-0" />;
+  if (status === 'failed') return <XCircle className="h-4 w-4 text-destructive shrink-0" />;
+  return <Clock className="h-4 w-4 text-muted-foreground/50 shrink-0" />;
+}
+
+function TreatmentActsProgress({ documentId, versionId, docType, projectId }: SectionedDocProgressProps) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const { data: acts = [], isLoading } = useQuery<TreatmentActRow[]>({
+    queryKey: ['treatment-acts', documentId],
+    queryFn: async () => {
+      if (!documentId) return [];
+      const { data, error } = await (supabase as any)
+        .from('treatment_acts')
+        .select('*')
+        .eq('treatment_id', documentId)
+        .order('act_number', { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as TreatmentActRow[];
+    },
+    enabled: !!documentId,
+    refetchInterval: (query) => {
+      const rows = query.state.data;
+      if (!rows || rows.length === 0) return 5000;
+      const TERMINAL = new Set(['done', 'failed']);
+      const allTerminal = rows.every((r: TreatmentActRow) => TERMINAL.has(r.status));
+      return allTerminal ? false : 5000;
+    },
+  });
+
+  const safeActs = Array.isArray(acts) ? acts : [];
+  const total = safeActs.length;
+  const doneCount = safeActs.filter(a => a.status === 'done').length;
+  const isStillActive = safeActs.some(a => a.status === 'rewriting' || a.status === 'pending');
+  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const label = DOC_TYPE_LABELS[docType] || docType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  const toggleExpand = (id: string) => setExpandedId(prev => prev === id ? null : id);
+
+  return (
+    <div className="flex flex-col w-full space-y-4">
+      {/* Header + progress bar */}
+      <div className="w-full space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2">
+            <span className="font-medium text-foreground">Generating {label}</span>
+            {isStillActive && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
+                <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                Live
+              </Badge>
+            )}
+            {!isStillActive && doneCount === total && total > 0 && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+                Complete
+              </Badge>
+            )}
+          </div>
+          <span className="text-muted-foreground font-mono text-xs">
+            {doneCount} / {total || '?'} acts
+          </span>
+        </div>
+        <Progress value={pct} className="h-2" />
+      </div>
+
+      {/* Act cards */}
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading acts…
+        </div>
+      ) : safeActs.length === 0 ? (
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Starting generation…
+        </div>
+      ) : (
+        <div className="w-full space-y-3">
+          {safeActs.map((act) => {
+            const isDone = act.status === 'done';
+            const isRewriting = act.status === 'rewriting';
+            const isFailed = act.status === 'failed';
+            const isExpanded = expandedId === act.id;
+            const wordCount = act.content ? act.content.split(/\s+/).filter(Boolean).length : null;
+            const charCount = act.content ? act.content.length : null;
+
+            return (
+              <Card
+                key={act.id}
+                className={`transition-all duration-300 ${
+                  isDone
+                    ? 'opacity-100 border-border/40 cursor-pointer hover:border-border/60'
+                    : isRewriting
+                      ? 'opacity-90 border-blue-500/30 animate-pulse'
+                      : isFailed
+                        ? 'opacity-100 border-destructive/40'
+                        : 'opacity-40 border-border/20'
+                }`}
+                onClick={() => isDone && toggleExpand(act.id)}
+              >
+                <CardContent className="p-3">
+                  <div className="flex items-start gap-2">
+                    <div className="mt-0.5">{actStatusIcon(act.status)}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-xs font-semibold text-foreground uppercase tracking-wide">
+                          {act.label || `Act ${act.act_number}`}
+                        </h4>
+                        <div className="flex items-center gap-2">
+                          {isDone && wordCount != null && (
+                            <span className="text-[10px] text-muted-foreground/60 font-mono">
+                              {wordCount.toLocaleString()} words
+                            </span>
+                          )}
+                          {isDone && charCount != null && (
+                            <span className="text-[10px] text-muted-foreground/60 font-mono">
+                              · {charCount.toLocaleString()} chars
+                            </span>
+                          )}
+                          {isDone && (
+                            isExpanded
+                              ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/60" />
+                              : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60" />
+                          )}
+                        </div>
+                      </div>
+
+                      {isFailed && (
+                        <p className="text-xs text-destructive/80 italic">
+                          {act.error_message || 'Failed to generate'}
+                        </p>
+                      )}
+
+                      {isDone && !isExpanded && act.content && (
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3 whitespace-pre-wrap">
+                          {act.content.slice(0, 300)}{act.content.length > 300 ? '…' : ''}
+                        </p>
+                      )}
+                      {isDone && isExpanded && act.content && (
+                        <ScrollArea className="max-h-[400px] mt-2">
+                          <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap pr-3">
+                            {act.content}
+                          </div>
+                        </ScrollArea>
+                      )}
+
+                      {isRewriting && (
+                        <p className="text-xs text-muted-foreground/70 italic">Rewriting…</p>
+                      )}
+                      {act.status === 'pending' && (
+                        <p className="text-xs text-muted-foreground/40 italic">Pending</p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground/60 text-center">
+        {isStillActive
+          ? 'Generation in progress — status updates every few seconds.'
+          : 'Act-by-act treatment generation complete.'}
+      </p>
+    </div>
+  );
+}
+
+// ─── Main Export ─────────────────────────────────────────────────────────────
+
 export function SectionedDocProgress({ versionId, docType, projectId, documentId }: SectionedDocProgressProps) {
+  // Route Treatment doc types to the act-based progress component
+  if (isTreatmentDocType(docType) && documentId) {
+    return <TreatmentActsProgress versionId={versionId} docType={docType} projectId={projectId} documentId={documentId} />;
+  }
+
+  // All other sectioned doc types use project_document_chunks
+  return <SectionedDocProgressChunks versionId={versionId} docType={docType} projectId={projectId} documentId={documentId} />;
+}
+
+function SectionedDocProgressChunks({ versionId, docType, projectId, documentId }: SectionedDocProgressProps) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
