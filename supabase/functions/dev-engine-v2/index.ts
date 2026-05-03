@@ -5129,7 +5129,7 @@ serve(async (req) => {
     if (!OPENROUTER_API_KEY) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     // Use service client for DB operations
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
