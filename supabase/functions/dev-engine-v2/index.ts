@@ -3,7 +3,7 @@ import { STAGE_LADDERS } from "../_shared/stage-ladders.ts";
 import { spineToReviewerAlignmentBlock, getSpineState, CLASS_A_SPINE_CHECK_DOC_TYPES, buildClassASpineCheckSystemPrompt, buildClassASpineCheckUserPrompt, parseClassASpineCheckOutput, CLASS_B_SPINE_CHECK_DOC_TYPES, CLASS_B_SPINE_CHECK_AXES, buildClassBSpineCheckSystemPrompt, buildClassBSpineCheckUserPrompt, parseClassBSpineCheckOutput, VALIDATOR_SUPPORTED_AXES, AXIS_METADATA } from "../_shared/narrativeSpine.ts";
 import { parseSections, findVerbatimInSections } from "../_shared/sectionRepairEngine.ts";
 import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
-import { isSectionRepairSupported } from "../_shared/deliverableSectionRegistry.ts";
+import { isSectionRepairSupported, getSectionConfig, findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { isCharBibleDepthEnabled, CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
@@ -46,7 +46,7 @@ import {
   SEVERITY_WEIGHTS,
 } from "../_shared/narrativeDependencyGraph.ts";
 import { buildNDGProjectGraph, summariseNDGGraph, type NDGInputData, type SectionInputRow } from "../_shared/ndgProjectGraph.ts";
-import { getSectionConfig } from "../_shared/deliverableSectionRegistry.ts";
+
 import { classifySceneRoles, type SceneForClassification } from "../_shared/sceneRoleClassifier.ts";
 import { classifySceneGraphState } from "../_shared/sceneGraphClassifier.ts";
 import type { SpineAxis } from "../_shared/narrativeSpine.ts";

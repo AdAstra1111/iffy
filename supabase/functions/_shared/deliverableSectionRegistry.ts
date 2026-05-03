@@ -28,6 +28,11 @@ export interface SectionDefinition {
   /** How to locate this section in the document text */
   match_mode: MatchMode;
   /**
+   * Act function description — used by TREATMENT_REWRITE per-act pipeline
+   * to build Act Blueprint structs. Only populated for act sections.
+   */
+  act_function_description?: string;
+  /**
    * Pattern used by the match_mode:
    *  - heading_exact: exact heading text (case-insensitive)
    *  - heading_regex: regex pattern string
@@ -105,10 +110,10 @@ const SEASON_ARC_SECTIONS: SectionDefinition[] = [
 const TREATMENT_SECTIONS: SectionDefinition[] = [
   // ── Act-structure headings (original) ──
   // Used when the treatment is written as a narrative with explicit act breaks.
-  { section_key: "act_1_setup",           label: "Act 1 – Setup",              match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(1|one|i)\\b|^#+\\s*setup",                                                      allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
-  { section_key: "act_2a_rising_action",  label: "Act 2A – Rising Action",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2a|two\\s*a|ii\\s*a)\\b|^#+\\s*rising\\s*action",                                allows_partial_rewrite: true, repair_mode: "replace_section", order: 1 },
-  { section_key: "act_2b_complications",  label: "Act 2B – Complications",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2b|two\\s*b|ii\\s*b)\\b|^#+\\s*complications?|^#+\\s*midpoint",                  allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
-  { section_key: "act_3_climax_resolution", label: "Act 3 – Climax & Resolution", match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(3|three|iii)\\b|^#+\\s*climax|^#+\\s*resolution",                            allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
+  { section_key: "act_1_setup",           label: "Act 1 – Setup",              match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(1|one|i)\\b|^#+\\s*setup",                                                      allows_partial_rewrite: true, repair_mode: "replace_section", order: 0, act_function_description: "3-5 pages (750-1,250 words). Introduce the world, protagonist, ordinary life, inciting incident. End on the moment of commitment." },
+  { section_key: "act_2a_rising_action",  label: "Act 2A – Rising Action",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2a|two\\s*a|ii\\s*a)\\b|^#+\\s*rising\\s*action",                                allows_partial_rewrite: true, repair_mode: "replace_section", order: 1, act_function_description: "4-6 pages (1,000-1,500 words). Protagonist commits to the journey. Rising stakes, early obstacles." },
+  { section_key: "act_2b_complications",  label: "Act 2B – Complications",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2b|two\\s*b|ii\\s*b)\\b|^#+\\s*complications?|^#+\\s*midpoint",                  allows_partial_rewrite: true, repair_mode: "replace_section", order: 2, act_function_description: "4-6 pages (1,000-1,500 words). Complications escalate. Midpoint turn, reversals, darkest moment." },
+  { section_key: "act_3_climax_resolution", label: "Act 3 – Climax & Resolution", match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(3|three|iii)\\b|^#+\\s*climax|^#+\\s*resolution",                            allows_partial_rewrite: true, repair_mode: "replace_section", order: 3, act_function_description: "3-5 pages (750-1,250 words). Climax, final confrontation, resolution, thematic statement, closing image." },
 
   // ── NIT v2.3: Concept-style headings (additive) ──
   // Used when the treatment is written as a concept document with pitch-style headings.
