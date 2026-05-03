@@ -357,17 +357,16 @@ export default function ProjectDevelopmentEngine() {
   const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'story_outline', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']);
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
-  const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('structured');
+  const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
 
   // Reset docViewMode when document or version changes
   useEffect(() => {
     if (isLoadingChunks) return; // wait for chunk check to resolve
-    if (isSectionedDocType && hasChunks) {
-      setDocViewMode('structured');
-    } else {
-      setDocViewMode('blueprint');
-    }
-  }, [selectedDoc?.id, selectedVersionId, isSectionedDocType, hasChunks, isLoadingChunks]);
+    // Default to raw view for reading existing documents
+    // SectionedDocViewer (structured) only shows during active generate/rewrite
+    // Act Blueprint shows structure without forcing chunked display
+    setDocViewMode('raw');
+  }, [selectedDoc?.id, selectedVersionId, isLoadingChunks]);
 
   // Auto-poll versions every 4s while bg_generating — refresh content when done
   const { data: _polledVersions } = useQuery({
