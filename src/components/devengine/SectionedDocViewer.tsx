@@ -110,7 +110,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
   const allExpanded = expandedIds.size === doneChunks.length;
 
   return (
-    <div>
+    <div className="relative z-10">
       {/* Selective rewrite partial-content banner */}
       {isSelectiveRewrite && (
         <div className="mb-3 flex items-start gap-2 p-2.5 rounded-md border border-amber-500/20 bg-amber-500/5">
