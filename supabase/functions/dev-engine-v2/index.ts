@@ -9404,6 +9404,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
             .update({ status: "rewriting" })
             .eq("treatment_id", documentId).eq("act_key", actKey);
           if (markResult.error) console.error("[treatment-per-act] mark rewriting FAILED:", markResult.error);
+          else console.log("[treatment-per-act] marked rewriting OK, rows:", markResult.data);
 
           // Build act blueprint (deterministic — no LLM)
           const blueprint = buildActBlueprint(
@@ -9457,6 +9458,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
           try {
             const rawResponse = await callAI(perActApiKey, BALANCED_MODEL, actSystemPrompt, actUserPrompt, 0.35, 6000);
+            console.log("[treatment-per-act] LLM response for " + actKey + ":", (rawResponse || "").substring(0, 200));
             const parsed = parseActRewriteResponse(rawResponse || "");
 
             const actContent = parsed.actContent || ("## " + actLabel + "\n\n[Generation failed — original content preserved]");
