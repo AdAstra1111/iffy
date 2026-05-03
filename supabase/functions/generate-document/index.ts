@@ -23,6 +23,7 @@ import { runChunkedGeneration, resumeChunkedGeneration } from "../_shared/chunkR
 import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_shared/chunkValidator.ts";
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
+import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import {
   buildNuancePromptBlock, computeMetrics, melodramaScore, nuanceScore,
   runGate, buildRepairInstruction, computeFingerprint, computeSimilarityRisk,
@@ -2262,7 +2263,32 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
 
     if (!newVersion) throw new Error(`Failed to create version via doc-os.createVersion`);
 
-    // 10) Update project_document pointer
+    // 10) Insert treatment_acts rows for Treatment doc types
+    // These rows are required by the per-act rewrite pipeline (dev-engine-v2 Step 3)
+    const isTreatmentGen = docType === "treatment" || docType === "long_treatment";
+    if (isTreatmentGen) {
+      const ACT_SEQUENCE = [
+        { actKey: "act_1_setup",            actNumber: 1 },
+        { actKey: "act_2a_rising_action",   actNumber: 2 },
+        { actKey: "act_2b_complications",   actNumber: 3 },
+        { actKey: "act_3_climax_resolution", actNumber: 4 },
+      ];
+      const taRows = ACT_SEQUENCE.map(({ actKey, actNumber }) => ({
+        treatment_id: docRecord!.id,
+        act_number: actNumber,
+        act_key: actKey,
+        label: findSectionDef("treatment", actKey)?.label ?? actKey,
+        status: "pending",
+      }));
+      const { error: taErr } = await supabase.from("treatment_acts").insert(taRows);
+      if (taErr) {
+        console.error("[generate-document] treatment_acts insert failed:", taErr.message);
+      } else {
+        console.log("[generate-document] treatment_acts: inserted " + taRows.length + " rows for treatment_id=" + docRecord!.id);
+      }
+    }
+
+    // 11) Update project_document pointer
     const updatePayload: Record<string, any> = {
       latest_version_id: newVersion!.id,
       updated_at: new Date().toISOString(),
