@@ -9400,9 +9400,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
           console.log("[treatment-per-act] starting act=" + actKey + " (" + actNumber + "/4)");
 
           // Mark row as rewriting
-          await supabase.from("treatment_acts")
+          const markResult = await supabase.from("treatment_acts")
             .update({ status: "rewriting" })
             .eq("treatment_id", documentId).eq("act_key", actKey);
+          if (markResult.error) console.error("[treatment-per-act] mark rewriting FAILED:", markResult.error);
 
           // Build act blueprint (deterministic — no LLM)
           const blueprint = buildActBlueprint(
@@ -9466,14 +9467,14 @@ MATERIAL TO REWRITE:\n${fullText}`;
               console.warn("[treatment-per-act] arc-state delta parse failed for " + actKey + ": " + parsed.deltaParseError);
             }
 
-            // Write to treatment_acts
-            await supabase.from("treatment_acts").update({
+            const updateResult = await supabase.from("treatment_acts").update({
               content: actContent,
               arc_state_deltas: arcDeltas ? (arcDeltas as unknown as Record<string, unknown>) : null,
               status: "done",
               revised_at: new Date().toISOString(),
               revised_by: effUserId,
             }).eq("treatment_id", documentId).eq("act_key", actKey);
+            if (updateResult.error) console.error("[treatment-per-act] content update FAILED:", updateResult.error);
 
             // Accumulate for next act's preceding context
             priorActResults.push({
