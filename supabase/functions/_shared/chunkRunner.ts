@@ -298,6 +298,14 @@ STORY OUTLINE LENGTH — MANDATORY:
         "act_3_beats":  "8–12 named beats (approximately 700–1,100 words). Break Into Three through Final Image. Each beat fully described.",
       };
       const actTarget = PER_ACT_TARGETS[sectionKey] ?? "10–14 named beats (approximately 900–1,400 words)";
+      // Section header label written into the LLM output so it appears in the assembled beat sheet
+      const BEAT_SHEET_ACT_HEADERS: Record<string, string> = {
+        "act_1_beats":  "## Act 1: Setup — Beats",
+        "act_2a_beats": "## Act 2A: Rising Action — Beats",
+        "act_2b_beats": "## Act 2B: Complications — Beats",
+        "act_3_beats":  "## Act 3: Climax & Resolution — Beats",
+      };
+      const actHeader = BEAT_SHEET_ACT_HEADERS[sectionKey] ?? (`## ${sectionLabel}`);
       lengthGuidance = `
 BEAT SHEET LENGTH — MANDATORY:
 - A feature film beat sheet has 38–54 named beats (approximately 3,500–5,000 words total across all 4 acts).
@@ -305,7 +313,8 @@ BEAT SHEET LENGTH — MANDATORY:
 - Each beat MUST include: beat name (e.g. "Opening Image"), page number, 2–3 sentence description, dramatic/emotional function.
 - Do NOT merge multiple beats into one. Do NOT skip beats to save space.
 - Do NOT stop writing until you have reached the beat count and word target above.
-`;
+
+IMPORTANT: Start your output with the section header "${actHeader}" on its own line, then write all beats below it.`;
 
     // ── Character Bible ──────────────────────────────────────────────────────
     } else if (docType === "character_bible" || docType === "long_character_bible") {

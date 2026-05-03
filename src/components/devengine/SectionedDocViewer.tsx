@@ -42,8 +42,14 @@ function cleanContent(raw: string): string {
   let text = raw.trim();
   // Strip markdown fences
   text = text.replace(/^```[\s\S]*?\n/, '').replace(/\n```\s*$/, '');
-  // Strip leading heading if it duplicates the chunk_key label
-  text = text.replace(/^#{1,3}\s+.*\n+/, '');
+  // Strip ONLY the very first heading if it duplicates the chunk_key label
+  // (avoids a doubled title). Preserve all subsequent section headers
+  // (e.g. ## Act 2A: Rising Action — Beats) so section structure is visible.
+  const chunkKeyLabel = chunk_key
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const escapedLabel = chunkKeyLabel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  text = text.replace(new RegExp(`^#{1,3}\\s+${escapedLabel}\\s*$\\n?`, 'i'), '');
   return text.trim();
 }
 
