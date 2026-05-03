@@ -356,7 +356,7 @@ export default function ProjectDevelopmentEngine() {
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'character_bible', 'production_draft', 'long_treatment', 'long_character_bible']);
   const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'story_outline', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']);
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
-  const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId);
+  const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('structured');
 
   // Reset docViewMode when document or version changes

@@ -203,18 +203,44 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
  * Hook to check if chunks exist for a version.
  * Used by the parent to decide whether to show structured view toggle.
  */
-export function useHasChunks(versionId: string | undefined) {
+export function useHasChunks(versionId: string | undefined, docType?: string) {
   return useQuery({
-    queryKey: ['has-chunks', versionId],
+    queryKey: ['has-chunks', versionId, docType],
     queryFn: async () => {
       if (!versionId) return false;
-      const { count, error } = await (supabase as any)
+
+
+      // Check project_document_chunks for non-treatment sectioned docs
+      const { count: chunkCount, error: chunkError } = await (supabase as any)
         .from('project_document_chunks')
         .select('id', { count: 'exact', head: true })
         .eq('version_id', versionId)
         .eq('status', 'done');
-      if (error) return false;
-      return (count ?? 0) > 0;
+
+      if ((chunkCount ?? 0) > 0) return true;
+
+
+      // Also check treatment_acts for treatment/long_treatment docs (per-act pipeline)
+      if (docType === 'treatment' || docType === 'long_treatment') {
+        // Get document_id from version to check treatment_acts
+        const { data: versionData } = await (supabase as any)
+          .from('project_document_versions')
+          .select('document_id')
+          .eq('id', versionId)
+          .single();
+
+        if (versionData?.document_id) {
+          const { count: actCount } = await (supabase as any)
+            .from('treatment_acts')
+            .select('id', { count: 'exact', head: true })
+            .eq('treatment_id', versionData.document_id)
+            .eq('status', 'done');
+
+          if ((actCount ?? 0) > 0) return true;
+        }
+      }
+
+      return false;
     },
     enabled: !!versionId,
     staleTime: 30_000,
