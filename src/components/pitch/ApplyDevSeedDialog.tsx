@@ -793,7 +793,8 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
           // This ensures seed artifacts exist before Auto-Run begins
           let tickDone = false;
           let tickIterations = 0;
-          const MAX_TICK_ITERATIONS = 25;
+          let lastTickResult: any = null;
+          const MAX_TICK_ITERATIONS = 60;
           while (!tickDone && tickIterations < MAX_TICK_ITERATIONS && !autopilotAbortRef.current) {
             tickIterations++;
             const { data: tickData, error: tickErr } = await supabase.functions.invoke('devseed-autopilot', {
@@ -803,17 +804,19 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
               console.error('[DevSeed] autopilot tick error:', tickErr.message);
               break;
             }
-            const result = tickData as any;
-            if (result?.autopilot) setAutopilotState(result.autopilot);
-            tickDone = result?.done === true || result?.message === 'not_running';
+            lastTickResult = tickData as any;
+            if (lastTickResult?.autopilot) setAutopilotState(lastTickResult.autopilot);
+            tickDone = lastTickResult?.done === true || lastTickResult?.message === 'not_running';
             if (!tickDone) await new Promise(r => setTimeout(r, 1000));
           }
 
           // ── Seed-state validation guard before Auto-Run ──
           // Auto-Run must only start from an explicitly validated seed state.
-          const lastAutopilotStatus = autopilotState?.status;
+          // Use lastTickResult (captured inside loop) to avoid stale React closure state.
+          const finalAutopilot = lastTickResult?.autopilot || autopilotState;
+          const lastAutopilotStatus = finalAutopilot?.status;
           const hasAutopilotError = lastAutopilotStatus === 'error' ||
-            (autopilotState?.stages && Object.values(autopilotState.stages).some(
+            (finalAutopilot?.stages && Object.values(finalAutopilot.stages).some(
               (s: any) => s.status === 'error'
             ));
 
