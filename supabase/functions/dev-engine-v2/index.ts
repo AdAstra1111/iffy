@@ -9367,10 +9367,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
 
         // 4 canonical act keys in order
         const ACT_SEQUENCE = [
-          { actKey: "act_1_setup",            actNumber: 1 },
-          { actKey: "act_2a_rising_action",   actNumber: 2 },
-          { actKey: "act_2b_complications",   actNumber: 3 },
-          { actKey: "act_3_climax_resolution", actNumber: 4 },
+          { actKey: "act_1_setup",            actNumber: 1, label: findSectionDef("treatment", "act_1_setup")?.label ?? "Act 1 – Setup" },
+          { actKey: "act_2a_rising_action",   actNumber: 2, label: findSectionDef("treatment", "act_2a_rising_action")?.label ?? "Act 2a – Rising Action" },
+          { actKey: "act_2b_complications",   actNumber: 3, label: findSectionDef("treatment", "act_2b_complications")?.label ?? "Act 2b – Complications" },
+          { actKey: "act_3_climax_resolution", actNumber: 4, label: findSectionDef("treatment", "act_3_climax_resolution")?.label ?? "Act 3 – Climax & Resolution" },
         ];
 
         // Reset treatment_acts rows for this treatment_id (fresh rewrite pass)
@@ -9632,7 +9632,11 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }
       }
 
-      const assembledText = rewrittenSections.map(function(s) { return s.content; }).join("\n\n");
+      const assembledText = rewrittenSections.map(function(s) {
+        const actLabel = ACT_SEQUENCE.find(a => a.actKey === s.sk)?.label ?? s.label;
+        const strippedContent = s.content.replace(/^#{1,6}\s+[^\n]+\n*/," ").trim();
+        return `## ${actLabel}\n\n${strippedContent}`;
+      }).join("\n\n").replace(/\n{3,}/g, "\n\n");
 
       const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,
