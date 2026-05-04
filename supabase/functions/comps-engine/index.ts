@@ -83,8 +83,11 @@ interface SeedResult {
 }
 
 const DOC_PRIORITY_BY_LANE: Record<string, string[]> = {
-  vertical_drama: ["beats", "episode_grid", "outline", "script", "concept_brief", "idea", "notes"],
-  feature_film: ["script", "outline", "treatment", "concept_brief", "idea", "notes"],
+  // Higher priority = earlier in list = selected first
+  // concept_brief / idea FIRST — high-level pitch, not scene content
+  // script LAST — too granular, scene-level detail leaks into comparables
+  vertical_drama: ["concept_brief", "idea", "notes", "outline", "beats", "episode_grid", "script"],
+  feature_film: ["concept_brief", "idea", "notes", "outline", "treatment", "script"],
   series: ["outline", "beats", "episode_grid", "script", "concept_brief", "idea", "notes"],
   documentary: ["outline", "treatment", "concept_brief", "idea", "notes", "script"],
 };
@@ -208,8 +211,23 @@ Return ONLY the summary text, no JSON, no formatting headers.`,
     return { seed_text: result.content || "", seed_sources, debug: { found_docs: allDocs.length, tried: debugTried } };
   } catch (e) {
     console.error("Seed summary LLM error:", e);
+    // FALLBACK: do NOT use raw combinedText (may contain script/scene content).
+    // Extract only structured concept-level text from concept_brief and idea docs.
+    const conceptDocs = selectedDocs.filter((d: any) =>
+      ["concept_brief", "idea", "notes"].includes(d.doc_type)
+    );
+    let fallbackSeed = "";
+    if (conceptDocs.length > 0) {
+      fallbackSeed = conceptDocs
+        .map((d: any) => `${d.displayTitle}\n${d.trimmedText}`)
+        .join("\n\n")
+        .substring(0, 3000);
+    }
+    if (!fallbackSeed || fallbackSeed.trim().length < 50) {
+      fallbackSeed = "[seed unavailable — concept document required. Add a concept_brief or idea document.]";
+    }
     return {
-      seed_text: combinedText.substring(0, 3000),
+      seed_text: fallbackSeed,
       seed_sources,
       fallback_reason: "llm_summary_failed",
       debug: { found_docs: allDocs.length, tried: debugTried },
