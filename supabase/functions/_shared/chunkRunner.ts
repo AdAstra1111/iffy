@@ -507,9 +507,54 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
   let failedChunks = 0;
 
   for (const chunk of toGenerate) {
-    const previousEnding = chunk.chunkIndex > 0
-      ? chunkContents[chunk.chunkIndex - 1].slice(-500)
-      : undefined;
+    // FIX (trinity-2026-05-03-generate-2a2b-dropped-fix — Bug 1):
+    // For sectioned strategy (Treatment, Beat Sheet, etc.), DO NOT pass the previous
+    // chunk's narrative ending as continuity context. Each act is a standalone
+    // structural contract — NOT a continuation of the previous act.
+    //
+    // The bug: upstreamContent (global treatment context) + previousEnding (Act 1's
+    // actual narrative text) together give the LLM both the structural contract AND
+    // the narrative content. Seeing Act 1's actual text as "what came before" causes
+    // the LLM to skip Act 2A/2B generation and jump to the next structural position.
+    //
+    // Fix: For sectioned strategy, pass a plain structural description of the previous
+    // section (its dramatic function, position in the arc) WITHOUT its narrative content.
+    // The lengthGuidance block already tells the LLM what each act IS — no need to also
+    // hand it the previous act's actual prose.
+    //
+    // Episodic_indexed strategy STILL gets narrative continuity (episodes ARE
+    // sequential continuations of each other — this is correct and expected).
+    let previousEnding: string | undefined;
+    if (plan.strategy === "episodic_indexed") {
+      // Episodic: pass last 500 chars of previous episode for genuine continuity
+      previousEnding = chunk.chunkIndex > 0
+        ? chunkContents[chunk.chunkIndex - 1].slice(-500)
+        : undefined;
+    } else if (plan.strategy === "sectioned") {
+      // Sectioned: each act is standalone. Provide structural description only —
+      // no narrative content from the previous act that would make the LLM "continue"
+      // instead of generating the act as an independent piece.
+      const ACT_STRUCTURAL_DESCRIPTIONS: Record<string, string> = {
+        "act_2a_rising_action": "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+        "act_2b_complications": "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+        "act_3_climax_resolution": "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+        "act_1_setup": "Act 1: Setup — Introduces the world, protagonist, ordinary life, and the inciting incident that disrupts everything. This is the first act.",
+        "act_2a_beats": "Act 2A: Rising Action — Beats covering B Story through Midpoint. Follows Act 1 Setup.",
+        "act_2b_beats": "Act 2B: Complications — Beats covering Bad Guys Close In through Dark Night of the Soul. Follows Act 2A Rising Action.",
+        "act_3_beats": "Act 3: Climax & Resolution — Beats covering Break Into Three through Final Image. Follows Act 2B Complications.",
+        "act_1_beats": "Act 1: Setup — Beats covering Opening Image through Break Into Two.",
+        "act_2a": "Act 2A: Rising Action — Follows Act 1. The protagonist commits to the journey. Rising stakes, early obstacles.",
+        "act_2b": "Act 2B: Complications — Follows Act 2A. Escalating complications, midpoint turn, dark night of the soul.",
+        "act_3": "Act 3: Climax & Resolution — Follows Act 2B. Climax, final confrontation, resolution.",
+        "act_1": "Act 1: Setup — Opening of the story. Establishes world, protagonist, goal, inciting incident.",
+      };
+      if (chunk.chunkIndex > 0) {
+        const prevChunk = plan.chunks[chunk.chunkIndex - 1];
+        previousEnding = ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
+          ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
+          ?? `Previous section was ${prevChunk.label}.`;
+      }
+    }
 
     // Mark as running with heartbeat timestamp
     const chunkStartedAt = new Date().toISOString();
@@ -641,7 +686,31 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     for (const idx of missingIndexes) {
       const chunk = plan.chunks[idx];
       if (!chunk) continue;
-      const previousEnding = idx > 0 ? (chunkContents[idx - 1] || "").slice(-500) : undefined;
+      const previousEnding = (() => {
+        if (plan.strategy === "episodic_indexed") {
+          return idx > 0 ? (chunkContents[idx - 1] || "").slice(-500) : undefined;
+        } else if (plan.strategy === "sectioned" && idx > 0) {
+          const prevChunk = plan.chunks[idx - 1];
+          const ACT_STRUCTURAL_DESCRIPTIONS: Record<string, string> = {
+            "act_2a_rising_action": "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+            "act_2b_complications": "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+            "act_3_climax_resolution": "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+            "act_1_setup": "Act 1: Setup — Introduces the world, protagonist, ordinary life, and the inciting incident that disrupts everything. This is the first act.",
+            "act_2a_beats": "Act 2A: Rising Action — Beats covering B Story through Midpoint. Follows Act 1 Setup.",
+            "act_2b_beats": "Act 2B: Complications — Beats covering Bad Guys Close In through Dark Night of the Soul. Follows Act 2A Rising Action.",
+            "act_3_beats": "Act 3: Climax & Resolution — Beats covering Break Into Three through Final Image. Follows Act 2B Complications.",
+            "act_1_beats": "Act 1: Setup — Beats covering Opening Image through Break Into Two.",
+            "act_2a": "Act 2A: Rising Action — Follows Act 1. The protagonist commits to the journey. Rising stakes, early obstacles.",
+            "act_2b": "Act 2B: Complications — Follows Act 2A. Escalating complications, midpoint turn, dark night of the soul.",
+            "act_3": "Act 3: Climax & Resolution — Follows Act 2B. Climax, final confrontation, resolution.",
+            "act_1": "Act 1: Setup — Opening of the story. Establishes world, protagonist, goal, inciting incident.",
+          };
+          return ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
+            ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
+            ?? `Previous section was ${prevChunk.label}.`;
+        }
+        return undefined;
+      })();
       try {
         const regenContent = await generateSingleChunk(chunkOpts, chunk, previousEnding);
         if (regenContent) {
@@ -666,10 +735,72 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     }
   }
 
-  // Assemble — use placeholder for any still-missing chunks so gaps are visible
-  let assembledContent = chunkContents
-    .map((c, i) => c || `[SECTION ${i + 1} GENERATION FAILED — REGENERATE THIS DOCUMENT]`)
-    .join("\n\n");
+  // ── FIX (trinity-2026-05-03-beat-sheet-generate-acts-dropped-plus-apply-notes-collapse.md — Bug 2):
+  // Chunk content is stored without prepended act headers. The LLM is instructed to include
+  // the header in its output (via BEAT_SHEET_ACT_HEADERS for beat_sheet, or via section
+  // labels in lengthGuidance for Treatment), but the assembly step used simple `.join("\n\n")`
+  // which does NOT inject headers — if the LLM omits or reformats the header, the assembled
+  // plaintext loses the Act 2A / Act 2B structural labels.
+  //
+  // Fix: During assembly, inject the canonical act header BEFORE each chunk's content.
+  // We also need to handle the case where a chunk's content ALREADY starts with the header
+  // (the LLM did include it) — avoid double-injecting.
+  //
+  // ACT header mapping for sectioned chunks:
+  const ACT_ASSEMBLY_HEADERS: Record<string, string> = {
+    // Treatment
+    "act_1_setup":            "## Act 1: Setup",
+    "act_2a_rising_action":   "## Act 2A: Rising Action",
+    "act_2b_complications":   "## Act 2B: Complications",
+    "act_3_climax_resolution": "## Act 3: Climax & Resolution",
+    // Beat Sheet
+    "act_1_beats":  "## Act 1: Setup — Beats",
+    "act_2a_beats": "## Act 2A: Rising Action — Beats",
+    "act_2b_beats": "## Act 2B: Complications — Beats",
+    "act_3_beats":  "## Act 3: Climax & Resolution — Beats",
+    // Screenplay / story outline
+    "act_1":        "## Act 1",
+    "act_2a":       "## Act 2A",
+    "act_2b":       "## Act 2B",
+    "act_3":        "## Act 3",
+    // Character bible sections
+    "protagonists":               "## Protagonists",
+    "antagonists":               "## Antagonists",
+    "supporting_cast":           "## Supporting Cast",
+    "relationships_and_dynamics": "## Relationships & Dynamics",
+  };
+
+  const assembledParts: string[] = [];
+  for (let i = 0; i < plan.totalChunks; i++) {
+    const c = chunkContents[i];
+    const chunkDef = plan.chunks[i];
+    if (!c) {
+      assembledParts.push(`[SECTION ${i + 1} GENERATION FAILED — REGENERATE THIS DOCUMENT]`);
+      continue;
+    }
+    // Determine the act header for this chunk
+    const headerForChunk = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey]
+      ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ""]
+      ?? null;
+
+    if (headerForChunk) {
+      // Check if the chunk content already starts with this header (case-insensitive)
+      const startsWithHeader = c.trim().match(new RegExp(`^##\s+${headerForChunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, '')}`, 'i'));
+      if (startsWithHeader) {
+        // LLM already included the header — keep content as-is
+        assembledParts.push(c);
+      } else {
+        // Header missing — inject it
+        assembledParts.push(`${headerForChunk}\n
+${c.trim()}`);
+      }
+    } else {
+      // No header mapping — use as-is (fallback)
+      assembledParts.push(c);
+    }
+  }
+
+  let assembledContent = assembledParts.join("\n\n");
   let validationResult: any;
 
   for (let repairPass = 0; repairPass <= MAX_ASSEMBLY_REPAIR_PASSES; repairPass++) {
@@ -727,7 +858,31 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     // Regenerate only those chunks
     for (const idx of chunksToRegen) {
       const chunk = plan.chunks[idx];
-      const previousEnding = idx > 0 ? chunkContents[idx - 1].slice(-500) : undefined;
+      const previousEnding = (() => {
+        if (plan.strategy === "episodic_indexed") {
+          return idx > 0 ? chunkContents[idx - 1].slice(-500) : undefined;
+        } else if (plan.strategy === "sectioned" && idx > 0) {
+          const prevChunk = plan.chunks[idx - 1];
+          const ACT_STRUCTURAL_DESCRIPTIONS: Record<string, string> = {
+            "act_2a_rising_action": "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+            "act_2b_complications": "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+            "act_3_climax_resolution": "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+            "act_1_setup": "Act 1: Setup — Introduces the world, protagonist, ordinary life, and the inciting incident that disrupts everything. This is the first act.",
+            "act_2a_beats": "Act 2A: Rising Action — Beats covering B Story through Midpoint. Follows Act 1 Setup.",
+            "act_2b_beats": "Act 2B: Complications — Beats covering Bad Guys Close In through Dark Night of the Soul. Follows Act 2A Rising Action.",
+            "act_3_beats": "Act 3: Climax & Resolution — Beats covering Break Into Three through Final Image. Follows Act 2B Complications.",
+            "act_1_beats": "Act 1: Setup — Beats covering Opening Image through Break Into Two.",
+            "act_2a": "Act 2A: Rising Action — Follows Act 1. The protagonist commits to the journey. Rising stakes, early obstacles.",
+            "act_2b": "Act 2B: Complications — Follows Act 2A. Escalating complications, midpoint turn, dark night of the soul.",
+            "act_3": "Act 3: Climax & Resolution — Follows Act 2B. Climax, final confrontation, resolution.",
+            "act_1": "Act 1: Setup — Opening of the story. Establishes world, protagonist, goal, inciting incident.",
+          };
+          return ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
+            ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
+            ?? `Previous section was ${prevChunk.label}.`;
+        }
+        return undefined;
+      })();
 
       await supabase
         .from("project_document_chunks")
@@ -766,8 +921,21 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       }
     }
 
-    // Reassemble
-    assembledContent = chunkContents.filter(Boolean).join("\n\n");
+    // Reassemble — apply ACT_ASSEMBLY_HEADERS injection to repaired assembly too
+    const repairedParts: string[] = [];
+    for (let i = 0; i < plan.totalChunks; i++) {
+      const c = chunkContents[i];
+      if (!c) { repairedParts.push(''); continue; }
+      const chunkDef = plan.chunks[i];
+      const hdr = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey] ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ''] ?? null;
+      if (hdr) {
+        const startsHdr = c.trim().match(new RegExp('^##\s+' + hdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, ''), 'i'));
+        repairedParts.push(startsHdr ? c : hdr + '\n\n' + c.trim());
+      } else {
+        repairedParts.push(c);
+      }
+    }
+    assembledContent = repairedParts.join("\n\n");
   }
 
   // 5. Store assembled content AND atomically clear bg_generating.
@@ -877,11 +1045,20 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
 
   if (pendingChunks.length === 0) {
     // All chunks done — just reassemble
-    const allContent = plan.chunks.map(c => {
+    const resumeAssembledParts: string[] = [];
+    for (const c of plan.chunks) {
       const existing = chunkMap.get(c.chunkIndex);
-      return existing?.content || "";
-    });
-    const assembled = allContent.filter(Boolean).join("\n\n");
+      const content = existing?.content || "";
+      if (!content) { resumeAssembledParts.push(''); continue; }
+      const hdr = ACT_ASSEMBLY_HEADERS[c.chunkKey] ?? ACT_ASSEMBLY_HEADERS[c.sectionId ?? ''] ?? null;
+      if (hdr) {
+        const startsHdr = content.trim().match(new RegExp('^##\s+' + hdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, ''), 'i'));
+        resumeAssembledParts.push(startsHdr ? content : hdr + '\n\n' + content.trim());
+      } else {
+        resumeAssembledParts.push(content);
+      }
+    }
+    const assembled = resumeAssembledParts.join("\n\n");
 
     return {
       success: true,
