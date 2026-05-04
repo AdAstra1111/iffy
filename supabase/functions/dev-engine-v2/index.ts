@@ -1926,6 +1926,17 @@ function buildRewriteSystem(deliverable: string, format: string, behavior: strin
 - Keep length appropriate for an idea-stage summary (typically 1-3 paragraphs).`;
   }
 
+  // Concept Brief format enforcement — must use structured labeled sections
+  let conceptBriefEnforcement = "";
+  if (deliverable === "concept_brief") {
+    conceptBriefEnforcement = `\n\nCONCEPT BRIEF FORMAT (MANDATORY — violations cause rejection):
+- Output MUST use the following labeled section headers. Each section is required.
+- Do NOT write freeform prose without section headers.
+- Do NOT use INT./EXT. sluglines, character name cues, or dialogue blocks.
+- Do NOT use bullet lists for the main content sections.
+\n## LOGLINE\n[1-2 sentence hook: specific characters, event, stakes — no genre platitudes]\n\n## PREMISE\n[2-4 sentence premise: who is the protagonist, what happens, why it matters. Be specific — named characters, named stakes, specific situation. Do not be vague or generic.]\n\n## CENTRAL QUESTION\n[the one dramatic question driving the story — what the story is REALLY about at the thematic level]\n\n## WORLD BUILDING NOTES\n[1-3 sentences on setting, time, place, world rules — enough for downstream documents to work from]\n\n## GENRE & TONE\n[Declare: primary genre, subgenre, tonal register, content rating target. Be specific — not "drama", specify the precise genre lane.]`;
+  }
+
   // Screenplay enforcement for script deliverables
   let scriptEnforcement = "";
   if (deliverable === "script" || deliverable === "production_draft") {
@@ -2036,7 +2047,7 @@ Rules:
 
 REWRITE OBJECTIVES FOR THIS DOCUMENT PURPOSE:
 ${rewriteGoals}
-${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${ideaEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}
+${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${ideaEnforcement}${conceptBriefEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}
 
 Return ONLY valid JSON:
 {
