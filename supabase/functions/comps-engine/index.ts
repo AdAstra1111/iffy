@@ -58,6 +58,68 @@ Deno.serve(async (req) => {
   }
 });
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+/**
+ * Strip entity-level fields from concept_brief/idea plaintext.
+ * CHARACTERS, SETTINGS, LOCATIONS, PROPS, WARDROBE, VEHICLES, CREATURES fields
+ * contain entity names that the LLM misreads as comparable titles.
+ * Only concept-level fields (LOGLINE, PREMISE, GENRE, TONE, THEMES, etc.) are kept.
+ */
+function filterConceptTextForComparables(text: string): string {
+  if (!text) return text;
+  // Fields that contain entity names — NOT comparable works — skip their content
+  const ENTITY_FIELD_PATTERNS = /^\s*(?:CHARACTERS|SETTINGS|LOCATIONS|PROPS|WARDROBE|VEHICLES|CREATURES|CAST|WARDROBE NOTES|VEHICLE NOTES|CREATURE NOTES|LOCATION NOTES|PROP NOTES)\s*$/gim;
+  const lines = text.split("\n");
+  const result: string[] = [];
+  let skipNextBlock = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+    // Check if this line matches an entity field header
+    const isEntityField = /^\s*(?:CHARACTERS|SETTINGS|LOCATIONS|PROPS|WARDROBE|VEHICLES|CREATURES|CAST|WARDROBE NOTES|VEHICLE NOTES|CREATURE NOTES|LOCATION NOTES|PROP NOTES)\s*$/gi.test(trimmed);
+    if (isEntityField) {
+      skipNextBlock = true;
+      continue;
+    }
+    if (skipNextBlock) {
+      // Check if we've hit the next field header (next uppercase line)
+      if (/^[A-Z][A-Z_ ]{2,}$/.test(trimmed) || trimmed.startsWith("## ")) {
+        skipNextBlock = false;
+      } else {
+        continue; // skip this line
+      }
+    }
+    result.push(line);
+  }
+  return result.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Extract structured comparable_titles from market_sheet plaintext.
+ * Market_sheet plaintext format: each field on its own line or section.
+ * Comparables appear as:
+ *   COMPARABLE TITLES
+ *   • The Devil Wears Prada
+ *   • Phantom Thread
+ */
+function extractComparableTitlesFromMarketSheet(docs: any[]): string {
+  if (!docs || docs.length === 0) return "";
+  const lines: string[] = [];
+  for (const doc of docs) {
+    const text = doc.plaintext || doc.extracted_text || "";
+    // Find the COMPARABLE TITLES section
+    const match = text.match(/COMPARABLE TITLES\s*[\s\S]*?(?=\n[A-Z][A-Z_ ]{2,}\s*\n|\n\n|\n---|$)/gi);
+    if (match && match[0]) {
+      // Strip the header, keep only the bullet lines
+      const section = match[0].replace(/^COMPARABLE TITLES\s*/i, "").trim();
+      if (section.length > 5) lines.push(section);
+    }
+  }
+  return lines.join("\n");
+}
+
+
 // ─── buildSeedFromProject ───────────────────────────────────────
 
 interface SeedSource {
@@ -188,9 +250,25 @@ async function buildSeedFromProject(supabase: any, projectId: string, lane: stri
   }));
 
   // 5. Build seed summary via LLM (1 small call)
-  const combinedText = selectedDocs.map((d: any) =>
-    `--- ${d.displayTitle || d.title || "Document"} (${d.doc_type || "unknown"}) ---\n${d.trimmedText}`
-  ).join("\n\n");
+  // Filter entity-level fields from concept docs — these are not comparable works
+  // CHARACTERS, SETTINGS, LOCATIONS, PROPS, WARDROBE, VEHICLES, CREATURES fields
+  // would cause the LLM to misread character/location names as film titles.
+  const combinedText = selectedDocs.map((d: any) => {
+    let filteredText = d.trimmedText;
+    if (d.doc_type === "concept_brief" || d.doc_type === "idea") {
+      filteredText = filterConceptTextForComparables(d.trimmedText);
+    }
+    return `--- ${d.displayTitle || d.title || "Document"} (${d.doc_type || "unknown"}) ---\n${filteredText}`;
+  }).join("\n\n");
+
+  // Also check market_sheet docs for structured comparable_titles — extract and prepend
+  const marketSheetDocs = allDocs.filter((doc: any) => doc.doc_type === "market_sheet" || doc.doc_type === "vertical_market_sheet");
+  const marketSheetComps = extractComparableTitlesFromMarketSheet(marketSheetDocs);
+  const compsHeader = marketSheetComps
+    ? `--- Comparable Works (from Market Sheet) ---\n${marketSheetComps}\n\n--- Project Seed ---\n`
+    : "";
+
+  const finalSeedText = compsHeader + combinedText;
 
   try {
     const result = await callLLM({
@@ -200,11 +278,19 @@ async function buildSeedFromProject(supabase: any, projectId: string, lane: stri
 - Genre + tone tags
 - Premise in 2-3 lines
 - Protagonist / goal / obstacle
-- Setting + world texture
+- Setting + world texture (general, not specific location names)
 - Stakes (personal/social/systemic)
-- Hooks (do NOT name comparable titles)
+- Thematic hooks
+
+CRITICAL EXCLUSIONS — do NOT include these in the summary:
+- Character names, actor names, or character descriptions
+- Specific location names (city, building, hotel names, etc.)
+- Prop descriptions, wardrobe notes, or vehicle names
+- Any proper nouns from the CHARACTERS, SETTINGS, LOCATIONS, PROPS, or WARDROBE sections
+- Comparable titles (real or invented)
+
 Return ONLY the summary text, no JSON, no formatting headers.`,
-      user: combinedText.substring(0, 18000),
+      user: finalSeedText.substring(0, 20000),
       temperature: 0.3,
       maxTokens: 2000,
     });
