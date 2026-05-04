@@ -9105,7 +9105,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
               const charSections = splitByActs(currentContent.join("\n"), label, "character");
               allSections.push(...charSections);
             } else {
-              allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk: "section" });
+              // Look up the proper section key from the registry so assembly can use it to resolve the correct label
+              const sectionDef = findSectionDef(doc.doc_type || "treatment", label);
+              const sk = sectionDef?.section_key ?? "section";
+              allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk });
             }
           }
           currentHeader = trimmed;
@@ -9126,7 +9129,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
           const charSections = splitByActs(currentContent.join("\n"), label, "character");
           allSections.push(...charSections);
         } else {
-          allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk: "section" });
+          // Look up the proper section key from the registry so assembly can use it to resolve the correct label
+          const sectionDef = findSectionDef(doc.doc_type || "treatment", label);
+          const sk = sectionDef?.section_key ?? "section";
+          allSections.push({ header: currentHeader, content: currentContent.join("\n").trim(), label, sk });
         }
       }
 
@@ -9633,7 +9639,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
       }
 
       const assembledText = rewrittenSections.map(function(s) {
-        const actLabel = ACT_SEQUENCE.find(a => a.actKey === s.sk)?.label ?? s.label;
+        // Use findSectionDef to resolve the correct header label for this section key and doc type.
+        // This works for both treatment (has ACT_SEQUENCE) and story_outline/character_bible (no ACT_SEQUENCE).
+        const def = findSectionDef(doc.doc_type || "treatment", s.sk);
+        const actLabel = def?.label ?? s.label;
         const strippedContent = s.content.replace(/^#{1,6}\s+[^\n]+\n*/," ").trim();
         return `## ${actLabel}\n\n${strippedContent}`;
       }).join("\n\n").replace(/\n{3,}/g, "\n\n");
