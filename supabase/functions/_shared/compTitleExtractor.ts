@@ -85,7 +85,7 @@ const LABELED_PATTERN = /^(?:Comparable|Comp|Reference|Similar to|See also|Ref)\
 const EMDASH_PATTERN = /^(.+?)\s*[—–]\s+.{10,}$/;
 
 // Inline mentions: "films like Title (Year)" or "inspired by Title"
-const INLINE_LIKE_PATTERN = /(?:like|such as|inspired by|similar to|reminiscent of|echoes of|in the vein of)\s+[""]?([A-Z][A-Za-z0-9\s':&!,.-]+?)[""]?\s*(?:\((\d{4})\)|\(([^)]+)\))?(?:[,;.]|\s+and\s|\s*$)/gi;
+const INLINE_LIKE_PATTERN = /\blike\s+[""]?([A-Z][A-Za-z0-9\s':&!,.-]+?)[""]?\s*(?:\((\d{4})\)|\(([^)]+)\))?(?:[,;.]|\s+and\s|\s*$)/gi;
 
 // Title (Year) pattern — common inline reference
 const TITLE_YEAR_PATTERN = /(?:^|[,;]\s*)([A-Z][A-Za-z0-9\s':&!.-]{2,40})\s*\((\d{4})\)/g;
