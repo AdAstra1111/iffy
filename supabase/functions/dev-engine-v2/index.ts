@@ -8348,12 +8348,50 @@ MATERIAL TO REWRITE:\n${fullText}`;
       let chunkTexts = SECTIONED_PLAN_TYPES.has(sourceDocType)
         ? buildSectionHeaderChunks(fullText)
         : buildLegacySluglineChunks(fullText);
+
+      // For sectioned doc types, extract section labels from ## headers in each chunk
+      // so the frontend can show act-by-act progress (Act 1, Act 2a, Act 2b, Act 3)
+      // instead of generic "Chunk 1/4" labels.
+      const ACT_LABEL_MAP: Record<string, string> = {
+        "act 1": "Act 1 — Setup",
+        "act 2a": "Act 2a — Complication",
+        "act 2b": "Act 2b — Crisis",
+        "act 3": "Act 3 — Resolution",
+        "act one": "Act 1 — Setup",
+        "act two": "Act 2 — Rising Action",
+        "act three": "Act 3 — Resolution",
+        "protagonists": "Protagonists",
+        "antagonists": "Antagonists",
+        "supporting": "Supporting Cast",
+        "relationships": "Relationships",
+      };
+      function extractSectionLabelFromChunk(chunkText: string): string | null {
+        const lines = chunkText.split("\n");
+        for (const line of lines.slice(0, 5)) {
+          const m = line.match(/^##\s+(.+)$/);
+          if (m) {
+            const raw = m[1].trim().toLowerCase();
+            for (const [key, label] of Object.entries(ACT_LABEL_MAP)) {
+              if (raw.includes(key)) return label;
+            }
+            // Return title-cased version of the header
+            return m[1].trim().replace(/\b\w/g, c => c.toUpperCase());
+          }
+        }
+        return null;
+      }
+
       let chunkMeta: Array<{ chunk_index: number; chunk_key: string; label: string; episode_start?: number | null; episode_end?: number | null; section_id?: string | null }> =
-        chunkTexts.map((_, i) => ({
-          chunk_index: i,
-          chunk_key: `chunk_${String(i + 1).padStart(2, "0")}`,
-          label: `Chunk ${i + 1}`,
-        }));
+        chunkTexts.map((chunkText, i) => {
+          const sectionLabel = SECTIONED_PLAN_TYPES.has(sourceDocType)
+            ? (extractSectionLabelFromChunk(chunkText) || `Chunk ${i + 1}`)
+            : `Chunk ${i + 1}`;
+          return {
+            chunk_index: i,
+            chunk_key: `chunk_${String(i + 1).padStart(2, "0")}`,
+            label: sectionLabel,
+          };
+        });
       let strategy = SECTIONED_PLAN_TYPES.has(sourceDocType) ? "sectioned" : "legacy_slugline";
       let resolvedEpisodeCount: number | null = null;
 

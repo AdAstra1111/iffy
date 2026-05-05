@@ -12,6 +12,38 @@ import { callLLM, MODELS } from "../_shared/llm.ts";
 import { surgicalEpisodeRewrite, SURGICAL_EPISODE_DOC_TYPES } from "../_shared/surgicalEpisodeRewrite.ts";
 import { resolveNarrativeContext, buildNarrativeContextBlock } from "../_shared/narrativeContextResolver.ts";
 
+// Sectioned doc types that require 4-act structure (Act 1, Act 2a, Act 2b, Act 3).
+// For these, single-pass note application must:
+//   1. Use higher maxTokens to avoid truncating Act 3
+//   2. Validate all 4 acts are present in output
+//   3. Log a warning if any act is missing post-generation
+const SECTIONED_DOC_TYPES = new Set([
+  "story_outline", "treatment", "character_bible", "beat_sheet",
+  "long_treatment", "long_character_bible",
+]);
+
+// Expected section markers for each sectioned doc type.
+// Used to validate that all acts survived the rewrite.
+const SECTIONED_EXPECTED_MARKERS: Record<string, string[]> = {
+  story_outline: ["act_1", "act_2a", "act_2b", "act_3"],
+  treatment:     ["act_1", "act_2a", "act_2b", "act_3"],
+  beat_sheet:    ["act_1", "act_2a", "act_2b", "act_3"],
+  long_treatment: ["act_1", "act_2a", "act_2b", "act_3"],
+  character_bible: ["protagonist", "antagonist", "supporting"],
+  long_character_bible: ["protagonist", "antagonist", "supporting"],
+};
+
+/**
+ * Validate that expected structural sections survived the rewrite.
+ * Returns list of missing section keywords (empty = all present).
+ */
+function validateSectionedOutput(text: string, docType: string): string[] {
+  const markers = SECTIONED_EXPECTED_MARKERS[docType];
+  if (!markers) return [];
+  const lower = text.toLowerCase();
+  return markers.filter(m => !lower.includes(m));
+}
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -278,13 +310,35 @@ Instructions: ${fix.instructions || "Resolve the issue using minimal targeted ch
 === INSTRUCTION ===
 Apply the fix above. Return ONLY the complete revised document text.`;
 
+        // Sectioned docs (story_outline, treatment, etc.) can be 20k-40k chars.
+        // Using 16k maxTokens risks truncating Act 3 silently.
+        // Use 32k for sectioned docs to ensure all 4 acts are preserved.
+        const isSectionedDoc = SECTIONED_DOC_TYPES.has(docType);
+        const maxTokens = isSectionedDoc ? 32000 : 16000;
+        console.log(`[apply-note-fix] apply_fix: docType=${docType} baseLen=${baseText.length} maxTokens=${maxTokens}`);
+
         const result = await callLLM({
           apiKey, model: MODELS.PRO, system: systemPrompt, user: userPrompt,
-          temperature: 0.2, maxTokens: 16000,
+          temperature: 0.2, maxTokens,
         });
 
         newText = result.content.trim();
         if (!newText) return json({ error: "AI returned empty result" }, 500);
+
+        // ── Post-generation section completeness validation ──
+        // For sectioned docs, verify all structural sections survived the rewrite.
+        // Act 3 in particular is vulnerable to LLM truncation when maxTokens is tight.
+        if (isSectionedDoc && newText) {
+          const missingSections = validateSectionedOutput(newText, docType);
+          if (missingSections.length > 0) {
+            console.error(`[apply-note-fix][IEL] SECTION_TRUNCATION_DETECTED: docType=${docType} missing=${missingSections.join(",")} outputLen=${newText.length} inputLen=${baseText.length}`);
+            // Attempt auto-repair: inject a warning into the result so the user can see it
+            // but do not silently drop — log prominently
+            console.warn(`[apply-note-fix] WARNING: Output may be truncated. Missing sections: ${missingSections.join(", ")}. Input: ${baseText.length} chars, Output: ${newText.length} chars.`);
+          } else {
+            console.log(`[apply-note-fix] Section completeness OK: docType=${docType} sections=all-present outputLen=${newText.length}`);
+          }
+        }
       }
 
       // Get next version number

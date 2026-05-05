@@ -121,6 +121,31 @@ function rollingAvg(arr: number[]): number {
   return recent.reduce((a, b) => a + b, 0) / recent.length;
 }
 
+/** Human-readable section label from a sectioned chunk key */
+function sectionLabel(chunkKey: string, metaLabel?: string): string {
+  if (metaLabel) return metaLabel;
+  // Map canonical section keys to display names
+  const SECTION_LABELS: Record<string, string> = {
+    act_1_setup: 'Act 1 — Setup',
+    act_2a_complication: 'Act 2a — Complication',
+    act_2b_crisis: 'Act 2b — Crisis',
+    act_3_resolution: 'Act 3 — Resolution',
+    act_1_beats: 'Act 1 — Beats',
+    act_2a_beats: 'Act 2a — Beats',
+    act_2b_beats: 'Act 2b — Beats',
+    act_3_beats: 'Act 3 — Beats',
+    act_1_rising_action: 'Act 1 — Rising Action',
+    act_2a_rising_action: 'Act 2a — Rising Action',
+    act_2b_complications: 'Act 2b — Complications',
+    act_3_climax_resolution: 'Act 3 — Climax & Resolution',
+    protagonists: 'Protagonists',
+    antagonists: 'Antagonists',
+    supporting_cast: 'Supporting Cast',
+    relationships_and_dynamics: 'Relationships & Dynamics',
+  };
+  return SECTION_LABELS[chunkKey] || chunkKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 /** Build a human-readable label for the current chunk based on strategy */
 function buildChunkLabel(
   strategy: string,
@@ -136,6 +161,13 @@ function buildChunkLabel(
     }
     return `Rewriting Episodes ${currentEpStart}–${currentEpEnd} — ${currentChunk} of ${totalChunks} affected`;
   }
+  // Sectioned strategy: show act/section label from chunk metadata
+  if (strategy === 'sectioned' && chunkMeta.length > 0 && currentChunk > 0) {
+    const meta = chunkMeta[currentChunk - 1];
+    if (meta) {
+      return `Rewriting ${sectionLabel(meta.chunk_key, meta.label)} — ${currentChunk} of ${totalChunks}`;
+    }
+  }
   return `Chunk ${currentChunk}/${totalChunks}`;
 }
 
@@ -147,12 +179,20 @@ function buildChunkDoneMessage(
   episodeStart: number | null,
   episodeEnd: number | null,
   durationSec: string,
+  chunkMeta?: ChunkMetaItem[],
 ): string {
   if (strategy === 'episodic_indexed' && episodeStart != null && episodeEnd != null) {
     if (episodeStart === episodeEnd) {
       return `Episode ${episodeStart} done (${durationSec}s)`;
     }
     return `Episodes ${episodeStart}–${episodeEnd} done (${durationSec}s)`;
+  }
+  // Sectioned strategy: show act/section label
+  if (strategy === 'sectioned' && chunkMeta && chunkMeta.length > chunkIndex) {
+    const meta = chunkMeta[chunkIndex];
+    if (meta) {
+      return `${sectionLabel(meta.chunk_key, meta.label)} done (${durationSec}s)`;
+    }
   }
   return `Chunk ${chunkIndex + 1}/${totalChunks} done (${durationSec}s)`;
 }
@@ -356,6 +396,7 @@ export function useRewritePipeline(projectId: string | undefined) {
         pushActivity('success', buildChunkDoneMessage(
           resolvedStrategy, i, totalChunks, resultEpStart, resultEpEnd,
           (chunkMs / 1000).toFixed(1),
+          resolvedChunkMeta,
         ));
       }
 

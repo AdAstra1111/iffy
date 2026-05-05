@@ -1294,33 +1294,23 @@ export default function ProjectDevelopmentEngine() {
       // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
       return;
     }
+    // Sectioned doc types (story_outline, treatment, character_bible, etc.) use the
+    // act-by-act rewrite pipeline — rewrite-plan splits into 4 acts, each act rewrites
+    // individually, showing Act 1 / Act 2a / Act 2b / Act 3 progress labels.
+    // NOTE: Previously this sent action=doc_type to dev-engine-v2 (broken — unknown action).
+    // Now routed through rewritePipeline for all sectioned types regardless of text length.
     if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
-      // Use dedicated treatment-rewrite action — creates new version with SectionedDocProgress polling
-      setTreatmentRewritePending(true);
-      const { data: trData, error: trErr } = await (supabase as any).functions.invoke('dev-engine-v2', {
-        body: {
-          action: selectedDoc?.doc_type,
-          projectId,
-          documentId: selectedDocId,
-          versionId: selectedVersionId,
-          approvedNotes: enrichedNotes,
-          protectItems,
+      const provenance = {
+        rewriteModeSelected: 'auto',
+        rewriteModeEffective: 'chunk',
+        rewriteModeReason: 'sectioned_doc_type_act_by_act',
+        rewriteModeDebug: {
+          docType: selectedDoc.doc_type,
+          decision_timestamp: new Date().toISOString(),
         },
-      }).finally(() => setTreatmentRewritePending(false));
-      if (trErr) {
-        toast.error(trErr?.message || trErr);
-      } else {
-        const newVersionId = trData?.versionId || null;
-        if (newVersionId) {
-          postOperationVersionId.current = newVersionId;
-          setSelectedVersionId(newVersionId);
-        } else {
-          postOperationVersionId.current = '__next__';
-        }
-        toast.success('Treatment rewrite complete');
-        qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-        qc.resetQueries({ queryKey: ['dev-v2-versions', selectedDocId], exact: true });
-      }
+        rewriteProbe: null,
+      };
+      rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
       afterRewrite();
       return;
     }
