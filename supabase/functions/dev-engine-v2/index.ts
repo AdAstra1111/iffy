@@ -2000,6 +2000,19 @@ Output the COMPLETE character bible as a JSON ARRAY of character objects. Every 
 - ORDER characters by narrative importance: protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time / story weight, then recurring/minor roles last. NEVER alphabetical order.`;
   }
 
+  // Market sheet format enforcement — mandatory anti-hallucination for market deliverables
+  let marketSheetEnforcement = "";
+  if (deliverable === "market_sheet" || deliverable === "vertical_market_sheet") {
+    marketSheetEnforcement = `\n\nMARKET SHEET FORMAT (MANDATORY — violations cause rejection):
+- This is a MARKET SHEET — a COMMERCIAL VIABILITY document, NOT a narrative document.
+- You MUST NOT invent, assume, or fabricate: financial figures, named investors/partners, deal structures, platform commitments, specific audience numbers, confirmed attachments, or market timing claims.
+- Only include data that is confirmed in the project's existing documents or explicitly requested in approved notes.
+- Mark all unconfirmed fields as "TBC" — never fill gaps with plausible-sounding fiction.
+- Do NOT add narrative content (character arcs, plot details, scene descriptions, themes).
+- If you cannot determine a field from the project data, write "TBC — requires development" rather than inventing content.
+- Comparable titles must be REAL works that genuinely match the project's format, genre, and scale. Better 1 real comp than 3 imaginary ones.`;
+  }
+
   // Episode grid format enforcement — mandatory when rewriting a grid doc
   let episodeGridEnforcement = "";
   if (deliverable === "episode_grid" || deliverable === "vertical_episode_grid") {
@@ -2047,7 +2060,7 @@ Rules:
 
 REWRITE OBJECTIVES FOR THIS DOCUMENT PURPOSE:
 ${rewriteGoals}
-${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${ideaEnforcement}${conceptBriefEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}
+${docGuard}${formatRules}${storyOutlineEnforcement}${beatSheetEnforcement}${ideaEnforcement}${conceptBriefEnforcement}${scriptEnforcement}${episodeBeatsEnforcement}${characterBibleEnforcement}${episodeGridEnforcement}${marketSheetEnforcement}
 
 Return ONLY valid JSON:
 {

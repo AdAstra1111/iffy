@@ -159,7 +159,7 @@ REQUIRED JSON SCHEMA:
   "final_seed_docs": {
     "project_overview": "STRING — Title, logline, format, genre, tone, target audience, comparable titles, development stage summary.",
     "creative_brief": "STRING — Creative vision, thematic core, visual tone, narrative approach, audience engagement strategy.",
-    "market_positioning": "STRING — Market landscape, competitive positioning, target buyers/platforms, international potential, timing considerations.",
+    "market_positioning": "STRING — Market landscape, competitive positioning, target buyers/platforms, international potential, timing considerations. CRITICAL: Do NOT invent financial figures, named investors/partners, deal structures, or confirmed platform commitments. Use TBC for unconfirmed fields.",
     "canon_constraints": "STRING — World rules, character constraints, narrative boundaries, tone guardrails, format-specific requirements."
   },
   "compression": {

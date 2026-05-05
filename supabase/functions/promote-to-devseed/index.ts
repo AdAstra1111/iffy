@@ -355,14 +355,24 @@ SECTIONS TO GENERATE:
    - Melodrama Guard: what emotional beats to avoid overdoing
    - Tone Boundaries: what this show/film IS NOT
 
-3. MARKET RATIONALE — Commercial justification:
-   - Market Hook: The single distinctive commercial angle (MUST satisfy NUE market hook requirement above)
-   - Comparable Analysis: why each comp is relevant, what to take and avoid
-   - Lane Justification: why this lane is optimal, alternatives considered
-   - Serial Scalability Note: How the engine sustains across the declared format length
-   - Buyer Positioning: which buyers/platforms, pitch angle for each
-   - Timing: market window, trend alignment
-   - Risk Summary: top 3 risks with mitigations
+3. MARKET RATIONALE — Commercial justification (GROUNDED IN KNOWN DATA ONLY):
+CRITICAL ANTI-HALLUCINATION RULE: YOU MUST NOT INVENT, ASSUME, OR FABRICATE ANY OF THE FOLLOWING:
+- Specific financial figures (budget numbers, revenue projections, deal valuations, financing amounts)
+- Named investors, production companies, studios, or partners (unless explicitly in the pitch data)
+- Deal structures (co-production splits, pre-sales, equity arrangements, distribution advances)
+- Platform commitments or confirmed buyer interest (unless in the pitch data)
+- Named executives, agents, or industry contacts
+- Market timing claims with specific dates, quarters, or windows
+- Audience size projections with specific numbers
+- Claims of confirmed attachment by any named person or entity
+FOR EVERY FIELD BELOW: if you do not have confirmed data from the pitch, use TBC or omit the field. NEVER invent something that sounds plausible.
+- Market Hook: The single distinctive commercial angle (MUST satisfy NUE market hook requirement above). If unknown, write "TBC — refine during development."
+- Comparable Analysis: If you cannot name actual comparable works from your training data that genuinely match, write fewer comps. Better 1 real comp than 3 imagined ones. For each comp, state why it's actually comparable based on known project facts, not made-up reasons.
+- Lane Justification: why this lane is optimal, alternatives considered. Base on the pitch's declared format, not on invented market reasoning.
+- Serial Scalability Note: How the engine sustains across the declared format length. Base on the actual story engine from the pitch, not invented scalability logic.
+- Buyer Positioning: which buyers/platforms, pitch angle for each. ONLY name platforms that are real and actually fit the format. Do NOT invent platform interest or confirmed meetings.
+- Timing: market window, trend alignment. If no specific timing/data exists in the pitch, use "TBC" or omit.
+- Risk Summary: top 3 risks with mitigations. Risks must be ABOUT THIS SPECIFIC PROJECT based on its actual characteristics (format, genre, scale), not generic market platitudes. Use TBC for fields without data.
 ${convergenceGuidanceBlock}${dnaConstraintBlock}${blueprintExecutionBlock}
 4. NARRATIVE SPINE — Structural lock object (output as "narrative_spine" key):
    - story_engine: the StoryEngine that best matches this story (pressure_cooker / two_hander / slow_burn_investigation / social_realism / moral_trap / character_spiral / rashomon / anti_plot)
@@ -424,9 +434,10 @@ Output as a JSON object with keys: bible_starter, nuance_contract, market_ration
                   },
                   market_rationale: {
                     type: "object",
+                    description: "Commercial justification. CRITICAL: Do NOT invent financial data, named partners, deal terms, or confirmed commitments. Use TBC for unconfirmed fields.",
                     properties: {
-                      market_hook: { type: "string", description: "Single distinctive commercial angle" },
-                      serial_scalability_note: { type: "string", description: "How the engine sustains across the declared format length" },
+                      market_hook: { type: "string", description: "Single distinctive commercial angle. Use TBC if unknown." },
+                      serial_scalability_note: { type: "string", description: "How the engine sustains across the declared format length. Base on actual story engine, not invented logic." },
                       comparable_analysis: { type: "array", items: { type: "object", properties: { title: { type: "string" }, relevance: { type: "string" }, take: { type: "string" }, avoid: { type: "string" } }, required: ["title", "relevance"] } },
                       lane_justification: { type: "string" },
                       buyer_positioning: { type: "array", items: { type: "object", properties: { buyer: { type: "string" }, angle: { type: "string" } }, required: ["buyer", "angle"] } },
@@ -652,6 +663,7 @@ Return the same JSON schema as before with the structural elements strengthened.
                   nuance_contract: { type: "object" },
                   market_rationale: {
                     type: "object",
+                    description: "Commercial justification. CRITICAL: Do NOT invent financial data, named partners, deal terms, or confirmed commitments. Use TBC for unconfirmed fields.",
                     properties: {
                       market_hook: { type: "string" },
                       serial_scalability_note: { type: "string" },
