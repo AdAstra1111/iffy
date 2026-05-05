@@ -742,7 +742,7 @@ function extractJSON(raw) {
 }
 async function callAI(apiKey, model, system, user, temperature = 0.3, maxTokens = 32000, seed) {
     const MAX_RETRIES = 3;
-    // Resolve gateway dynamically — prefer Lovable AI Gateway over OpenRouter
+    // Resolve gateway dynamically
     const gw = (() => { try {
         return resolveGateway();
     }

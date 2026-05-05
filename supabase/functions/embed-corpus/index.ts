@@ -22,8 +22,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = Deno.env.get("OPENROUTER_API_KEY");
-    if (!lovableKey) throw new Error("OPENROUTER_API_KEY not configured");
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
+    if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
     // Verify user
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -36,11 +36,11 @@ serve(async (req) => {
     const { action, ...params } = await req.json();
 
     if (action === "embed_script") {
-      return await handleEmbedScript(adminClient, user.id, params, lovableKey, corsHeaders);
+      return await handleEmbedScript(adminClient, user.id, params, openrouterKey, corsHeaders);
     } else if (action === "embed_pending") {
-      return await handleEmbedPending(adminClient, user.id, lovableKey, corsHeaders);
+      return await handleEmbedPending(adminClient, user.id, openrouterKey, corsHeaders);
     } else if (action === "semantic_search") {
-      return await handleSemanticSearch(adminClient, user.id, params, lovableKey, corsHeaders);
+      return await handleSemanticSearch(adminClient, user.id, params, openrouterKey, corsHeaders);
     } else {
       throw new Error(`Unknown action: ${action}`);
     }

@@ -21,7 +21,7 @@ serve(async (req) => {
       });
     }
 
-    const lovableApiKey = resolveGateway().apiKey;
+    const gatewayKey = resolveGateway().apiKey;
 
     const { text, file_name } = await req.json();
     if (!text) {
@@ -57,7 +57,7 @@ Example output:
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${gatewayKey}`,
       },
       body: JSON.stringify({
         model: MODELS.FAST,

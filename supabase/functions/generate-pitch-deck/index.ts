@@ -17,8 +17,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const _gw = resolveGateway();
-    const lovableKey = _gw.apiKey;
-    if (!lovableKey) throw new Error("No AI gateway key configured");
+    const gatewayKey = _gw.apiKey;
+    if (!gatewayKey) throw new Error("No AI gateway key configured");
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -183,7 +183,7 @@ Generate the content for each slide as a JSON array.`;
     const response = await fetch(resolveGateway().url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableKey}`,
+        Authorization: `Bearer ${gatewayKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

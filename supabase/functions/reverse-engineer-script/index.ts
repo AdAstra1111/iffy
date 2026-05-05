@@ -87,8 +87,8 @@ function chunkScriptWithLines(text: string, numChunks = 3): {
 
 // ─── LLM Gateway ─────────────────────────────────────────────────────────────
 function resolveGatewayKey(): { key: string; baseUrl: string; model: string } {
-  const lovable = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-  if (lovable) return { key: lovable, baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-2.5-flash" };
+  const openrouterKey = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
+  if (openrouterKey) return { key: openrouterKey, baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-2.5-flash" };
   const openai = Deno.env.get("OPENAI_API_KEY");
   if (openai) return { key: openai, baseUrl: "https://api.openai.com/v1", model: "gpt-4o" };
   throw new Error("No AI gateway key configured");

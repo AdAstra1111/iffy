@@ -39,7 +39,7 @@ serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
   const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const _gw = resolveGateway();
-  const lovableApiKey = _gw.apiKey;
+  const gatewayKey = _gw.apiKey;
   const PERPLEXITY_API_KEY = Deno.env.get("PERPLEXITY_API_KEY");
   const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -378,7 +378,7 @@ Return ONLY a JSON array of objects. No markdown, no explanation outside the JSO
       fetch(_gw.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
+          Authorization: `Bearer ${gatewayKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -389,7 +389,7 @@ Return ONLY a JSON array of objects. No markdown, no explanation outside the JSO
       fetch(_gw.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
+          Authorization: `Bearer ${gatewayKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
@@ -647,7 +647,7 @@ Write in direct, professional prose. No bullet points, no headers. Just a tight 
       const briefResponse = await fetch(_gw.url, {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${lovableApiKey}`,
+          Authorization: `Bearer ${gatewayKey}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

@@ -25,7 +25,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("OPENROUTER_API_KEY")!;
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Verify user
@@ -119,7 +119,7 @@ ${JSON.stringify(sceneSummary, null, 2)}`;
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openrouterKey}`,
       },
       body: JSON.stringify({
         model: MODELS.FAST,

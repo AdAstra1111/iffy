@@ -843,7 +843,7 @@ function extractJSON(raw: string): string {
 
 async function callAI(apiKey: string, model: string, system: string, user: string, temperature = 0.3, maxTokens = 32000, seed?: number): Promise<string> {
   const MAX_RETRIES = 3;
-  // Resolve gateway dynamically — prefer Lovable AI Gateway over OpenRouter
+  // Resolve gateway dynamically
   const gw = (() => { try { return resolveGateway(); } catch { return { url: "https://openrouter.ai/api/v1/chat/completions", apiKey }; } })();
   const effectiveUrl = gw.url;
   const effectiveKey = gw.apiKey || apiKey;

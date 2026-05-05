@@ -18,7 +18,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = resolveGateway().apiKey;
+    const gatewayKey = resolveGateway().apiKey;
 
     // Verify user
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -31,9 +31,9 @@ serve(async (req) => {
     const { action, ...params } = await req.json();
 
     if (action === "ingest") {
-      return await handleIngest(adminClient, user.id, params, lovableKey, corsHeaders);
+      return await handleIngest(adminClient, user.id, params, gatewayKey, corsHeaders);
     } else if (action === "reingest") {
-      return await handleReingest(adminClient, user.id, params, lovableKey, corsHeaders);
+      return await handleReingest(adminClient, user.id, params, gatewayKey, corsHeaders);
     } else if (action === "search") {
       return await handleSearch(adminClient, user.id, params, corsHeaders);
     } else {
@@ -54,7 +54,7 @@ async function handleIngest(
   db: ReturnType<typeof createClient>,
   userId: string,
   params: { source_id: string },
-  lovableKey: string | undefined,
+  gatewayKey: string | undefined,
   cors: Record<string, string>,
 ) {
   const { source_id } = params;
@@ -151,8 +151,8 @@ async function handleIngest(
     rawText = extractHtmlText(html);
     addLog(`HTML extracted: ${rawText.length} chars`);
   } else {
-    // PDF — use Gemini via Lovable AI to extract text
-    if (!lovableKey) throw new Error("OPENROUTER_API_KEY not configured — needed for PDF extraction");
+    // PDF — use Gemini via AI gateway to extract text
+    if (!gatewayKey) throw new Error("OPENROUTER_API_KEY not configured — needed for PDF extraction");
     addLog("Fetching PDF and extracting text via AI…");
     const pdfResp = await fetch(source.source_url);
     if (!pdfResp.ok) throw new Error(`Failed to fetch PDF: ${pdfResp.status}`);
@@ -168,7 +168,7 @@ async function handleIngest(
 
     const aiResp = await fetch(resolveGateway().url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${gatewayKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [
@@ -309,13 +309,13 @@ async function handleIngest(
   }
 
   // 8. Generate derived artifacts via LLM
-  if (lovableKey) {
+  if (gatewayKey) {
     addLog("Generating derived artifacts…");
     try {
       const excerpt = rawText.slice(0, 15_000);
       const artifactResp = await fetch(resolveGateway().url, {
         method: "POST",
-        headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${gatewayKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",
           messages: [
@@ -415,7 +415,7 @@ async function handleReingest(
   db: ReturnType<typeof createClient>,
   userId: string,
   params: { script_id: string; file_content: string; file_name: string; file_type?: string },
-  lovableKey: string | undefined,
+  gatewayKey: string | undefined,
   cors: Record<string, string>,
 ) {
   const { script_id, file_content, file_name, file_type } = params;
@@ -440,11 +440,11 @@ async function handleReingest(
     : (file_type || 'txt').toLowerCase().includes('pdf') ? 'pdf' : 'txt';
 
   // For PDF: use AI extraction
-  if (ingestionSource === 'pdf' && lovableKey) {
+  if (ingestionSource === 'pdf' && gatewayKey) {
     addLog("Extracting text from PDF via AI…");
     const aiResp = await fetch(resolveGateway().url, {
       method: "POST",
-      headers: { Authorization: `Bearer ${lovableKey}`, "Content-Type": "application/json" },
+      headers: { Authorization: `Bearer ${gatewayKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages: [{

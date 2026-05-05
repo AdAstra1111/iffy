@@ -23,7 +23,7 @@ serve(async (req) => {
     }
 
     const _gw = resolveGateway();
-    const lovableApiKey = _gw.apiKey;
+    const gatewayKey = _gw.apiKey;
     const { scriptText, format, genres, budgetRange, lane, totalBudget } = await req.json();
 
     if (!scriptText) {
@@ -77,7 +77,7 @@ ${truncated}`;
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${gatewayKey}`,
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",

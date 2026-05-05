@@ -106,7 +106,7 @@ serve(async (req) => {
       });
     }
 
-    const lovableApiKey = Deno.env.get("OPENROUTER_API_KEY")!;
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY")!;
     const { text, file_name, import_type } = await req.json();
 
     if (!text) {
@@ -122,7 +122,7 @@ serve(async (req) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openrouterKey}`,
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",

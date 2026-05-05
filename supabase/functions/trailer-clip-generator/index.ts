@@ -1712,8 +1712,8 @@ async function handleRunTechnicalClipJudge(db: any, body: any, userId: string) {
     }
   }
 
-  // Use Lovable AI for judging
-  const lovableApiKey = Deno.env.get("OPENROUTER_API_KEY") || "";
+  // Use AI gateway for judging
+  const openrouterKey = Deno.env.get("OPENROUTER_API_KEY") || "";
 
   const results: any[] = [];
   let judged = 0;
@@ -1821,12 +1821,12 @@ GENERATION PROMPT USED:
 ${(clip.gen_params?.prompt || clip.gen_params?.clip_spec?.visual_prompt || "").toString().slice(0, 500)}`;
 
     try {
-      // Use Lovable AI via the shared LLM pattern
-      const llmResp = await fetch("https://api.lovable.dev/v1/chat/completions", {
+      // Use AI gateway for judging
+      const llmResp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${lovableApiKey}`,
+          "Authorization": `Bearer ${openrouterKey}`,
         },
         body: JSON.stringify({
           model: "google/gemini-2.5-flash",

@@ -40,8 +40,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = Deno.env.get("OPENROUTER_API_KEY");
-    if (!lovableKey) throw new Error("OPENROUTER_API_KEY not configured");
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
+    if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
     // Verify user
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -149,7 +149,7 @@ serve(async (req) => {
       }
 
       try {
-        const embedding = await createEmbedding(embeddingText, lovableKey);
+        const embedding = await createEmbedding(embeddingText, openrouterKey);
 
         const { data: newId, error: insertErr } = await sb.rpc("insert_project_vector", {
           _project_id: projectId,
@@ -161,7 +161,7 @@ serve(async (req) => {
           _source_meta: {
             source_preview: embeddingText.slice(0, 200),
             generated_at: new Date().toISOString(),
-            provider: "lovable_ai_gateway",
+            provider: "openrouter_gateway",
             trigger: body.trigger || "manual",
           },
         });

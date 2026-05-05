@@ -240,7 +240,7 @@ async function handleGenerateShotMedia(db: any, body: any, userId: string, apiKe
 
   for (let i = 0; i < variations; i++) {
     try {
-      // Generate image via Lovable AI image model
+      // Generate image via AI gateway image model
       const imageResponse = await fetch(resolveGateway().url, {
         method: "POST",
         headers: {

@@ -33,7 +33,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = resolveGateway().apiKey;
+    const gatewayKey = resolveGateway().apiKey;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -119,7 +119,7 @@ Return ONLY the JSON array. No markdown fences, no explanation outside the array
     const aiResponse = await fetch(resolveGateway().url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${gatewayKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

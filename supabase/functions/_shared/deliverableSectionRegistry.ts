@@ -131,12 +131,12 @@ const TREATMENT_SECTIONS: SectionDefinition[] = [
 ];
 
 const STORY_OUTLINE_SECTIONS: SectionDefinition[] = [
-  { section_key: "setup", label: "Setup / Opening", match_mode: "heading_regex", match_pattern: "^#+\\s*setup|^#+\\s*opening|^#+\\s*act\\s*(1|one|i)\\b", allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
+  { section_key: "setup", label: "Setup / Opening", match_mode: "heading_regex", match_pattern: "^#+\\s*setup|^#+\\s*opening", allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
   { section_key: "inciting_incident", label: "Inciting Incident", match_mode: "heading_regex", match_pattern: "^#+\\s*inciting\\s*incident|^#+\\s*catalyst", allows_partial_rewrite: true, repair_mode: "replace_section", order: 1 },
-  { section_key: "rising_action", label: "Rising Action", match_mode: "heading_regex", match_pattern: "^#+\\s*rising\\s*action|^#+\\s*act\\s*(2|two|ii)\\b", allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
+  { section_key: "rising_action", label: "Rising Action", match_mode: "heading_regex", match_pattern: "^#+\\s*rising\\s*action", allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
   { section_key: "midpoint", label: "Midpoint", match_mode: "heading_regex", match_pattern: "^#+\\s*midpoint|^#+\\s*mid-?point", allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
   { section_key: "climax", label: "Climax", match_mode: "heading_regex", match_pattern: "^#+\\s*climax", allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
-  { section_key: "resolution", label: "Resolution / Denouement", match_mode: "heading_regex", match_pattern: "^#+\\s*resolution|^#+\\s*denouement|^#+\\s*act\\s*(3|three|iii)\\b", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
+  { section_key: "resolution", label: "Resolution / Denouement", match_mode: "heading_regex", match_pattern: "^#+\\s*resolution|^#+\\s*denouement", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
 ];
 
 const BEAT_SHEET_SECTIONS: SectionDefinition[] = [

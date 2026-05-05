@@ -23,7 +23,7 @@ serve(async (req) => {
     }
 
     const _gw = resolveGateway();
-    const lovableApiKey = _gw.apiKey;
+    const gatewayKey = _gw.apiKey;
     const { scenes, shootDays, schedule, format, genres, budgetRange } = await req.json();
 
     if (!scenes || scenes.length === 0) {
@@ -81,7 +81,7 @@ ${JSON.stringify(sceneSummary)}`;
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${gatewayKey}`,
       },
       body: JSON.stringify({
         model: MODELS.FAST,

@@ -357,26 +357,41 @@ export function useScriptDropProject() {
 
       // ── Stage 2: Ingest PDF ────────────────────────────────────────────────
       await markRunning('ingest');
-      let titleGuess   = placeholderTitle;
-      let docVersionId = ver.id;
+      let titleGuess          = placeholderTitle;
+      let docVersionId        = ver.id;
+      let ingestFailed: boolean = false;
 
-      try {
-        const ingestResult = await callFunction('script-intake', {
-          action:     'ingest_pdf',
-          projectId:  pid,
-          storagePath,
-          documentId: doc.id,
-          versionId:  ver.id,
-        }, token);
-        if (ingestResult?.titleGuess) titleGuess = ingestResult.titleGuess;
+      // Retry up to 2x on transient "Failed to fetch" errors
+      let ingestResult: any = null;
+      let ingestRetries = 0;
+      const MAX_INGEST_RETRIES = 2;
+      while (ingestRetries <= MAX_INGEST_RETRIES && !ingestResult) {
+        try {
+          ingestResult = await callFunction('script-intake', {
+            action:     'ingest_pdf',
+            projectId:  pid,
+            storagePath,
+            documentId: doc.id,
+            versionId:  ver.id,
+          }, token);
+        } catch (ingestErr: any) {
+          ingestRetries++;
+          if (ingestRetries <= MAX_INGEST_RETRIES) {
+            console.warn(`[drop] ingest_pdf attempt ${ingestRetries}/${MAX_INGEST_RETRIES} failed, retrying:`, ingestErr.message);
+            await new Promise(r => setTimeout(r, 2000 * ingestRetries)); // 2s, then 4s backoff
+          } else {
+            ingestFailed = true;
+            await markFailed('ingest', ingestErr);
+            console.warn('[drop] ingest_pdf failed after', MAX_INGEST_RETRIES, 'retries:', ingestErr.message);
+          }
+        }
+      }
+      if (ingestResult?.titleGuess) titleGuess = ingestResult.titleGuess;
+      if (!ingestFailed) {
         await markDone('ingest', {
           title_guess:  titleGuess,
           page_count:   ingestResult?.pageCount,
         });
-      } catch (ingestErr: any) {
-        // Non-fatal: scene_graph_extract will attempt with whatever text is available
-        await markFailed('ingest', ingestErr);
-        console.warn('[drop] ingest_pdf failed (non-fatal):', ingestErr.message);
       }
 
       // Update project title and document title with AI-detected title
@@ -434,6 +449,22 @@ export function useScriptDropProject() {
       const { isScreenplay, sceneCount } = isScreenplayText(plaintext);
 
       if (!isScreenplay) {
+        if (ingestFailed) {
+          // Ingest failed — text was not extracted, so we cannot determine document type.
+          // Fail enrichment stages (not skip) so the user knows something is wrong
+          // and can retry ingest before proceeding.
+          const failedStages = ["scene_extract", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
+          for (const key of failedStages) {
+            await markFailed(key, new Error(`ingest failed — no text available; retry ingest or re-upload`));
+          }
+          if (currentRunId) {
+            await finaliseIntakeRun(currentRunId, currentStages).catch(() => {});
+          }
+          toast.warning(`"${titleGuess}" created — ingest failed. Retry ingest or re-upload.`);
+          navigate(`/projects/${pid}`);
+          setIsRunning(false);
+          return;
+        }
         // Non-screenplay document — skip all screenplay-specific enrichment stages
         const skippedStages = ["scene_extract", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
         for (const key of skippedStages) {

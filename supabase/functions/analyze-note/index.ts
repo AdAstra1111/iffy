@@ -25,7 +25,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("OPENROUTER_API_KEY")!;
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY")!;
 
     // Verify user
     const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -111,7 +111,7 @@ INSTRUCTIONS:
     const aiResponse = await fetch(resolveGateway().url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openrouterKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

@@ -118,12 +118,14 @@ const CHARACTER_BIBLE_SECTIONS = [
   "relationships_and_dynamics",
 ];
 
-// Feature story outline: 4 structural acts, each with 12-20 scenes (~50-80 total)
+// Feature story outline: 6 canonical sections
 const STORY_OUTLINE_SECTIONS = [
-  "act_1_setup",         // pp 1-25: world, protagonist, inciting incident
-  "act_2a_complication", // pp 26-55: rising action, lock-in, midpoint build
-  "act_2b_crisis",       // pp 56-85: complications, dark night of the soul
-  "act_3_resolution",    // pp 86-110: climax, resolution, denouement
+  "setup",              // Setup / Opening
+  "inciting_incident",  // Inciting Incident / Catalyst
+  "rising_action",      // Rising Action / Act 2
+  "midpoint",           // Midpoint
+  "climax",             // Climax
+  "resolution",         // Resolution / Denouement
 ];
 
 // Feature beat sheet: 4 structural acts, each with 10-15 named beats (~40-60 total)

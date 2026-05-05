@@ -11,7 +11,7 @@
  * Extraction pipeline:
  *   1. Guardrails / project-metadata (lowest priority)
  *   2. Per-doc regex heading extraction (deterministic)
- *   3. LLM inference for still-missing fields (Lovable AI gateway)
+ *   3. LLM inference for still-missing fields (AI gateway)
  *   4. Safe defaults for remaining gaps
  */
 

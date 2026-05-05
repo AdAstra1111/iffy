@@ -16,15 +16,15 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
 async function callLLM(prompt: string, maxTokens = 6000): Promise<string> {
-  const lovable = Deno.env.get("OPENROUTER_API_KEY");
+  const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   const openai = Deno.env.get("OPENAI_API_KEY");
   const openrouter = Deno.env.get("OPENROUTER_API_KEY");
 
-  let key = lovable || openai || openrouter;
+  let key = openrouterKey || openai || openrouter;
   let baseUrl = "https://openrouter.ai/api/v1";
   let model = "google/gemini-2.5-flash";
 
-  if (lovable) { baseUrl = "https://openrouter.ai/api/v1"; model = "google/gemini-2.5-flash"; }
+  if (openrouterKey) { baseUrl = "https://openrouter.ai/api/v1"; model = "google/gemini-2.5-flash"; }
   else if (openai) { baseUrl = "https://api.openai.com/v1"; model = "gpt-4o"; }
   else if (openrouter) { baseUrl = "https://openrouter.ai/api/v1"; model = "openai/gpt-4o"; }
 

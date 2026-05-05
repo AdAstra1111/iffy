@@ -592,8 +592,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-    const lovableKey = resolveGateway().apiKey;
-    if (!lovableKey) throw new Error("No AI gateway key configured");
+    const gatewayKey = resolveGateway().apiKey;
+    if (!gatewayKey) throw new Error("No AI gateway key configured");
 
     const db = createClient(supabaseUrl, supabaseKey);
     const { action, ...params } = await req.json();
@@ -710,7 +710,7 @@ Also extract up to 30 scene patterns and up to 15 character profiles.`;
         },
       }];
 
-      const result = await callAIWithTools(lovableKey, systemPrompt, userPrompt, tools, {
+      const result = await callAIWithTools(gatewayKey, systemPrompt, userPrompt, tools, {
         type: "function", function: { name: "store_analysis" },
       });
 
@@ -957,7 +957,7 @@ Each playbook should have:
         },
       }];
 
-      const result = await callAIWithTools(lovableKey, systemPrompt, userPrompt, tools, {
+      const result = await callAIWithTools(gatewayKey, systemPrompt, userPrompt, tools, {
         type: "function", function: { name: "store_playbooks" },
       });
 

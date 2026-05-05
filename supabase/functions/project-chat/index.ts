@@ -76,8 +76,8 @@ ${(docsRes.data || []).filter((d: any) => d.extracted_text).map((d: any) => `---
     `.trim();
 
     // Call AI with streaming
-    const lovableApiKey = Deno.env.get("OPENROUTER_API_KEY");
-    if (!lovableApiKey) throw new Error("AI not configured");
+    const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
+    if (!openrouterKey) throw new Error("AI not configured");
 
     const guardrails = buildGuardrailBlock({ productionType: project.format, engineName: "project-chat" });
     console.log(`[project-chat] guardrails: profile=${guardrails.profileName}, hash=${guardrails.hash}`);
@@ -86,7 +86,7 @@ ${(docsRes.data || []).filter((d: any) => d.extracted_text).map((d: any) => `---
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${lovableApiKey}`,
+        Authorization: `Bearer ${openrouterKey}`,
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
