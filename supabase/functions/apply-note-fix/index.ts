@@ -252,8 +252,16 @@ Generate fix options for this note.`;
 
       // ── Standard full-doc rewrite (non-episode docs, or global-change fallback) ──
       if (!newText) {
+        // Doc-type guard: market sheets are COMMERCIAL documents, not narrative.
+        // Narrative notes applied without guard can corrupt commercial docs with
+        // character/story details that belong elsewhere.
+        const isMarketSheet = docType === "market_sheet" || docType === "vertical_market_sheet";
+        const marketSheetGuard = isMarketSheet
+          ? `\n\nDOCUMENT TYPE GUARD: You are editing a ${docType.toUpperCase()} — a COMMERCIAL VIABILITY document, NOT a narrative document. Do NOT add or alter: character descriptions, plot details, dialogue, scene direction, story arcs, theme exploration, or any narrative content. This document contains ONLY: audience targeting, comparable titles, market positioning, budget range, distribution strategy, revenue model, buyer positioning, and risk assessment. If the note asks you to add narrative content, REFUSE and state "This is a commercial document. Narrative notes should target concept_brief or treatment instead."`
+          : "";
+
         const systemPrompt = `You are applying a note to a screenplay development document. The note has been submitted by the author and must be implemented as specified.
-${narrativeContextBlock ? `\nCANONICAL CONTEXT (locked upstream — preserve unless the note explicitly directs otherwise):\n${narrativeContextBlock}` : ""}${canonDocsBlock}${canonBreakWarning}
+${narrativeContextBlock ? `\nCANONICAL CONTEXT (locked upstream — preserve unless the note explicitly directs otherwise):\n${narrativeContextBlock}` : ""}${canonDocsBlock}${canonBreakWarning}${marketSheetGuard}
 
 Apply ONLY the specified fix. Preserve all other content exactly as written. Do not add, remove, or alter any content beyond what the note requires.`;
 

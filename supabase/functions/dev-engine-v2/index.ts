@@ -5335,7 +5335,10 @@ serve(async (req) => {
       const rawFormat = reqFormat || project?.format || "film";
       const effectiveFormat = resolveFormatAlias(rawFormat.toLowerCase().replace(/[_ ]+/g, "-"));
       const effectiveBehavior = developmentBehavior || project?.development_behavior || "market";
-      const effectiveDeliverable = deliverableType;
+      // Remap doc type for format-aware rubric selection.
+      // e.g. vertical-drama projects should use vertical_market_sheet rubric,
+      // not the generic market_sheet rubric (and vice versa for horizontal projects).
+      const effectiveDeliverable = remapDocType(deliverableType, effectiveFormat) ?? deliverableType;
       const effectiveProductionType = productionType || formatToProductionType[effectiveFormat] || "narrative_feature";
 
       // ── Canonical Qualification Resolver ──

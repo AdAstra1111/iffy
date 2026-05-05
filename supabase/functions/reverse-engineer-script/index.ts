@@ -217,11 +217,100 @@ async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Pro
 // ─── Doc storage ──────────────────────────────────────────────────────────────
 async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId: string | null, docType: string, docRole: string, title: string, data: any, extraMeta?: Record<string, any>, dependsOnResolverHash?: string): Promise<void> {
   const content = JSON.stringify(data, null, 2);
+  // ── Market sheet canonical prose formatter ──────────────────────────
+  // Matches DevSeed's buildMarketSheetContent() section structure:
+  //   ## Convergence Guidance, ## Nuance Contract, ## Comparable Projects,
+  //   ## Buyer Positioning, ## Risk Summary
+  function buildMarketSheetPlaintext(data: any): string {
+    if (!data || typeof data !== "object") return String(data ?? "");
+    const lines: string[] = [];
+
+    // ## Convergence Guidance (section 1)
+    lines.push("## Convergence Guidance", "");
+    const audienceParts: string[] = [];
+    if (data.target_audience) audienceParts.push(`Target Audience: ${data.target_audience}`);
+    if (data.audience_age_range) audienceParts.push(`Age Range: ${data.audience_age_range}`);
+    if (audienceParts.length > 0) {
+      lines.push(`**Audience Targeting:** ${audienceParts.join(" | ")}`, "");
+    }
+    if (data.audience_breakdown?.male || data.audience_breakdown?.female) {
+      const ab = data.audience_breakdown;
+      lines.push(`**Audience Breakdown:** Male ${ab.male || "—"} / Female ${ab.female || "—"}`, "");
+    }
+    if (data.market_positioning) {
+      lines.push(`**Market Gap / Unique Angle:** ${data.market_positioning}`, "");
+    }
+    lines.push("> *This is guidance derived from reverse-engineered script analysis. Used to align voice/tone/pacing while staying original.*", "");
+
+    // ## Nuance Contract
+    lines.push("## Nuance Contract", "");
+    if (data.tone) {
+      lines.push(`**Tonal Register:** ${data.tone}`, "");
+    }
+    if (data.format) {
+      lines.push(`**Format:** ${data.format}`, "");
+    }
+    if (data.budget_range) {
+      lines.push(`**Budget Band:** ${data.budget_range}`, "");
+    }
+    if (data.project_status) {
+      lines.push(`**Project Status:** ${data.project_status}`, "");
+    }
+    if (!data.tone && !data.format && !data.budget_range && !data.project_status) {
+      lines.push("*No nuance contract data from reverse engineering — populate during development.*", "");
+    }
+    lines.push("");
+
+    // ## Comparable Projects
+    if (data.comparable_titles?.length > 0) {
+      lines.push("## Comparable Projects", "");
+      for (const title of data.comparable_titles) {
+        lines.push(`- **${title}**`, "");
+      }
+      lines.push("");
+    } else {
+      lines.push("## Comparable Projects", "");
+      lines.push("*No comparable titles identified — add during development.*", "");
+    }
+
+    // ## Buyer Positioning
+    lines.push("## Buyer Positioning", "");
+    if (data.market_positioning) {
+      const platforms = ["Netflix", "Amazon", "Apple TV+", "HBO", "Hulu", "Disney+", "Paramount+", "Peacock"];
+      lines.push(`- **Streamers / Buyers:** This project's positioning (${data.market_positioning}) suggests targeting platforms seeking ${data.genre || "original"} content${data.audience_age_range ? ` for ${data.audience_age_range} audiences` : ""}.`);
+      lines.push("");
+    } else {
+      lines.push("*Buyer positioning not determined from script — refine during development.*", "");
+    }
+
+    // ## Risk Summary
+    lines.push("## Risk Summary", "");
+    if (data.budget_range === "tent-pole" || data.budget_range === "high") {
+      lines.push(`- **Budget Risk** → ${data.budget_range} budget requires proven IP or A-list attachment to mitigate financing risk.`);
+      lines.push("");
+    }
+    if (data.comparable_titles?.length === 0) {
+      lines.push("- **Market Risk** → No comparable titles identified — market fit is unvalidated until comps are established.");
+      lines.push("");
+    }
+    const riskCount = lines.filter(l => l.startsWith("- **")).length;
+    if (riskCount === 0) {
+      lines.push("*Risk analysis incomplete — populate during development.*", "");
+    }
+
+    return lines.join("\n").trim();
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
   function buildPlaintext(data: any, docType?: string): string {
     if (!data || typeof data !== "object") return String(data ?? "");
+
+    // ── MARKET SHEET / VERTICAL MARKET SHEET: canonical prose format ──
+    if (docType === "market_sheet" || docType === "vertical_market_sheet") {
+      return buildMarketSheetPlaintext(data);
+    }
 
     // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
     if (docType === "beat_sheet" && Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
