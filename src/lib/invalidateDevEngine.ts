@@ -74,5 +74,8 @@ export function invalidateDevEngine(
     // Document package / active folder
     qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
     qc.invalidateQueries({ queryKey: ['document-package', projectId] });
+    // FIX: useDocumentPackage hook uses ['package-status', ...] not ['document-package', ...]
+    // Without this invalidation, latestVersionMap is stale after any version creation
+    qc.invalidateQueries({ queryKey: ['package-status', projectId] });
   }
 }

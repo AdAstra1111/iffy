@@ -1699,7 +1699,7 @@ export default function ProjectDevelopmentEngine() {
       qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
-      qc.invalidateQueries({ queryKey: ['project-package', projectId] });
+      qc.invalidateQueries({ queryKey: ['package-status', projectId] });
     } catch (err: any) {
       toast.error(err.message || 'Failed to unapprove');
     } finally {
