@@ -29,6 +29,9 @@
     },
     "api/re_status.ts": {
       "maxDuration": 300
+    },
+    "api/entity-links-engine.ts": {
+      "maxDuration": 300
     }
   },
   "headers": [
