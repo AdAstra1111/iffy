@@ -102,8 +102,10 @@ async function callFunction(
   // nit-sync and entity-links-engine use service role key internally (verify_jwt: false).
   // Route through server-side proxy to avoid gateway JWT validation failures
   // when user token expires during long-running pipelines.
+  // Note: nit-sync has a dedicated proxy file with '-proxy' suffix.
+  const proxyName = name === 'nit-sync' ? 'nit-sync-proxy' : name;
   const url = name === 'nit-sync' || name === 'entity-links-engine'
-    ? `/api/${name}`
+    ? `/api/${proxyName}`
     : `${FUNC_BASE}/${name}`;
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (name !== 'nit-sync') headers['Authorization'] = `Bearer ${token}`;
