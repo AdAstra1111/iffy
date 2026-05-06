@@ -589,7 +589,7 @@ async function handleExtractFromDocs(supabase: any, body: any) {
   const COMP_JSON_KEYS = ["comparable_titles", "comparables", "comparable_shows", "comp_titles",
     "reference_titles", "similar_titles", "comparable_films", "comparable_series"];
   // Only scan plaintext in sections explicitly about comparables (not all bold/heading text)
-  const COMP_SECTION_PATTERN = /(?:comparable[s]?|similar (?:film|title|show|series|work)|reference title|comp title|like|meets)[^\n]*\n((?:[^\n]+\n?){1,20})/gi;
+  const COMP_SECTION_PATTERN = /(?:comparable[s]?|similar (?:film|title|show|series|work)|reference title|comp title|meets)[^\n]*\n((?:[^\n]+\n?){1,20})/gi;
 
   for (const doc of allDocs) {
     // Resolve version plaintext
@@ -605,6 +605,10 @@ async function handleExtractFromDocs(supabase: any, body: any) {
       if (vers?.[0]?.plaintext?.trim().length > 0) text = vers[0].plaintext.trim();
     }
     if (text.length < 20) continue;
+
+    // Skip screenplay docs — they contain no structured comparable lists,
+    // and dialogue fragments contaminate the extractor.
+    if (doc.doc_type === 'feature_script') continue;
 
     const docId = doc.id;
     const docTitle = doc.title || doc.file_name || "Untitled";
