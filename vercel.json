@@ -29,9 +29,6 @@
     },
     "api/re_status.ts": {
       "maxDuration": 300
-    },
-    "api/supabase-proxy/functions/v1/entity-links-engine.ts": {
-      "maxDuration": 300
     }
   },
   "headers": [
