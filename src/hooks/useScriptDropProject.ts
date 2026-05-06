@@ -253,6 +253,9 @@ export function useScriptDropProject() {
     };
 
     try {
+      // Refresh session first — prevents Supabase SDK's autoRefreshToken from
+      // aborting in-flight requests mid-pipeline ("signal is aborted without reason")
+      await supabase.auth.refreshSession();
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? '';
 
@@ -406,19 +409,24 @@ export function useScriptDropProject() {
 
       // Create project_scripts record — archive any existing current first, then insert.
       // (No unique constraint on project_id alone, so upsert would silently fail.)
-      await (supabase as any)
-        .from('project_scripts')
-        .update({ status: 'archived' })
-        .eq('project_id', pid)
-        .eq('status', 'current');
-      await (supabase as any).from('project_scripts').insert({
-        project_id:    pid,
-        user_id:       user.id,
-        version_label: titleGuess,
-        status:        'current',
-        file_path:     storagePath,
-        notes:         'Created via Script Drop Zone',
-      });
+      // Wrap in try/catch — supabase SDK's autoRefreshToken can abort in-flight
+      // requests ("signal is aborted without reason"), and project_scripts is
+      // non-critical for the primary pipeline flow.
+      try {
+        await (supabase as any)
+          .from('project_scripts')
+          .update({ status: 'archived' })
+          .eq('project_id', pid)
+          .eq('status', 'current');
+        await (supabase as any).from('project_scripts').insert({
+          project_id:    pid,
+          user_id:       user.id,
+          version_label: titleGuess,
+          status:        'current',
+          file_path:     storagePath,
+          notes:         'Created via Script Drop Zone',
+        });
+      } catch (_) { /* non-fatal — project_scripts write failure does not block import */ }
 
       // Update intake run with doc refs now that we have them
       if (currentRunId) {
