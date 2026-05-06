@@ -85,7 +85,7 @@ const INITIAL_STAGES: DropStage[] = STAGE_DEFINITIONS.map(s => ({
 
 /** Detect if plaintext is a screenplay (has INT./EXT. scene headings). */
 function isScreenplayText(text: string): { isScreenplay: boolean; sceneCount: number } {
-  const sluglinePattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.?|INTERIOR|EXTERIOR)[\s\-\.\/]( |\t)/gmi;
+  const sluglinePattern = /^(?:INT\.|EXT\.|INT\/EXT\.|I\/E\.?|INTERIOR|EXTERIOR)\s+/gmi;
   const matches = [...text.matchAll(sluglinePattern)];
   return { isScreenplay: matches.length >= 3, sceneCount: matches.length };
 }
