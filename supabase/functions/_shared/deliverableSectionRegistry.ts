@@ -130,13 +130,14 @@ const TREATMENT_SECTIONS: SectionDefinition[] = [
   { section_key: "themes",              label: "Themes",                match_mode: "heading_regex", match_pattern: "^#+\\s*themes?",                                                                                         allows_partial_rewrite: true, repair_mode: "replace_section", order: 16 },
 ];
 
+// Story outline: 4-act structure (Act 1 | Act 2a | Act 2b | Act 3)
+// Matches beat_sheet, treatment, and script act patterns for consistent act-by-act chunking.
+// Prevents Act 3 from being lost during rewrite (6-section feature structure was incompatible).
 const STORY_OUTLINE_SECTIONS: SectionDefinition[] = [
-  { section_key: "setup", label: "Setup / Opening", match_mode: "heading_regex", match_pattern: "^#+\\s*setup|^#+\\s*opening", allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
-  { section_key: "inciting_incident", label: "Inciting Incident", match_mode: "heading_regex", match_pattern: "^#+\\s*inciting\\s*incident|^#+\\s*catalyst", allows_partial_rewrite: true, repair_mode: "replace_section", order: 1 },
-  { section_key: "rising_action", label: "Rising Action", match_mode: "heading_regex", match_pattern: "^#+\\s*rising\\s*action", allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
-  { section_key: "midpoint", label: "Midpoint", match_mode: "heading_regex", match_pattern: "^#+\\s*midpoint|^#+\\s*mid-?point", allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
-  { section_key: "climax", label: "Climax", match_mode: "heading_regex", match_pattern: "^#+\\s*climax", allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
-  { section_key: "resolution", label: "Resolution / Denouement", match_mode: "heading_regex", match_pattern: "^#+\\s*resolution|^#+\\s*denouement", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
+  { section_key: "act_1_setup",           label: "Act 1 – Setup",              match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(1|one|i)\\b|^#+\\s*setup|^#+\\s*opening",                                                                   allows_partial_rewrite: true, repair_mode: "replace_section", order: 0, act_function_description: "Introduce the world, protagonist, ordinary life, inciting incident. End on the moment of commitment." },
+  { section_key: "act_2a_rising_action",  label: "Act 2A – Rising Action",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2a|two\\s*a|ii\\s*a)\\b|^#+\\s*rising\\s*action",                                                    allows_partial_rewrite: true, repair_mode: "replace_section", order: 1, act_function_description: "Protagonist commits to the journey. Rising stakes, early obstacles, complications build." },
+  { section_key: "act_2b_complications",  label: "Act 2B – Complications",     match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(2b|two\\s*b|ii\\s*b)\\b|^#+\\s*complications?|^#+\\s*midpoint",                                    allows_partial_rewrite: true, repair_mode: "replace_section", order: 2, act_function_description: "Complications escalate. Midpoint turn, reversals, darkest moment, characters pushed to limit." },
+  { section_key: "act_3_climax_resolution", label: "Act 3 – Climax & Resolution", match_mode: "heading_regex", match_pattern: "^#+\\s*act\\s*(3|three|iii)\\b|^#+\\s*climax|^#+\\s*resolution|^#+\\s*denouement",                            allows_partial_rewrite: true, repair_mode: "replace_section", order: 3, act_function_description: "Climax, final confrontation, resolution, thematic statement, closing image." },
 ];
 
 const BEAT_SHEET_SECTIONS: SectionDefinition[] = [

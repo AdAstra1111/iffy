@@ -10393,7 +10393,7 @@ Write these scenes NOW in proper screenplay format. Output ONLY screenplay text.
           page_estimate: pageEstimate,
           target_pages: planJson?.target_pages,
           total_scenes: planJson?.total_scenes,
-          acts: planJson?.acts?.length || 3,
+          acts: planJson?.acts?.length || 4,   // migrated from 3 to 4 to match 4-act canonical structure
         },
       }).select().single();
 

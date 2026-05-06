@@ -118,14 +118,14 @@ const CHARACTER_BIBLE_SECTIONS = [
   "relationships_and_dynamics",
 ];
 
-// Feature story outline: 6 canonical sections
+// Story outline: 4-act structure (Act 1 | Act 2a | Act 2b | Act 3)
+// Used for both feature and vertical drama to ensure consistent act-by-act chunking
+// and prevent Act 3 from being silently dropped during rewrite.
 const STORY_OUTLINE_SECTIONS = [
-  "setup",              // Setup / Opening
-  "inciting_incident",  // Inciting Incident / Catalyst
-  "rising_action",      // Rising Action / Act 2
-  "midpoint",           // Midpoint
-  "climax",             // Climax
-  "resolution",         // Resolution / Denouement
+  "act_1_setup",               // Act 1 — Setup / Opening
+  "act_2a_rising_action",       // Act 2a — Rising Action
+  "act_2b_complications",       // Act 2b — Complications
+  "act_3_climax_resolution",    // Act 3 — Climax & Resolution
 ];
 
 // Feature beat sheet: 4 structural acts, each with 10-15 named beats (~40-60 total)
