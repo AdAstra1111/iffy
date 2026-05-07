@@ -8,7 +8,7 @@
  * only the labels and backend routing differ.
  */
 
-import { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -40,7 +40,7 @@ function StatusBadge({ status }: { status: string }) {
   }
 }
 
-export function MomentRewritePanel({
+export default function MomentRewritePanel({
   projectId, documentId, versionId, approvedNotes, protectItems, onComplete, pipelineInstance,
 }: MomentRewritePanelProps) {
   const ownPipeline = useMomentRewritePipeline(projectId);

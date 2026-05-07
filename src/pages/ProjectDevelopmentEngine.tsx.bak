@@ -11,7 +11,7 @@ import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
 import { SceneRewritePanel } from '@/components/devengine/SceneRewritePanel';
-import MomentRewritePanel from '@/components/devengine/MomentRewritePanel';
+import { MomentRewritePanel } from '@/components/devengine/MomentRewritePanel';
 import { useMomentRewritePipeline } from '@/hooks/useMomentRewritePipeline';
 import BeatRewritePanel from '@/components/devengine/BeatRewritePanel';
 import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
