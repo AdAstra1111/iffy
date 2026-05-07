@@ -344,3 +344,5 @@ export default function MomentRewritePanel({
     </div>
   );
 }
+
+export const Kh = MomentRewritePanel;

@@ -11,8 +11,7 @@ import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
 import { SceneRewritePanel } from '@/components/devengine/SceneRewritePanel';
-import MomentRewritePanel from '@/components/devengine/MomentRewritePanel';
-import { useMomentRewritePipeline } from '@/hooks/useMomentRewritePipeline';
+import {Kh as MomentRewritePanel} from '@/components/devengine/MomentRewritePanel';
 import BeatRewritePanel from '@/components/devengine/BeatRewritePanel';
 import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
 import { DocSetManager } from '@/components/notes/DocSetManager';
@@ -452,7 +451,7 @@ export default function ProjectDevelopmentEngine() {
   const promotionIntel = usePromotionIntelligence();
   const rewritePipeline = useRewritePipeline(projectId);
   const sceneRewrite = useSceneRewritePipeline(projectId);
-  const momentRewrite = useMomentRewritePipeline(projectId);
+  const momentPipeline = useSceneRewritePipeline(projectId, 'story_outline');
   const autoRun = useAutoRunMissionControl(projectId);
   const enrichedPending = useEnrichedPendingDecisions(
     autoRun.job?.pending_decisions as any[] | undefined,
@@ -2278,11 +2277,11 @@ export default function ProjectDevelopmentEngine() {
                       versionId={selectedVersionId}
                       approvedNotes={[]}
                       protectItems={[]}
-                      pipelineInstance={momentRewrite}
+                      pipelineInstance={momentPipeline}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
                         setSelectedVersionId(newVersionId);
-                        momentRewrite.reset();
+                        momentPipeline.reset();
                       }}
                     />
                   )}
