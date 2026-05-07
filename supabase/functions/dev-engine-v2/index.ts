@@ -6739,7 +6739,8 @@ GENERAL RULES:
 - polish_notes: Optional refinements. Max 5.
 - Sort within each tier by structural importance.
 - Do NOT re-raise previously resolved issues as blockers.
-- If an existing note_key persists, use the same key — do NOT rephrase under a new key.${antiRepeatRule}
+- If an existing note_key persists, use the same key — do NOT rephrase under a new key.
+- ACT BISECTION AWARENESS: Act 2A + Act 2B within a 3-act film structure is a MIDPOINT SPLIT, NOT a fourth act. Do NOT flag 2A/2B as "too many acts" or "act structure confusion." This is a standard structural choice for feature films where the midpoint divides Act 2. Do NOT suggest collapsing 2A and 2B into a single Act 2 — that is a distinct creative choice, not a structural error. Genuine 4-act projects (e.g. limited series arcs, non-standard formats) should remain unaffected; the rule is specifically about not misreading bisection as a 4th act.${antiRepeatRule}
 
 ${(() => {
   const docTypeNoteScopes: Record<string, string> = {
@@ -10393,7 +10394,7 @@ Write these scenes NOW in proper screenplay format. Output ONLY screenplay text.
           page_estimate: pageEstimate,
           target_pages: planJson?.target_pages,
           total_scenes: planJson?.total_scenes,
-          acts: planJson?.acts?.length || 4,   // migrated from 3 to 4 to match 4-act canonical structure
+          acts: planJson?.acts?.length || 3,   // default 3 — act-bisection (2A+2B) is a midpoint split within 3 acts, NOT a 4th act
         },
       }).select().single();
 
