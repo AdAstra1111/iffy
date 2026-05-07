@@ -9116,6 +9116,213 @@ MATERIAL TO REWRITE:\n${fullText}`;
         }
       } catch (e) { /* Not JSON */ }
 
+      // ── STORY OUTLINE JSON MODE: detect { "title", "format", "entries": [...] } and rewrite per-moment ──
+      let isStoryOutlineJSON = false;
+      let storyOutlineJSON: any = null;
+      if (doc.doc_type === "story_outline" && !isBeatSheetJSON) {
+        try {
+          const trimmed = fullText.trim();
+          if (trimmed.startsWith("{")) {
+            storyOutlineJSON = JSON.parse(trimmed);
+            if (storyOutlineJSON && Array.isArray(storyOutlineJSON.entries) && storyOutlineJSON.entries.length > 0) {
+              isStoryOutlineJSON = true;
+              console.log(`[dev-engine-v2][story-outline] detected JSON story outline with ${storyOutlineJSON.entries.length} entries`);
+            } else {
+              storyOutlineJSON = null;
+            }
+          }
+        } catch (e) { /* Not JSON — fall through to sectioned prose path */ }
+      }
+
+      // ── STORY OUTLINE PER-MOMENT REWRITE PATH ──
+      if (isStoryOutlineJSON) {
+        const entries = storyOutlineJSON.entries;
+        const totalEntries = entries.length;
+
+        // Create new version
+        const newVersionNumber = (version.version_number || 1) + 1;
+        const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+        const effUserId = user?.id || proj?.user_id || null;
+
+        const insertRes = await supabase.from("project_document_versions").upsert({
+          document_id: documentId,
+          version_number: newVersionNumber,
+          plaintext: "",
+          is_current: false,
+          created_by: effUserId,
+          meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
+        }, { onConflict: "document_id,version_number" }).select();
+        if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
+        const newVersion = insertRes.data[0];
+        if (!newVersion?.id) throw new Error("No version returned from insert");
+
+        await supabase.from("project_document_versions").update({ is_current: false })
+          .eq("document_id", documentId).neq("id", newVersion.id);
+
+        // Create one chunk per entry for progress tracking
+        const chunkInserts = entries.map(function(e: any, idx: number) {
+          return {
+            version_id: newVersion.id,
+            chunk_index: idx,
+            chunk_key: "moment_" + (e.number || (idx + 1)),
+            status: "pending",
+            char_count: (e.description || "").length,
+            meta_json: { label: e.title || "Moment " + (idx + 1), moment_number: e.number || (idx + 1) },
+          };
+        });
+        await supabase.from("project_document_chunks").insert(chunkInserts);
+
+        // Build system prompt
+        const lane = project.assigned_lane || "independent-film";
+        const format = project.format || "film";
+        const narrativeCtx = await resolveNarrativeContext(supabase, projectId, { lane, format, includeSignals: true });
+        const narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+
+        let notesBlock = "";
+        if (approvedNotes && approvedNotes.length > 0) {
+          notesBlock = "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n: any) {
+            if (typeof n === "string") return "- " + n;
+            if (n.resolution_directive) return "- " + n.resolution_directive;
+            if (n.note_key) return "- [" + n.note_key + "] " + (n.description || n.note || JSON.stringify(n));
+            return "- " + (n.description || n.note || JSON.stringify(n));
+          }).join("\n") + "";
+        }
+
+        // Per-moment rewrite loop — each entry rewritten independently with adjacent context
+        const rewrittenEntries: any[] = [];
+
+        for (let i = 0; i < entries.length; i++) {
+          const entry = entries[i];
+          const prevEntry = i > 0 ? entries[i - 1] : null;
+          const nextEntry = i < entries.length - 1 ? entries[i + 1] : null;
+          const entryNum = entry.number || (i + 1);
+
+          console.log(`[story-outline] rewriting moment ${entryNum}/${totalEntries}: "${(entry.title || "").slice(0, 60)}"`);
+
+          // Mark chunk as running
+          await supabase.from("project_document_chunks")
+            .update({ status: "running" })
+            .eq("version_id", newVersion.id).eq("chunk_index", i);
+
+          // Build context block
+          let contextBlock = "";
+          if (prevEntry) {
+            contextBlock += `\nPREVIOUS MOMENT (${prevEntry.number || (i)}):\nTitle: ${prevEntry.title || ""}\nDescription: ${prevEntry.description || ""}`;
+          }
+          contextBlock += `\n\nCURRENT MOMENT (${entryNum}):\nTitle: ${entry.title || ""}\nDescription: ${entry.description || ""}`;
+          if (nextEntry) {
+            contextBlock += `\n\nNEXT MOMENT (${nextEntry.number || (i + 2)}):\nTitle: ${nextEntry.title || ""}\nDescription: ${nextEntry.description || ""}`;
+          }
+
+          const systemMsg = `You are rewriting ONE moment of a story outline for "${project.title || "this project"}".
+
+Production type: ${format}.
+${narrativeBlock}
+
+INSTRUCTIONS:
+- Rewrite ONLY the Description field of the CURRENT MOMENT below.
+- Keep the Number and Title EXACTLY as they are — do NOT change them.
+- The previous and next moments are provided for continuity context.
+- Maintain consistent voice, pacing, and narrative tone with adjacent moments.
+- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.
+- Do NOT merge, split, or reorder moments. Rewrite only this one moment.
+- Output ONLY valid JSON: {"number": ${entryNum}, "title": "...", "description": "..."}
+- Temp=0 — be deterministic. Exactly preserve the number and title given.${notesBlock}`;
+
+          const userPrompt = `MOMENT TO REWRITE (with context):${contextBlock}`;
+
+          try {
+            const _gw = resolveGateway();
+            const _apiKey = _gw.apiKey;
+            if (!_apiKey) throw new Error("No AI gateway key configured");
+
+            const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemMsg, userPrompt, 0.0, 2000);
+            const rewrittenText = rewrittenRaw?.trim() || "";
+
+            // Parse the rewritten moment JSON — extract JSON from possible markdown fences
+            let rewrittenEntry: any = null;
+            const jsonMatch = rewrittenText.match(/\{[\s\S]*?\}/);
+            if (jsonMatch) {
+              try {
+                rewrittenEntry = JSON.parse(jsonMatch[0]);
+              } catch { /* parse failed */ }
+            }
+            if (!rewrittenEntry || !rewrittenEntry.description) {
+              // LLM output was invalid — keep original
+              console.warn(`[story-outline] moment ${entryNum}/${totalEntries}: invalid LLM output, keeping original`);
+              rewrittenEntries.push({ number: entryNum, title: entry.title, description: entry.description });
+              await supabase.from("project_document_chunks").update({
+                status: "done",
+                content: entry.description,
+                char_count: (entry.description || "").length,
+              }).eq("version_id", newVersion.id).eq("chunk_index", i);
+            } else {
+              // Validate: preserve number and title from original
+              const validatedEntry = {
+                number: entryNum,
+                title: entry.title || rewrittenEntry.title || "",
+                description: rewrittenEntry.description || entry.description || "",
+              };
+              rewrittenEntries.push(validatedEntry);
+              await supabase.from("project_document_chunks").update({
+                status: "done",
+                content: validatedEntry.description,
+                char_count: validatedEntry.description.length,
+              }).eq("version_id", newVersion.id).eq("chunk_index", i);
+              console.log(`[story-outline] moment ${entryNum}/${totalEntries}: rewritten OK (${validatedEntry.description.length} chars)`);
+            }
+          } catch (err: any) {
+            console.warn(`[story-outline] moment ${entryNum}/${totalEntries} failed: ${String(err?.message || err)}, keeping original`);
+            rewrittenEntries.push({ number: entryNum, title: entry.title, description: entry.description });
+            await supabase.from("project_document_chunks").update({ status: "failed" })
+              .eq("version_id", newVersion.id).eq("chunk_index", i);
+          }
+        }
+
+        // Reassemble as JSON — preserve title and format from original
+        const outputJSON = {
+          title: storyOutlineJSON.title || project.title || "Story Outline",
+          format: storyOutlineJSON.format || format,
+          entries: rewrittenEntries,
+        };
+        const assembledText = JSON.stringify(outputJSON, null, 2);
+
+        // Update version with reassembled JSON
+        await supabase.from("project_document_versions").update({
+          plaintext: assembledText,
+          meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries, notes_applied: approvedNotes?.length || 0 },
+        }).eq("id", newVersion.id);
+
+        await supabase.from("development_runs").insert({
+          project_id: projectId, document_id: documentId, version_id: newVersion?.id,
+          user_id: effUserId, run_type: "STORY_OUTLINE_REWRITE",
+          output_json: { total_entries: totalEntries, notes_applied: approvedNotes?.length || 0 },
+        });
+
+        await supabase.from("project_documents").update({ latest_version_id: newVersion.id }).eq("id", documentId);
+
+        // Resolve approved notes
+        if (approvedNotes && approvedNotes.length > 0) {
+          const noteKeys = approvedNotes.map((n: any) => n.id || n.note_key).filter(Boolean);
+          if (noteKeys.length > 0) {
+            try {
+              await supabase.from("development_notes")
+                .update({ resolved: true, resolved_in_version: newVersion.id })
+                .eq("document_id", documentId).eq("resolved", false).in("note_key", noteKeys);
+            } catch (err: any) { console.warn("[story-outline] note resolution failed:", err?.message); }
+          }
+        }
+
+        return new Response(JSON.stringify({
+          success: true,
+          versionId: newVersion.id,
+          pipeline: "per_moment_v1",
+          totalEntries,
+          entryTitles: entries.map(function(e: any) { return e.title; }),
+          notesApplied: approvedNotes?.length || 0,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // ── SECTION-AWARE PARSER: handles both TREATMENT (## → ## THE STORY/ACT) and CHARACTER_BIBLE (## → ACT) ──
       function splitByActs(content: string, label: string, sk: string): { header: string; content: string; label: string; sk: string }[] {
         const actLines = content.split("\n");
