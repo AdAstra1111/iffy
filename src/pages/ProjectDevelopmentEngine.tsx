@@ -2271,7 +2271,7 @@ export default function ProjectDevelopmentEngine() {
                   )}
                   {/* Beat-level rewrite panel — beats are individual rewriteable units */}
                   {/* Moment-by-moment rewrite panel — fires for story_outline docs */}
-                  {momentRewrite.total > 0 && selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId && (
+                  {selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId && (
                     <MomentRewritePanel
                       projectId={projectId!}
                       documentId={selectedDocId}
