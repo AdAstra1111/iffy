@@ -10394,7 +10394,7 @@ Write these scenes NOW in proper screenplay format. Output ONLY screenplay text.
           page_estimate: pageEstimate,
           target_pages: planJson?.target_pages,
           total_scenes: planJson?.total_scenes,
-          acts: planJson?.acts?.length || 3,   // default 3 — act-bisection (2A+2B) is a midpoint split within 3 acts, NOT a 4th act
+          acts: planJson?.acts?.length || 4,   // 4 sections (Act 1, 2A, 2B, Act 3) is correct — 2A+2B = midpoint bisection within 3 dramatic acts
         },
       }).select().single();
 
