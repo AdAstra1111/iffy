@@ -11,6 +11,8 @@ import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
 import { SceneRewritePanel } from '@/components/devengine/SceneRewritePanel';
+import { MomentRewritePanel } from '@/components/devengine/MomentRewritePanel';
+import { useMomentRewritePipeline } from '@/hooks/useMomentRewritePipeline';
 import BeatRewritePanel from '@/components/devengine/BeatRewritePanel';
 import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
 import { DocSetManager } from '@/components/notes/DocSetManager';
@@ -450,6 +452,7 @@ export default function ProjectDevelopmentEngine() {
   const promotionIntel = usePromotionIntelligence();
   const rewritePipeline = useRewritePipeline(projectId);
   const sceneRewrite = useSceneRewritePipeline(projectId);
+  const momentRewrite = useMomentRewritePipeline(projectId);
   const autoRun = useAutoRunMissionControl(projectId);
   const enrichedPending = useEnrichedPendingDecisions(
     autoRun.job?.pending_decisions as any[] | undefined,
@@ -2267,6 +2270,22 @@ export default function ProjectDevelopmentEngine() {
                     )
                   )}
                   {/* Beat-level rewrite panel — beats are individual rewriteable units */}
+                  {/* Moment-by-moment rewrite panel — fires for story_outline docs */}
+                  {momentRewrite.total > 0 && selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId && (
+                    <MomentRewritePanel
+                      projectId={projectId!}
+                      documentId={selectedDocId}
+                      versionId={selectedVersionId}
+                      approvedNotes={[]}
+                      protectItems={[]}
+                      pipelineInstance={momentRewrite}
+                      onComplete={(newVersionId) => {
+                        postOperationVersionId.current = newVersionId;
+                        setSelectedVersionId(newVersionId);
+                        momentRewrite.reset();
+                      }}
+                    />
+                  )}
                   {selectedDoc?.doc_type === 'beat_sheet' && selectedDocId && selectedVersionId && (
                     <BeatRewritePanel
                       projectId={projectId!}

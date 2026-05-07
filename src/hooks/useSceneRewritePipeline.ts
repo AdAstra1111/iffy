@@ -179,7 +179,10 @@ async function fetchLatestRunId(projectId: string, sourceVersionId: string): Pro
   }
 }
 
-export function useSceneRewritePipeline(projectId: string | undefined) {
+export function useSceneRewritePipeline(projectId: string | undefined, targetDocType?: string) {
+  const isMomentMode = targetDocType === 'story_outline';
+  const unitLabel = isMomentMode ? 'Moment' : 'Scene';
+  const unitLabelPlural = isMomentMode ? 'Moments' : 'Scenes';
   const qc = useQueryClient();
   const [state, setState] = useState<SceneRewriteState>(initialState);
   const processingRef = useRef(false);
@@ -322,13 +325,14 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     const isSelective = Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0;
     setState(s => ({ ...s, mode: 'enqueuing', error: null, newVersionId: null }));
     pushActivity('info', isSelective
-      ? `Enqueuing ${targetSceneNumbers!.length} target scene jobs…`
-      : 'Enqueuing scene jobs…');
+      ? `Enqueuing ${targetSceneNumbers!.length} target ${unitLabel.toLowerCase()} jobs…`
+      : `Enqueuing ${unitLabel.toLowerCase()} jobs…`);
     try {
       lastSourceVersionIdRef.current = sourceVersionId;
       const result = await callEngine('enqueue_rewrite_jobs', {
         projectId, sourceDocId, sourceVersionId, approvedNotes, protectItems,
         targetSceneNumbers: targetSceneNumbers || undefined,
+        targetDocType: targetDocType || undefined,
       });
       const newRunId = result.runId || null;
       runIdRef.current = newRunId;
@@ -547,7 +551,7 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
           // Clear persisted runId on successful assemble
           if (projectId) clearRunId(projectId, sourceVersionId);
           runIdRef.current = null;
-          pushActivity('success', `Assembled ${assembleResult.scenesCount} scenes → ${assembleResult.charCount?.toLocaleString()} chars (is_current=true)`);
+          pushActivity('success', `Assembled ${assembleResult.scenesCount} ${unitLabel.toLowerCase()}s → ${assembleResult.charCount?.toLocaleString()} chars (is_current=true)`);
           toast.success(`Assembled → ${assembleResult.newVersionLabel || 'new version'}`);
         } catch (assembleErr: any) {
           setState(s => ({ ...s, mode: 'error', error: `Assemble failed: ${assembleErr.message}` }));
@@ -561,22 +565,22 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
           scenes: finalStatus.scenes || [],
           oldestRunningClaimedAt: finalStatus.oldest_running_claimed_at || null,
           mode: allDone ? 'complete' : (finalStatus.failed > 0 ? 'error' : 'idle'),
-          error: finalStatus.failed > 0 ? `${finalStatus.failed} scene(s) failed` : null,
+          error: finalStatus.failed > 0 ? `${finalStatus.failed} ${unitLabel.toLowerCase()}(s) failed` : null,
           smoothedPercent: allDone ? 100 : s.smoothedPercent,
           etaMs: allDone ? null : s.etaMs,
         }));
 
         if (allDone) {
-          pushActivity('success', `All ${finalStatus.total} scenes rewritten (assemble pending — no sourceDocId provided)`);
+          pushActivity('success', `All ${finalStatus.total} ${unitLabel.toLowerCase()}s rewritten (assemble pending — no sourceDocId provided)`);
         } else if (finalStatus.failed > 0) {
-          pushActivity('warn', `${finalStatus.failed} scene(s) failed — retry available`);
-          toast.warning(`${finalStatus.failed} scene(s) failed. You can retry them.`);
+          pushActivity('warn', `${finalStatus.failed} ${unitLabel.toLowerCase()}(s) failed — retry available`);
+          toast.warning(`${finalStatus.failed} ${unitLabel.toLowerCase()}(s) failed. You can retry them.`);
         }
       }
     } catch (err: any) {
       setState(s => ({ ...s, mode: 'error', error: err.message }));
       pushActivity('error', `Processing error: ${err.message}`);
-      toast.error(`Scene rewrite error: ${err.message}`);
+      toast.error(`${unitLabel} rewrite error: ${err.message}`);
     } finally {
       processingRef.current = false;
       stopSmoothing();
@@ -593,8 +597,8 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     if (!projectId) return;
     try {
       const result = await callEngine('retry_failed_rewrite_jobs', { projectId, sourceVersionId });
-      pushActivity('info', `Re-queued ${result.reset} failed scene(s)`);
-      toast.success(`${result.reset} failed scene(s) re-queued`);
+      pushActivity('info', `Re-queued ${result.reset} failed ${unitLabel.toLowerCase()}(s)`);
+      toast.success(`${result.reset} failed ${unitLabel.toLowerCase()}(s) re-queued`);
       await loadStatus(sourceVersionId);
     } catch (err: any) {
       pushActivity('error', `Retry failed: ${err.message}`);
@@ -606,8 +610,8 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     if (!projectId) return;
     setState(s => ({ ...s, mode: 'assembling' }));
     pushActivity('info', state.scopePlan
-      ? `Assembling (selective: ${state.scopePlan.target_scene_numbers.length} rewritten scenes)…`
-      : 'Assembling final script…');
+      ? `Assembling (selective: ${state.scopePlan.target_scene_numbers.length} rewritten ${unitLabel.toLowerCase()}s)…`
+      : `Assembling final ${isMomentMode ? 'Story Outline' : 'Script'}…`);
     try {
       let currentRunId = runIdRef.current;
       if (!currentRunId && projectId) {
@@ -647,9 +651,9 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
       // Clear persisted runId on successful assemble
       if (projectId) clearRunId(projectId, sourceVersionId);
       runIdRef.current = null;
-      const label = result.newVersionLabel || `${result.scenesCount} scenes`;
+      const label = result.newVersionLabel || `${result.scenesCount} ${unitLabel.toLowerCase()}s`;
       const selectiveNote = result.trulySelective ? ` (${result.scenesCount}/${result.totalScenesInAssembly} selective)` : '';
-      pushActivity('success', `Assembled ${result.scenesCount} scenes${selectiveNote} → ${result.charCount.toLocaleString()} chars`);
+      pushActivity('success', `Assembled ${result.scenesCount} ${unitLabel.toLowerCase()}s${selectiveNote} → ${result.charCount.toLocaleString()} chars`);
       toast.success(`Assembled → ${label}`);
       return result;
     } catch (err: any) {
@@ -817,8 +821,8 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     if (!projectId) return;
     try {
       const result = await callEngine('requeue_stuck_rewrite_jobs', { projectId, sourceVersionId, stuckMinutes });
-      pushActivity('warn', `Requeued ${result.requeued} stuck job(s)`);
-      toast.success(`${result.requeued} stuck job(s) requeued`);
+      pushActivity('warn', `Requeued ${result.requeued} stuck ${unitLabel.toLowerCase()}(s)`);
+      toast.success(`${result.requeued} stuck ${unitLabel.toLowerCase()}(s) requeued`);
       await loadStatus(sourceVersionId);
     } catch (err: any) {
       pushActivity('error', `Requeue stuck failed: ${err.message}`);
@@ -852,6 +856,23 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
 
   const isSelective = state.scopePlan != null && state.targetSceneNumbers.length > 0 && state.targetSceneNumbers.length < state.totalScenesInScript;
   const actualPercent = state.total > 0 ? Math.floor((state.done / state.total) * 100) : 0;
+  const progressLabel: string = (() => {
+    switch (state.mode) {
+      case 'probing': return `Probing ${unitLabel.toLowerCase()}s…`;
+      case 'enqueuing': return isSelective
+        ? `Enqueuing ${state.targetSceneNumbers.length} target ${unitLabel.toLowerCase()}s…`
+        : `Splitting into ${unitLabel.toLowerCase()}s…`;
+      case 'processing': return isSelective
+        ? `Target ${unitLabel.toLowerCase()}s: ${state.done}/${state.total}`
+        : `${unitLabel} ${state.done}/${state.total}`;
+      case 'assembling': return isSelective
+        ? `Assembling (${state.targetSceneNumbers.length} rewritten / ${state.totalScenesInScript} total)…`
+        : `Assembling final ${isMomentMode ? 'Story Outline' : 'Script'}…`;
+      case 'complete': return 'Complete';
+      case 'error': return state.error || 'Error';
+      default: return '';
+    }
+  })();
 
   const progress = {
     phase: state.mode === 'probing' ? 'probing'
@@ -867,19 +888,7 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     failed: state.failed,
     queued: state.queued,
     percent: actualPercent,
-    label: state.mode === 'probing' ? 'Probing scenes…'
-      : state.mode === 'enqueuing' ? (isSelective
-          ? `Enqueuing ${state.targetSceneNumbers.length} target scenes…`
-          : 'Splitting into scenes…')
-      : state.mode === 'processing' ? (isSelective
-          ? `Target scenes: ${state.done}/${state.total}`
-          : `Scene ${state.done}/${state.total}`)
-      : state.mode === 'assembling' ? (isSelective
-          ? `Assembling (${state.targetSceneNumbers.length} rewritten / ${state.totalScenesInScript} total)…`
-          : 'Assembling final script…')
-      : state.mode === 'complete' ? 'Complete'
-      : state.mode === 'error' ? (state.error || 'Error')
-      : '',
+    label: progressLabel,
   };
 
   return {
@@ -903,6 +912,7 @@ export function useSceneRewritePipeline(projectId: string | undefined) {
     expandAndContinue,
     // Progress exports
     progress,
+    unitLabel,
     activityItems,
     clearActivity,
     pushActivity,
