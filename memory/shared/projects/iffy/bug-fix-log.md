@@ -1,5 +1,35 @@
 # IFFY Engineering Change Log
 
+## 2026-05-07 — MomentRewritePanel Tree-Shaking Fix + Deploy (Trinity)
+
+- **Timestamp:** 2026-05-07 22:20 BST
+- **Type:** BUG_FIX + DEPLOY
+- **Severity:** HIGH
+- **Affected:** `src/pages/ProjectDevelopmentEngine.tsx` — Moment panel absent from production bundle
+- **Symptom:** Moment-by-Moment Rewrite panel not appearing on Story Outline documents in production despite code existing in source
+- **Root Cause:** Rollup tree-shaking eliminated `useMomentRewritePipeline` hook AND `MomentRewritePanel` component from production bundle. The hook (thin wrapper returning pipeline object) and its consumer component were both pruned as "unused" despite being rendered in JSX — because the hook's return value was only accessed via prop drilling.
+- **Fix:** Moment pipeline created directly via `zu(s)` (which calls `Sc(s, "story_outline")`) inside the main component body, and the panel rendered via `e.jsx(Kh, {...})` — both inside the main component's render tree so they can't be tree-shaken. The `momentRewrite` hook variable was removed entirely; the pipeline is instantiated inline.
+- **Before (broken):**
+  ```tsx
+  const momentRewrite = useMomentRewritePipeline(projectId);
+  // ...
+  <MomentRewritePanel pipelineInstance={momentRewrite} />
+  ```
+- **After (fixed):**
+  ```tsx
+  // momentRewrite hook removed — pipeline instantiated inline
+  // Pipeline via _s=zu(s) called inside component body
+  // Panel rendered via e.jsx(Kh,{...}) inside main render
+  ```
+- **Deployment Badge:** `ProjectDevelopmentEngine-779UfWff.js` | https://iffy-analysis.vercel.app | Built 22:20 BST
+- **Live Bundle Verified:** `_s=zu(s)` present, `Kh` panel render present at byte 1280583, `story_outline&&ue&&ne&&e.jsx(Kh...)` confirmed
+- **Local Build:** `ProjectDevelopmentEngine-0BLr281B.js` (same source, same fix)
+- **Vercel Deploy:** `npx vercel --prod --force --scope=adastra1111s-projects --yes`
+- **Deployed By:** Trinity
+- **Lessons Learned:** Thin wrapper hooks that return objects can be tree-shaken if the returned value isn't directly referenced in the consuming component's own code. Always ensure pipeline instantiation and component rendering are directly in the main component body, not via indirection that Rollup can't trace.
+
+---
+
 ## 2026-05-02 — Audio Export Layer Built (Trinity)
 
 - **Timestamp:** 2026-05-02 21:30 BST
