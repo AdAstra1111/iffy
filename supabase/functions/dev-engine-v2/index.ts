@@ -28965,6 +28965,113 @@ CRITICAL:
       const { projectId, sourceDocId, sourceVersionId, targetDocType, approvedNotes, protectItems, targetSceneNumbers } = body;
       if (!projectId || !sourceDocId || !sourceVersionId) throw new Error("projectId, sourceDocId, sourceVersionId required");
 
+      // ── STORY OUTLINE PATH: delegate to sectioned per-moment rewrite ──
+      if (targetDocType === "story_outline") {
+        // Story outline rewrites go through the JSON entries[] per-moment path.
+        // We create a run record, fire the rewrite async via waitUntil,
+        // and return immediately so the frontend can poll status.
+        const runId = crypto.randomUUID();
+        const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+        const effUserId = user?.id || proj?.user_id || null;
+        await supabase.from("rewrite_runs").insert({
+          project_id: projectId, user_id: effUserId,
+          source_doc_id: sourceDocId, source_version_id: sourceVersionId,
+          status: "running",
+          target_scene_numbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
+        }).select("id").single();
+        if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+          (globalThis as any).EdgeRuntime.waitUntil(
+            (async () => {
+              try {
+                const _gw = resolveGateway();
+                const _apiKey = _gw.apiKey;
+                const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+                const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+                const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+                const bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+                  auth: { persistSession: false, autoRefreshToken: false },
+                  global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
+                });
+                const { data: doc } = await bgSupabase.from("project_documents").select("doc_type").eq("id", sourceDocId).single();
+                if (doc?.doc_type !== "story_outline") throw new Error("Not a story outline");
+                const { data: version } = await bgSupabase.from("project_document_versions").select("plaintext, version_number").eq("id", sourceVersionId).single();
+                if (!version) return;
+                const trimmed = (version.plaintext || "").trim();
+                if (!trimmed.startsWith("{")) return;
+                const storyOutlineJSON = JSON.parse(trimmed);
+                if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) return;
+                const totalEntries = storyOutlineJSON.entries.length;
+                const newVersionNumber = (version.version_number || 1) + 1;
+                const { data: proj } = await bgSupabase.from("projects").select("title, format, assigned_lane, user_id").eq("id", projectId).maybeSingle();
+                const effUid = user?.id || proj?.user_id || null;
+                const { data: newVer } = await bgSupabase.from("project_document_versions").upsert({
+                  document_id: sourceDocId, version_number: newVersionNumber, plaintext: "",
+                  is_current: false, created_by: effUid,
+                  meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
+                }, { onConflict: "document_id,version_number" }).select().single();
+                if (!newVer?.id) return;
+                await bgSupabase.from("project_document_versions").update({ is_current: false }).eq("document_id", sourceDocId).neq("id", newVer.id);
+                await bgSupabase.from("project_document_chunks").insert(storyOutlineJSON.entries.map((e: any, idx: number) => ({
+                  version_id: newVer.id, chunk_index: idx,
+                  chunk_key: "moment_" + (e.number || (idx + 1)),
+                  status: "pending",
+                  char_count: (e.description || "").length,
+                  meta_json: { label: e.title || "Moment " + (e.number || (idx + 1)), moment_number: e.number || (idx + 1) },
+                })));
+                for (let i = 0; i < storyOutlineJSON.entries.length; i++) {
+                  await bgSupabase.from("project_document_chunks").update({ status: "running" }).eq("version_id", newVer.id).eq("chunk_index", i);
+                  const entry = storyOutlineJSON.entries[i];
+                  const prevEntry = i > 0 ? storyOutlineJSON.entries[i - 1] : null;
+                  const nextEntry = i < storyOutlineJSON.entries.length - 1 ? storyOutlineJSON.entries[i + 1] : null;
+                  const entryNum = entry.number || (i + 1);
+                  let ctx = "";
+                  if (prevEntry) ctx += "\nPREVIOUS MOMENT (" + (prevEntry.number || i) + "):\nTitle: " + (prevEntry.title || "") + "\nDescription: " + (prevEntry.description || "");
+                  ctx += "\n\nCURRENT MOMENT (" + entryNum + "):\nTitle: " + (entry.title || "") + "\nDescription: " + (entry.description || "");
+                  if (nextEntry) ctx += "\n\nNEXT MOMENT (" + (nextEntry.number || (i + 2)) + "):\nTitle: " + (nextEntry.title || "") + "\nDescription: " + (nextEntry.description || "");
+                  const notesCtx = (approvedNotes || []).length > 0 ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map((n: any) => "- " + (n.description || n.note || "")).join("\n") : "";
+                  const systemMsg = "You are rewriting ONE moment of a story outline for \"" + (proj?.title || "this project") + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are — do NOT change them.\n- The previous and next moments are provided for continuity context.\n- Maintain consistent voice, pacing, and narrative tone with adjacent moments.\n- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.\n- Do NOT merge, split, or reorder moments. Rewrite only this one moment.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"" + notesCtx + "}";
+                  let rewrittenEntry = entry;
+                  try {
+                    const raw = await callAI(_apiKey, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
+                    const m = (raw || "").match(/\{[\s\S]*?\}/);
+                    if (m) {
+                      const p = JSON.parse(m[0]);
+                      if (p.description) rewrittenEntry = { number: entryNum, title: entry.title || p.title || "", description: p.description };
+                    }
+                  } catch { /* keep original */ }
+                  await bgSupabase.from("project_document_chunks").update({ status: "done", content: rewrittenEntry.description, char_count: rewrittenEntry.description.length }).eq("version_id", newVer.id).eq("chunk_index", i);
+                }
+                const outputJSON = {
+                  title: storyOutlineJSON.title || proj?.title || "Story Outline",
+                  format: storyOutlineJSON.format || proj?.format || "film",
+                  entries: storyOutlineJSON.entries.map((e: any, idx: number) => ({ number: e.number || (idx + 1), title: e.title, description: e.description })),
+                };
+                await bgSupabase.from("project_document_versions").update({ plaintext: JSON.stringify(outputJSON, null, 2), meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries } }).eq("id", newVer.id);
+                await bgSupabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", sourceDocId);
+                await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
+              } catch (err: any) {
+                console.error("[story-outline-bg] rewrite failed:", err?.message);
+                await bgSupabase.from("rewrite_runs").update({ status: "failed", summary: err?.message }).eq("id", runId);
+              }
+            })()
+          );
+        }
+        // Parse entries count BEFORE waitUntil (it's available right after JSON.parse)
+        const _entriesPreview = (() => {
+          try {
+            const trimmed = (version?.plaintext || "").trim();
+            if (trimmed.startsWith("{")) {
+              const preview = JSON.parse(trimmed);
+              return Array.isArray(preview.entries) ? preview.entries.length : 0;
+            }
+          } catch { /* not JSON */ }
+          return 0;
+        })();
+        return new Response(JSON.stringify({ runId, totalScenes: _entriesPreview, queued: _entriesPreview, pipeline: "story_outline_per_moment" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // Selective enqueue: if targetSceneNumbers provided, only those will be enqueued
       const selectiveMode = Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0;
 
@@ -29125,6 +29232,15 @@ CRITICAL:
       if (!runId) {
         return new Response(JSON.stringify({ error: "runId required" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // ── STORY OUTLINE PATH: no scene-level jobs — rewrite runs in bg, not via polling ──
+      const { data: run } = await supabase.from("rewrite_runs")
+        .select("status").eq("id", runId).maybeSingle();
+      if (run && run.status !== "running") {
+        return new Response(JSON.stringify({ processed: false, done: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (!projectId || !sourceVersionId) throw new Error("projectId, sourceVersionId required");
