@@ -29067,7 +29067,7 @@ CRITICAL:
           } catch { /* not JSON */ }
           return 0;
         })();
-        return new Response(JSON.stringify({ runId, totalScenes: _entriesPreview, queued: _entriesPreview, pipeline: "story_outline_per_moment" }), {
+        return new Response(JSON.stringify({ runId, totalScenes: _entriesPreview, queued: _entriesPreview, pipeline: "story_outline_per_moment", isStoryOutlineRewrite: true }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
@@ -29460,6 +29460,66 @@ CRITICAL:
     }
 
     // ── GET REWRITE STATUS ──
+    // ── STORY OUTLINE REWRITE STATUS (polls project_document_chunks) ──
+    if (action === "get_story_outline_rewrite_status") {
+      const { projectId, runId } = body;
+      if (!runId) {
+        return new Response(JSON.stringify({ error: "runId required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!projectId) throw new Error("projectId required");
+
+      // Get run record to find the output version
+      const { data: run } = await supabase.from("rewrite_runs")
+        .select("source_doc_id, source_version_id, status, meta_json")
+        .eq("id", runId).maybeSingle();
+
+      if (!run) {
+        return new Response(JSON.stringify({ error: "Run not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // Get the latest version created by this run (output version)
+      const { data: version } = await supabase.from("project_document_versions")
+        .select("id, plaintext, version_number, meta_json")
+        .eq("document_id", run.source_doc_id)
+        .eq("created_by", run.meta_json?.user_id || null)
+        .order("version_number", { ascending: false })
+        .limit(1).single();
+
+      if (!version) {
+        return new Response(JSON.stringify({ total: 0, done: 0, queued: 0, running: 0, failed: 0, status: "no_output_version" }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Check chunks for this version
+      const { data: chunks } = await supabase.from("project_document_chunks")
+        .select("chunk_index, status, chunk_key")
+        .eq("version_id", version.id)
+        .order("chunk_index", { ascending: true });
+
+      const total = (chunks || []).length;
+      const done = (chunks || []).filter(c => c.status === "done").length;
+      const running = (chunks || []).filter(c => c.status === "running").length;
+      const failed = (chunks || []).filter(c => c.status === "failed").length;
+      const queued = (chunks || []).filter(c => c.status === "pending").length;
+
+      const runStatus = run.status || "running";
+      const isComplete = runStatus === "done" || runStatus === "failed" || (total > 0 && done === total);
+
+      return new Response(JSON.stringify({
+        total, done, queued, running, failed,
+        status: isComplete ? (runStatus === "failed" ? "failed" : "done") : "processing",
+        runStatus,
+        newVersionId: version.id,
+        newVersionNumber: version.version_number,
+        isComplete,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "get_rewrite_status") {
       const { projectId, runId } = body;
       if (!runId) {

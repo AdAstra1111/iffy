@@ -424,6 +424,50 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
     try {
       // story_outline per-moment: backend processes via waitUntil, no jobs to poll
       if (isMomentMode) {
+        // Poll story-outline-specific status endpoint
+        setState(s => ({ ...s, mode: 'processing', smoothedPercent: 0 }));
+        pushActivity('info', 'Moment rewrite running in background…');
+        
+        let pollCount = 0;
+        while (!stopRef.current && pollCount < 300) { // max 5 min
+          await new Promise(r => setTimeout(r, 1000));
+          pollCount++;
+          
+          const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId });
+          
+          if (status && status.total !== undefined) {
+            const pct = status.total > 0 ? Math.floor((status.done / status.total) * 100) : 0;
+            setState(s => ({ 
+              ...s, 
+              total: status.total, 
+              done: status.done, 
+              queued: status.queued, 
+              running: status.running, 
+              failed: status.failed,
+              smoothedPercent: pct, 
+              lastProgressAt: Date.now() 
+            }));
+            pushActivity('info', `Background rewrite: ${status.done}/${status.total} moments done`);
+            
+            if (status.isComplete) {
+              if (status.newVersionId) {
+                setState(s => ({ ...s, mode: 'complete', newVersionId: status.newVersionId, smoothedPercent: 100 }));
+                pushActivity('success', 'Moment rewrite complete');
+                invalidate();
+              } else {
+                setState(s => ({ ...s, mode: 'complete', smoothedPercent: 100 }));
+                pushActivity('success', 'Moment rewrite complete');
+                invalidate();
+              }
+              return;
+            }
+          }
+        }
+        if (!stopRef.current) {
+          pushActivity('warn', 'Background rewrite still running — check back shortly');
+        }
+        return;
+      }
         // story_outline per-moment: backend processes via waitUntil, no frontend polling needed
         // Just monitor via get_rewrite_status until all chunks are done
         setState(s => ({ ...s, mode: 'processing', smoothedPercent: 0 }));
