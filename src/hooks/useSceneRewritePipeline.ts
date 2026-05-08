@@ -232,9 +232,23 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
   }, []);
 
 
-  // Probe whether scenes exist
+  // Probe whether scenes exist — skip for story_outline (uses moments, not scenes)
   const probe = useCallback(async (sourceDocId: string, sourceVersionId: string) => {
     if (!projectId) return null;
+    // story_outline always uses moment mode — no probe needed
+    if (isMomentMode) {
+      setState(s => ({
+        ...s,
+        mode: 'idle',
+        hasScenes: false,
+        scenesCount: 0,
+        rewriteMode: 'chunk',
+        probeResult: null,
+        lastProbedAt: new Date().toISOString(),
+      }));
+      pushActivity('info', 'Story outline — using moment-by-moment rewrite (no scene probe)');
+      return null;
+    }
     setState(s => ({ ...s, mode: 'probing' }));
     try {
       const result = await callEngine('rewrite_debug_probe', { projectId, sourceDocId, sourceVersionId });

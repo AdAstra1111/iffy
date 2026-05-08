@@ -1296,11 +1296,8 @@ export default function ProjectDevelopmentEngine() {
       // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
       return;
     }
-    // Sectioned doc types (treatment, character_bible, etc.) use the
-    // act-by-act rewrite pipeline — story_outline uses per-moment JSON handler
-    // individually, showing Act 1 / Act 2a / Act 2b / Act 3 progress labels.
-    // NOTE: Previously this sent action=doc_type to dev-engine-v2 (broken — unknown action).
-    // Now routed through rewritePipeline for all sectioned types regardless of text length.
+    // Sectioned rewrite for treatment, character_bible, etc. — uses act-by-act pipeline
+    // (story_outline is handled above via momentPipeline)
     if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
       const provenance = {
         rewriteModeSelected: 'auto',
@@ -1314,6 +1311,23 @@ export default function ProjectDevelopmentEngine() {
       };
       rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
       afterRewrite();
+      return;
+    }
+
+    // story_outline: always route to moment pipeline — skip scene/chunk fallback
+    if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
+      if (allPrioritizedMoves.length > 0) {
+        // Apply approved notes through moment pipeline
+        const result = await momentPipeline.enqueue(
+          selectedDocId, selectedVersionId, enrichedNotes, protectItems, undefined
+        );
+        if (result) {
+          momentPipeline.processAll(selectedVersionId, selectedDocId);
+          afterRewrite();
+        }
+      } else {
+        toast.info('Add notes to apply before rewriting.');
+      }
       return;
     }
 
