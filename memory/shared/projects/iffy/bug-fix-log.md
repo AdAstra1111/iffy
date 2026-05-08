@@ -99,3 +99,48 @@
 - **Deploy Badge:** `ProjectDevelopmentEngine-CKZd1NxH.js` built 10:46 BST (first deploy of the day)
 - **Edge Function:** `dev-engine-v2` blocker gate fix deployed ~11:50 BST
 - **Lessons Learned:** Always use 422 for precondition failures, 400 for malformed requests. Error messages must be descriptive enough for Sebastian to understand what to fix.
+
+## 2026-05-07 — Moment-By-Moment UI Not Showing — FIXED ✅
+
+**Timestamp:** 2026-05-07 22:51 BST  
+**Type:** BUG_FIX  
+**Severity:** HIGH  
+**Deployment Badge:** https://iffy-analysis.vercel.app (commit `042d20d`)  
+**Bundle:** `index-DlbUHCaZ.js` + `ProjectDevelopmentEngine-DIwHTZFs.js` — built 2026-05-07T22:51:50.541  
+**Affected:** Moment Rewrite panel in ProjectDevelopmentEngine
+
+**Symptom:**  
+Moment-by-Moment Rewrite panel completely absent from Dev Engine UI when viewing a Story Outline doc. Panel import + hook were present in source but Rollup tree-shaking eliminated the `momentPipeline` pipeline instance because `useMomentRewritePipeline` was a thin re-export wrapper that was recognized as duplicate code and pruned.
+
+**Root Cause:**  
+`useMomentRewritePipeline` (wrapper) + `sceneRewrite` (scene pipeline) both call `useSceneRewritePipeline`. Rollup deduplication: both resolve to the same hook instance (`gs=Xi(s)`) in the scene pipeline call site. When scene pipeline uses `zu(s)` at its call site, the `momentPipeline` variable points to `zu(s)` which = Xi(s) with no `story_outline` arg. Since the panel's `pipelineInstance` prop was set to `momentRewrite` (a tree-shaken reference), the `Kh` component never rendered because its pipeline had no target docType.
+
+Additionally: `MomentRewritePanel` was exported as `default` only — the named export `Kh` didn't exist, so `import {Kh as MomentRewritePanel}` failed silently (named import of default-only export).
+
+**Fix Applied:**
+1. `MomentRewritePanel.tsx`: Added named export `export const Kh = MomentRewritePanel;`
+2. `ProjectDevelopmentEngine.tsx`:
+   - Replaced `import MomentRewritePanel` + `import { useMomentRewritePipeline }` with single import: `import {Kh as MomentRewritePanel} from '@/components/devengine/MomentRewritePanel';`
+   - Replaced `const momentRewrite = useMomentRewritePipeline(projectId)` with `const momentPipeline = useSceneRewritePipeline(projectId, 'story_outline');`
+   - Updated panel's `pipelineInstance` and `onComplete` references to use `momentPipeline`
+
+**Before:**
+```typescript
+import MomentRewritePanel from '@/components/devengine/MomentRewritePanel';
+import { useMomentRewritePipeline } from '@/hooks/useMomentRewritePipeline';
+const momentRewrite = useMomentRewritePipeline(projectId);
+// → Rollup: momentRewrite = sceneRewrite = zu(s) (tree-shaken duplicate)
+// Panel gets pipeline with no story_outline target → never renders
+```
+
+**After:**
+```typescript
+import {Kh as MomentRewritePanel} from '@/components/devengine/MomentRewritePanel';
+const momentPipeline = useSceneRewritePipeline(projectId, 'story_outline');
+// → Inline call: Xi(s, "story_outline") with distinct call site
+// Panel gets correct pipeline → renders for story_outline doc_type
+```
+
+**GitHub Diff:** https://github.com/AdAstra1111/iffy/commit/042d20d  
+**Deployed By:** Trinity  
+**Lessons Learned:** Thin wrapper hooks that re-export another hook cause Rollup deduplication issues. Call the underlying hook directly with the specific arguments instead. Also: always verify named exports exist for components imported with `{}` syntax.

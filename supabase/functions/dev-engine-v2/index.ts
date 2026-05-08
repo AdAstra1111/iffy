@@ -29284,6 +29284,9 @@ CRITICAL:
           console.warn(`[scene-rewrite] Scene ${job.scene_number} output is ${Math.round((rewrittenScene.length / sceneText.length - 1) * 100)}% larger than input`);
         }
 
+        // Resolve user_id for this operation — use auth user or fallback
+        const effectiveUserId = user?.id || null;
+
         // Save output keyed by run_id + scene_number
         const { error: outErr } = await supabase.from("rewrite_scene_outputs").upsert({
           project_id: projectId,
