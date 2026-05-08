@@ -355,7 +355,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'character_bible', 'production_draft', 'long_treatment', 'long_character_bible']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'story_outline', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']);
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']); // story_outline uses per-moment JSON handler via MomentRewritePanel
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
@@ -1296,8 +1296,8 @@ export default function ProjectDevelopmentEngine() {
       // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
       return;
     }
-    // Sectioned doc types (story_outline, treatment, character_bible, etc.) use the
-    // act-by-act rewrite pipeline — rewrite-plan splits into 4 acts, each act rewrites
+    // Sectioned doc types (treatment, character_bible, etc.) use the
+    // act-by-act rewrite pipeline — story_outline uses per-moment JSON handler
     // individually, showing Act 1 / Act 2a / Act 2b / Act 3 progress labels.
     // NOTE: Previously this sent action=doc_type to dev-engine-v2 (broken — unknown action).
     // Now routed through rewritePipeline for all sectioned types regardless of text length.
