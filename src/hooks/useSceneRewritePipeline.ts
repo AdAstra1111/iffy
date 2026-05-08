@@ -468,34 +468,6 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         }
         return;
       }
-        // story_outline per-moment: backend processes via waitUntil, no frontend polling needed
-        // Just monitor via get_rewrite_status until all chunks are done
-        setState(s => ({ ...s, mode: 'processing', smoothedPercent: 0 }));
-        pushActivity('info', 'Moment rewrite running in background…');
-        
-        let pollCount = 0;
-        while (!stopRef.current && pollCount < 300) { // max 5 min polling
-          await new Promise(r => setTimeout(r, 1000));
-          pollCount++;
-          
-          const status = await callEngine('get_rewrite_status', { projectId, sourceVersionId, runId: currentRunId });
-          if (status.total > 0) {
-            const pct = status.total > 0 ? Math.floor((status.done / status.total) * 100) : 0;
-            setState(s => ({ ...s, ...status, smoothedPercent: pct, lastProgressAt: Date.now() }));
-            pushActivity('info', `Background rewrite: ${status.done}/${status.total} moments done`);
-            if (status.done === status.total) {
-              setState(s => ({ ...s, mode: 'complete', smoothedPercent: 100 }));
-              pushActivity('success', 'Background moment rewrite complete');
-              invalidate();
-              return;
-            }
-          }
-        }
-        if (!stopRef.current) {
-          pushActivity('warn', 'Background rewrite still running — check back shortly');
-        }
-        return;
-      }
 
       let consecutiveEmpty = 0;
       while (!stopRef.current) {
