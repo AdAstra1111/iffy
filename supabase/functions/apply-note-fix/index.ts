@@ -18,8 +18,8 @@ import { resolveNarrativeContext, buildNarrativeContextBlock } from "../_shared/
 //   2. Validate all 4 acts are present in output
 //   3. Log a warning if any act is missing post-generation
 const SECTIONED_DOC_TYPES = new Set([
-  "story_outline", "treatment", "character_bible", "beat_sheet",
-  "long_treatment", "long_character_bible",
+  "story_outline", "treatment", "beat_sheet",
+  "long_treatment",
 ]);
 
 // Expected section markers for each sectioned doc type.
@@ -29,8 +29,6 @@ const SECTIONED_EXPECTED_MARKERS: Record<string, string[]> = {
   treatment:     ["act_1", "act_2a", "act_2b", "act_3"],
   beat_sheet:    ["act_1", "act_2a", "act_2b", "act_3"],
   long_treatment: ["act_1", "act_2a", "act_2b", "act_3"],
-  character_bible: ["protagonist", "antagonist", "supporting"],
-  long_character_bible: ["protagonist", "antagonist", "supporting"],
 };
 
 /**

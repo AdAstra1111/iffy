@@ -1539,6 +1539,241 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
           message: "Output contains collapsed range summaries — episodes may be abbreviated",
         }));
       }
+    } else if (docType === "character_bible" || docType === "long_character_bible") {
+      // ── Per-character bible generation ──
+      // Extract characters from concept brief via LLM, create narrative_entities,
+      // generate per-character profiles, then assemble into final bible document.
+      // Uses background task pattern matching episode/chunked branches.
+      console.log(`[generate-document] Character bible "${docType}" — starting per-character background generation`);
+
+      // 1. Ensure doc record exists
+      let { data: cbDocRecord } = await supabase.from("project_documents")
+        .select("id").eq("project_id", projectId).eq("doc_type", docType).single();
+      if (!cbDocRecord) {
+        const { data: newCbDoc, error: createErr } = await supabase.from("project_documents")
+          .insert({
+            project_id: projectId, doc_type: docType, user_id: actorUserId,
+            file_name: `${docType}.md`, file_path: `${projectId}/${docType}.md`,
+            extraction_status: "complete",
+          }).select("id").single();
+        if (createErr) throw new Error(`Failed to create doc record: ${createErr.message}`);
+        cbDocRecord = newCbDoc;
+      }
+
+      // In-progress guard: don't double-start if already generating (<30 min)
+      const { data: inProgressCbVer } = await supabase.from("project_document_versions")
+        .select("id, version_number, created_at, meta_json")
+        .eq("document_id", cbDocRecord!.id)
+        .eq("status", "draft")
+        .eq("meta_json->>bg_generating", "true")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (inProgressCbVer) {
+        const ageMs = Date.now() - new Date(inProgressCbVer.created_at).getTime();
+        if (ageMs < 30 * 60 * 1000) {
+          console.log(`[generate-document] Character bible generation already in progress (age ${Math.round(ageMs/1000)}s) — returning existing version`);
+          return new Response(JSON.stringify({
+            success: true,
+            document_id: cbDocRecord!.id,
+            version_id: inProgressCbVer.id,
+            version_number: inProgressCbVer.version_number,
+            generating: true,
+            message: "Character bible generation already in progress — poll for completion",
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        // Stale flag (>30 min) — clear and restart
+        console.log(`[generate-document] Stale bg_generating=true for ${docType} (${Math.round(ageMs/60000)} min) — clearing and restarting`);
+        await serviceClient.from("project_document_versions")
+          .update({ meta_json: { bg_generating: false, bg_stale: true } })
+          .eq("id", inProgressCbVer.id);
+      }
+
+      // 2. Create placeholder version
+      await serviceClient.from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", cbDocRecord!.id)
+        .eq("is_current", true);
+      const { count: cbVerCount } = await supabase.from("project_document_versions")
+        .select("id", { count: "exact", head: true }).eq("document_id", cbDocRecord!.id);
+      const cbVersionNum = (cbVerCount || 0) + 1;
+      const cbDependsOnFields = DOC_DEPENDENCY_MAP[docType] || [];
+      const { data: cbVersion, error: cbVerErr } = await supabase.from("project_document_versions")
+        .insert({
+          document_id: cbDocRecord!.id, version_number: cbVersionNum,
+          status: "draft", plaintext: "", created_by: actorUserId,
+          depends_on: cbDependsOnFields, depends_on_resolver_hash: currentHash,
+          inputs_used: inputsUsed,
+          is_current: true,
+          is_stale: false,
+          stale_reason: null,
+          meta_json: { bg_generating: true, bg_started_at: new Date().toISOString(), doc_type: docType },
+        }).select("id").single();
+      if (cbVerErr) throw new Error(`Failed to create character bible version: ${cbVerErr.message}`);
+
+      // Mark older versions as not-current
+      await supabase.from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", cbDocRecord!.id)
+        .neq("id", cbVersion!.id);
+
+      // 3. Fire background generation task
+      const bgCbTask = (async () => {
+        try {
+          const conceptBriefContent = upstreamContent || "";
+
+          // Step A: Extract character names/roles from concept brief via LLM
+          const extractPrompt = `Analyze the concept brief below and identify ALL characters mentioned. Return a JSON array of objects, each with:
+- "name": the character's full name
+- "role": their role in the story (e.g., "protagonist", "antagonist", "supporting", "love interest", "mentor", etc.)
+- "description": a brief 1-2 sentence description based solely on the concept brief
+
+Return ONLY valid JSON, no markdown, no explanation.
+
+Example:
+[{"name": "Jane Doe", "role": "protagonist", "description": "A brilliant scientist who discovers a way to communicate across dimensions."}]`;
+
+          const extractUser = `CONCEPT BRIEF:\n${conceptBriefContent.slice(0, 50000)}`;
+          const extractRaw = await callLLM(apiKey, extractPrompt, extractUser);
+          const jsonMatch = extractRaw.match(/\[[\s\S]*\]/);
+          let characters: Array<{name: string; role: string; description: string}> = [];
+          if (jsonMatch) {
+            try {
+              characters = JSON.parse(jsonMatch[0]);
+            } catch { /* fall through to default */ }
+          }
+          if (!Array.isArray(characters) || characters.length === 0) {
+            // Fallback: create a single generic character entry
+            characters = [{ name: "Protagonist", role: "protagonist", description: "The main character of the story." }];
+            console.warn(`[generate-document] Character extraction returned empty — using fallback`);
+          }
+
+          console.log(`[generate-document] Extracted ${characters.length} characters from concept brief`);
+
+          // Step B: For each character, create entity + generate profile
+          const profiles: Array<{name: string; role: string; profile: string}> = [];
+          let completedCount = 0;
+
+          for (const char of characters) {
+            try {
+              // Create narrative_entity
+              const entityKey = `char_${char.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60)}`;
+              await serviceClient.from("narrative_entities").insert({
+                project_id: projectId,
+                entity_key: entityKey,
+                canonical_name: char.name,
+                entity_type: "character",
+                source_kind: "project_canon",
+                source_key: docType,
+                meta_json: {
+                  role: char.role,
+                  extraction_description: char.description,
+                  extracted_from: docType,
+                  bible_version_id: cbVersion!.id,
+                },
+              });
+
+              // Generate character profile via LLM
+              const profilePrompt = `You are generating a detailed character profile for a character bible. 
+Based on the concept brief and character details below, write a thorough character profile using markdown.
+
+Include these sections where applicable:
+- **Overview**: Who is this character?
+- **Role in Story**: Their narrative function
+- **Personality**: Key traits, motivations, flaws
+- **Backstory**: History and background (infer from concept brief clues)
+- **Relationships**: How they relate to other characters
+- **Arc**: Potential growth or change throughout the story
+
+Write naturally — read like a professional development bible entry. 300-800 words.`;
+
+              const profileUser = `Character Name: ${char.name}
+Role: ${char.role}
+Description: ${char.description}
+
+Source Concept Brief:
+${conceptBriefContent.slice(0, 30000)}`;
+
+              const profile = await callLLM(apiKey, profilePrompt, profileUser);
+              profiles.push({ name: char.name, role: char.role, profile });
+              completedCount++;
+
+              // Update per-character progress in meta_json
+              await serviceClient.from("project_document_versions")
+                .update({
+                  meta_json: {
+                    bg_generating: true,
+                    bg_started_at: new Date().toISOString(),
+                    doc_type: docType,
+                    characters_total: characters.length,
+                    characters_completed: completedCount,
+                    current_character: char.name,
+                  },
+                })
+                .eq("id", cbVersion!.id);
+            } catch (charErr: any) {
+              console.error(`[generate-document] Character profile failed for "${char.name}": ${charErr?.message}`);
+              // Continue with next character — partial generation is acceptable
+              completedCount++;
+            }
+          }
+
+          // Step C: Assemble all profiles into final bible document
+          const header = `# ${docType === "long_character_bible" ? "COMPREHENSIVE CHARACTER BIBLE" : "CHARACTER BIBLE"}\n\n`;
+          const projectLine = `**Project:** ${project.title || "Untitled"}\n\n---\n\n`;
+          const profileSections = profiles.map((p, i) => {
+            return `## ${i + 1}. ${p.name} (${p.role})\n\n${p.profile}\n\n---\n`;
+          }).join("\n");
+          const assembledContent = header + projectLine + profileSections;
+
+          // Step D: Write back and promote version
+          await serviceClient.from("project_document_versions")
+            .update({
+              plaintext: assembledContent,
+              status: "draft",
+              is_current: true,
+              meta_json: {
+                bg_generating: false,
+                bg_completed_at: new Date().toISOString(),
+                characters_total: characters.length,
+                characters_completed: completedCount,
+                characters_list: characters.map(c => c.name),
+              },
+            })
+            .eq("id", cbVersion!.id);
+
+          await serviceClient.from("project_documents")
+            .update({ latest_version_id: cbVersion!.id, updated_at: new Date().toISOString() })
+            .eq("id", cbDocRecord!.id);
+
+          console.log(`[generate-document] Character bible COMPLETE: ${docType} v${cbVersionNum} characters=${completedCount}/${characters.length}`);
+
+        } catch (bgErr: any) {
+          console.error(`[generate-document] Character bible generation FAILED: ${docType} — ${bgErr?.message}`);
+          await serviceClient.from("project_document_versions")
+            .update({ meta_json: { bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
+            .eq("id", cbVersion!.id);
+        }
+      })();
+
+      // @ts-ignore — EdgeRuntime available in Supabase edge function context
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
+        EdgeRuntime.waitUntil(bgCbTask);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        document_id: cbDocRecord!.id,
+        version_id: cbVersion!.id,
+        version_number: cbVersionNum,
+        mode,
+        resolver_hash: currentHash,
+        inputs_used: inputsUsed,
+        depends_on: cbDependsOnFields,
+        generating: true,
+        per_character: true,
+        message: "Character bible generation started — per-character profiles being created in background",
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } else if (isLargeRiskDocType(docType) && !isTopline) {
       // ── Non-episodic large-risk doc: background chunked generation ──
       // runChunkedGeneration can take 2–10 min (4 acts × 30–60s each).

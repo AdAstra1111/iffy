@@ -7690,7 +7690,7 @@ MATERIAL:\n${version.plaintext}`;
       // (it falls back to slugline chunking and uses the screenplay system prompt — wrong format).
       // These docs are safe for single-pass up to 30k chars. Episodic and scene-indexed types
       // (episode_grid, episode_beats, scripts) still use the lower 8k threshold.
-      const SECTIONED_DEV_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "character_bible", "long_treatment", "long_character_bible"]);
+      const SECTIONED_DEV_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment"]);
       const LARGE_RISK_MIN_CHARS = SECTIONED_DEV_TYPES.has(effectiveDeliverable) ? LONG_THRESHOLD : 8000;
 
       // ── SURGICAL EPISODE REWRITE ──
@@ -8321,7 +8321,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       // ── SECTIONED DEV TYPES (character_bible, beat_sheet, treatment, story_outline) ──
       // These docs use ## section headers, not INT./EXT. sluglines.
       // Split on ## headers instead of sluglines so each chunk stays coherent.
-      const SECTIONED_PLAN_TYPES = new Set(["character_bible", "beat_sheet", "treatment", "story_outline", "long_treatment", "long_character_bible"]);
+      const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment"]);
       const buildSectionHeaderChunks = (text: string): string[] => {
         const CHUNK_TARGET = 12000;
         const lines = text.split("\n");
@@ -8672,7 +8672,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       // NOTE: docType must be declared BEFORE this line (temporal dead zone guard)
       const isGridDocType = docType === "episode_grid" || docType === "vertical_episode_grid";
       const isBeatsDocType = docType === "vertical_episode_beats" || docType === "episode_beats";
-      const isSectionedDocType = new Set(["character_bible", "beat_sheet", "treatment", "story_outline", "long_treatment", "long_character_bible"]).has(docType);
+      const isSectionedDocType = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment"]).has(docType);
       const baseChunkSystem = isGridDocType ? REWRITE_CHUNK_SYSTEM_GRID
         : isBeatsDocType ? REWRITE_CHUNK_SYSTEM_BEATS
         : isSectionedDocType ? REWRITE_CHUNK_SYSTEM_SECTIONED
@@ -9081,7 +9081,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
     // SECTIONED-REWRITE — section-aware regeneration for sectioned doc types
     // Handles: treatment, story_outline, character_bible, long_treatment, long_character_bible
     // ═══════════════════════════════════════════════════════════════════
-    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "character_bible", "long_treatment", "long_character_bible", "beat_sheet"]);
+    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "long_treatment", "beat_sheet"]);
     if (sectionedRewriteTypes.has(action)) {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");

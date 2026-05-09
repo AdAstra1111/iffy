@@ -53,8 +53,6 @@ const SECTIONED_DOC_TYPES = new Set([
   "treatment",
   "story_outline",
   "beat_sheet",
-  "character_bible",
-  "long_character_bible",
 ]);
 
 const SCENE_INDEXED_DOC_TYPES = new Set([
@@ -111,12 +109,8 @@ const SCRIPT_SECTIONS = [
   "act_3",
 ];
 
-const CHARACTER_BIBLE_SECTIONS = [
-  "protagonists",
-  "antagonists",
-  "supporting_cast",
-  "relationships_and_dynamics",
-];
+// CHARACTER_BIBLE uses per-character generation (not sectioned/chunked)
+// See generate-document/index.ts for the dedicated pathway.
 
 // Story outline: 4-act structure (Act 1 | Act 2a | Act 2b | Act 3)
 // Used for both feature and vertical drama to ensure consistent act-by-act chunking
@@ -187,8 +181,6 @@ export function chunkPlanFor(
     let sections: string[];
     if (docType === "treatment" || docType === "long_treatment") {
       sections = TREATMENT_SECTIONS;
-    } else if (docType === "character_bible" || docType === "long_character_bible") {
-      sections = CHARACTER_BIBLE_SECTIONS;
     } else if (docType === "story_outline") {
       sections = STORY_OUTLINE_SECTIONS;
     } else if (docType === "beat_sheet") {
