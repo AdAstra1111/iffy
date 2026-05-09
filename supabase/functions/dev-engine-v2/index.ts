@@ -7772,7 +7772,14 @@ MATERIAL:\n${version.plaintext}`;
         console.log(`[dev-engine-v2] rewrite: Large-risk doc type "${effectiveDeliverable}" but small content (${fullText.length} chars < ${LARGE_RISK_MIN_CHARS}) — allowing single-pass`);
       }
 
-      if (fullText.length > LONG_THRESHOLD) {
+      // Character bible and long_character_bible are safe for larger single-pass rewrites
+      // (per-character format means no risk of truncating an act/season structure)
+      const CHAR_BIBLE_LONG_THRESHOLD = 80000;
+      const effectiveLongThreshold = (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible")
+        ? CHAR_BIBLE_LONG_THRESHOLD
+        : LONG_THRESHOLD;
+
+      if (fullText.length > effectiveLongThreshold) {
         return new Response(JSON.stringify({ error: "Document too long for single-pass rewrite. Use rewrite-plan/rewrite-chunk/rewrite-assemble pipeline.", needsPipeline: true, charCount: fullText.length }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

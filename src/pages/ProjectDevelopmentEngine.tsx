@@ -1332,6 +1332,24 @@ export default function ProjectDevelopmentEngine() {
     }
 
     if (textLength > 30000 && selectedDocId && selectedVersionId) {
+      // Character bibles use per-character rewrite via dev-engine-v2, not scene pipeline
+      if (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') {
+        rewrite.mutate({
+          approvedNotes: enrichedNotes,
+          protectItems,
+          deliverableType: selectedDeliverableType,
+          developmentBehavior: projectBehavior,
+          format: projectFormat,
+          selectedOptions: selectedOptionsForRewrite,
+          globalDirections: globalDirections || [],
+        }, {
+          onSuccess: afterRewrite,
+          onError: (err: any) => toast.error(err?.message || 'Rewrite failed'),
+        });
+        afterRewrite();
+        return;
+      }
+
       const selected = sceneRewrite.selectedRewriteMode;
 
       let probe = sceneRewrite.probeResult;
