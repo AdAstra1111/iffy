@@ -791,6 +791,88 @@ serve(async (req) => {
           } catch (rpcErr) {
             console.error("[convergence-engine] atomic_write RPC failed:", rpcErr);
           }
+
+          // ── A1: Extract + persist sub-scores as first-class data ──────────────
+          // These unlock: delta tracking, blocking detection, SR calculation, trend analysis
+          try {
+            // Build sub-score records
+            const ciRecords: Array<{ dimension: string; score: number }> = CI_COMPONENTS.map(k => ({
+              dimension: k,
+              score: Math.round((Number(ciSubScores[k]) || 5) * 10), // scale 0-10 → 0-100
+            }));
+            const gpRecords: Array<{ dimension: string; score: number }> = GP_COMPONENTS.map(k => ({
+              dimension: k,
+              score: Math.round((Number(gpSubScores[k]) || 5) * 10), // scale 0-10 → 0-100
+            }));
+
+            // Fetch previous version's sub-scores for delta tracking
+            const { data: prevScores } = await supabase
+              .from("document_version_subscores")
+              .select("dimension, category, score")
+              .eq("version_id", resolvedVersionId)
+              .order("created_at", { ascending: false })
+              .limit(50);
+
+            // Index previous scores by category+dimension for fast lookup
+            const prevMap: Record<string, number> = {};
+            if (prevScores) {
+              for (const r of prevScores) {
+                const key = `${r.category}::${r.dimension}`;
+                if (!(key in prevMap)) prevMap[key] = r.score;
+              }
+            }
+
+            // Build rows for batch insert
+            const now = new Date().toISOString();
+            const rows: Array<Record<string, unknown>> = [];
+            for (const rec of ciRecords) {
+              const key = `CI::${rec.dimension}`;
+              const prev = prevMap[key];
+              const delta = prev != null ? rec.score - prev : null;
+              const trend = delta != null
+                ? (delta > 2 ? "up" : delta < -2 ? "down" : "stable")
+                : null;
+              rows.push({
+                version_id: resolvedVersionId,
+                category: "CI",
+                dimension: rec.dimension,
+                score: rec.score,
+                confidence: null,
+                delta_from_previous: delta,
+                trend,
+                created_at: now,
+              });
+            }
+            for (const rec of gpRecords) {
+              const key = `GP::${rec.dimension}`;
+              const prev = prevMap[key];
+              const delta = prev != null ? rec.score - prev : null;
+              const trend = delta != null
+                ? (delta > 2 ? "up" : delta < -2 ? "down" : "stable")
+                : null;
+              rows.push({
+                version_id: resolvedVersionId,
+                category: "GP",
+                dimension: rec.dimension,
+                score: rec.score,
+                confidence: null,
+                delta_from_previous: delta,
+                trend,
+                created_at: now,
+              });
+            }
+
+            if (rows.length > 0) {
+              // Upsert: replace sub-scores for this version (idempotent on version+category+dimension)
+              await supabase.from("document_version_subscores").upsert(rows, {
+                onConflict: "version_id,category,dimension",
+              });
+              console.log(`[convergence-engine] sub-scores persisted: ${rows.length} records for version=${resolvedVersionId}`);
+            }
+          } catch (subErr) {
+            // Non-fatal: sub-score extraction failures should not break the main convergence write
+            console.error("[convergence-engine] sub-score extraction failed:", subErr);
+          }
         }
 
         // Legacy: convergence_scores (kept for backward compat during rollout)
