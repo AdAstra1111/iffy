@@ -13,10 +13,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { SeasonScriptProgress } from './SeasonScriptProgress';
 import { SectionedDocProgress } from './SectionedDocProgress';
 import { SceneIndexedProgress } from './SceneIndexedProgress';
+import { CharacterBibleProgress } from './CharacterBibleProgress';
 
 const SECTIONED_PROSE_TYPES = new Set([
   'story_outline', 'treatment', 'long_treatment', 'beat_sheet',
-  'feature_script', 'screenplay_draft', 'production_draft', 'character_bible', 'long_character_bible',
+  'feature_script', 'screenplay_draft', 'production_draft',
 ]);
 
 /** Detect generation strategy from the first few chunk keys */
@@ -66,6 +67,11 @@ class BgGenBannerErrorBoundary extends React.Component<
 }
 
 function BgGenBannerInner({ versionId, episodeCount, docType, projectId, documentId }: BgGenBannerProps) {
+  // Character bible uses per-character progress (no chunks)
+  if (docType === 'character_bible' || docType === 'long_character_bible') {
+    return <CharacterBibleProgress versionId={versionId} docType={docType} />;
+  }
+
   const isSectioned = docType && SECTIONED_PROSE_TYPES.has(docType);
 
   // Locked strategy: once resolved to a definitive mode, it stays locked for this

@@ -354,8 +354,8 @@ export default function ProjectDevelopmentEngine() {
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
 
   // Structured viewer support
-  const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'character_bible', 'production_draft', 'long_treatment', 'long_character_bible']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'character_bible', 'long_treatment', 'long_character_bible', 'beat_sheet']); // story_outline uses per-moment JSON handler via MomentRewritePanel
+  const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft']);
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet']); // story_outline uses per-moment JSON handler via MomentRewritePanel
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
