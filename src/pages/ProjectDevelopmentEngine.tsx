@@ -18,6 +18,7 @@ import { DocSetManager } from '@/components/notes/DocSetManager';
 import { ProcessProgressBar } from '@/components/devengine/ProcessProgressBar';
 import { EpisodeRewriteWorkspace } from '@/components/devengine/EpisodeRewriteWorkspace';
 import { ActivityTimeline } from '@/components/devengine/ActivityTimeline';
+import { CharacterBibleProgress } from '@/components/devengine/CharacterBibleProgress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -2265,7 +2266,11 @@ export default function ProjectDevelopmentEngine() {
                   {/* Progress indicators */}
                   <OperationProgress isActive={analyze.isPending} stages={DEV_ANALYZE_STAGES} onStop={() => analyze.reset()} onRestart={handleRunEngine} />
                   <OperationProgress isActive={generateNotes.isPending} stages={DEV_NOTES_STAGES} onStop={() => generateNotes.reset()} onRestart={() => generateNotes.mutate(latestAnalysis)} />
-                  <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
+                  {rewrite.isPending && selectedDoc?.doc_type === 'character_bible' && selectedVersionId ? (
+                    <CharacterBibleProgress versionId={selectedVersionId} docType="character_bible" />
+                  ) : (
+                    <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
+                  )}
                   <OperationProgress isActive={isBgGenerating || isGeneratingDocument} stages={DEV_GENERATE_STAGES} stallTimeoutMs={300_000} />
                   <OperationProgress isActive={convert.isPending} stages={DEV_CONVERT_STAGES} onStop={() => convert.reset()} onRestart={() => {
                     // PIPELINE AUTHORITY: use Pipeline Brain (promotionIntel), never LLM output
