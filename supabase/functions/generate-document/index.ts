@@ -1622,8 +1622,30 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         try {
           const conceptBriefContent = upstreamContent || "";
 
-          // Step A: Extract character names/roles from concept brief via LLM
-          const extractPrompt = `Analyze the concept brief below and identify ALL characters mentioned. Return a JSON array of objects, each with:
+          // Step A: Read characters from project_canon (canonical source established by DevSeed).
+          // This avoids canon conflicts: same source → same characters → no conflicting notes.
+          let characters: Array<{name: string; role: string; description: string}> = [];
+          try {
+            const { data: canonRow } = await serviceClient
+              .from("project_canon")
+              .select("canon_json")
+              .eq("project_id", projectId)
+              .maybeSingle();
+            const canonChars = canonRow?.canon_json?.characters;
+            if (Array.isArray(canonChars) && canonChars.length > 0) {
+              characters = canonChars.map((c: any) => ({
+                name: c.name || "Unknown",
+                role: c.role || "unknown",
+                description: c.description || "",
+              }));
+              console.log(`[generate-document] Read ${characters.length} characters from project_canon`);
+            }
+          } catch { /* fall through to fallback */ }
+
+          // Fallback: extract from concept brief via LLM if canon is empty
+          if (!Array.isArray(characters) || characters.length === 0) {
+            console.log(`[generate-document] No characters in project_canon — extracting from concept brief`);
+            const extractPrompt = `Analyze the concept brief below and identify ALL characters mentioned. Return a JSON array of objects, each with:
 - "name": the character's full name
 - "role": their role in the story (e.g., "protagonist", "antagonist", "supporting", "love interest", "mentor", etc.)
 - "description": a brief 1-2 sentence description based solely on the concept brief
@@ -1633,22 +1655,20 @@ Return ONLY valid JSON, no markdown, no explanation.
 Example:
 [{"name": "Jane Doe", "role": "protagonist", "description": "A brilliant scientist who discovers a way to communicate across dimensions."}]`;
 
-          const extractUser = `CONCEPT BRIEF:\n${conceptBriefContent.slice(0, 50000)}`;
-          const extractRaw = await callLLM(apiKey, extractPrompt, extractUser);
-          const jsonMatch = extractRaw.match(/\[[\s\S]*\]/);
-          let characters: Array<{name: string; role: string; description: string}> = [];
-          if (jsonMatch) {
-            try {
-              characters = JSON.parse(jsonMatch[0]);
-            } catch { /* fall through to default */ }
+            const extractUser = `CONCEPT BRIEF:\n${conceptBriefContent.slice(0, 50000)}`;
+            const extractRaw = await callLLM(apiKey, extractPrompt, extractUser);
+            const jsonMatch = extractRaw.match(/\[[\s\S]*\]/);
+            if (jsonMatch) {
+              try {
+                characters = JSON.parse(jsonMatch[0]);
+              } catch { /* fall through to default */ }
+            }
+            if (!Array.isArray(characters) || characters.length === 0) {
+              characters = [{ name: "Protagonist", role: "protagonist", description: "The main character of the story." }];
+              console.warn(`[generate-document] Character extraction returned empty — using fallback`);
+            }
+            console.log(`[generate-document] Extracted ${characters.length} characters from concept brief`);
           }
-          if (!Array.isArray(characters) || characters.length === 0) {
-            // Fallback: create a single generic character entry
-            characters = [{ name: "Protagonist", role: "protagonist", description: "The main character of the story." }];
-            console.warn(`[generate-document] Character extraction returned empty — using fallback`);
-          }
-
-          console.log(`[generate-document] Extracted ${characters.length} characters from concept brief`);
 
           // Step B: For each character, create entity + generate profile
           const profiles: Array<{name: string; role: string; profile: string}> = [];
