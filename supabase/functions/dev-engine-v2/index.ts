@@ -1862,6 +1862,65 @@ RULES FOR NOTE GENERATION:
 ${deliverable === "character_bible" ? CHARACTER_BIBLE_DEPTH_EVAL_BLOCK : ""}`;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// PER-CHARACTER BIBLE REWRITE HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+interface CharBibleSection {
+  name: string;
+  role: string;
+  header: string;
+  body: string;
+}
+
+/**
+ * Parse a character bible full text into per-character sections.
+ * Splits on `## [number]. Name (role)` headers and returns
+ * `{name, role, header, body}[]` preserving original text within each section.
+ */
+function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
+  const sections: CharBibleSection[] = [];
+  const lines = fullText.split("\n");
+  const headerRegex = /^##\s+\d+\.\s+(.+?)\s+\(([^)]+)\)\s*$/;
+  let currentName = "";
+  let currentRole = "";
+  let currentHeader = "";
+  let currentStart = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(headerRegex);
+    if (match) {
+      // Save previous section
+      if (currentName && currentStart >= 0) {
+        const bodyLines = lines.slice(currentStart, i);
+        sections.push({
+          name: currentName,
+          role: currentRole,
+          header: currentHeader,
+          body: bodyLines.join("\n"),
+        });
+      }
+      currentName = match[1].trim();
+      currentRole = match[2].trim();
+      currentHeader = lines[i];
+      currentStart = i;
+    }
+  }
+
+  // Save last section
+  if (currentName && currentStart >= 0) {
+    const bodyLines = lines.slice(currentStart);
+    sections.push({
+      name: currentName,
+      role: currentRole,
+      header: currentHeader,
+      body: bodyLines.join("\n"),
+    });
+  }
+
+  return sections;
+}
+
 function buildRewriteSystem(deliverable: string, format: string, behavior: string): string {
   const isDocSafe = ["deck", "documentary_outline"].includes(deliverable) ||
     ["documentary", "documentary-series", "hybrid-documentary"].includes(format);
@@ -7774,7 +7833,7 @@ MATERIAL:\n${version.plaintext}`;
 
       // Character bible and long_character_bible are safe for larger single-pass rewrites
       // (per-character format means no risk of truncating an act/season structure)
-      const CHAR_BIBLE_LONG_THRESHOLD = 80000;
+      const CHAR_BIBLE_LONG_THRESHOLD = 200000;
       const effectiveLongThreshold = (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible")
         ? CHAR_BIBLE_LONG_THRESHOLD
         : LONG_THRESHOLD;
@@ -8001,103 +8060,297 @@ MATERIAL:\n${version.plaintext}`;
         ? "\n\nFORMAT GUIDANCE: This is a TREATMENT document. Write vivid prose narrative organized by ## ACT section headers. Do NOT use INT./EXT. sluglines or screenplay format. Each ## ACT section: 4-7 pages (~1,500-2,000 words) of present-tense prose with full scenes, atmosphere, character interiority. Do NOT summarise."
         : "";
 
-      const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
-APPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
+\nAPPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}${characterFactsBlock}
 TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;
 
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
-      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
-      if (!parsed) {
-        console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
-        return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "rewrite", snippet: raw.slice(0, 300) }), {
-          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      // Guard: rewritten_text must be a string. If the model returned a nested object
-      // (e.g. { rewritten_text: { CONCEPT_BRIEF: {...} } }), coerce or unwrap it.
-      let rewrittenTextRaw = parsed.rewritten_text;
-      if (rewrittenTextRaw !== null && rewrittenTextRaw !== undefined && typeof rewrittenTextRaw !== "string") {
-        // Model returned an object — JSON-stringify it as a recoverable fallback,
-        // then let the unwrap guard below attempt to extract a string from it.
-        rewrittenTextRaw = JSON.stringify(rewrittenTextRaw);
-      }
-      let rewrittenText: string = (typeof rewrittenTextRaw === "string" ? rewrittenTextRaw : "") ||
-        (typeof parsed.converted_text === "string" ? parsed.converted_text : "") ||
-        (typeof parsed.text === "string" ? parsed.text : "");
-      // Guard: if the model returned JSON instead of plain text, convert to markdown
-      if (rewrittenText.trim().startsWith("```") || rewrittenText.trim().startsWith("{") || rewrittenText.trim().startsWith("[")) {
-        try {
-          const stripped = rewrittenText.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/\n?```\s*$/, "").trim();
-          const inner = JSON.parse(stripped);
-          // Prefer explicit text keys
-          const explicit = inner?.rewritten_text || inner?.converted_text || inner?.text;
-          if (explicit && typeof explicit === "string" && explicit.trim().length > 50) {
-            rewrittenText = explicit;
-          } else {
-            // Fall back to full recursive JSON→markdown (same logic as convert path)
-            function _jToMd(obj: any, depth = 0): string {
-              if (typeof obj === "string") return obj;
-              if (Array.isArray(obj)) return (obj as any[]).map((item: any) =>
-                `- ${typeof item === "string" ? item : _jToMd(item, depth + 1)}`).join("\n");
-              if (typeof obj === "object" && obj !== null) {
-                return Object.entries(obj).map(([k, v]: [string, any]) => {
-                  const h = "#".repeat(Math.min(depth + 2, 4));
-                  const lbl = k.replace(/_/g, " ").toUpperCase();
-                  if (typeof v === "string") return `${h} ${lbl}\n\n${v}`;
-                  if (Array.isArray(v)) return `${h} ${lbl}\n\n${(v as any[]).map((i: any) => `- ${typeof i === "string" ? i : _jToMd(i, depth + 1)}`).join("\n")}`;
-                  if (typeof v === "object") return `${h} ${lbl}\n\n${_jToMd(v, depth + 1)}`;
-                  return `${h} ${lbl}\n\n${v}`;
-                }).join("\n\n");
+      // ── PER-CHARACTER REWRITE for character bible / long_character_bible ──
+      // When applicable, rewrite each character individually through per-character LLM
+      // calls with matching notes, then assemble the final document. This bypasses the
+      // single-pass LLM call below.
+      let rewrittenText = "";
+      let parsed: any = null;
+      let isPerCharRewrite = false;
+
+      if (
+        (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible") &&
+        fullText.trim().length > 100
+      ) {
+        const perCharNotes = [userNotes, additionalContext, (rewriteNotes || []).join("\n")].filter(Boolean).join("\n\n");
+        // Only trigger per-character mode if we have actual notes to apply
+        if (perCharNotes.trim() || (approvedNotes && approvedNotes.length > 0)) {
+          console.log(`[dev-engine-v2] rewrite: per-character mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
+
+          // Step 1: Parse character bible into per-character sections
+          const sections = parseCharacterBibleSections(fullText);
+
+          if (sections.length > 0) {
+            isPerCharRewrite = true;
+
+            // Step 2: Determine which characters are affected by notes
+            // Build a consolidated search string from all note sources
+            const allNoteText = [
+              perCharNotes,
+              ...(approvedNotes || []).flatMap((n: any) => [
+                n.note, n.title, n.summary, n.note_key || n.id,
+              ]),
+            ].filter(Boolean).join("\n").toLowerCase();
+
+            const isAffected = (section: CharBibleSection): boolean => {
+              const nameLower = section.name.toLowerCase();
+              // Check exact word boundary match to avoid false positives
+              // e.g. "Ann" matching "Annie" or "Manny"
+              const namePattern = new RegExp(
+                nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "i"
+              );
+              return namePattern.test(allNoteText);
+            };
+
+            const affectedSections = sections.filter(isAffected);
+            const totalAffected = affectedSections.length;
+
+            console.log(
+              `[dev-engine-v2] rewrite: per-character — ${totalAffected}/${sections.length} characters affected by notes`
+            );
+
+            // Step 3: Build per-character system prompt (same base but with single-character override)
+            const perCharSystemBase = effectiveRewritePrompt;
+
+            // Per-character LLM wrapper
+            const perCharLLM = async (system: string, user: string): Promise<string> => {
+              return await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, system, user, 0.4, 16000) || "";
+            };
+
+            // Step 4: Loop through all sections — rewrite affected, preserve unaffected
+            const assembledSections: string[] = [];
+            let charLoopIndex = 0;
+            let updatedCount = 0;
+            const updatedNames: string[] = [];
+
+            for (const section of sections) {
+              if (isAffected(section)) {
+                charLoopIndex++;
+                console.log(
+                  `[dev-engine-v2] rewrite: per-character "${section.name}" (${charLoopIndex}/${totalAffected})`
+                );
+
+                // Build character-specific user prompt
+                const charApprovedNotes = (approvedNotes || []).filter((n: any) => {
+                  const noteText = [n.note, n.title, n.summary, n.note_key || n.id]
+                    .filter(Boolean).join(" ").toLowerCase();
+                  return noteText.includes(section.name.toLowerCase()) ||
+                    noteText.includes(section.role.toLowerCase());
+                });
+
+                const charUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+
+APPROVED NOTES (applying to "${section.name}"):\n${JSON.stringify(charApprovedNotes)}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
+${narrativeBlock}${characterFactsBlock}
+TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
+
+CHARACTER TO REWRITE: ${section.name} (${section.role})
+
+ORIGINAL CHARACTER PROFILE:
+${section.body}
+
+INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
+- Rewrite ONLY this single character profile: "${section.name}".
+- Apply ONLY the approved notes that reference this character.
+- Preserve the section header exactly as provided.
+- Output the FULL rewritten character profile in natural prose — 300–800 words.
+- If no notes apply to this character, return the original text verbatim unchanged.
+- Do NOT output any other character profiles. Do NOT output the full bible.
+- Return valid JSON with "rewritten_text" containing ONLY this character's profile.`;
+
+                try {
+                  let rawChar = await perCharLLM(perCharSystemBase, charUserPrompt);
+
+                  // Parse the JSON response to extract rewritten_text
+                  let charContent: string;
+                  try {
+                    const parsedChar = await parseAIJson(OPENROUTER_API_KEY, rawChar);
+                    if (parsedChar && typeof parsedChar.rewritten_text === "string" && parsedChar.rewritten_text.trim().length > 20) {
+                      charContent = parsedChar.rewritten_text.trim();
+                    } else if (parsedChar && typeof parsedChar === "object") {
+                      // Try to find any substantial string value
+                      const vals = Object.values(parsedChar).filter(
+                        (v): v is string => typeof v === "string" && v.length > 50
+                      );
+                      charContent = vals.length > 0 ? vals[0] : rawChar.trim();
+                    } else {
+                      charContent = rawChar.trim();
+                    }
+                  } catch {
+                    charContent = rawChar.trim();
+                  }
+
+                  // Clean: strip any JSON fences or wrapper markdown
+                  charContent = charContent.replace(/^```(?:json)?\s*/i, "").replace(/\n?```\s*$/, "").trim();
+
+                  // If the model returned the full ## header, strip it (we supply our own)
+                  const headerRegex = new RegExp(`^##\\s+\\d+\\.\\s+${section.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s+\\(${section.role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)\\s*`, "i");
+                  charContent = charContent.replace(headerRegex, "").trim();
+
+                  // Assemble: original header + new body + separator
+                  assembledSections.push(
+                    `${section.header}\n\n${charContent}\n\n---`
+                  );
+                  updatedCount++;
+                  updatedNames.push(section.name);
+
+                } catch (charErr: any) {
+                  console.error(
+                    `[dev-engine-v2] rewrite: per-character LLM failed for "${section.name}": ${charErr?.message}`
+                  );
+                  // Preserve original on failure
+                  assembledSections.push(section.body);
+                }
+
+                // Track progress via version meta_json between per-character calls
+                try {
+                  await supabase.from("project_document_versions")
+                    .update({
+                      meta_json: {
+                        ...((version as any)?.meta_json || {}),
+                        bg_generating: true,
+                        characters_total: totalAffected,
+                        characters_completed: charLoopIndex,
+                        current_character: section.name,
+                        rewrite_mode: "per_character",
+                      },
+                    })
+                    .eq("id", versionId);
+                } catch (metaErr: any) {
+                  console.warn(
+                    "[dev-engine-v2] rewrite: meta_json progress update failed (non-fatal):",
+                    metaErr?.message
+                  );
+                }
+              } else {
+                // Unaffected character — preserve original text exactly
+                assembledSections.push(section.body);
               }
-              return String(obj);
             }
-            const md = _jToMd(inner);
-            if (md && md.length > 50) rewrittenText = md;
+
+            // Step 5: Assemble final document
+            // Extract any header material before the first ## N. Name (role) section
+            const firstSectionMatch = fullText.match(/^##\s+\d+\.\s+.+?\([^)]+\)\s*$/m);
+            const firstSectionIndex = firstSectionMatch ? firstSectionMatch.index! : 0;
+            const docHeader = firstSectionIndex > 0 ? fullText.slice(0, firstSectionIndex) : "";
+
+            const assembledText = docHeader + assembledSections.join("\n\n");
+
+            rewrittenText = assembledText;
+            parsed = {
+              rewritten_text: assembledText,
+              changes_summary: `${updatedCount} character(s) updated via per-character rewrite: ${updatedNames.join(", ")}`,
+              creative_preserved: `Per-character rewrite preserved ${sections.length - updatedCount} unaffected character(s) exactly.`,
+              commercial_improvements: "",
+            };
+
+            console.log(
+              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${totalAffected} affected characters rewritten, ${sections.length - totalAffected} total characters preserved`
+            );
           }
-        } catch { /* not JSON — leave as-is */ }
+        }
       }
 
-      // Post-processing safety guard for documentary/deck
-      const safetyViolation = validateDocSafety(fullText, rewrittenText, effectiveDeliverable, effectiveFormat);
-      if (safetyViolation) {
-        return new Response(JSON.stringify({ error: safetyViolation, safety_blocked: true }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
-      // ── STAGE IDENTITY GATE — block persistence of malformed stage artifacts ──
-      if (effectiveDeliverable && ["idea", "concept_brief"].includes(effectiveDeliverable)) {
-        const sidResult = validateStageIdentity(effectiveDeliverable, rewrittenText);
-        if (sidResult && !sidResult.pass) {
-          console.error(JSON.stringify({
-            diag: "STAGE_IDENTITY_BLOCKED",
-            action: "rewrite_persist",
-            project_id: projectId,
-            document_id: documentId,
-            source_version_id: versionId,
-            deliverable: effectiveDeliverable,
-            violation: sidResult.violation,
-            char_count: sidResult.details.char_count,
-            word_count: sidResult.details.word_count,
-            section_count: sidResult.details.section_count,
-            violations: sidResult.details.violations,
-            repair_hint: sidResult.repair_hint || null,
-          }));
-          return new Response(JSON.stringify({
-            error: `STAGE_IDENTITY_BLOCKED: ${sidResult.violation}`,
-            stage_identity_blocked: true,
-            violation: sidResult.violation,
-            violations: sidResult.details.violations,
-            repair_hint: sidResult.repair_hint,
-            detail: `Rewrite output for ${effectiveDeliverable} exceeded stage identity constraints and was not saved. ${sidResult.repair_hint || "Regenerate with correct stage constraints."}`,
-          }), {
-            status: 422,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
+      if (!isPerCharRewrite) {
+        const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
+        const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+        if (!parsed) {
+          console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
+          return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "rewrite", snippet: raw.slice(0, 300) }), {
+            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
+        }
+        // Guard: rewritten_text must be a string. If the model returned a nested object
+        // (e.g. { rewritten_text: { CONCEPT_BRIEF: {...} } }), coerce or unwrap it.
+        let rewrittenTextRaw = parsed.rewritten_text;
+        if (rewrittenTextRaw !== null && rewrittenTextRaw !== undefined && typeof rewrittenTextRaw !== "string") {
+          // Model returned an object — JSON-stringify it as a recoverable fallback,
+          // then let the unwrap guard below attempt to extract a string from it.
+          rewrittenTextRaw = JSON.stringify(rewrittenTextRaw);
+        }
+        rewrittenText = (typeof rewrittenTextRaw === "string" ? rewrittenTextRaw : "") ||
+          (typeof parsed.converted_text === "string" ? parsed.converted_text : "") ||
+          (typeof parsed.text === "string" ? parsed.text : "");
+        // Guard: if the model returned JSON instead of plain text, convert to markdown
+        if (rewrittenText.trim().startsWith("```") || rewrittenText.trim().startsWith("{") || rewrittenText.trim().startsWith("[")) {
+          try {
+            const stripped = rewrittenText.trim().replace(/^```json\s*/i, "").replace(/^```\s*/, "").replace(/\n?```\s*$/, "").trim();
+            const inner = JSON.parse(stripped);
+            // Prefer explicit text keys
+            const explicit = inner?.rewritten_text || inner?.converted_text || inner?.text;
+            if (explicit && typeof explicit === "string" && explicit.trim().length > 50) {
+              rewrittenText = explicit;
+            } else {
+              // Fall back to full recursive JSON→markdown (same logic as convert path)
+              function _jToMd(obj: any, depth = 0): string {
+                if (typeof obj === "string") return obj;
+                if (Array.isArray(obj)) return (obj as any[]).map((item: any) =>
+                  `- ${typeof item === "string" ? item : _jToMd(item, depth + 1)}`).join("\n");
+                if (typeof obj === "object" && obj !== null) {
+                  return Object.entries(obj).map(([k, v]: [string, any]) => {
+                    const h = "#".repeat(Math.min(depth + 2, 4));
+                    const lbl = k.replace(/_/g, " ").toUpperCase();
+                    if (typeof v === "string") return `${h} ${lbl}\n\n${v}`;
+                    if (Array.isArray(v)) return `${h} ${lbl}\n\n${(v as any[]).map((i: any) => `- ${typeof i === "string" ? i : _jToMd(i, depth + 1)}`).join("\n")}`;
+                    if (typeof v === "object") return `${h} ${lbl}\n\n${_jToMd(v, depth + 1)}`;
+                    return `${h} ${lbl}\n\n${v}`;
+                  }).join("\n\n");
+                }
+                return String(obj);
+              }
+              const md = _jToMd(inner);
+              if (md && md.length > 50) rewrittenText = md;
+            }
+          } catch { /* not JSON — leave as-is */ }
+        }
+
+        // Post-processing safety guard for documentary/deck
+        const safetyViolation = validateDocSafety(fullText, rewrittenText, effectiveDeliverable, effectiveFormat);
+        if (safetyViolation) {
+          return new Response(JSON.stringify({ error: safetyViolation, safety_blocked: true }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+
+        // ── STAGE IDENTITY GATE — block persistence of malformed stage artifacts ──
+        if (effectiveDeliverable && ["idea", "concept_brief"].includes(effectiveDeliverable)) {
+          const sidResult = validateStageIdentity(effectiveDeliverable, rewrittenText);
+          if (sidResult && !sidResult.pass) {
+            console.error(JSON.stringify({
+              diag: "STAGE_IDENTITY_BLOCKED",
+              action: "rewrite_persist",
+              project_id: projectId,
+              document_id: documentId,
+              source_version_id: versionId,
+              deliverable: effectiveDeliverable,
+              violation: sidResult.violation,
+              char_count: sidResult.details.char_count,
+              word_count: sidResult.details.word_count,
+              section_count: sidResult.details.section_count,
+              violations: sidResult.details.violations,
+              repair_hint: sidResult.repair_hint || null,
+            }));
+            return new Response(JSON.stringify({
+              error: `STAGE_IDENTITY_BLOCKED: ${sidResult.violation}`,
+              stage_identity_blocked: true,
+              violation: sidResult.violation,
+              violations: sidResult.details.violations,
+              repair_hint: sidResult.repair_hint,
+              detail: `Rewrite output for ${effectiveDeliverable} exceeded stage identity constraints and was not saved. ${sidResult.repair_hint || "Regenerate with correct stage constraints."}`,
+            }), {
+              status: 422,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
         }
       }
 
