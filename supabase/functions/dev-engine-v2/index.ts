@@ -1975,29 +1975,22 @@ Apply notes only to the specific affected episodes. Preserve all others exactly.
   let characterBibleEnforcement = "";
   if (deliverable === "character_bible") {
     characterBibleEnforcement = `\n\nCHARACTER BIBLE FORMAT (MANDATORY — violations cause rejection):
-Output the COMPLETE character bible as a JSON ARRAY of character objects. Every character must have this structure:
-[
-  {
-    "name": "Character Full Name",
-    "role": "protagonist | antagonist | supporting | recurring",
-    "age": "age or age range",
-    "physical_description": "...",
-    "backstory": "...",
-    "motivation": "what they want and why",
-    "arc": "how they change across the season",
-    "relationships": "key relationships to other characters",
-    "voice": "how they speak and communicate",
-    "secrets": "hidden information / what others don't know",
-    "fatal_flaw": "their core weakness",
-    "goals": "immediate and long-term goals"
-  }
-]
-- Output ONLY the JSON array — no prose wrappers, no markdown headers, no INT./EXT. sluglines.
+Output the COMPLETE character bible as a markdown document with per-character sections. Each character profile must follow this structure:
+
+## [number]. [Character Full Name] ([role])
+
+A detailed prose profile covering the character's personality, backstory, motivations, arc, relationships, voice, and key traits.
+
+Continue in natural prose — write as a professional development bible entry (300-800 words per character).
+
+RULES:
+- Every character is a separate ## section, ordered by narrative importance: protagonist(s) first, then antagonist(s), then supporting roles by screen time, then recurring/minor roles last. NEVER alphabetical.
+- Separate characters with \n\n---\n\n
 - ALL existing characters must be present in the output — do not drop characters.
 - Apply notes only to the specific characters those notes affect.
 - Preserve all unaffected characters exactly as they are.
-- Do NOT convert character profiles to prose or screenplay format.
-- ORDER characters by narrative importance: protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time / story weight, then recurring/minor roles last. NEVER alphabetical order.`;
+- Do NOT output JSON, screenplay format, or INT./EXT. sluglines.
+- Do NOT convert character profiles to screenplay dialogue or scene format.`;
   }
 
   // Market sheet format enforcement — mandatory anti-hallucination for market deliverables
