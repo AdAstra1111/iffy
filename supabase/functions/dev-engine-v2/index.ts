@@ -8262,7 +8262,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 
       if (!isPerCharRewrite) {
         const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, effectiveRewritePrompt, userPrompt, 0.4, 32000);
-        const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+        parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
         if (!parsed) {
           console.error("[dev-engine-v2] rewrite: parseAIJson returned null", raw.slice(0, 300));
           return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "rewrite", snippet: raw.slice(0, 300) }), {
