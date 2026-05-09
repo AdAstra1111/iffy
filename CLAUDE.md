@@ -78,11 +78,10 @@ Critical events must be emitted as structured logs: `authoritative_version_resol
 
 ## Branch Workflow
 
-- `main` is protected — no direct pushes; PRs required
-- Lovable (the AI coding tool) pushes to the `lovable` branch and opens PRs to `main`
-- Lara reviews and merges Lovable PRs, checking for regressions against protected files
+- `main` is the primary branch — push directly, no Lovable involvement
+- All deploys happen via the `deploy-functions.yml` GitHub Action on push to `main`
 
-## Protected Files — Verify on Every Lovable PR
+## Protected Files — Verify on Every Main Push
 
 These files carry critical hardening that Lovable may accidentally revert:
 
