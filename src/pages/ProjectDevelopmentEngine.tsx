@@ -1334,13 +1334,22 @@ export default function ProjectDevelopmentEngine() {
     if (textLength > 30000 && selectedDocId && selectedVersionId) {
       // Character bibles use per-character rewrite via dev-engine-v2, not scene pipeline
       if (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') {
+        const charSelectedOptions = decisions
+          ? Object.entries(decisions)
+              .filter(([, v]) => !!v)
+              .map(([noteId, optionId]) => ({
+                note_id: noteId,
+                option_id: optionId,
+                custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
+              }))
+          : undefined;
         rewrite.mutate({
           approvedNotes: enrichedNotes,
           protectItems,
           deliverableType: selectedDeliverableType,
           developmentBehavior: projectBehavior,
           format: projectFormat,
-          selectedOptions: selectedOptionsForRewrite,
+          selectedOptions: charSelectedOptions,
           globalDirections: globalDirections || [],
         }, {
           onSuccess: afterRewrite,
