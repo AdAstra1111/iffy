@@ -8321,7 +8321,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       // ── SECTIONED DEV TYPES (character_bible, beat_sheet, treatment, story_outline) ──
       // These docs use ## section headers, not INT./EXT. sluglines.
       // Split on ## headers instead of sluglines so each chunk stays coherent.
-      const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment"]);
+      const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible"]);
       const buildSectionHeaderChunks = (text: string): string[] => {
         const CHUNK_TARGET = 12000;
         const lines = text.split("\n");
@@ -8672,7 +8672,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
       // NOTE: docType must be declared BEFORE this line (temporal dead zone guard)
       const isGridDocType = docType === "episode_grid" || docType === "vertical_episode_grid";
       const isBeatsDocType = docType === "vertical_episode_beats" || docType === "episode_beats";
-      const isSectionedDocType = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment"]).has(docType);
+      const isSectionedDocType = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible"]).has(docType);
       const baseChunkSystem = isGridDocType ? REWRITE_CHUNK_SYSTEM_GRID
         : isBeatsDocType ? REWRITE_CHUNK_SYSTEM_BEATS
         : isSectionedDocType ? REWRITE_CHUNK_SYSTEM_SECTIONED
