@@ -306,20 +306,37 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     const lines: string[] = [];
     const val = (field: string) => data[field] ?? "";
     const arrayVal = (field: string) => Array.isArray(data[field]) ? data[field].join(", ") : String(data[field] ?? "");
+    const title = val("title") || "Project";
 
-    lines.push("# CONCEPT BRIEF", "");
+    lines.push(`# CONCEPT BRIEF: ${title}`, "");
     lines.push("## LOGLINE", val("logline"), "");
-    lines.push("## GENRE & SUBGENRE", val("genre_subgenre") || val("genre") || "", "");
+    const gs = val("genre_subgenre") || val("genre") || "";
+    lines.push("## GENRE & SUBGENRE", gs ? `**Primary Genre:** ${gs}` : "", "");
     lines.push("## PREMISE", val("premise"), "");
-    lines.push("## PROTAGONIST", val("protagonist"), "");
-    lines.push("## OPPOSITION", val("opposition"), "");
-    lines.push("## KEY RELATIONSHIPS", val("key_relationships"), "");
+
+    const prot = val("protagonist");
+    lines.push("## PROTAGONIST", prot ? `**Name & Role:** ${prot}` : "", "");
+
+    const opp = val("opposition");
+    lines.push("## OPPOSITION", opp ? `**Antagonist / Opposing Force:** ${opp}` : "", "");
+
+    const rel = val("key_relationships");
+    lines.push("## KEY RELATIONSHIPS", rel ? `**Allies & Mentors:** ${rel}` : "", "");
+
     lines.push("## CENTRAL CONFLICT", val("central_conflict"), "");
     lines.push("## STAKES", val("stakes"), "");
-    lines.push("## TONE & ATMOSPHERE", val("tone_and_style"), "");
-    lines.push("## THEMES", arrayVal("themes"), "");
+
+    const tone = val("tone_and_style");
+    lines.push("## TONE & ATMOSPHERE", tone ? `**Emotional Register:** ${tone}` : "", "");
+
+    const themes = arrayVal("themes");
+    lines.push("## THEMES", themes || "", "");
+
     lines.push("## WORLD BUILDING", val("world_building_notes"), "");
-    lines.push("## AUDIENCE & MARKET", val("target_audience"), "");
+
+    const aud = val("target_audience");
+    lines.push("## AUDIENCE & MARKET", aud ? `**Target Demographic:** ${aud}` : "", "");
+
     lines.push("## UNIQUE HOOK", val("unique_hook"), "");
     lines.push("## VISUAL & SENSORY PALETTE", val("visual_palette"), "");
     return lines.join("\n").trim();
