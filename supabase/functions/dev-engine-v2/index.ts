@@ -1989,11 +1989,51 @@ function buildRewriteSystem(deliverable: string, format: string, behavior: strin
   let conceptBriefEnforcement = "";
   if (deliverable === "concept_brief") {
     conceptBriefEnforcement = `\n\nCONCEPT BRIEF FORMAT (MANDATORY — violations cause rejection):
-- Output MUST use the following labeled section headers. Each section is required.
+- Output MUST use the following 14 labeled section headers. Each section is required.
 - Do NOT write freeform prose without section headers.
 - Do NOT use INT./EXT. sluglines, character name cues, or dialogue blocks.
 - Do NOT use bullet lists for the main content sections.
-\n## LOGLINE\n[1-2 sentence hook: specific characters, event, stakes — no genre platitudes]\n\n## PREMISE\n[2-4 sentence premise: who is the protagonist, what happens, why it matters. Be specific — named characters, named stakes, specific situation. Do not be vague or generic.]\n\n## CENTRAL QUESTION\n[the one dramatic question driving the story — what the story is REALLY about at the thematic level]\n\n## WORLD BUILDING NOTES\n[1-3 sentences on setting, time, place, world rules — enough for downstream documents to work from]\n\n## GENRE & TONE\n[Declare: primary genre, subgenre, tonal register, content rating target. Be specific — not "drama", specify the precise genre lane.]`;
+\n## LOGLINE
+[One sentence — active protagonist + specific conflict + concrete stakes. No passive voice.]
+
+## GENRE & SUBGENRE
+**Primary Genre:** [Primary genre] **Secondary/Tertiary:** [Secondary/tertiary subgenres]
+
+## PREMISE
+[2–3 paragraphs. Establish the dramatic world, the inciting incident, and the protagonist's entrance into the conflict. Be specific — character names, situation, inciting force.]
+
+## PROTAGONIST
+**Name:** [Character name] **Role:** [Narrative role] **Want:** [Concrete external goal] **Need:** [Internal truth they resist] **Flaw:** [Internal limitation] **Fear:** [What they're most afraid of] **Arc Trajectory:** [Start state → breaking point → end state]
+
+## OPPOSITION
+**Antagonist / Opposing Force:** [Name or force] **Motivation:** [What they want] **Nature of Threat:** [How they oppose the protagonist] **Mirror:** [How the antagonist reflects the protagonist]
+
+## KEY RELATIONSHIPS
+**Allies & Mentors:** [Key allies — dynamics with protagonist] **Foils:** [Characters who contrast the protagonist] **Relational Tension:** [The emotional web that drives character decisions]
+
+## CENTRAL CONFLICT
+[The engine of tension. Protagonist vs Opposition vs World. What drives the story forward. 1–2 paragraphs.]
+
+## STAKES
+**Personal:** [What the protagonist personally stands to lose] **Interpersonal:** [What relationships are at risk] **Global / World:** [The broader cost of failure]
+
+## TONE & ATMOSPHERE
+**Emotional Register:** [The dominant emotional experience] **Visual/Literary Tone:** [Reference works or stylistic touchstones] **Mood References:** [Specific tonal references]
+
+## THEMES
+[Core thematic concerns. What the story is really about underneath the plot. 1–2 paragraphs.]
+
+## WORLD BUILDING
+**Setting:** [Time period, location, physical world] **Rules:** [Historical, mythological, or world-specific rules] **Atmosphere:** [How the world feels]
+
+## AUDIENCE & MARKET
+**Target Demographic:** [Age range, platform behaviour, viewing context] **Comparable Titles:** [2–3 recent titles in the same genre/tone/market space] **Market Positioning:** [What gap this fills]
+
+## UNIQUE HOOK
+[One paragraph — the single element that makes this story distinctive and undeniable.]
+
+## VISUAL & SENSORY PALETTE
+**Key Visual Motifs:** [Recurring images or symbols] **Color References:** [Color palette and its emotional function] **Sensory Atmosphere:** [Sound design, tactile qualities, smell, temperature — the sensory world]`;
   }
 
   // Screenplay enforcement for script deliverables
@@ -8574,7 +8614,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // ── SECTIONED DEV TYPES (character_bible, beat_sheet, treatment, story_outline) ──
       // These docs use ## section headers, not INT./EXT. sluglines.
       // Split on ## headers instead of sluglines so each chunk stays coherent.
-      const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible"]);
+      const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible", "concept_brief"]);
       const buildSectionHeaderChunks = (text: string): string[] => {
         const CHUNK_TARGET = 12000;
         const lines = text.split("\n");
@@ -8925,7 +8965,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // NOTE: docType must be declared BEFORE this line (temporal dead zone guard)
       const isGridDocType = docType === "episode_grid" || docType === "vertical_episode_grid";
       const isBeatsDocType = docType === "vertical_episode_beats" || docType === "episode_beats";
-      const isSectionedDocType = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible"]).has(docType);
+      const isSectionedDocType = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible", "concept_brief"]).has(docType);
       const baseChunkSystem = isGridDocType ? REWRITE_CHUNK_SYSTEM_GRID
         : isBeatsDocType ? REWRITE_CHUNK_SYSTEM_BEATS
         : isSectionedDocType ? REWRITE_CHUNK_SYSTEM_SECTIONED
@@ -9334,7 +9374,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
     // SECTIONED-REWRITE — section-aware regeneration for sectioned doc types
     // Handles: treatment, story_outline, character_bible, long_treatment, long_character_bible
     // ═══════════════════════════════════════════════════════════════════
-    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "long_treatment", "beat_sheet"]);
+    const sectionedRewriteTypes = new Set(["treatment", "story_outline", "long_treatment", "beat_sheet", "concept_brief"]);
     if (sectionedRewriteTypes.has(action)) {
       const { projectId, documentId, versionId, approvedNotes, protectItems, additionalContext } = body;
       if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");

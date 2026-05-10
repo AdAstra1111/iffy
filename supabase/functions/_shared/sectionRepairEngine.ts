@@ -445,7 +445,7 @@ function buildCategoryMap(docType: string): Record<string, string> {
         audience: "audience",
         hook: "unique_hook",
         genre: "genre",
-        subgenre: "subgenre",
+        subgenre: "genre",
         visual: "visual_palette",
         comparable: "audience",
       };

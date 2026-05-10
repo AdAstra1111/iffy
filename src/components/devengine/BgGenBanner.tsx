@@ -18,6 +18,7 @@ import { CharacterBibleProgress } from './CharacterBibleProgress';
 const SECTIONED_PROSE_TYPES = new Set([
   'story_outline', 'treatment', 'long_treatment', 'beat_sheet',
   'feature_script', 'screenplay_draft', 'production_draft',
+  'concept_brief',
 ]);
 
 /** Detect generation strategy from the first few chunk keys */

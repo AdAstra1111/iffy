@@ -11,10 +11,9 @@
  */
 
 export const CONCEPT_BRIEF_SECTIONS = [
-  // ── Canonical sections (15) — used by parseSections + section-level rewrite ──
+  // ── Canonical sections (14) — used by parseSections + section-level rewrite ──
   { key: "logline",             label: "Logline",              dependencies: [] },
-  { key: "genre",               label: "Genre",                dependencies: ["logline"] },
-  { key: "subgenre",            label: "Subgenre",             dependencies: ["genre"] },
+  { key: "genre",               label: "Genre & Subgenre",     dependencies: ["logline"] },
   { key: "premise",             label: "Premise",              dependencies: ["logline"] },
   { key: "protagonist",         label: "Protagonist",          dependencies: ["premise"] },
   { key: "opposition",          label: "Opposition",           dependencies: ["protagonist"] },
@@ -31,7 +30,7 @@ export const CONCEPT_BRIEF_SECTIONS = [
 
 export type ConceptBriefSectionKey = typeof CONCEPT_BRIEF_SECTIONS[number]["key"];
 
-// Topologically sorted (all 15 sections)
+// Topologically sorted (all 14 sections)
 export const SECTION_DEPENDENCY_ORDER: ConceptBriefSectionKey[] =
   CONCEPT_BRIEF_SECTIONS.map(s => s.key);
 
@@ -52,7 +51,7 @@ export const NOTE_SECTION_MAP: Record<string, ConceptBriefSectionKey | null> = {
   logline_concision:   "logline",
   // genre & subgenre
   genre_positioning:   "genre",
-  subgenre_positioning: "subgenre",
+  subgenre_positioning: "genre",
   // premise
   premise_strength:           "premise",
   premise_narrative_density: "premise",

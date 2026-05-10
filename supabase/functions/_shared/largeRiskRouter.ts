@@ -53,6 +53,7 @@ const SECTIONED_DOC_TYPES = new Set([
   "treatment",
   "story_outline",
   "beat_sheet",
+  "concept_brief",
 ]);
 
 const SCENE_INDEXED_DOC_TYPES = new Set([
