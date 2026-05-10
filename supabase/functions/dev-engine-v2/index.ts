@@ -9890,6 +9890,20 @@ INSTRUCTIONS:
       // ── POPULATE ACTS ONLY: fill treatment_acts from version text without LLM ──
       if (isTreatmentDoc && (body as any).populateActsOnly === true) {
         console.log("[treatment-populate-acts] populateActsOnly=true — extracting act sections from version plaintext");
+
+        // ITEM 1: Guard against blank placeholder versions created by chunked generation
+        // If the version hasn't been populated yet (bg_generating still in progress), skip
+        // to avoid inserting empty act rows. Acts will be populated on the first rewrite.
+        if (!fullText || fullText.trim().length === 0) {
+          console.warn("[treatment-populate-acts] version plaintext is empty — skipping (acts will be populated on first rewrite)");
+          return new Response(JSON.stringify({
+            success: true,
+            pipeline: "populate_acts_only",
+            skipped: true,
+            reason: "version_plaintext_empty",
+          }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+
         const POPULATE_ACT_SEQUENCE = [
           { actKey: "act_1_setup",            actNumber: 1, label: findSectionDef("treatment", "act_1_setup")?.label ?? "Act 1 – Setup" },
           { actKey: "act_2a_rising_action",   actNumber: 2, label: findSectionDef("treatment", "act_2a_rising_action")?.label ?? "Act 2a – Rising Action" },
@@ -9919,6 +9933,19 @@ INSTRUCTIONS:
         });
         await supabase.from("treatment_acts").insert(actSectionRows);
         console.log("[treatment-populate-acts] inserted " + actSectionRows.length + " treatment_acts rows for treatment_id=" + documentId);
+
+        // ITEM 3: Ensure is_current=true after populate completes
+        // Merge acts_populated_at into existing meta_json to preserve other fields
+        const { data: existingMeta } = await supabase.from("project_document_versions")
+          .select("meta_json").eq("id", versionId).maybeSingle();
+        await supabase.from("project_document_versions").update({
+          is_current: true,
+          meta_json: {
+            ...(existingMeta?.meta_json || {}),
+            acts_populated_at: new Date().toISOString(),
+          },
+        }).eq("id", versionId);
+
         return new Response(JSON.stringify({
           success: true,
           pipeline: "populate_acts_only",

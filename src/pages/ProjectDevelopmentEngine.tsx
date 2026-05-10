@@ -1088,17 +1088,23 @@ export default function ProjectDevelopmentEngine() {
         setSelectedVersionId((genResp as any).version_id);
       }
       // Populate treatment_acts from generated version for treatment docs
+      // Await the call so failures are caught and the user gets toast feedback
       if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') &&
           (genResp as any)?.version_id) {
-        supabase.functions.invoke('dev-engine-v2', {
-          body: {
-            action: selectedDoc.doc_type,
-            projectId,
-            documentId: selectedDocId,
-            versionId: (genResp as any).version_id,
-            populateActsOnly: true,
-          },
-        }).catch(e => console.warn('[generate] treatment_acts fill failed:', e));
+        try {
+          const { error: taErr } = await supabase.functions.invoke('dev-engine-v2', {
+            body: {
+              action: selectedDoc.doc_type,
+              projectId,
+              documentId: selectedDocId,
+              versionId: (genResp as any).version_id,
+              populateActsOnly: true,
+            },
+          });
+          if (taErr) throw taErr;
+        } catch (e: any) {
+          console.warn('[generate] treatment_acts fill failed:', e?.message || e);
+        }
       }
     } finally {
       setIsGeneratingDocument(false);
