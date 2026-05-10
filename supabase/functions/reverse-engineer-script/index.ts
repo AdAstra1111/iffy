@@ -301,11 +301,40 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return lines.join("\n").trim();
   }
 
-  // Smart plaintext formatter for structured docs (beat_sheet, story_outline)
+  // Concept Brief plaintext formatter — renders 14-section markdown matching docTypeTemplates.ts
+  function buildConceptBriefPlaintext(data: any): string {
+    const lines: string[] = [];
+    const val = (field: string) => data[field] ?? "";
+    const arrayVal = (field: string) => Array.isArray(data[field]) ? data[field].join(", ") : String(data[field] ?? "");
+
+    lines.push("# CONCEPT BRIEF", "");
+    lines.push("## LOGLINE", val("logline"), "");
+    lines.push("## GENRE & SUBGENRE", val("genre_subgenre") || val("genre") || "", "");
+    lines.push("## PREMISE", val("premise"), "");
+    lines.push("## PROTAGONIST", val("protagonist"), "");
+    lines.push("## OPPOSITION", val("opposition"), "");
+    lines.push("## KEY RELATIONSHIPS", val("key_relationships"), "");
+    lines.push("## CENTRAL CONFLICT", val("central_conflict"), "");
+    lines.push("## STAKES", val("stakes"), "");
+    lines.push("## TONE & ATMOSPHERE", val("tone_and_style"), "");
+    lines.push("## THEMES", arrayVal("themes"), "");
+    lines.push("## WORLD BUILDING", val("world_building_notes"), "");
+    lines.push("## AUDIENCE & MARKET", val("target_audience"), "");
+    lines.push("## UNIQUE HOOK", val("unique_hook"), "");
+    lines.push("## VISUAL & SENSORY PALETTE", val("visual_palette"), "");
+    return lines.join("\n").trim();
+  }
+
+  // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
   function buildPlaintext(data: any, docType?: string): string {
     if (!data || typeof data !== "object") return String(data ?? "");
+
+    // ── CONCEPT BRIEF: 14-section markdown matching docTypeTemplates.ts ──
+    if (docType === "concept_brief") {
+      return buildConceptBriefPlaintext(data);
+    }
 
     // ── MARKET SHEET / VERTICAL MARKET SHEET: canonical prose format ──
     if (docType === "market_sheet" || docType === "vertical_market_sheet") {
@@ -632,9 +661,20 @@ Return ONLY valid JSON:
     "target_audience": "string"
   },
   "concept_brief": {
-    "premise": "string",
-    "central_question": "string",
-    "world_building_notes": "string"
+    "logline": "string — 1-2 sentence hook: active protagonist + specific conflict + concrete stakes",
+    "genre_subgenre": "string — primary genre & subgenre (e.g. 'psychological thriller', 'dark fantasy')",
+    "premise": "string — 2-3 paragraphs. The dramatic world, inciting incident, protagonist's entrance into conflict",
+    "protagonist": "string — Name, narrative role, want, need, flaw, fear, arc trajectory",
+    "opposition": "string — Antagonist/opposing force, motivation, nature of threat, mirror",
+    "key_relationships": "string — Allies, mentors, foils, relational tension web",
+    "central_conflict": "string — The engine of tension. Protagonist vs Opposition vs World",
+    "stakes": "string — Personal, interpersonal, global/world stakes",
+    "tone_and_style": "string — Emotional register, visual/literary tone, mood references",
+    "themes": ["string"],
+    "world_building_notes": "string — Setting, rules, atmosphere",
+    "target_audience": "string — Target demographic, market positioning",
+    "unique_hook": "string — The single element that makes this story distinctive",
+    "visual_palette": "string — Key visual motifs, color references, sensory atmosphere"
   },
   "market_sheet": {
     "tagline": "string — one-line hook summing the core appeal (derive from tone + premise). Use null if script provides insufficient signal.",
