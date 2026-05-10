@@ -342,6 +342,25 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return lines.join("\n").trim();
   }
 
+  // Idea plaintext formatter — renders 3-section markdown matching docTypeTemplates.ts
+  function buildIdeaPlaintext(data: any): string {
+    const lines: string[] = [];
+    const val = (field: string) => data[field] ?? "";
+    const title = val("title") || "Project";
+    const genre = val("genre") || "";
+    const subgenre = val("subgenre") || "";
+    const hook = val("hook") || "";
+    const genreStr = subgenre ? `${genre} (${subgenre})` : genre;
+
+    lines.push(`# ${title}`, "");
+    lines.push("## LOGLINE", val("logline"), "");
+    lines.push("## PREMISE", val("premise"), "");
+    const genreLine = genreStr ? `**Genre:** ${genreStr}` : "";
+    const hookLine = hook ? `**Unique hook:** ${hook}` : "";
+    lines.push("## GENRE & HOOK", genreLine, hookLine, "");
+    return lines.join("\n").trim();
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
@@ -351,6 +370,11 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     // ── CONCEPT BRIEF: 14-section markdown matching docTypeTemplates.ts ──
     if (docType === "concept_brief") {
       return buildConceptBriefPlaintext(data);
+    }
+
+    // ── IDEA: 3-section markdown matching docTypeTemplates.ts ──
+    if (docType === "idea") {
+      return buildIdeaPlaintext(data);
     }
 
     // ── MARKET SHEET / VERTICAL MARKET SHEET: canonical prose format ──
@@ -756,8 +780,10 @@ Return ONLY valid JSON:
 {
   "title": "string",
   "logline": "string — 1-2 sentence hook that sells the story",
+  "premise": "string — 2-3 paragraphs. The core dramatic proposition: who, what situation, what's at stake, why now. Concise and commercially legible.",
   "genre": "string",
   "subgenre": "string or null",
+  "hook": "string — one sentence: the single element that makes this idea distinctive",
   "tone": "string",
   "themes": ["string"],
   "target_audience": "string"
@@ -774,8 +800,10 @@ Respond with ONLY JSON.`, 14000);
     const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
       title: metadata.title || "Untitled",
       logline: metadata.logline || "",
+      premise: "",
       genre: metadata.genre || null,
       subgenre: metadata.subgenre || null,
+      hook: "",
       tone: metadata.tone || null,
       themes: metadata.themes || [],
       target_audience: metadata.target_audience || null,

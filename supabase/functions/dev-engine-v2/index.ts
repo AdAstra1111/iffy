@@ -1975,14 +1975,23 @@ function buildRewriteSystem(deliverable: string, format: string, behavior: strin
   let ideaEnforcement = "";
   if (deliverable === "idea") {
     ideaEnforcement = `\n\nIDEA DOCUMENT FORMAT (MANDATORY — violations cause rejection):
-- This is an IDEA document — a concise premise-stage prose summary.
+- Output MUST use the following 3 labeled section headers. Each section is required.
+- Do NOT write freeform prose without section headers.
 - Do NOT use INT./EXT. scene headings, sluglines, or location/day headers.
 - Do NOT use ALL-CAPS character name cue lines (e.g. "AKARI", "KAITO" on their own line).
 - Do NOT use parenthetical directions or formatted dialogue blocks.
 - Do NOT include V.O./O.S./O.C. annotations.
-- Write in structured prose: typically logline + expanded premise + commercial framing.
 - The output is a concept document, NOT a screenplay or shooting script.
-- Keep length appropriate for an idea-stage summary (typically 1-3 paragraphs).`;
+
+## LOGLINE
+[One sentence — active protagonist + specific conflict + concrete stakes.]
+
+## PREMISE
+[2–3 paragraphs maximum. The core dramatic proposition: who, what situation, what's at stake, why now. Keep it concise and commercially legible.]
+
+## GENRE & HOOK
+**Genre:** [Primary genre]
+**Unique hook:** [One sentence — the single element that makes this idea distinctive.]`;
   }
 
   // Concept Brief format enforcement — must use structured labeled sections
