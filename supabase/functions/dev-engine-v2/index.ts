@@ -8615,15 +8615,28 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // These docs use ## section headers, not INT./EXT. sluglines.
       // Split on ## headers instead of sluglines so each chunk stays coherent.
       const SECTIONED_PLAN_TYPES = new Set(["beat_sheet", "treatment", "story_outline", "long_treatment", "character_bible", "long_character_bible", "concept_brief"]);
-      const buildSectionHeaderChunks = (text: string): string[] => {
+      // Doc-type-specific section header regex — only split on the natural section
+      // unit for each type. Prevents scene-level headers inside acts from creating
+      // too many chunks (e.g. 19 chunks instead of 4 for treatment).
+      const SECTION_HEADER_RE: Record<string, RegExp> = {
+        treatment: /^##\s+Act\s+/i,
+        long_treatment: /^##\s+Act\s+/i,
+        beat_sheet: /^##\s+Act\s+/i,
+        story_outline: /^##\s+(Act\s+|Scene\s+)/i,
+        character_bible: /^##\s+\d+\.\s+/,
+        long_character_bible: /^##\s+\d+\.\s+/,
+        concept_brief: /^##\s+/,
+      };
+      const buildSectionHeaderChunks = (text: string, docType: string): string[] => {
+        const headerRe = SECTION_HEADER_RE[docType] || /^##\s+/;
         const CHUNK_TARGET = 12000;
         const lines = text.split("\n");
         let currentChunk = "";
         const chunks: string[] = [];
         for (const line of lines) {
           const trimmed = line.trim();
-          const isSectionHeader = /^##\s/.test(trimmed);
-          // Always split at section headers — act/outline sections are the unit, not arbitrary size
+          const isSectionHeader = headerRe.test(trimmed);
+          // Always split at section headers — acts/outline sections are the unit, not arbitrary size
           if (isSectionHeader && currentChunk.trim().length > 0) {
             chunks.push(currentChunk.trim());
             currentChunk = "";
@@ -8640,7 +8653,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       };
 
       let chunkTexts = SECTIONED_PLAN_TYPES.has(sourceDocType)
-        ? buildSectionHeaderChunks(fullText)
+        ? buildSectionHeaderChunks(fullText, sourceDocType)
         : buildLegacySluglineChunks(fullText);
 
       // For sectioned doc types, extract section labels from ## headers in each chunk
