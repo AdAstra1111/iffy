@@ -361,6 +361,41 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return lines.join("\n").trim();
   }
 
+  // Character bible plaintext formatter — renders per-character ## sections
+  // matching parseCharacterBibleSections regex (/^##\s+\d+\.\s+(.+?)\s+\(([^)]+)\)\s*$/)
+  function buildCharacterBiblePlaintext(data: any): string {
+    const chars = Array.isArray(data?.characters) ? data.characters : [];
+    const lines: string[] = [];
+
+    chars.forEach((c: any, idx: number) => {
+      const name = c.name || `Character ${idx + 1}`;
+      const role = c.role || "unknown";
+      lines.push(`## ${idx + 1}. ${name} (${role})`, "");
+      if (c.age) lines.push(`**Age:** ${c.age}`, "");
+      if (c.physical_description) lines.push(`**Physical Description:** ${c.physical_description}`, "");
+      if (c.backstory) lines.push(`**Backstory:** ${c.backstory}`, "");
+      if (c.psychology) lines.push(`**Psychology:** ${c.psychology}`, "");
+      if (c.want) lines.push(`**Want:** ${c.want}`, "");
+      if (c.need) lines.push(`**Need:** ${c.need}`, "");
+      if (c.fatal_flaw) lines.push(`**Fatal Flaw:** ${c.fatal_flaw}`, "");
+      if (c.arc) lines.push(`**Arc:** ${c.arc}`, "");
+      if (c.voice_and_speech) lines.push(`**Voice & Speech:** ${c.voice_and_speech}`, "");
+      if (c.sample_dialogue) lines.push(`**Sample Dialogue:** ${c.sample_dialogue}`, "");
+      if (Array.isArray(c.casting_suggestions) && c.casting_suggestions.length > 0) {
+        lines.push(`**Casting Suggestions:** ${c.casting_suggestions.join(", ")}`, "");
+      }
+      lines.push("---", "");
+    });
+
+    if (data.relationship_dynamics) {
+      lines.push("## RELATIONSHIP DYNAMICS", "", `${data.relationship_dynamics}`, "");
+    }
+    if (data.ensemble_notes) {
+      lines.push("## ENSEMBLE NOTES", "", `${data.ensemble_notes}`, "");
+    }
+    return lines.join("\n").trim();
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
@@ -375,6 +410,11 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     // ── IDEA: 3-section markdown matching docTypeTemplates.ts ──
     if (docType === "idea") {
       return buildIdeaPlaintext(data);
+    }
+
+    // ── CHARACTER BIBLE: per-character ## sections matching ──
+    if (docType === "character_bible") {
+      return buildCharacterBiblePlaintext(data);
     }
 
     // ── MARKET SHEET / VERTICAL MARKET SHEET: canonical prose format ──
