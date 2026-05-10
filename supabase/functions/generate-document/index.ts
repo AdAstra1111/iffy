@@ -2049,58 +2049,6 @@ ${conceptBriefContent.slice(0, 30000)}`;
               .eq("id", chunkDocRecord!.id);
             console.log(`[generate-document] Chunked background generation COMPLETE: ${docType} v${chunkVersionNum} chunks=${chunkResult.completedChunks}/${chunkResult.totalChunks}`);
 
-            // ── POST-GENERATION TREATMENT ACTS POPULATION ──────────────────────
-            // For treatment docs generated via chunked background path, the frontend
-            // won't be able to populate treatment_acts (version was empty at that point).
-            // Populate them here from the now-filled assembled content.
-            if (docType === "treatment" || docType === "long_treatment") {
-              const populateTag = `[generate-document][treatment-acts-populate]`;
-              try {
-                const { data: assembledVer } = await serviceClient
-                  .from("project_document_versions")
-                  .select("plaintext")
-                  .eq("id", chunkVersion!.id)
-                  .single();
-                const assembledText = assembledVer?.plaintext || "";
-                if (assembledText.trim().length > 0) {
-                  const POPULATE_ACT_SEQUENCE = [
-                    { actKey: "act_1_setup",            actNumber: 1, label: findSectionDef("treatment", "act_1_setup")?.label ?? "Act 1 \u2013 Setup" },
-                    { actKey: "act_2a_rising_action",   actNumber: 2, label: findSectionDef("treatment", "act_2a_rising_action")?.label ?? "Act 2a \u2013 Rising Action" },
-                    { actKey: "act_2b_complications",   actNumber: 3, label: findSectionDef("treatment", "act_2b_complications")?.label ?? "Act 2b \u2013 Complications" },
-                    { actKey: "act_3_climax_resolution", actNumber: 4, label: findSectionDef("treatment", "act_3_climax_resolution")?.label ?? "Act 3 \u2013 Climax & Resolution" },
-                  ];
-                  await serviceClient.from("treatment_acts").delete().eq("treatment_id", chunkDocRecord!.id);
-                  const actSectionRows = POPULATE_ACT_SEQUENCE.map(({ actKey, actNumber, label }) => {
-                    const sectionHeader = `## ${label}`;
-                    const headerIdx = assembledText.indexOf(sectionHeader);
-                    let content = "";
-                    if (headerIdx >= 0) {
-                      const afterHeader = assembledText.slice(headerIdx + sectionHeader.length);
-                      const nextActMatch = afterHeader.match(/\n##\s+Act\s+\d/i);
-                      content = nextActMatch && nextActMatch.index !== undefined
-                        ? afterHeader.slice(0, nextActMatch.index).trim()
-                        : afterHeader.trim();
-                    }
-                    return {
-                      treatment_id: chunkDocRecord!.id,
-                      act_number: actNumber,
-                      act_key: actKey,
-                      label,
-                      status: "done" as const,
-                      content: content || null,
-                    };
-                  });
-                  await serviceClient.from("treatment_acts").insert(actSectionRows);
-                  console.log(`${populateTag} inserted ${actSectionRows.length} treatment_acts rows for treatment_id=${chunkDocRecord!.id}`);
-                } else {
-                  console.warn(`${populateTag} assembled text empty — skipping`);
-                }
-              } catch (popErr: any) {
-                console.error(`${populateTag} failed: ${popErr?.message}`);
-              }
-            }
-            // ── END TREATMENT ACTS POPULATION ──────────────────────────────────
-
             // ── POST-GENERATION SCENE GRAPH BOOTSTRAP ──────────────────────────
             // For screenplay-class docs that fell back to sectioned (no scene graph),
             // auto-extract scenes from the generated text so the next regeneration
