@@ -1087,6 +1087,19 @@ export default function ProjectDevelopmentEngine() {
       if ((genResp as any)?.generating === true && (genResp as any)?.version_id) {
         setSelectedVersionId((genResp as any).version_id);
       }
+      // Populate treatment_acts from generated version for treatment docs
+      if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') &&
+          (genResp as any)?.version_id) {
+        supabase.functions.invoke('dev-engine-v2', {
+          body: {
+            action: selectedDoc.doc_type,
+            projectId,
+            documentId: selectedDocId,
+            versionId: (genResp as any).version_id,
+            populateActsOnly: true,
+          },
+        }).catch(e => console.warn('[generate] treatment_acts fill failed:', e));
+      }
     } finally {
       setIsGeneratingDocument(false);
     }
@@ -1113,6 +1126,11 @@ export default function ProjectDevelopmentEngine() {
         qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
         qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
         setIsGeneratingDocument(false);
+        return;
+      } else if (selectedDoc.doc_type === 'treatment' || selectedDoc.doc_type === 'long_treatment') {
+        // Reroute treatment docs through handleGenerateDocument which includes treatment_acts fill-in
+        setIsGeneratingDocument(false); // handleGenerateDocument sets it itself
+        await handleGenerateDocument();
         return;
       } else {
         // Refresh session before invocation — long-running edge functions can expire the token mid-call
@@ -1301,26 +1319,32 @@ export default function ProjectDevelopmentEngine() {
     // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
     // Notes/decisions enrichment is already done above — enrichedNotes contains all context
     if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
+      setTreatmentRewritePending(true);
       const vid = selectedVersionId;
       const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
       
-      supabase.functions.invoke('dev-engine-v2', {
-        body: {
-          action: taAction,
-          projectId,
-          documentId: selectedDocId,
-          versionId: vid,
-          approvedNotes: enrichedNotes,
-          protectItems,
-        },
-      }).then((result: any) => {
-        if (result?.data?.success) {
+      try {
+        const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
+          body: {
+            action: taAction,
+            projectId,
+            documentId: selectedDocId,
+            versionId: vid,
+            approvedNotes: enrichedNotes,
+            protectItems,
+          },
+        });
+        if (invokeError) throw invokeError;
+        if (result?.success) {
+          toast.success('Treatment rewritten — per-act pipeline completed');
           afterRewrite();
           qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
         }
-      }).catch((err: any) => {
+      } catch (err: any) {
         console.error('[treatment] per-act rewrite failed:', err);
+        toast.error('Per-act rewrite failed: ' + (err?.message || 'Unknown error'));
         // Fallback to chunked pipeline if per-act fails
+        toast.info('Falling back to sectioned rewrite...');
         const provenance = {
           rewriteModeSelected: 'auto',
           rewriteModeEffective: 'chunk',
@@ -1330,7 +1354,9 @@ export default function ProjectDevelopmentEngine() {
         };
         rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
         afterRewrite();
-      });
+      } finally {
+        setTreatmentRewritePending(false);
+      }
       return;
     }
     // Sectioned rewrite for character_bible, etc. — uses act-by-act pipeline

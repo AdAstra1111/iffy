@@ -9887,6 +9887,45 @@ INSTRUCTIONS:
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // ── POPULATE ACTS ONLY: fill treatment_acts from version text without LLM ──
+      if (isTreatmentDoc && (body as any).populateActsOnly === true) {
+        console.log("[treatment-populate-acts] populateActsOnly=true — extracting act sections from version plaintext");
+        const POPULATE_ACT_SEQUENCE = [
+          { actKey: "act_1_setup",            actNumber: 1, label: findSectionDef("treatment", "act_1_setup")?.label ?? "Act 1 – Setup" },
+          { actKey: "act_2a_rising_action",   actNumber: 2, label: findSectionDef("treatment", "act_2a_rising_action")?.label ?? "Act 2a – Rising Action" },
+          { actKey: "act_2b_complications",   actNumber: 3, label: findSectionDef("treatment", "act_2b_complications")?.label ?? "Act 2b – Complications" },
+          { actKey: "act_3_climax_resolution", actNumber: 4, label: findSectionDef("treatment", "act_3_climax_resolution")?.label ?? "Act 3 – Climax & Resolution" },
+        ];
+        await supabase.from("treatment_acts").delete().eq("treatment_id", documentId);
+        const actSectionRows = POPULATE_ACT_SEQUENCE.map(({ actKey, actNumber, label }) => {
+          const sectionHeader = `## ${label}`;
+          const headerIdx = fullText.indexOf(sectionHeader);
+          let content = "";
+          if (headerIdx >= 0) {
+            const afterHeader = fullText.slice(headerIdx + sectionHeader.length);
+            const nextActMatch = afterHeader.match(/\n##\s+Act\s+\d/i);
+            content = nextActMatch && nextActMatch.index !== undefined
+              ? afterHeader.slice(0, nextActMatch.index).trim()
+              : afterHeader.trim();
+          }
+          return {
+            treatment_id: documentId,
+            act_number: actNumber,
+            act_key: actKey,
+            label,
+            status: "done" as const,
+            content: content || null,
+          };
+        });
+        await supabase.from("treatment_acts").insert(actSectionRows);
+        console.log("[treatment-populate-acts] inserted " + actSectionRows.length + " treatment_acts rows for treatment_id=" + documentId);
+        return new Response(JSON.stringify({
+          success: true,
+          pipeline: "populate_acts_only",
+          actsCount: POPULATE_ACT_SEQUENCE.length,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // ── TREATMENT PER-ACT PIPELINE (treatment / long_treatment doc types) ──
       if (isTreatmentDoc) {
         // Load canon_json for ActBlueprint canon constraints
