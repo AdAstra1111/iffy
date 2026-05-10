@@ -1297,7 +1297,43 @@ export default function ProjectDevelopmentEngine() {
       // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
       return;
     }
-    // Sectioned rewrite for treatment, character_bible, etc. — uses act-by-act pipeline
+    // Treatment docs: route to per-act pipeline via direct supabase invoke instead of chunked pipeline
+    // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
+    // Notes/decisions enrichment is already done above — enrichedNotes contains all context
+    if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
+      const vid = selectedVersionId;
+      const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
+      
+      supabase.functions.invoke('dev-engine-v2', {
+        body: {
+          action: taAction,
+          projectId,
+          documentId: selectedDocId,
+          versionId: vid,
+          approvedNotes: enrichedNotes,
+          protectItems,
+        },
+      }).then((result: any) => {
+        if (result?.data?.success) {
+          afterRewrite();
+          qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+        }
+      }).catch((err: any) => {
+        console.error('[treatment] per-act rewrite failed:', err);
+        // Fallback to chunked pipeline if per-act fails
+        const provenance = {
+          rewriteModeSelected: 'auto',
+          rewriteModeEffective: 'chunk',
+          rewriteModeReason: 'per_act_failed_fallback',
+          rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
+          rewriteProbe: null,
+        };
+        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
+        afterRewrite();
+      });
+      return;
+    }
+    // Sectioned rewrite for character_bible, etc. — uses act-by-act pipeline
     // (story_outline is handled above via momentPipeline)
     if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
       const provenance = {

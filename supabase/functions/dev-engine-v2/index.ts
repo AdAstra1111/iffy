@@ -10080,6 +10080,23 @@ INSTRUCTIONS:
           return false; // we pushed fallback — check via status field query if needed
         });
 
+        // Trigger async convergence scoring in background (same pattern as rewrite-assemble)
+        if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+          (globalThis as any).EdgeRuntime.waitUntil(
+            fetch(`${supabaseUrl}/functions/v1/convergence-dispatch`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: `Bearer ${supabaseServiceKey}` },
+              body: JSON.stringify({
+                version_id: newVersion.id,
+                project_id: projectId,
+                deliverable_type: doc.doc_type || "treatment",
+                development_behavior: "market",
+                format: project?.format || "film",
+              }),
+            }).catch(function(e) { console.error("[dev-engine-v2][per-act] convergence-dispatch failed: " + String(e)); })
+          );
+        }
+
         return new Response(JSON.stringify({
           success: true,
           versionId: newVersion.id,
