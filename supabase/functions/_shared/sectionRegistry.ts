@@ -11,29 +11,27 @@
  */
 
 export const CONCEPT_BRIEF_SECTIONS = [
-  // ── Canonical sections (7) — used by parseSections + section-level rewrite ──
-  { key: "logline",            label: "Logline",              dependencies: [] },
-  { key: "premise",            label: "Premise",              dependencies: ["logline"] },
-  { key: "protagonist",        label: "Protagonist",          dependencies: ["premise"] },
-  { key: "central_conflict",   label: "Central Conflict",     dependencies: ["protagonist"] },
-  { key: "tone_and_style",     label: "Tone & Style",         dependencies: ["central_conflict"] },
-  { key: "audience",           label: "Audience",             dependencies: ["tone_and_style"] },
-  { key: "unique_hook",        label: "Unique Hook",           dependencies: ["audience"] },
-  // ── Additional real sections present in v31 but not yet in parseSections ──
-  // These are parsed by heading but NOT yet routed to section-level rewrite.
-  // TODO (Phase 2+): add to deliverableSectionRegistry.ts CONCEPT_BRIEF_SECTIONS
-  // so parseSections can extract them, then add to rewrite targets.
-  { key: "genre",              label: "Genre",                 dependencies: ["logline"] },
-  { key: "subgenre",           label: "Subgenre",              dependencies: ["genre"] },
-  { key: "themes",             label: "Themes",               dependencies: ["tone_and_style"] },
-  { key: "world_building_notes",label: "World Building Notes", dependencies: ["premise"] },
-  { key: "festival_strategy",   label: "Festival Strategy",    dependencies: ["unique_hook"] },
-  { key: "budget_contextualization", label: "Budget Contextualization", dependencies: ["festival_strategy"] },
+  // ── Canonical sections (15) — used by parseSections + section-level rewrite ──
+  { key: "logline",             label: "Logline",              dependencies: [] },
+  { key: "genre",               label: "Genre",                dependencies: ["logline"] },
+  { key: "subgenre",            label: "Subgenre",             dependencies: ["genre"] },
+  { key: "premise",             label: "Premise",              dependencies: ["logline"] },
+  { key: "protagonist",         label: "Protagonist",          dependencies: ["premise"] },
+  { key: "opposition",          label: "Opposition",           dependencies: ["protagonist"] },
+  { key: "key_relationships",   label: "Key Relationships",    dependencies: ["protagonist"] },
+  { key: "world_building_notes",label: "World Building",       dependencies: ["premise"] },
+  { key: "central_conflict",    label: "Central Conflict",     dependencies: ["opposition", "protagonist"] },
+  { key: "stakes",              label: "Stakes",               dependencies: ["central_conflict"] },
+  { key: "tone_and_style",      label: "Tone & Atmosphere",    dependencies: ["central_conflict"] },
+  { key: "themes",              label: "Themes",               dependencies: ["tone_and_style"] },
+  { key: "audience",            label: "Audience & Market",    dependencies: ["tone_and_style"] },
+  { key: "unique_hook",         label: "Unique Hook",          dependencies: ["audience"] },
+  { key: "visual_palette",      label: "Visual & Sensory Palette", dependencies: ["world_building_notes"] },
 ] as const;
 
 export type ConceptBriefSectionKey = typeof CONCEPT_BRIEF_SECTIONS[number]["key"];
 
-// Topologically sorted (all 11 sections including the additional ones)
+// Topologically sorted (all 15 sections)
 export const SECTION_DEPENDENCY_ORDER: ConceptBriefSectionKey[] =
   CONCEPT_BRIEF_SECTIONS.map(s => s.key);
 
@@ -52,6 +50,9 @@ export const NOTE_SECTION_MAP: Record<string, ConceptBriefSectionKey | null> = {
   logline_clarity:     "logline",
   logline_impact:      "logline",
   logline_concision:   "logline",
+  // genre & subgenre
+  genre_positioning:   "genre",
+  subgenre_positioning: "subgenre",
   // premise
   premise_strength:           "premise",
   premise_narrative_density: "premise",
@@ -60,36 +61,48 @@ export const NOTE_SECTION_MAP: Record<string, ConceptBriefSectionKey | null> = {
   protagonist_depth:     "protagonist",
   protagonist_motivation: "protagonist",
   protagonist_arc:       "protagonist",
+  // opposition
+  opposition_strength:     "opposition",
+  opposition_mirror:       "opposition",
+  opposition_motivation:   "opposition",
+  // key_relationships
+  relationship_depth:    "key_relationships",
+  relationship_dynamics: "key_relationships",
+  relationship_web:      "key_relationships",
   // central_conflict
   central_conflict_clarity:  "central_conflict",
   central_conflict_strength:  "central_conflict",
-  // tone_and_style / genre / theme
+  // stakes
+  stakes_personal:      "stakes",
+  stakes_interpersonal: "stakes",
+  stakes_global:        "stakes",
+  // tone_and_style
   tone_register:       "tone_and_style",
   tone_consistency:    "tone_and_style",
-  genre_positioning:   "genre",
-  subgenre_positioning: "subgenre",
+  // themes
   theme_clarity:       "themes",
   theme_integration:   "themes",
   theme_coherence:     "themes",
+  // world_building
+  world_building_depth: "world_building_notes",
+  setting_clarity:      "world_building_notes",
   // audience
   audience_clarity:         "audience",
   audience_demographic:    "audience",
   audience_gender_balance:  "audience",
+  packaging_clarity:       "audience",
+  commercial_positioning:   "audience",
+  distribution_logic:        "audience",
+  // comparable_titles — map to audience (market-facing, content within Audience & Market section)
+  comp_clarity:        "audience",
+  comp_relevance:      "audience",
   // unique_hook
   hook_strength:    "unique_hook",
   hook_originality: "unique_hook",
-  // world_building
-  world_building_depth: "world_building_notes",
-  setting_clarity:      "world_building_notes",
-  // festival + budget
-  festival_positioning:  "festival_strategy",
-  budget_context:       "budget_contextualization",
-  budget_alignment:     "budget_contextualization",
-  // PACKAGING / COMMERCIAL notes — map to audience (market-facing section)
-  packaging_clarity:       "audience",
-  commercial_positioning:   "audience",
-  comp_clarity:             "audience",
-  distribution_logic:        "audience",
+  // visual_palette
+  visual_palette_motifs:   "visual_palette",
+  visual_palette_color:    "visual_palette",
+  visual_palette_sensory:  "visual_palette",
   // null = unmapped (configuration error — flag in UI)
 };
 

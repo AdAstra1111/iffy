@@ -51,26 +51,66 @@ export function getDocTypeTemplate(docType: string, ctx: TemplateContext = {}): 
 ## LOGLINE
 [One sentence — active protagonist + specific conflict + concrete stakes. No passive voice.]
 
-## CORE PREMISE
-[2–3 paragraphs. What is this story? Establish the dramatic world, the central tension, and the emotional engine that sustains the full run. Be specific — character names, situation, inciting force.]
+## GENRE & SUBGENRE
+**Primary Genre:** [Primary genre]
+**Secondary/Tertiary:** [Secondary/tertiary subgenres]
 
-## GENRE & TONE
-**Genre:** [Primary genre / Sub-genre]
-**Tone:** [Describe the emotional register — e.g. tense, romantic, darkly comic, emotionally devastating]
-**Comparable titles:** [2–3 recent titles in same genre/tone space]
+## PREMISE
+[2–3 paragraphs. Establish the dramatic world, the inciting incident, and the protagonist's entrance into the conflict. Be specific — character names, situation, inciting force.]
 
-## THEMATIC SPINE
-[The central question or human truth this story is really about. One paragraph. Not plot — meaning.]
+## PROTAGONIST
+**Name:** [Character name]
+**Role:** [Narrative role — hero, anti-hero, catalyst, etc.]
+**Want:** [Concrete external goal]
+**Need:** [Internal truth they resist]
+**Flaw:** [Internal limitation that generates story friction]
+**Fear:** [What they're most afraid of]
+**Arc Trajectory:** [Start state → breaking point → end state]
 
-## UNIQUE SELLING PROPOSITION
-[What makes this distinct from anything currently in the market? One paragraph — be specific, not generic.]
+## OPPOSITION
+**Antagonist / Opposing Force:** [Name or force]
+**Motivation:** [What they want and why they believe they're right]
+**Nature of Threat:** [How they oppose the protagonist — active, systemic, internal]
+**Mirror:** [How the antagonist reflects or distorts the protagonist's own qualities]
 
-## TARGET AUDIENCE
-**Primary:** [Age range, platform behaviour, viewing context]
-**Secondary:** [Broader crossover audience]${/film|feature|screenplay/i.test(format) ? '' : `
+## KEY RELATIONSHIPS
+**Allies & Mentors:** [Key allies — dynamics with protagonist]
+**Foils:** [Characters who contrast the protagonist]
+**Relational Tension:** [The emotional web that drives character decisions]
 
-## SERIES POTENTIAL
-[For episodic formats: how does this premise sustain ${epCount} episodes? What is the escalation engine?]`}`;
+## CENTRAL CONFLICT
+[The engine of tension. Protagonist vs Opposition vs World. What drives the story forward. 1–2 paragraphs.]
+
+## STAKES
+**Personal:** [What the protagonist personally stands to lose]
+**Interpersonal:** [What relationships are at risk]
+**Global / World:** [The broader cost of failure]
+
+## TONE & ATMOSPHERE
+**Emotional Register:** [The dominant emotional experience — e.g. tense, romantic, darkly comic]
+**Visual/Literary Tone:** [Reference works or stylistic touchstones]
+**Mood References:** [Specific tonal references — e.g. Nolan's unease, Kaufman's melancholy]
+
+## THEMES
+[Core thematic concerns. What the story is really about underneath the plot. 1–2 paragraphs.]
+
+## WORLD BUILDING
+**Setting:** [Time period, location, physical world]
+**Rules:** [Historical, mythological, or world-specific rules. What's real, what's invented.]
+**Atmosphere:** [How the world feels — lived-in, surreal, dystopian, nostalgic]
+
+## AUDIENCE & MARKET
+**Target Demographic:** [Age range, platform behaviour, viewing context]
+**Comparable Titles:** [2–3 recent titles in the same genre/tone/market space]
+**Market Positioning:** [What gap this fills in the current landscape]
+
+## UNIQUE HOOK
+[One paragraph — the single element that makes this story distinctive and undeniable. Why this story exists. What makes it fresh.]
+
+## VISUAL & SENSORY PALETTE
+**Key Visual Motifs:** [Recurring images or symbols]
+**Color References:** [Color palette and its emotional function]
+**Sensory Atmosphere:** [Sound design, tactile qualities, smell, temperature — the sensory world]`;
 
     // ─────────────────────────────────────────────────────────────────────────────
     case "market_sheet":
@@ -352,7 +392,7 @@ If you find yourself writing about any character — STOP. That content belongs 
 [IMPORT — copy exactly from concept_brief.logline. Do not reinterpret or paraphrase.]
 
 ## THE WORLD
-[EVOLVE from concept_brief.world — 1–2 paragraphs establishing setting, time, place, social context. Build on what's established, add texture. Do not contradict concept_brief.]
+[EVOLVE from concept_brief.world_building_notes — 1–2 paragraphs establishing setting, time, place, social context. Build on what's established, add texture. Do not contradict concept_brief.]
 
 ## THE STORY
 
@@ -369,10 +409,10 @@ If you find yourself writing about any character — STOP. That content belongs 
 [EVOLVE from character_bible core descriptions — add texture, relationship dynamics. Do not invent new character facts not in the character_bible.]
 
 ## TONE & VISUAL LANGUAGE
-[EVOLVE from concept_brief.tone — reference visual approach, pacing, tonal notes. Build on what's established, do not reinterpret.]
+[EVOLVE from concept_brief.tone_and_style — reference visual approach, pacing, tonal notes. Build on what's established, do not reinterpret.]
 
 ## WHY NOW
-[IMPORT — copy exactly from concept_brief.why_now. Thematic relevance, cultural/emotional resonance.]`;
+[IMPORT — copy exactly from concept_brief.unique_hook. Thematic relevance, cultural/emotional resonance.]`;
 
     // ─────────────────────────────────────────────────────────────────────────────
     case "topline_narrative":
@@ -428,7 +468,7 @@ If you find yourself writing about any character — STOP. That content belongs 
 [IMPORT from treatment.tone — 1 paragraph. Copy exactly.]
 
 ## THE WORLD
-[EVOLVE from concept_brief.world and treatment.world — brief (1 paragraph). Do not contradict either source.]
+[EVOLVE from concept_brief.world_building_notes and treatment.world — brief (1 paragraph). Do not contradict either source.]
 
 ## BEATS
 [GENERATE — 40–70 numbered beats. Use story_outline scene structure as the spine. Each beat must cite which story_outline scene it expands. Format:]

@@ -62,18 +62,21 @@ export interface DocTypeSectionConfig {
 // ── Registry Data ──
 
 const CONCEPT_BRIEF_SECTIONS: SectionDefinition[] = [
-  { section_key: "logline", label: "Logline", match_mode: "heading_regex", match_pattern: "^#+\\s*logline", allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
-  { section_key: "premise", label: "Premise", match_mode: "heading_regex", match_pattern: "^#+\\s*premise", allows_partial_rewrite: true, repair_mode: "replace_section", order: 1 },
-  { section_key: "protagonist", label: "Protagonist", match_mode: "heading_regex", match_pattern: "^#+\\s*protagonist", allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
-  { section_key: "central_conflict", label: "Central Conflict", match_mode: "heading_regex", match_pattern: "^#+\\s*central\\s*conflict", allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
-  { section_key: "tone_and_style", label: "Tone & Style", match_mode: "heading_regex", match_pattern: "^#+\\s*tone", allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
-  { section_key: "audience", label: "Audience", match_mode: "heading_regex", match_pattern: "^#+\\s*audience|^#+\\s*target\\s*audience", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
-  { section_key: "unique_hook", label: "Unique Hook", match_mode: "heading_regex", match_pattern: "^#+\\s*unique\\s*hook|^#+\\s*hook|^#+\\s*usp", allows_partial_rewrite: true, repair_mode: "replace_section", order: 6 },
-  { section_key: "genre", label: "Genre", match_mode: "heading_regex", match_pattern: "^#+\\s*genre", allows_partial_rewrite: true, repair_mode: "replace_section", order: 7 },
-  { section_key: "subgenre", label: "Subgenre", match_mode: "heading_regex", match_pattern: "^#+\\s*subgenre", allows_partial_rewrite: true, repair_mode: "replace_section", order: 8 },
-  { section_key: "themes", label: "Themes", match_mode: "heading_regex", match_pattern: "^#+\\s*themes?", allows_partial_rewrite: true, repair_mode: "replace_section", order: 9 },
-  { section_key: "festival_strategy", label: "Festival Strategy", match_mode: "heading_regex", match_pattern: "^#+\\s*festival\\s*strategy", allows_partial_rewrite: true, repair_mode: "replace_section", order: 10 },
-  { section_key: "budget_contextualization", label: "Budget Contextualization", match_mode: "heading_regex", match_pattern: "^#+\\s*budget\\s*contextualization", allows_partial_rewrite: true, repair_mode: "replace_section", order: 11 },
+  { section_key: "logline",             label: "Logline",                  match_mode: "heading_regex", match_pattern: "^#+\\s*logline",                                        allows_partial_rewrite: true, repair_mode: "replace_section", order: 0 },
+  { section_key: "genre",               label: "Genre",                    match_mode: "heading_regex", match_pattern: "^#+\\s*genre\\b(?:\\s*(?:&|and)\\s*subgenre)?",            allows_partial_rewrite: true, repair_mode: "replace_section", order: 1 },
+  { section_key: "subgenre",            label: "Subgenre",                 match_mode: "heading_regex", match_pattern: "^#+\\s*subgenre",                                      allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
+  { section_key: "premise",             label: "Premise",                  match_mode: "heading_regex", match_pattern: "^#+\\s*premise",                                        allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
+  { section_key: "protagonist",         label: "Protagonist",              match_mode: "heading_regex", match_pattern: "^#+\\s*protagonist",                                    allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
+  { section_key: "opposition",          label: "Opposition",               match_mode: "heading_regex", match_pattern: "^#+\\s*opposition",                                     allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
+  { section_key: "key_relationships",   label: "Key Relationships",        match_mode: "heading_regex", match_pattern: "^#+\\s*key\\s*relationships",                            allows_partial_rewrite: true, repair_mode: "replace_section", order: 6 },
+  { section_key: "world_building_notes",label: "World Building",           match_mode: "heading_regex", match_pattern: "^#+\\s*world\\s*building",                               allows_partial_rewrite: true, repair_mode: "replace_section", order: 7 },
+  { section_key: "central_conflict",    label: "Central Conflict",         match_mode: "heading_regex", match_pattern: "^#+\\s*central\\s*conflict",                            allows_partial_rewrite: true, repair_mode: "replace_section", order: 8 },
+  { section_key: "stakes",              label: "Stakes",                   match_mode: "heading_regex", match_pattern: "^#+\\s*stakes",                                         allows_partial_rewrite: true, repair_mode: "replace_section", order: 9 },
+  { section_key: "tone_and_style",      label: "Tone & Atmosphere",        match_mode: "heading_regex", match_pattern: "^#+\\s*tone(?:\\s*(?:&|and)\\s*atmosphere)?",           allows_partial_rewrite: true, repair_mode: "replace_section", order: 10 },
+  { section_key: "themes",              label: "Themes",                   match_mode: "heading_regex", match_pattern: "^#+\\s*themes?",                                        allows_partial_rewrite: true, repair_mode: "replace_section", order: 11 },
+  { section_key: "audience",            label: "Audience & Market",        match_mode: "heading_regex", match_pattern: "^#+\\s*audience(?:\\s*(?:&|and)\\s*market)?",           allows_partial_rewrite: true, repair_mode: "replace_section", order: 12 },
+  { section_key: "unique_hook",         label: "Unique Hook",              match_mode: "heading_regex", match_pattern: "^#+\\s*unique\\s*hook|^#+\\s*hook|^#+\\s*usp",         allows_partial_rewrite: true, repair_mode: "replace_section", order: 13 },
+  { section_key: "visual_palette",      label: "Visual & Sensory Palette", match_mode: "heading_regex", match_pattern: "^#+\\s*visual(?:\\s*(?:&|and)\\s*sensory)?\\s*palette", allows_partial_rewrite: true, repair_mode: "replace_section", order: 14 },
 ];
 
 const FORMAT_RULES_SECTIONS: SectionDefinition[] = [
@@ -183,7 +186,7 @@ const SECTION_REGISTRY: Record<string, DocTypeSectionConfig> = {
     section_repair_supported: true,
     sections: CONCEPT_BRIEF_SECTIONS,
     fallback_mode: "full_doc_rewrite",
-    min_sections_required: 2,
+    min_sections_required: 14,
   },
   format_rules: {
     doc_type: "format_rules",

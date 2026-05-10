@@ -435,10 +435,19 @@ function buildCategoryMap(docType: string): Record<string, string> {
         logline: "logline",
         premise: "premise",
         protagonist: "protagonist",
+        opposition: "opposition",
+        relationship: "key_relationships",
         conflict: "central_conflict",
+        stakes: "stakes",
         tone: "tone_and_style",
+        theme: "themes",
+        world: "world_building_notes",
         audience: "audience",
         hook: "unique_hook",
+        genre: "genre",
+        subgenre: "subgenre",
+        visual: "visual_palette",
+        comparable: "audience",
       };
     case "season_arc":
       return {
