@@ -18,7 +18,10 @@ import { DocSetManager } from '@/components/notes/DocSetManager';
 import { ProcessProgressBar } from '@/components/devengine/ProcessProgressBar';
 import { EpisodeRewriteWorkspace } from '@/components/devengine/EpisodeRewriteWorkspace';
 import { ActivityTimeline } from '@/components/devengine/ActivityTimeline';
+import { isTreatmentDocType, SectionedDocProgress } from '@/components/devengine/SectionedDocProgress';
+import { SceneIndexedProgress } from '@/components/devengine/SceneIndexedProgress';
 import { CharacterBibleProgress } from '@/components/devengine/CharacterBibleProgress';
+import { TreatmentActsProgress } from '@/components/devengine/SectionedDocProgress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -1087,19 +1090,9 @@ export default function ProjectDevelopmentEngine() {
       if ((genResp as any)?.generating === true && (genResp as any)?.version_id) {
         setSelectedVersionId((genResp as any).version_id);
       }
-      // Populate treatment_acts from generated version for treatment docs
-      if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') &&
-          (genResp as any)?.version_id) {
-        supabase.functions.invoke('dev-engine-v2', {
-          body: {
-            action: selectedDoc.doc_type,
-            projectId,
-            documentId: selectedDocId,
-            versionId: (genResp as any).version_id,
-            populateActsOnly: true,
-          },
-        }).catch(e => console.warn('[generate] treatment_acts fill failed:', e));
-      }
+      // Skip populateActsOnly — treatment acts are populated by the chunk completion
+      // handler in generate-document after assembly. The per-act rewrite pipeline
+      // in dev-engine-v2 handles act-by-act population during rewrite.
     } finally {
       setIsGeneratingDocument(false);
     }
@@ -2324,15 +2317,17 @@ export default function ProjectDevelopmentEngine() {
                   />
 
                   {/* Resume auto-run handled by banner above */}
-
-                  {/* Progress indicators */}
-                  <OperationProgress isActive={analyze.isPending} stages={DEV_ANALYZE_STAGES} onStop={() => analyze.reset()} onRestart={handleRunEngine} />
-                  <OperationProgress isActive={generateNotes.isPending} stages={DEV_NOTES_STAGES} onStop={() => generateNotes.reset()} onRestart={() => generateNotes.mutate(latestAnalysis)} />
-                  {rewrite.isPending && selectedDoc?.doc_type === 'character_bible' && selectedVersionId ? (
-                    <CharacterBibleProgress versionId={selectedVersionId} docType="character_bible" />
-                  ) : (
-                    <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
-                  )}
+}>{' '}
+              {/* Progress indicators */}
+              <OperationProgress isActive={analyze.isPending} stages={DEV_ANALYZE_STAGES} onStop={() => analyze.reset()} onRestart={handleRunEngine} />
+              <OperationProgress isActive={generateNotes.isPending} stages={DEV_NOTES_STAGES} onStop={() => generateNotes.reset()} onRestart={() => generateNotes.mutate(latestAnalysis)} />
+              {rewrite.isPending && selectedDoc?.doc_type === 'character_bible' && selectedVersionId ? (
+                <CharacterBibleProgress versionId={selectedVersionId} docType="character_bible" />
+              ) : treatmentRewritePending && isTreatmentDocType(selectedDoc?.doc_type) && selectedVersionId && selectedDocId ? (
+                <TreatmentActsProgress versionId={selectedVersionId} docType={selectedDoc.doc_type} documentId={selectedDocId} />
+              ) : (
+                <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
+              )}
                   <OperationProgress isActive={isBgGenerating || isGeneratingDocument} stages={DEV_GENERATE_STAGES} stallTimeoutMs={300_000} />
                   <OperationProgress isActive={convert.isPending} stages={DEV_CONVERT_STAGES} onStop={() => convert.reset()} onRestart={() => {
                     // PIPELINE AUTHORITY: use Pipeline Brain (promotionIntel), never LLM output

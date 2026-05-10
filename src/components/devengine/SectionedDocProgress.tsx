@@ -100,7 +100,7 @@ function cleanPreview(raw: string): string {
 
 // ─── Treatment Acts Progress ────────────────────────────────────────────────
 
-function isTreatmentDocType(docType: string) {
+export function isTreatmentDocType(docType: string) {
   return docType === 'treatment' || docType === 'long_treatment';
 }
 
@@ -111,7 +111,7 @@ function actStatusIcon(status: string) {
   return <Clock className="h-4 w-4 text-muted-foreground/50 shrink-0" />;
 }
 
-function TreatmentActsProgress({ documentId, versionId, docType, projectId }: SectionedDocProgressProps) {
+export function TreatmentActsProgress({ documentId, versionId, docType, projectId }: SectionedDocProgressProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const { data: acts = [], isLoading } = useQuery<TreatmentActRow[]>({

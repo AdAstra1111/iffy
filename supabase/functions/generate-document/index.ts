@@ -2133,6 +2133,54 @@ ${conceptBriefContent.slice(0, 30000)}`;
             }
             // ── END SCENE GRAPH BOOTSTRAP ───────────────────────────────────────
 
+            // ── POST-GENERATION TREATMENT ACTS POPULATION ─────────────────
+            // Populate treatment_acts from the assembled plaintext so the
+            // TreatmentActsProgress component shows content immediately.
+            // The per-act rewrite pipeline (dev-engine-v2) handles rewrite.
+            if (docType === "treatment" || docType === "long_treatment") {
+              const taPopTag = `[generate-document][treatment-acts]`;
+              try {
+                const { data: assembledVer } = await serviceClient
+                  .from("project_document_versions")
+                  .select("plaintext")
+                  .eq("id", chunkVersion!.id)
+                  .single();
+                const assembledText = assembledVer?.plaintext || "";
+                if (assembledText.trim().length > 0) {
+                  const ACT_SEQUENCE = [
+                    { actKey: "act_1_setup",            actNumber: 1 },
+                    { actKey: "act_2a_rising_action",   actNumber: 2 },
+                    { actKey: "act_2b_complications",   actNumber: 3 },
+                    { actKey: "act_3_climax_resolution", actNumber: 4 },
+                  ];
+                  for (const { actKey } of ACT_SEQUENCE) {
+                    const label = findSectionDef("treatment", actKey)?.label ?? actKey;
+                    const sectionHeader = `## ${label}`;
+                    const headerIdx = assembledText.indexOf(sectionHeader);
+                    let content = "";
+                    if (headerIdx >= 0) {
+                      const afterHeader = assembledText.slice(headerIdx + sectionHeader.length);
+                      const nextActMatch = afterHeader.match(/\n##\s+Act\s+\d/i);
+                      content = nextActMatch && nextActMatch.index !== undefined
+                        ? afterHeader.slice(0, nextActMatch.index).trim()
+                        : afterHeader.trim();
+                    }
+                    await serviceClient.from("treatment_acts")
+                      .update({ content: content || null, status: "done" })
+                      .eq("treatment_id", chunkDocRecord!.id)
+                      .eq("act_key", actKey);
+                  }
+                  console.log(`${taPopTag} populated ${ACT_SEQUENCE.length} acts with content from assembled text. treatment_id=${chunkDocRecord!.id}`);
+                } else {
+                  console.warn(`${taPopTag} assembled text empty — skipping act population`);
+                }
+              } catch (taErr: any) {
+                // Non-fatal: population failure must never break the generated document
+                console.warn(`${taPopTag} ERROR (non-fatal) — ${taErr?.message}`);
+              }
+            }
+            // ── END TREATMENT ACTS POPULATION ─────────────────────────────
+
           } else {
             // Failed or incomplete: persist for observability but do NOT promote to is_current/latest
             const isIncomplete = chunkResult.completedChunks > 0 && chunkResult.completedChunks < chunkResult.totalChunks;
