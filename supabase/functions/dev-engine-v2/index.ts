@@ -9733,6 +9733,38 @@ INSTRUCTIONS:
         allSections.push({ header: "## CONTENT", content: fullText, label: "CONTENT", sk: isCharacterBible ? "character" : "section" });
       }
 
+      // ── CONCEPT BRIEF SECTION DEDUP + FOLDING ──
+      // Prior single-pass rewrites can duplicate sections (e.g. 5x LOGLINE).
+      // For concept_brief: de-duplicate known keys (keep LAST occurrence),
+      // then fold unknown headers into preceding valid section.
+      if (doc.doc_type === "concept_brief") {
+        const cbKeys = new Set(
+          (getSectionConfig("concept_brief")?.sections || []).map((s: any) => s.section_key)
+        );
+        // Pass 1: keep only the LAST occurrence of each known key
+        const seenKeys = new Set<string>();
+        const deduped: typeof allSections = [];
+        for (let i = allSections.length - 1; i >= 0; i--) {
+          const sec = allSections[i];
+          if (cbKeys.has(sec.sk)) {
+            if (!seenKeys.has(sec.sk)) { seenKeys.add(sec.sk); deduped.unshift(sec); }
+          } else {
+            deduped.unshift(sec);
+          }
+        }
+        // Pass 2: fold non-matching sections into preceding valid section
+        const folded: typeof allSections = [];
+        for (const sec of deduped) {
+          if (cbKeys.has(sec.sk)) { folded.push(sec); }
+          else if (folded.length > 0) {
+            folded[folded.length - 1].content += "\n\n" + ("header" in sec ? sec.header : "") + "\n" + sec.content;
+          } else { folded.push(sec); }
+        }
+        allSections.length = 0;
+        allSections.push(...folded);
+        console.log(`[dev-engine-v2][concept-brief] deduped ${allSections.length} sections from ${deduped.length} unique keys`);
+      }
+
       console.log(`[dev-engine-v2][${action}] sections_found=${allSections.length}`);
 
       // ── BEAT SHEET JSON PATH: build flatSections directly from parsed beats ──
