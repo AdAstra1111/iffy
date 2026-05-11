@@ -1871,6 +1871,7 @@ interface CharBibleSection {
   role: string;
   header: string;
   body: string;
+  sectionType: 'character' | 'relationship_dynamics' | 'ensemble_notes';
 }
 
 /**
@@ -1882,14 +1883,18 @@ function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
   const sections: CharBibleSection[] = [];
   const lines = fullText.split("\n");
   const headerRegex = /^##\s+\d+\.\s+(.+?)\s+\(([^)]+)\)\s*$/;
+  const nonCharHeaderRegex = /^##\s+(RELATIONSHIP DYNAMICS|ENSEMBLE NOTES)\s*$/i;
   let currentName = "";
   let currentRole = "";
   let currentHeader = "";
   let currentStart = -1;
+  let currentSectionType: CharBibleSection['sectionType'] = 'character';
 
   for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(headerRegex);
-    if (match) {
+    const charMatch = lines[i].match(headerRegex);
+    const nonCharMatch = lines[i].match(nonCharHeaderRegex);
+
+    if (charMatch || nonCharMatch) {
       // Save previous section
       if (currentName && currentStart >= 0) {
         const bodyLines = lines.slice(currentStart, i);
@@ -1898,11 +1903,22 @@ function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
           role: currentRole,
           header: currentHeader,
           body: bodyLines.join("\n"),
+          sectionType: currentSectionType,
         });
       }
-      currentName = match[1].trim();
-      currentRole = match[2].trim();
-      currentHeader = lines[i];
+
+      if (charMatch) {
+        currentName = charMatch[1].trim();
+        currentRole = charMatch[2].trim();
+        currentHeader = lines[i];
+        currentSectionType = 'character';
+      } else if (nonCharMatch) {
+        const headerName = nonCharMatch[1].trim().toUpperCase();
+        currentName = headerName;
+        currentRole = "";
+        currentHeader = lines[i];
+        currentSectionType = headerName === 'RELATIONSHIP DYNAMICS' ? 'relationship_dynamics' : 'ensemble_notes';
+      }
       currentStart = i;
     }
   }
@@ -1915,6 +1931,7 @@ function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
       role: currentRole,
       header: currentHeader,
       body: bodyLines.join("\n"),
+      sectionType: currentSectionType,
     });
   }
 
@@ -2097,6 +2114,8 @@ RULES:
 - ALL existing characters must be present in the output — do not drop characters.
 - Apply notes only to the specific characters those notes affect.
 - Preserve all unaffected characters exactly as they are.
+- Non-character sections (## RELATIONSHIP DYNAMICS, ## ENSEMBLE NOTES) MUST be preserved exactly as-is unless notes explicitly target them.
+- If the original bible contains ## RELATIONSHIP DYNAMICS or ## ENSEMBLE NOTES headers, include them in the output with their full content. Do NOT drop them.
 - Do NOT output JSON, screenplay format, or INT./EXT. sluglines.
 - Do NOT convert character profiles to screenplay dialogue or scene format.`;
   }
@@ -8150,6 +8169,17 @@ MATERIAL TO REWRITE:\n${fullText}`;
             ].filter(Boolean).join("\n").toLowerCase();
 
             const isAffected = (section: CharBibleSection): boolean => {
+              // Non-character sections: keyword-based matching
+              if (section.sectionType === 'relationship_dynamics') {
+                const rdKeywords = /\b(relationship|dynamic|character dynamic|paired dynamic)\b/i;
+                return rdKeywords.test(allNoteText);
+              }
+              if (section.sectionType === 'ensemble_notes') {
+                const enKeywords = /\b(ensemble|group|team note|cast dynamic|ensemble dynamics)\b/i;
+                return enKeywords.test(allNoteText);
+              }
+
+              // Character sections: exact name match (existing logic)
               const nameLower = section.name.toLowerCase();
               // Check exact word boundary match to avoid false positives
               // e.g. "Ann" matching "Annie" or "Manny"
@@ -8175,15 +8205,125 @@ MATERIAL TO REWRITE:\n${fullText}`;
               return await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, system, user, 0.4, 16000) || "";
             };
 
-            // Step 4: Loop through all sections — rewrite affected, preserve unaffected
+            // Step 4: Loop through all sections — 3-way gate:
+            //   non-character + affected → LLM rewrite (section-specific prompt)
+            //   character + affected → existing per-character LLM rewrite
+            //   any + unaffected → preserve body exactly
             const assembledSections: string[] = [];
             let charLoopIndex = 0;
             let updatedCount = 0;
+            let nonCharacterCount = 0;
+            let sectionsCompleted = 0;
             const updatedNames: string[] = [];
 
             for (const section of sections) {
-              if (isAffected(section)) {
+              if (section.sectionType !== 'character') {
+                // ── Non-character section (Relationship Dynamics / Ensemble Notes) ──
+                if (isAffected(section)) {
+                  nonCharacterCount++;
+                  sectionsCompleted++;
+                  console.log(
+                    `[dev-engine-v2] rewrite: non-character "${section.name}" (${nonCharacterCount}/${totalAffected})`
+                  );
+
+                  // Filter approved notes relevant to this non-character section
+                  const nonCharKeywords = section.sectionType === 'relationship_dynamics'
+                    ? /\b(relationship|dynamic|character dynamic|paired dynamic)\b/i
+                    : /\b(ensemble|group|team note|cast dynamic|ensemble dynamics)\b/i;
+                  const sectionNotes = (approvedNotes || []).filter((n: any) => {
+                    const noteText = [n.note, n.title, n.summary, n.note_key || n.id]
+                      .filter(Boolean).join(" ").toLowerCase();
+                    return nonCharKeywords.test(noteText);
+                  });
+
+                  const nonCharUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+
+APPROVED NOTES (applying to "${section.name}"):\n${JSON.stringify(sectionNotes)}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
+${narrativeBlock}${characterFactsBlock}
+TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
+
+SECTION TO REWRITE: ${section.name}
+
+ORIGINAL CONTENT:
+${section.body}
+
+INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
+- Rewrite ONLY this section: "${section.name}".
+- Apply ONLY the approved notes that reference ${section.sectionType === 'relationship_dynamics' ? 'relationship dynamics' : 'ensemble dynamics'}.
+- Preserve the section header exactly as provided.
+- Output the FULL rewritten section in natural prose.
+- If no notes apply to this section, return the original text verbatim unchanged.
+- Do NOT output any other sections. Do NOT output the full bible.
+- Return valid JSON with "rewritten_text" containing ONLY this section's content.`;
+
+                  try {
+                    let rawSection = await perCharLLM(perCharSystemBase, nonCharUserPrompt);
+
+                    // Parse the JSON response to extract rewritten_text
+                    let sectionContent: string;
+                    try {
+                      const parsedSection = await parseAIJson(OPENROUTER_API_KEY, rawSection);
+                      if (parsedSection && typeof parsedSection.rewritten_text === "string" && parsedSection.rewritten_text.trim().length > 20) {
+                        sectionContent = parsedSection.rewritten_text.trim();
+                      } else if (parsedSection && typeof parsedSection === "object") {
+                        const vals = Object.values(parsedSection).filter(
+                          (v): v is string => typeof v === "string" && v.length > 50
+                        );
+                        sectionContent = vals.length > 0 ? vals[0] : rawSection.trim();
+                      } else {
+                        sectionContent = rawSection.trim();
+                      }
+                    } catch {
+                      sectionContent = rawSection.trim();
+                    }
+
+                    // Clean: strip any JSON fences or wrapper markdown
+                    sectionContent = sectionContent.replace(/^```(?:json)?\s*/i, "").replace(/\n?```\s*$/, "").trim();
+
+                    // Assemble: original header + new body
+                    assembledSections.push(
+                      `${section.header}\n\n${sectionContent}`
+                    );
+
+                  } catch (sectionErr: any) {
+                    console.error(
+                      `[dev-engine-v2] rewrite: non-character LLM failed for "${section.name}": ${sectionErr?.message}`
+                    );
+                    // Preserve original on failure
+                    assembledSections.push(section.body);
+                  }
+                  // Per-loop meta_json progress update for non-character sections
+                  try {
+                    await supabase.from("project_document_versions")
+                      .update({
+                        meta_json: {
+                          ...((version as any)?.meta_json || {}),
+                          bg_generating: true,
+                          characters_total: sections.filter(s => s.sectionType === 'character').length,
+                          characters_list: sections.map(s => s.name),
+                          sections_total: sections.length,
+                          sections_completed: sectionsCompleted,
+                          sections_list: sections.map(s => s.name),
+                          section_types: sections.map(s => s.sectionType),
+                          current_character: section.name,
+                          rewrite_mode: "per_character",
+                        },
+                      })
+                      .eq("id", versionId);
+                  } catch (metaErr: any) {
+                    console.warn(
+                      "[dev-engine-v2] rewrite: non-character meta_json progress update failed (non-fatal):",
+                      metaErr?.message
+                    );
+                  }
+                } else {
+                  // Unaffected non-character section — preserve original text exactly
+                  sectionsCompleted++;
+                  assembledSections.push(section.body);
+                }
+              } else if (isAffected(section)) {
                 charLoopIndex++;
+                sectionsCompleted++;
                 console.log(
                   `[dev-engine-v2] rewrite: per-character "${section.name}" (${charLoopIndex}/${totalAffected})`
                 );
@@ -8267,9 +8407,14 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                       meta_json: {
                         ...((version as any)?.meta_json || {}),
                         bg_generating: true,
-                        characters_total: sections.length,
+                        characters_total: sections.filter(s => s.sectionType === 'character').length,
                         characters_to_rewrite: totalAffected,
                         characters_list: sections.map(s => s.name),
+                        // NEW: unified section tracking for surgical rewrite
+                        sections_total: sections.length,
+                        sections_completed: sectionsCompleted,
+                        sections_list: sections.map(s => s.name),
+                        section_types: sections.map(s => s.sectionType),
                         characters_completed: charLoopIndex,
                         current_character: section.name,
                         rewrite_mode: "per_character",
@@ -8284,13 +8429,14 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                 }
               } else {
                 // Unaffected character — preserve original text exactly
+                sectionsCompleted++;
                 assembledSections.push(section.body);
               }
             }
 
             // Step 5: Assemble final document
-            // Extract any header material before the first ## N. Name (role) section
-            const firstSectionMatch = fullText.match(/^##\s+\d+\.\s+.+?\([^)]+\)\s*$/m);
+            // Extract any header material before the first ## section
+            const firstSectionMatch = fullText.match(/^##\s+/m);
             const firstSectionIndex = firstSectionMatch ? firstSectionMatch.index! : 0;
             const docHeader = firstSectionIndex > 0 ? fullText.slice(0, firstSectionIndex) : "";
 
@@ -8299,8 +8445,8 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             rewrittenText = assembledText;
             parsed = {
               rewritten_text: assembledText,
-              changes_summary: `${updatedCount} character(s) updated via per-character rewrite: ${updatedNames.join(", ")}`,
-              creative_preserved: `Per-character rewrite preserved ${sections.length - updatedCount} unaffected character(s) exactly.`,
+              changes_summary: `${updatedCount} character(s) + ${nonCharacterCount} non-character section(s) updated via surgical rewrite${updatedNames.length > 0 ? `: ${updatedNames.join(", ")}` : ""}`,
+              creative_preserved: `Surgical rewrite preserved ${sections.length - updatedCount} unaffected character(s) and ${sections.length - nonCharacterCount} unaffected non-character section(s) exactly.`,
               commercial_improvements: "",
             };
 
@@ -8435,9 +8581,15 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         // Merge character rewrite metadata into output version
         if (isPerCharRewrite) {
           Object.assign(rwSafeMetaJson, {
-            characters_total: sections.length,
+            characters_total: sections.filter(s => s.sectionType === 'character').length,
             characters_completed: updatedCount,
             characters_list: sections.map(s => s.name),
+            // NEW: unified section tracking
+            sections_total: sections.length,
+            sections_completed: updatedCount + nonCharacterCount,
+            sections_list: sections.map(s => s.name),
+            section_types: sections.map(s => s.sectionType),
+            non_character_count: nonCharacterCount,
             rewrite_mode: "per_character",
             affected_characters: updatedNames,
           });
@@ -8646,8 +8798,8 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         long_treatment: /^##\s+Act\s+/i,
         beat_sheet: /^##\s+Act\s+/i,
         story_outline: /^##\s+(Act\s+|Scene\s+)/i,
-        character_bible: /^##\s+\d+\.\s+/,
-        long_character_bible: /^##\s+\d+\.\s+/,
+        character_bible: /^##\s+(?:\d+\.\s+.*?\(|RELATIONSHIP DYNAMICS|ENSEMBLE NOTES)/i,
+        long_character_bible: /^##\s+(?:\d+\.\s+.*?\(|RELATIONSHIP DYNAMICS|ENSEMBLE NOTES)/i,
         concept_brief: /^##\s+/,
       };
       const buildSectionHeaderChunks = (text: string, docType: string): string[] => {
