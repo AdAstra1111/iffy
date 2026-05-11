@@ -168,7 +168,7 @@ function extractJSON(raw: string): any {
   return null;
 }
 
-async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 30000): Promise<any> {
+async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 120000): Promise<any> {
   const { key, baseUrl, model } = resolveGatewayKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${timeoutMs/1000}s`)), timeoutMs);
@@ -185,7 +185,7 @@ async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 30000): Pro
           ],
           max_tokens: maxTokens,
           temperature: 0.2,
-          // response_format removed — Gemini doesn't support json_object mode; extractJSON handles parsing
+// response_format removed — Gemini doesn't support json_object mode; extractJSON handles parsing
         }),
         signal: controller.signal as any,
       });
