@@ -284,10 +284,17 @@ export function getSectionKeys(docType: string): string[] {
 /**
  * Find section definition by key within a doc type.
  */
-export function findSectionDef(docType: string, sectionKey: string): SectionDefinition | null {
+export function findSectionDef(docType: string, key: string): SectionDefinition | null {
   const config = SECTION_REGISTRY[docType];
   if (!config) return null;
-  return config.sections.find(s => s.section_key === sectionKey) || null;
+  // First try exact section_key match
+  let found = config.sections.find(s => s.section_key === key);
+  if (found) return found;
+  // Then try case-insensitive label match (handles section parser passing header text like "LOGLINE")
+  const keyLower = key.toLowerCase();
+  found = config.sections.find(s => s.label.toLowerCase() === keyLower);
+  if (found) return found;
+  return null;
 }
 
 /**

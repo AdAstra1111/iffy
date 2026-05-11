@@ -10362,60 +10362,32 @@ INSTRUCTIONS:
           sectionTypeHint = "SECTION TYPE: " + section.label.toUpperCase() + ".";
         }
 
-        // ── SURGICAL KEYWORD MATCHING: for concept_brief, skip LLM if no notes match this section ──
-        let skipRewrite = false;
-        if (doc.doc_type === "concept_brief" && approvedNotes && approvedNotes.length > 0) {
-          const allNoteText = approvedNotes
-            .flatMap((n: any) => [n.note, n.title, n.summary, n.note_key, n.resolution_directive, n.description])
-            .filter(Boolean).join(" ").toLowerCase();
-          const skTerms = (section.sk || "").toLowerCase().split("_");
-          const labelTerms = (section.label || "").toLowerCase().split(/\s+/);
-          const allTerms = [...new Set([...skTerms, ...labelTerms])]
-            .filter((t: string) => t.length >= 3 && !["the", "and", "for", "with", "&"].includes(t));
-          const isAffected = allTerms.length === 0 || allTerms.some((t: string) => allNoteText.includes(t));
-          if (!isAffected) {
-            skipRewrite = true;
-            console.log(`[dev-engine-v2][concept_brief] section="${section.label}" (sk=${section.sk}): NO keyword match — preserving original`);
-          }
+        const userPrompt = sectionTypeHint + "\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Preserve the section header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
+
+        const existingChunks = await supabase.from("project_document_chunks")
+          .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
+        if (existingChunks.data && existingChunks.data.length > 0) {
+          await supabase.from("project_document_chunks").update({ status: "running" }).eq("id", existingChunks.data[0].id);
         }
 
-        if (skipRewrite) {
-          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
-          const existingChunks = await supabase.from("project_document_chunks")
-            .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
+        try {
+          const _gw = resolveGateway();
+          const _apiKey = _gw.apiKey;
+          if (!_apiKey) throw new Error("No AI gateway key configured");
+          const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase, userPrompt, 0.3, 4000);
+          const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
+          rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
+          console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({
-              status: "preserved", char_count: section.content.length,
+              status: "done", content: rewritten, char_count: rewritten.length,
             }).eq("id", existingChunks.data[0].id);
           }
-        } else {
-          const userPrompt = sectionTypeHint + "\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Preserve the section header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
-
-          const existingChunks = await supabase.from("project_document_chunks")
-            .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
+        } catch (err: any) {
+          console.warn("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
+          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
           if (existingChunks.data && existingChunks.data.length > 0) {
-            await supabase.from("project_document_chunks").update({ status: "running" }).eq("id", existingChunks.data[0].id);
-          }
-
-          try {
-            const _gw = resolveGateway();
-            const _apiKey = _gw.apiKey;
-            if (!_apiKey) throw new Error("No AI gateway key configured");
-            const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase, userPrompt, 0.3, 4000);
-            const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
-            rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
-            console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
-            if (existingChunks.data && existingChunks.data.length > 0) {
-              await supabase.from("project_document_chunks").update({
-                status: "done", content: rewritten, char_count: rewritten.length,
-              }).eq("id", existingChunks.data[0].id);
-            }
-          } catch (err: any) {
-            console.warn("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
-            rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
-            if (existingChunks.data && existingChunks.data.length > 0) {
-              await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
-            }
+            await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
           }
         }
       }
