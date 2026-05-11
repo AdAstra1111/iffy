@@ -185,7 +185,7 @@ async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Pro
           ],
           max_tokens: maxTokens,
           temperature: 0.2,
-          response_format: { type: "json_object" },
+          // response_format removed — Gemini doesn't support json_object mode; extractJSON handles parsing
         }),
         signal: controller.signal as any,
       });
