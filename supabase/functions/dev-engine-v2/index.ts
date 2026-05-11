@@ -9733,6 +9733,38 @@ INSTRUCTIONS:
         allSections.push({ header: "## CONTENT", content: fullText, label: "CONTENT", sk: isCharacterBible ? "character" : "section" });
       }
 
+      // ── CONCEPT BRIEF SECTION DEDUP + FOLDING ──
+      // Prior single-pass rewrites can duplicate sections (e.g. 5x LOGLINE).
+      // For concept_brief: de-duplicate known keys (keep LAST occurrence),
+      // then fold unknown headers into preceding valid section.
+      if (doc.doc_type === "concept_brief") {
+        const cbKeys = new Set(
+          (getSectionConfig("concept_brief")?.sections || []).map((s: any) => s.section_key)
+        );
+        // Pass 1: keep only the LAST occurrence of each known key
+        const seenKeys = new Set<string>();
+        const deduped: typeof allSections = [];
+        for (let i = allSections.length - 1; i >= 0; i--) {
+          const sec = allSections[i];
+          if (cbKeys.has(sec.sk)) {
+            if (!seenKeys.has(sec.sk)) { seenKeys.add(sec.sk); deduped.unshift(sec); }
+          } else {
+            deduped.unshift(sec);
+          }
+        }
+        // Pass 2: fold non-matching sections into preceding valid section
+        const folded: typeof allSections = [];
+        for (const sec of deduped) {
+          if (cbKeys.has(sec.sk)) { folded.push(sec); }
+          else if (folded.length > 0) {
+            folded[folded.length - 1].content += "\n\n" + ("header" in sec ? sec.header : "") + "\n" + sec.content;
+          } else { folded.push(sec); }
+        }
+        allSections.length = 0;
+        allSections.push(...folded);
+        console.log(`[dev-engine-v2][concept-brief] deduped ${allSections.length} sections from ${deduped.length} unique keys`);
+      }
+
       console.log(`[dev-engine-v2][${action}] sections_found=${allSections.length}`);
 
       // ── BEAT SHEET JSON PATH: build flatSections directly from parsed beats ──
@@ -10262,8 +10294,55 @@ INSTRUCTIONS:
 
       const rewrittenSections: { header: string; content: string; label: string; sk: string; beats?: any[] }[] = [];
 
+      // ── SURGICAL PER-SECTION REWRITE — only rewrite sections matching notes ──
+      // Build consolidated note text for matching
+      const allNoteText = (approvedNotes || [])
+        .flatMap((n: any) => [n.note, n.title, n.summary, n.note_key, n.resolution_directive, n.description,
+          ...(Array.isArray(n.selectedOptions) ? n.selectedOptions : []),
+        ])
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      // For each section, check if note text mentions its label/key/content terms
+      // Only rewrite sections where notes match — preserve all others exactly.
+      // This prevents unnecessary LLM calls and avoids format drift on unaffected sections.
+      const isSectionAffected = (section: any): boolean => {
+        if (!allNoteText || allNoteText.length === 0) return true; // no notes = rewrite all
+        // Extract candidate terms from section label and key
+        const labelWords = (section.label || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter((w: string) => w.length > 2 && !["the","and","for","with","&"].includes(w));
+        const keyWords = (section.sk || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter((w: string) => w.length > 2);
+        const searchTerms = [...new Set([...labelWords, ...keyWords])];
+        // Check if any search term appears in the note text
+        return searchTerms.some((term: string) => allNoteText.includes(term));
+      };
+
       for (let i = 0; i < flatSections.length; i++) {
         const section = flatSections[i];
+
+        // ── SURGICAL CHECK: skip LLM call for sections not mentioned in notes ──
+        if (!isSectionAffected(section) && flatSections.length > 1) {
+          console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " — preserved (no matching notes)");
+          // Mark chunk as preserved
+          const existingChunks = await supabase.from("project_document_chunks")
+            .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
+          if (existingChunks.data && existingChunks.data.length > 0) {
+            await supabase.from("project_document_chunks").update({
+              status: "done", content: section.content, char_count: section.content.length,
+            }).eq("id", existingChunks.data[0].id);
+          }
+          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
+          continue;
+        }
+
         const lengthGuidance = getLengthGuidanceFromRegistry(section.sk, section.label);
 
         let sectionTypeHint = "";

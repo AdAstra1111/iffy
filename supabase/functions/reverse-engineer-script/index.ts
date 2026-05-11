@@ -168,7 +168,7 @@ function extractJSON(raw: string): any {
   return null;
 }
 
-async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Promise<any> {
+async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 120000): Promise<any> {
   const { key, baseUrl, model } = resolveGatewayKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${timeoutMs/1000}s`)), timeoutMs);
@@ -185,7 +185,7 @@ async function callLLM(prompt: string, maxTokens = 8000, timeoutMs = 60000): Pro
           ],
           max_tokens: maxTokens,
           temperature: 0.2,
-          response_format: { type: "json_object" },
+// response_format removed — Gemini doesn't support json_object mode; extractJSON handles parsing
         }),
         signal: controller.signal as any,
       });
@@ -516,7 +516,7 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     // Update the most recent version in place (replaces seed content + metadata, keeps v1)
     const latestId = existingVersions[0].id;
     await sb.from("project_document_versions").update({
-      plaintext: content,
+      plaintext: plaintext,
       label: "v1 (reverse-engineered)",
       status: "draft",
       approval_status: "draft",
@@ -532,7 +532,7 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     // No existing versions — create fresh (this is a truly new doc)
     try {
       const { createVersion } = await import("../_shared/doc-os.ts");
-      const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext: content, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "draft", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, dependsOnResolverHash, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
+      const ver = await createVersion(sb, { documentId: doc.id, docType, plaintext, label: "v1 (reverse-engineered)", createdBy: userId || "system", approvalStatus: "draft", isStale: false, generatorId: "reverse-engineer-script", inputsUsed: { extracted_from: scriptDocId }, dependsOnResolverHash, metaJson: { reverse_engineered: true, ...(extraMeta || {}) } });
       if (ver) await sb.from("project_documents").update({ latest_version_id: ver.id }).eq("id", doc.id);
     } catch (e) { console.warn("Version creation skipped:", e); }
   }
