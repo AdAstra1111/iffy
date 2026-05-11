@@ -9044,11 +9044,42 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           repairDirective = `\n\nREPAIR REQUIRED (attempt ${attempt + 2}/3): Previous output failed validation.${missing} Return COMPLETE content for each required episode with no summaries.`;
         }
       } else {
-        const chunkPrompt = `${notesContext}${prevContext}\n\nCHUNK ${chunkIndex + 1} OF ${plan.total_chunks} — Rewrite this section, applying notes while preserving all scenes and story beats:\n\n${chunkText}`;
-        console.log(`Rewrite chunk ${chunkIndex + 1}/${plan.total_chunks} (${chunkText.length} chars)`);
-        rewrittenChunk = await callAI(
-          OPENROUTER_API_KEY, BALANCED_MODEL, augmentedChunkSystem, chunkPrompt, 0.4, 16000,
-        );
+        // ── SURGICAL CHECK: For sectioned doc types, preserve sections not mentioned in notes ──
+        let skipAiCall = false;
+        if (isSectionedDocType && plan.approved_notes && plan.approved_notes.length > 0) {
+          const allNoteText = plan.approved_notes
+            .flatMap((n: any) => [n.note, n.title, n.summary, n.note_key, n.resolution_directive, n.description,
+              ...(Array.isArray(n.selectedOptions) ? n.selectedOptions : []),
+            ])
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (allNoteText && allNoteText.length > 0) {
+            // Extract section label from the first ## header in the chunk
+            const headerMatch = chunkText.match(/^##\s+(.+)/m);
+            const sectionLabel = headerMatch ? headerMatch[1].trim() : "";
+            const labelWords = (sectionLabel || "")
+              .toLowerCase()
+              .replace(/[^a-z0-9\s]/g, " ")
+              .split(/\s+/)
+              .filter((w: string) => w.length > 2 && !["the","and","for","with","&","not"].includes(w));
+            const headerSearch = [...new Set(labelWords)];
+            const hasMatch = headerSearch.some((term: string) => allNoteText.includes(term));
+            if (!hasMatch) {
+              skipAiCall = true;
+              console.log("[dev-engine-v2][rewrite-chunk] surgical_preserve chunk=" + (chunkIndex + 1) + " label=\"" + sectionLabel + "\" — no matching notes");
+            }
+          }
+        }
+        if (skipAiCall) {
+          rewrittenChunk = chunkText;
+        } else {
+          const chunkPrompt = `${notesContext}${prevContext}\n\nCHUNK ${chunkIndex + 1} OF ${plan.total_chunks} — Rewrite this section, applying notes while preserving all scenes and story beats:\n\n${chunkText}`;
+          console.log(`Rewrite chunk ${chunkIndex + 1}/${plan.total_chunks} (${chunkText.length} chars)`);
+          rewrittenChunk = await callAI(
+            OPENROUTER_API_KEY, BALANCED_MODEL, augmentedChunkSystem, chunkPrompt, 0.4, 16000,
+          );
+        }
       }
 
       return new Response(JSON.stringify({

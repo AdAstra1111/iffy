@@ -1352,45 +1352,7 @@ export default function ProjectDevelopmentEngine() {
       }
       return;
     }
-    // Concept brief: route to sectioned rewrite via direct supabase invoke
-    // The per-section pipeline at dev-engine-v2 is triggered by action === "concept_brief" (sectionedRewriteTypes handler)
-    if (selectedDoc?.doc_type === 'concept_brief' && selectedDocId && selectedVersionId) {
-      const vid = selectedVersionId;
-      try {
-        const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-          body: {
-            action: 'concept_brief',
-            projectId,
-            documentId: selectedDocId,
-            versionId: vid,
-            approvedNotes: enrichedNotes,
-            protectItems,
-          },
-        });
-        if (invokeError) throw invokeError;
-        if (result?.success) {
-          toast.success('Concept brief rewritten — per-section pipeline completed');
-          afterRewrite();
-          qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-        }
-      } catch (err: any) {
-        console.error('[concept_brief] per-section rewrite failed:', err);
-        toast.error('Concept brief rewrite failed: ' + (err?.message || 'Unknown error'));
-        // Fallback to chunked pipeline if per-section fails
-        toast.info('Falling back to sectioned rewrite...');
-        const provenance = {
-          rewriteModeSelected: 'auto',
-          rewriteModeEffective: 'chunk',
-          rewriteModeReason: 'per_section_failed_fallback',
-          rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
-          rewriteProbe: null,
-        };
-        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
-        afterRewrite();
-      }
-      return;
-    }
-    // Sectioned rewrite for character_bible, etc. — uses act-by-act pipeline
+    // Sectioned rewrite for character_bible, concept_brief, etc. — uses rewrite pipeline with progress UI
     // (story_outline is handled above via momentPipeline)
     if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
       const provenance = {
