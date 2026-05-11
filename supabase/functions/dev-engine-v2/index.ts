@@ -8143,6 +8143,10 @@ MATERIAL TO REWRITE:\n${fullText}`;
       let rewrittenText = "";
       let parsed: any = null;
       let isPerCharRewrite = false;
+      let sections: CharBibleSection[] = [];
+      let updatedCount = 0;
+      let nonCharacterCount = 0;
+      const updatedNames: string[] = [];
 
       if (
         (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible") &&
@@ -8196,6 +8200,35 @@ MATERIAL TO REWRITE:\n${fullText}`;
             console.log(
               `[dev-engine-v2] rewrite: per-character — ${totalAffected}/${sections.length} characters affected by notes`
             );
+
+            // Step 2.5: Initialize progress state — clear stale "Complete" flags from source version
+            // This ensures the frontend sees bg_generating: true immediately on first poll,
+            // instead of stale bg_completed_at from the previous generation/rewrite.
+            try {
+              await supabase.from("project_document_versions")
+                .update({
+                  meta_json: {
+                    bg_generating: true,
+                    characters_total: sections.filter(s => s.sectionType === 'character').length,
+                    characters_to_rewrite: totalAffected,
+                    characters_list: sections.map(s => s.name),
+                    characters_completed: 0,
+                    sections_total: sections.length,
+                    sections_completed: 0,
+                    sections_list: sections.map(s => s.name),
+                    section_types: sections.map(s => s.sectionType),
+                    non_character_count: 0,
+                    current_character: null,
+                    rewrite_mode: "per_character",
+                  },
+                })
+                .eq("id", versionId);
+            } catch (initErr: any) {
+              console.warn(
+                "[dev-engine-v2] rewrite: progress init failed (non-fatal):",
+                initErr?.message,
+              );
+            }
 
             // Step 3: Build per-character system prompt (same base but with single-character override)
             const perCharSystemBase = effectiveRewritePrompt;
@@ -8446,12 +8479,12 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             parsed = {
               rewritten_text: assembledText,
               changes_summary: `${updatedCount} character(s) + ${nonCharacterCount} non-character section(s) updated via surgical rewrite${updatedNames.length > 0 ? `: ${updatedNames.join(", ")}` : ""}`,
-              creative_preserved: `Surgical rewrite preserved ${sections.length - updatedCount} unaffected character(s) and ${sections.length - nonCharacterCount} unaffected non-character section(s) exactly.`,
+              creative_preserved: `Surgical rewrite preserved ${sections.filter(s => s.sectionType === 'character').length - updatedCount} unaffected character(s) and ${sections.filter(s => s.sectionType !== 'character').length - nonCharacterCount} unaffected non-character section(s) exactly.`,
               commercial_improvements: "",
             };
 
             console.log(
-              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${totalAffected} affected characters rewritten, ${sections.length - totalAffected} total characters preserved`
+              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${totalAffected} affected sections rewritten, ${sections.length - totalAffected} unaffected sections preserved`
             );
           }
         }
