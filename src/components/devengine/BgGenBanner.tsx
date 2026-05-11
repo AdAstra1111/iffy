@@ -70,7 +70,7 @@ class BgGenBannerErrorBoundary extends React.Component<
 function BgGenBannerInner({ versionId, episodeCount, docType, projectId, documentId }: BgGenBannerProps) {
   // Character bible uses per-character progress (no chunks)
   if (docType === 'character_bible' || docType === 'long_character_bible') {
-    return <CharacterBibleProgress versionId={versionId} docType={docType} />;
+    return <CharacterBibleProgress versionId={versionId} docType={docType} mode="generate" />;
   }
 
   const isSectioned = docType && SECTIONED_PROSE_TYPES.has(docType);

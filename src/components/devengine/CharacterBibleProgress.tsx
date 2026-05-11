@@ -16,6 +16,7 @@ import { Loader2, CheckCircle, Clock, AlertTriangle, XCircle, RefreshCw, User } 
 interface CharacterBibleProgressProps {
   versionId: string;
   docType: string;
+  mode?: 'generate' | 'rewrite';
 }
 
 interface VersionMeta {
@@ -24,8 +25,11 @@ interface VersionMeta {
   bg_failed?: boolean;
   characters_total?: number;
   characters_completed?: number;
+  characters_to_rewrite?: number;
   characters_list?: string[];
+  affected_characters?: string[];
   current_character?: string;
+  rewrite_mode?: string;
 }
 
 function characterStatusIcon(idx: number, meta: VersionMeta): { icon: React.ReactNode; label: string; color: string } {
@@ -63,7 +67,7 @@ function characterStatusIcon(idx: number, meta: VersionMeta): { icon: React.Reac
   };
 }
 
-export function CharacterBibleProgress({ versionId, docType }: CharacterBibleProgressProps) {
+export function CharacterBibleProgress({ versionId, docType, mode = 'generate' }: CharacterBibleProgressProps) {
   const { data: meta, isLoading } = useQuery<VersionMeta>({
     queryKey: ['character-bible-progress', versionId],
     queryFn: async () => {
@@ -114,7 +118,9 @@ export function CharacterBibleProgress({ versionId, docType }: CharacterBiblePro
       <div className="flex flex-col items-center justify-center h-[300px] gap-3 text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin" />
         <p className="text-sm text-center max-w-sm">
-          Preparing character generation — identifying characters from concept brief…
+          {mode === 'rewrite'
+            ? 'Preparing per-character rewrite — reading existing character profiles…'
+            : 'Preparing character generation — identifying characters from concept brief…'}
         </p>
       </div>
     );
@@ -126,7 +132,9 @@ export function CharacterBibleProgress({ versionId, docType }: CharacterBiblePro
       <div className="w-full space-y-2">
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
-            <span className="font-medium text-foreground">Generating Character Bible</span>
+            <span className="font-medium text-foreground">
+              {mode === 'rewrite' ? 'Character Bible Rewrite' : 'Generating Character Bible'}
+            </span>
             {isGenerating && (
               <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
                 <RefreshCw className="h-2.5 w-2.5 animate-spin" />
@@ -145,7 +153,9 @@ export function CharacterBibleProgress({ versionId, docType }: CharacterBiblePro
             )}
           </div>
           <span className="text-muted-foreground font-mono text-xs">
-            {completed} / {total} characters
+            {meta?.characters_to_rewrite != null && meta.characters_to_rewrite !== total
+              ? `Rewriting ${completed} of ${meta.characters_to_rewrite} characters (${total} total)`
+              : `${completed} / ${total} characters`}
           </span>
         </div>
         <Progress value={pct} className="h-2" />

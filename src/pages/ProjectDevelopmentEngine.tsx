@@ -2321,7 +2321,7 @@ export default function ProjectDevelopmentEngine() {
               <OperationProgress isActive={analyze.isPending} stages={DEV_ANALYZE_STAGES} onStop={() => analyze.reset()} onRestart={handleRunEngine} />
               <OperationProgress isActive={generateNotes.isPending} stages={DEV_NOTES_STAGES} onStop={() => generateNotes.reset()} onRestart={() => generateNotes.mutate(latestAnalysis)} />
               {rewrite.isPending && selectedDoc?.doc_type === 'character_bible' && selectedVersionId ? (
-                <CharacterBibleProgress versionId={selectedVersionId} docType="character_bible" />
+                <CharacterBibleProgress versionId={selectedVersionId} docType="character_bible" mode="rewrite" />
               ) : treatmentRewritePending && isTreatmentDocType(selectedDoc?.doc_type) && selectedVersionId && selectedDocId ? (
                 <TreatmentActsProgress versionId={selectedVersionId} docType={selectedDoc.doc_type} documentId={selectedDocId} />
               ) : (

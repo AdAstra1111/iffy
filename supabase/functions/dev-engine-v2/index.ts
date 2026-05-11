@@ -8267,7 +8267,9 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                       meta_json: {
                         ...((version as any)?.meta_json || {}),
                         bg_generating: true,
-                        characters_total: totalAffected,
+                        characters_total: sections.length,
+                        characters_to_rewrite: totalAffected,
+                        characters_list: sections.map(s => s.name),
                         characters_completed: charLoopIndex,
                         current_character: section.name,
                         rewrite_mode: "per_character",
@@ -8429,6 +8431,18 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 
         const rwMetaJson = narrativeCtx.voice.voiceId ? { team_voice_id: narrativeCtx.voice.voiceId } : undefined;
         const rwSafeMetaJson = (rwMetaJson && typeof rwMetaJson === 'object' && !Array.isArray(rwMetaJson)) ? rwMetaJson : {};
+
+        // Merge character rewrite metadata into output version
+        if (isPerCharRewrite) {
+          Object.assign(rwSafeMetaJson, {
+            characters_total: sections.length,
+            characters_completed: updatedCount,
+            characters_list: sections.map(s => s.name),
+            rewrite_mode: "per_character",
+            affected_characters: updatedNames,
+          });
+        }
+
         const { data: nv, error: vErr } = await writeVersionSafe(supabase, {
           documentId,
           versionNumber: nextVersion,
