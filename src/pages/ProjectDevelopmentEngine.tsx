@@ -359,7 +359,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet']); // story_outline uses per-moment JSON handler via MomentRewritePanel
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'concept_brief']); // story_outline uses per-moment JSON handler via MomentRewritePanel
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
@@ -1349,6 +1349,44 @@ export default function ProjectDevelopmentEngine() {
         afterRewrite();
       } finally {
         setTreatmentRewritePending(false);
+      }
+      return;
+    }
+    // Concept brief: route to sectioned rewrite via direct supabase invoke
+    // The per-section pipeline at dev-engine-v2 is triggered by action === "concept_brief" (sectionedRewriteTypes handler)
+    if (selectedDoc?.doc_type === 'concept_brief' && selectedDocId && selectedVersionId) {
+      const vid = selectedVersionId;
+      try {
+        const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
+          body: {
+            action: 'concept_brief',
+            projectId,
+            documentId: selectedDocId,
+            versionId: vid,
+            approvedNotes: enrichedNotes,
+            protectItems,
+          },
+        });
+        if (invokeError) throw invokeError;
+        if (result?.success) {
+          toast.success('Concept brief rewritten — per-section pipeline completed');
+          afterRewrite();
+          qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+        }
+      } catch (err: any) {
+        console.error('[concept_brief] per-section rewrite failed:', err);
+        toast.error('Concept brief rewrite failed: ' + (err?.message || 'Unknown error'));
+        // Fallback to chunked pipeline if per-section fails
+        toast.info('Falling back to sectioned rewrite...');
+        const provenance = {
+          rewriteModeSelected: 'auto',
+          rewriteModeEffective: 'chunk',
+          rewriteModeReason: 'per_section_failed_fallback',
+          rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
+          rewriteProbe: null,
+        };
+        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
+        afterRewrite();
       }
       return;
     }

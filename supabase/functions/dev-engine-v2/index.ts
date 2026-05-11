@@ -9768,6 +9768,37 @@ INSTRUCTIONS:
         console.log(`[dev-engine-v2][beat-sheet] grouped into ${flatSections.length} act sections`);
       } else {
         flatSections = allSections;
+
+        // ── CONCEPT BRIEF: de-duplicate sections ──
+        // Single-pass rewrites can leave duplicate sections. Collapse to canonical 14.
+        if (doc.doc_type === "concept_brief") {
+          const cbSectionKeys = new Set([
+            "logline", "genre", "premise", "protagonist", "opposition",
+            "key_relationships", "world_building_notes", "central_conflict", "stakes",
+            "tone_and_style", "themes", "audience", "unique_hook", "visual_palette"
+          ]);
+          const seen = new Set<string>();
+          const deduped: typeof flatSections = [];
+          for (let si = flatSections.length - 1; si >= 0; si--) {
+            const s = flatSections[si];
+            if (!cbSectionKeys.has(s.sk) || !seen.has(s.sk)) {
+              if (cbSectionKeys.has(s.sk)) seen.add(s.sk);
+              deduped.unshift(s);
+            }
+          }
+          // Non-cb section keys (stray headers, preamble) — fold into preceding section
+          const folded: typeof flatSections = [];
+          for (const s of deduped) {
+            if (cbSectionKeys.has(s.sk) || folded.length === 0) {
+              folded.push(s);
+            } else {
+              const last = folded[folded.length - 1];
+              last.content = last.content + "\n\n" + s.header + "\n" + s.content;
+            }
+          }
+          flatSections = folded;
+          console.log(`[dev-engine-v2][concept_brief] de-duplicated: ${allSections.length} -> ${flatSections.length} sections`);
+        }
       }
 
       if (flatSections.length === 0) {
@@ -10252,32 +10283,60 @@ INSTRUCTIONS:
           sectionTypeHint = "SECTION TYPE: " + section.label.toUpperCase() + ".";
         }
 
-        const userPrompt = sectionTypeHint + "\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Preserve the section header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
-
-        const existingChunks = await supabase.from("project_document_chunks")
-          .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
-        if (existingChunks.data && existingChunks.data.length > 0) {
-          await supabase.from("project_document_chunks").update({ status: "running" }).eq("id", existingChunks.data[0].id);
+        // ── SURGICAL KEYWORD MATCHING: for concept_brief, skip LLM if no notes match this section ──
+        let skipRewrite = false;
+        if (doc.doc_type === "concept_brief" && approvedNotes && approvedNotes.length > 0) {
+          const allNoteText = approvedNotes
+            .flatMap((n: any) => [n.note, n.title, n.summary, n.note_key, n.resolution_directive, n.description])
+            .filter(Boolean).join(" ").toLowerCase();
+          const skTerms = (section.sk || "").toLowerCase().split("_");
+          const labelTerms = (section.label || "").toLowerCase().split(/\s+/);
+          const allTerms = [...new Set([...skTerms, ...labelTerms])]
+            .filter((t: string) => t.length >= 3 && !["the", "and", "for", "with", "&"].includes(t));
+          const isAffected = allTerms.length === 0 || allTerms.some((t: string) => allNoteText.includes(t));
+          if (!isAffected) {
+            skipRewrite = true;
+            console.log(`[dev-engine-v2][concept_brief] section="${section.label}" (sk=${section.sk}): NO keyword match — preserving original`);
+          }
         }
 
-        try {
-          const _gw = resolveGateway();
-          const _apiKey = _gw.apiKey;
-          if (!_apiKey) throw new Error("No AI gateway key configured");
-          const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase, userPrompt, 0.3, 4000);
-          const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
-          rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
-          console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
+        if (skipRewrite) {
+          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
+          const existingChunks = await supabase.from("project_document_chunks")
+            .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
           if (existingChunks.data && existingChunks.data.length > 0) {
             await supabase.from("project_document_chunks").update({
-              status: "done", content: rewritten, char_count: rewritten.length,
+              status: "preserved", char_count: section.content.length,
             }).eq("id", existingChunks.data[0].id);
           }
-        } catch (err: any) {
-          console.warn("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
-          rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
+        } else {
+          const userPrompt = sectionTypeHint + "\n\nEXISTING:\n" + section.header + "\n" + section.content + "\n\nLENGTH TARGET: " + lengthGuidance + "\n\nWrite vivid present-tense prose. Preserve the section header exactly. Apply notes/decisions. No INT./EXT. sluglines.";
+
+          const existingChunks = await supabase.from("project_document_chunks")
+            .select("id").eq("version_id", newVersion.id).eq("chunk_index", i);
           if (existingChunks.data && existingChunks.data.length > 0) {
-            await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
+            await supabase.from("project_document_chunks").update({ status: "running" }).eq("id", existingChunks.data[0].id);
+          }
+
+          try {
+            const _gw = resolveGateway();
+            const _apiKey = _gw.apiKey;
+            if (!_apiKey) throw new Error("No AI gateway key configured");
+            const rewrittenRaw = await callAI(_apiKey, BALANCED_MODEL, systemPromptBase, userPrompt, 0.3, 4000);
+            const rewritten = rewrittenRaw?.trim() || (section.header + "\n\n" + section.content);
+            rewrittenSections.push({ header: section.header, content: rewritten, label: section.label, sk: section.sk });
+            console.log("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " label=" + section.label + " sk=" + section.sk + " chars=" + rewritten.length);
+            if (existingChunks.data && existingChunks.data.length > 0) {
+              await supabase.from("project_document_chunks").update({
+                status: "done", content: rewritten, char_count: rewritten.length,
+              }).eq("id", existingChunks.data[0].id);
+            }
+          } catch (err: any) {
+            console.warn("[dev-engine-v2][sectioned-rewrite] section=" + (i+1) + " failed: " + String(err?.message || err));
+            rewrittenSections.push({ header: section.header, content: section.content, label: section.label, sk: section.sk });
+            if (existingChunks.data && existingChunks.data.length > 0) {
+              await supabase.from("project_document_chunks").update({ status: "failed" }).eq("id", existingChunks.data[0].id);
+            }
           }
         }
       }
