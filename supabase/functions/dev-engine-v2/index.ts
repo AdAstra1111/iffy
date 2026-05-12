@@ -2136,6 +2136,39 @@ function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
   return sections;
 }
 
+/**
+ * Check voice component indicator presence in rewritten character bible sections.
+ * Uses heuristic pattern matching to detect voice-related content without
+ * requiring a full Schema v2 JSON parser. Returns coverage stats for the
+ * post-rewrite voice quality verification gate.
+ * Escalate to JSON parser if pattern-based detection proves unreliable.
+ */
+function checkVoiceComponentPresence(
+  assembledSections: string[],
+  updatedNames: string[]
+): { coveragePercent: number; charactersWithVoice: number; characterCount: number } {
+  const voicePatterns = [
+    /\b(register|colloquial|formal|archaic)\b/i,
+    /\b(vocabulary|lexicon|word choice|phrasing)\b/i,
+    /\b(verbal tic|repeated phrase|catchphrase|verbal habit)\b/i,
+    /\b(avoidance|never says|avoids topic)\b/i,
+    /\b(speech pattern|dialogue pattern|speaks in|way of speaking)\b/i,
+  ];
+
+  const sectionsWithVoice = assembledSections.filter(body => {
+    const matchCount = voicePatterns.filter(p => p.test(body)).length;
+    return matchCount >= 2; // At least 2 different voice indicator categories
+  }).length;
+
+  const characterCount = updatedNames.length;
+  const charactersWithVoice = Math.min(sectionsWithVoice, characterCount);
+  const coveragePercent = characterCount > 0
+    ? Math.round((charactersWithVoice / characterCount) * 100)
+    : 0;
+
+  return { coveragePercent, charactersWithVoice, characterCount };
+}
+
 function buildRewriteSystem(deliverable: string, format: string, behavior: string): string {
   const isDocSafe = ["deck", "documentary_outline"].includes(deliverable) ||
     ["documentary", "documentary-series", "hybrid-documentary"].includes(format);
@@ -7213,7 +7246,6 @@ ${(() => {
     character_bible: `DOCUMENT TYPE: CHARACTER BIBLE
 |- Evaluate character completeness, arc design, voice distinctiveness, relationship dynamics, thematic integration, and backstory depth.
 |- Valid note categories: "character_depth|arc_clarity|voice_distinctiveness|relationship_dynamics|backstory_consistency|thematic_integration|missing_character|cast_balance"
-|- NOTE: voice_distinctiveness is a polish-only category — voice distinctiveness is inherently subjective and cannot be objectively resolved. Do NOT flag it as a blocker.
 |- Do NOT raise notes about scene structure, pacing, dialogue craft, act breaks, hooks, or cliffhangers — those are script concerns.
 |- Flag missing characters or underdeveloped arcs as blockers.`,
     season_arc: `DOCUMENT TYPE: SEASON ARC
@@ -8539,7 +8571,17 @@ MATERIAL TO REWRITE:\n${fullText}`;
                 nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
                 "i"
               );
-              return namePattern.test(allNoteText);
+              if (namePattern.test(allNoteText)) return true;
+
+              // Voice-specific matching: if note text references voice/speech patterns
+              // without naming a specific character, flag character sections with
+              // substantial existing content for potential improvement
+              const voiceKeywords = /\b(voice|speech|dialogue pattern|verbal|register|vocabulary)\b/i;
+              if (voiceKeywords.test(allNoteText) && section.body.length > 100) {
+                return true;
+              }
+
+              return false;
             };
 
             const affectedSections = sections.filter(isAffected);
@@ -8729,6 +8771,9 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this single character profile: "${section.name}".
 - Apply ONLY the approved notes that reference this character.
 - Preserve the section header exactly as provided.
+- INCLUDE the character's distinct VOICE: define speech register (formal/colloquial/archaic), vocabulary level, verbal tics (repeated phrases/patterns), and avoidances (words or topics the character would never say).
+- Voice must be consistent with the character's social_position, functional_role, and world_embedding as defined in the Schema v2 requirements.
+- If previously evaluated voice components exist (from meta_json), preserve or improve them — do NOT regress.
 - Output the FULL rewritten character profile in natural prose — 300–800 words.
 - If no notes apply to this character, return the original text verbatim unchanged.
 - Do NOT output any other character profiles. Do NOT output the full bible.
@@ -8810,6 +8855,32 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                 sectionsCompleted++;
                 assembledSections.push(section.body);
               }
+            }
+
+            // ── VOICE QUALITY GATE — post-rewrite verification ──
+            // Check voice component presence in rewritten character sections
+            // and flag if coverage is insufficient across Tier 1 characters.
+            // Non-fatal — warnings only, no blockers or rewrite rejection.
+            try {
+              const voiceCoverageCheck = checkVoiceComponentPresence(assembledSections, updatedNames);
+              if (voiceCoverageCheck.coveragePercent < 50 && voiceCoverageCheck.characterCount > 0) {
+                const metaUpdate: any = (version as any)?.meta_json || {};
+                metaUpdate.voiceCoverageWarning = {
+                  coveragePercent: voiceCoverageCheck.coveragePercent,
+                  charactersWithVoice: voiceCoverageCheck.charactersWithVoice,
+                  totalTier1Characters: voiceCoverageCheck.characterCount,
+                  message: `Voice components below 50% coverage (${voiceCoverageCheck.coveragePercent}% of ${voiceCoverageCheck.characterCount} characters)`,
+                };
+                await supabase.from("project_document_versions")
+                  .update({ meta_json: metaUpdate })
+                  .eq("id", versionId)
+                  .maybeSingle();
+                console.log(
+                  `[dev-engine-v2][voice-gate] Warning: voice coverage ${voiceCoverageCheck.coveragePercent}% (${voiceCoverageCheck.charactersWithVoice}/${voiceCoverageCheck.characterCount} characters)`
+                );
+              }
+            } catch (vcErr: any) {
+              console.warn("[dev-engine-v2][voice-gate] voice quality gate failed (non-fatal):", vcErr?.message);
             }
 
             // Step 5: Assemble final document
@@ -29752,7 +29823,7 @@ CRITICAL:
             characters: ver?.characters || [],
           };
         });
-      } else {
+} else {
         // Fallback: split from plaintext — but strategy depends on doc_type
         // For sectioned dev types (treatment, story_outline, etc.), use ## headers.
         // For script-like types, use INT./EXT. sluglines.
