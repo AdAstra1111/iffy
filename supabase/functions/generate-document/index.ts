@@ -24,7 +24,7 @@ import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_sha
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
-import { findOrCreateCharacterEntity, findExistingCharacterEntity } from "../_shared/characterDedupUtils.ts";
+import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
   buildNuancePromptBlock, computeMetrics, melodramaScore, nuanceScore,
   runGate, buildRepairInstruction, computeFingerprint, computeSimilarityRisk,
