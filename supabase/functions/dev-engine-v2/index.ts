@@ -544,6 +544,9 @@ HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
  * Queries development_runs for the most recent ANALYZE runs for this doc/version.
  * If a note_key appears in blocking_issues for 3+ consecutive runs, moves it from
  * blocking_issues to polish_notes (signals the LLM is churning on the same issue).
+ * Also tracks category-level churn: if notes of the same category keep appearing
+ * with different note_keys each run (e.g. voice_distinctiveness targeting
+ * different characters per iteration), demotes them via category-level matching.
  */
 async function detectNoteChurn(
   supabase: any,
@@ -563,22 +566,44 @@ async function detectNoteChurn(
       .limit(5);
     if (!recentRuns || recentRuns.length < 3) return { demotedKeys: [] };
 
-    // Build a map of note_key -> count of consecutive appearances in blocking_issues
+    // ── Level 1: Exact note_key churn ──
+    // Tracks a specific note_key appearing in blocking_issues across consecutive runs.
     const churnCount: Record<string, number> = {};
+
+    // ── Level 2: Category-level churn ──
+    // Tracks whether notes of a given category appear in blocking_issues across
+    // consecutive runs, even if the note_key changes each time (e.g. voice_distinctiveness
+    // targeting different characters per iteration). This catches the "note key mutation"
+    // pattern where the same fundamental issue is re-raised under different note_keys.
+    const categoryChurnCount: Record<string, number> = {};
+
     for (const run of recentRuns) {
       const blockers = run.output_json?.blocking_issues || [];
-      const seenInThisRun = new Set<string>();
+      const seenKeys = new Set<string>();
+      const seenCategories = new Set<string>();
       for (const b of blockers) {
         const nk = b.note_key || b.id;
-        if (nk) seenInThisRun.add(nk);
+        if (nk) seenKeys.add(nk);
+        if (b.category) seenCategories.add(b.category);
       }
-      for (const nk of seenInThisRun) {
+      // Track exact note_key churn
+      for (const nk of seenKeys) {
         churnCount[nk] = (churnCount[nk] || 0) + 1;
       }
-      // Keys not seen in this run reset their count (non-consecutive)
+      // Reset keys not seen this run
       for (const nk of Object.keys(churnCount)) {
-        if (!seenInThisRun.has(nk)) {
+        if (!seenKeys.has(nk)) {
           churnCount[nk] = 0;
+        }
+      }
+      // Track category-level churn
+      for (const cat of seenCategories) {
+        categoryChurnCount[cat] = (categoryChurnCount[cat] || 0) + 1;
+      }
+      // Reset categories not seen this run
+      for (const cat of Object.keys(categoryChurnCount)) {
+        if (!seenCategories.has(cat)) {
+          categoryChurnCount[cat] = 0;
         }
       }
     }
@@ -588,12 +613,21 @@ async function detectNoteChurn(
     const remaining: any[] = [];
     for (const b of currentBlockers) {
       const nk = b.note_key || b.id;
+      const cat = b.category;
+      // Check exact note_key churn first
       if (nk && (churnCount[nk] || 0) >= 3) {
         demotedKeys.push(nk);
         // Move to polish_notes
         if (!Array.isArray(parsed.polish_notes)) parsed.polish_notes = [];
         parsed.polish_notes.push({ ...b, severity: "polish", churn_demoted: true });
         console.log(`[dev-engine-v2][convergence] Churn demoted blocker ${nk} — appeared ${churnCount[nk]}+ consecutive runs`);
+      } else if (cat && (categoryChurnCount[cat] || 0) >= 3) {
+        // Category-level churn: same category appearing 3+ consecutive runs
+        // with different note_keys (note key mutation pattern)
+        demotedKeys.push(nk || cat);
+        if (!Array.isArray(parsed.polish_notes)) parsed.polish_notes = [];
+        parsed.polish_notes.push({ ...b, severity: "polish", churn_demoted: true, churn_category: cat });
+        console.log(`[dev-engine-v2][convergence] Churn demoted blocker by category "${cat}" — appeared ${categoryChurnCount[cat]}+ consecutive runs (note_key mutation pattern)`);
       } else {
         remaining.push(b);
       }
@@ -7081,10 +7115,11 @@ ${deliverableType === "treatment" && notesEffectiveFormat === "film" ? `|- ACT B
 ${(() => {
   const docTypeNoteScopes: Record<string, string> = {
     character_bible: `DOCUMENT TYPE: CHARACTER BIBLE
-- Evaluate character completeness, arc design, voice distinctiveness, relationship dynamics, thematic integration, and backstory depth.
-- Valid note categories: "character_depth|arc_clarity|voice_distinctiveness|relationship_dynamics|backstory_consistency|thematic_integration|missing_character|cast_balance"
-- Do NOT raise notes about scene structure, pacing, dialogue craft, act breaks, hooks, or cliffhangers — those are script concerns.
-- Flag missing characters, underdeveloped arcs, or characters who lack distinct voice as blockers.`,
+|- Evaluate character completeness, arc design, voice distinctiveness, relationship dynamics, thematic integration, and backstory depth.
+|- Valid note categories: "character_depth|arc_clarity|voice_distinctiveness|relationship_dynamics|backstory_consistency|thematic_integration|missing_character|cast_balance"
+|- NOTE: voice_distinctiveness is a polish-only category — voice distinctiveness is inherently subjective and cannot be objectively resolved. Do NOT flag it as a blocker.
+|- Do NOT raise notes about scene structure, pacing, dialogue craft, act breaks, hooks, or cliffhangers — those are script concerns.
+|- Flag missing characters or underdeveloped arcs as blockers.`,
     season_arc: `DOCUMENT TYPE: SEASON ARC
 - Evaluate arc architecture, escalation logic, turning-point placement, thematic spine, and character arc integration.
 - Valid note categories: "arc_structure|escalation|turning_points|character_arc_integration|thematic_spine|series_engine|season_resolution"

@@ -731,6 +731,12 @@ const DOC_TYPE_GATE_OVERRIDES: Record<string, { ci: number; gp: number }> = {
   // CI:72/GP:76: a complete beats doc with correct structure passes. CI:95+ causes thrash.
   vertical_episode_beats: { ci: 72, gp: 76 },
   episode_beats:          { ci: 72, gp: 76 },
+  // Character Bible: narrative craft document with structural CI ceiling of 88-90
+  // across all formats (feature_film=90, tv_series=88, vertical=78-85, documentary=80).
+  // CI:88 prevents impossible chase of resolveTargetCI's default 95 — the per-character
+  // rewrite architecture cannot reach 95 within the format ceiling. CI:88 is achievable
+  // across all formats and avoids the "CI never reaches target" convergence stall.
+  character_bible:       { ci: 88, gp: 0 },
 };
 
 /** Returns the effective CI+GP gate thresholds for a given doc type and job. */
@@ -6202,6 +6208,15 @@ Deno.serve(async (req) => {
       const srcMeta = sourceVer?.meta_json || {};
       const srcCI = typeof srcMeta.ci === "number" ? srcMeta.ci : (job.last_ci ?? 0);
       const srcGP = typeof srcMeta.gp === "number" ? srcMeta.gp : (job.last_gp ?? 0);
+
+      // ── PATCH: Set approval_status=approved on the manual force-promoted version ──
+      // The plateau_recovery_promote path (line ~4267) already does this, but the
+      // manual action:"force-promote" handler skipped it. Without this, force-promoted
+      // versions stay approval_status=draft, causing subsequent jobs to re-enter the
+      // same stage and regenerate — creating a force-promote cycle.
+      await supabase.from("project_document_versions").update({
+        approval_status: "approved", approved_at: new Date().toISOString(), approved_by: job.user_id,
+      }).eq("id", promotionSourceVersionId);
 
       const next = await nextUnsatisfiedStage(supabase, job.project_id, jobFmt, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
       if (!next) {

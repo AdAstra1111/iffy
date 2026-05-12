@@ -496,6 +496,17 @@ export const CHARACTER_BIBLE_DEPTH_EVAL_BLOCK = `
 
 For each PRINCIPAL (Tier 1) character, check these Schema v2 requirements:
 - social_position, functional_role, world_embedding, want_vs_need, wound, flaw, relationships, arc, voice
+
+### VOICE COVERAGE RULE (Churn Prevention)
+"Voice" means speech register, vocabulary level, verbal tics, and avoidances as described in the CHARACTER SCHEMA v2 block. If voice is present for SOME principal characters:
+- voice present on >75% of Tier 1 characters → missing voice on remaining characters is POLISH (severity: polish, category: character)
+- voice present on >50% of Tier 1 characters → missing voice is HIGH-IMPACT (severity: high, category: character)
+- voice present on ≤50% or fewer Tier 1 characters → BLOCKER (severity: blocker, category: character) — structurally insufficient voice definition
+- voice completely absent from ALL Tier 1 characters → always BLOCKER
+
+This prevents the evaluator from cycling across different character names iteration after iteration when per-character rewrite only addresses a subset per pass.
+
+### SCORING MATRIX (after applying Voice Coverage Rule above):
 - If ANY principal character is missing 3+ items: BLOCKER (severity: blocker, category: character)
 - If ANY principal character is missing 1-2 items: HIGH-IMPACT (severity: high, category: character)
 
