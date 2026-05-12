@@ -537,6 +537,156 @@ HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
   }
 }
 
+// ── Convergence failsafes (Character Bible ANALYZE) ──
+
+/**
+ * detectNoteChurn — Demote blockers appearing 3+ consecutive ANALYZE iterations.
+ * Queries development_runs for the most recent ANALYZE runs for this doc/version.
+ * If a note_key appears in blocking_issues for 3+ consecutive runs, moves it from
+ * blocking_issues to polish_notes (signals the LLM is churning on the same issue).
+ */
+async function detectNoteChurn(
+  supabase: any,
+  documentId: string,
+  versionId: string,
+  effectiveDeliverable: string,
+  parsed: any,
+): Promise<{ demotedKeys: string[] }> {
+  if (effectiveDeliverable !== "character_bible") return { demotedKeys: [] };
+  try {
+    const { data: recentRuns } = await supabase
+      .from("development_runs")
+      .select("output_json, created_at")
+      .eq("version_id", versionId)
+      .eq("run_type", "ANALYZE")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    if (!recentRuns || recentRuns.length < 3) return { demotedKeys: [] };
+
+    // Build a map of note_key -> count of consecutive appearances in blocking_issues
+    const churnCount: Record<string, number> = {};
+    for (const run of recentRuns) {
+      const blockers = run.output_json?.blocking_issues || [];
+      const seenInThisRun = new Set<string>();
+      for (const b of blockers) {
+        const nk = b.note_key || b.id;
+        if (nk) seenInThisRun.add(nk);
+      }
+      for (const nk of seenInThisRun) {
+        churnCount[nk] = (churnCount[nk] || 0) + 1;
+      }
+      // Keys not seen in this run reset their count (non-consecutive)
+      for (const nk of Object.keys(churnCount)) {
+        if (!seenInThisRun.has(nk)) {
+          churnCount[nk] = 0;
+        }
+      }
+    }
+
+    const demotedKeys: string[] = [];
+    const currentBlockers = parsed.blocking_issues || [];
+    const remaining: any[] = [];
+    for (const b of currentBlockers) {
+      const nk = b.note_key || b.id;
+      if (nk && (churnCount[nk] || 0) >= 3) {
+        demotedKeys.push(nk);
+        // Move to polish_notes
+        if (!Array.isArray(parsed.polish_notes)) parsed.polish_notes = [];
+        parsed.polish_notes.push({ ...b, severity: "polish", churn_demoted: true });
+        console.log(`[dev-engine-v2][convergence] Churn demoted blocker ${nk} — appeared ${churnCount[nk]}+ consecutive runs`);
+      } else {
+        remaining.push(b);
+      }
+    }
+    parsed.blocking_issues = remaining;
+    return { demotedKeys };
+  } catch (e) {
+    console.warn("[dev-engine-v2][convergence] detectNoteChurn error (non-fatal):", e);
+    return { demotedKeys: [] };
+  }
+}
+
+/**
+ * checkDevRunIterationCap — Force-converge after MAX_DEVELOPMENT_RUN_LOOPS ANALYZE iterations.
+ * If the count of ANALYZE runs for this doc/version >= MAX_DEVELOPMENT_RUN_LOOPS,
+ * forces convergence.status = "converged" and sets iteration_forced_converged on output.
+ */
+async function checkDevRunIterationCap(
+  supabase: any,
+  documentId: string,
+  versionId: string,
+  parsed: any,
+): Promise<boolean> {
+  try {
+    const { count } = await supabase
+      .from("development_runs")
+      .select("*", { count: "exact", head: true })
+      .eq("version_id", versionId)
+      .eq("run_type", "ANALYZE");
+    if (count !== null && count >= MAX_DEVELOPMENT_RUN_LOOPS) {
+      if (parsed.convergence) {
+        parsed.convergence.status = "converged";
+        parsed.convergence.iteration_forced_converged = true;
+        parsed.convergence.reasons = [...(parsed.convergence.reasons || []), `Force-converged after ${count} ANALYZE iterations (cap: ${MAX_DEVELOPMENT_RUN_LOOPS})`];
+      }
+      // Also set on output_json for persistence
+      parsed.iteration_forced_converged = true;
+      console.log(`[dev-engine-v2][convergence] Iteration cap reached — ${count} ANALYZE runs, force-converged`);
+      return true;
+    }
+    return false;
+  } catch (e) {
+    console.warn("[dev-engine-v2][convergence] checkDevRunIterationCap error (non-fatal):", e);
+    return false;
+  }
+}
+
+/**
+ * detectCIRegression — Flag CI regression of CI_REGRESSION_THRESHOLD+ points.
+ * Compares current ci_score against the previous ANALYZE run's ci_score.
+ * Sets ci_regression flags on parsed output if regression is detected.
+ */
+async function detectCIRegression(
+  supabase: any,
+  documentId: string,
+  versionId: string,
+  parsed: any,
+): Promise<void> {
+  try {
+    const currentCi = parsed.ci_score;
+    if (typeof currentCi !== "number") return;
+
+    const { data: prevRun } = await supabase
+      .from("development_runs")
+      .select("output_json")
+      .eq("version_id", versionId)
+      .eq("run_type", "ANALYZE")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // If there was no previous run, nothing to compare
+    if (!prevRun || !prevRun.output_json) return;
+
+    const prevCi = prevRun.output_json.ci_score;
+    if (typeof prevCi !== "number") return;
+
+    const drop = prevCi - currentCi;
+    if (drop >= CI_REGRESSION_THRESHOLD) {
+      parsed.ci_regression = {
+        previous_ci_score: prevCi,
+        current_ci_score: currentCi,
+        drop,
+        threshold: CI_REGRESSION_THRESHOLD,
+        flagged: true,
+      };
+      console.log(`[dev-engine-v2][convergence] CI regression detected: ${prevCi} → ${currentCi} (drop of ${drop}, threshold ${CI_REGRESSION_THRESHOLD})`);
+    }
+  } catch (e) {
+    console.warn("[dev-engine-v2][convergence] detectCIRegression error (non-fatal):", e);
+  }
+}
+
 // ── Supporting doc pack constants ──
 // ── Cost optimisation: reduced context budgets ──
 // Upstream supporting docs are summaries for orientation, not full reads.
@@ -829,6 +979,8 @@ const ANALYZE_MODEL = "openai/gpt-4.1-mini"; // deterministic at temp=0+seed —
 const BALANCED_MODEL = "google/gemini-2.5-flash";
 
 const SCHEMA_VERSION = "v3";
+const MAX_DEVELOPMENT_RUN_LOOPS = 10; // Force-converge after N ANALYZE iterations
+const CI_REGRESSION_THRESHOLD = 3;   // Flag regression if CI score drops by this many points
 
 function extractJSON(raw: string): string {
   let c = raw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "");
@@ -6203,6 +6355,12 @@ ${docTextForScoring}`;
       parsed.high_impact_notes = highResult.now;
       parsed.polish_notes = polishResult.now;
 
+      // ── Convergence failsafe: detect note churn (character bible) ──
+      const { demotedKeys } = await detectNoteChurn(supabase, documentId, versionId, effectiveDeliverable, parsed);
+      if (demotedKeys.length > 0) {
+        console.log(`[dev-engine-v2][convergence] Churn demoted ${demotedKeys.length} blockers to polish: [${demotedKeys.join(", ")}]`);
+      }
+
       // Collect all deferred notes
       const allDeferred = [...blockersResult.deferred, ...highResult.deferred, ...polishResult.deferred];
       parsed.deferred_notes = allDeferred;
@@ -6318,6 +6476,9 @@ ${docTextForScoring}`;
         if (arr) for (const n of arr) { if (!n.note_key) n.note_key = n.id; if (!n.id) n.id = n.note_key; }
       }
 
+      // ── Convergence failsafe: iteration cap (character bible) ──
+      const capReached = await checkDevRunIterationCap(supabase, documentId, versionId, parsed);
+
       // Blocker-based convergence override: only NOW blockers gate convergence
       const blockerCount = (parsed.blocking_issues || []).length;
       const highCount = (parsed.high_impact_notes || []).length;
@@ -6343,6 +6504,9 @@ ${docTextForScoring}`;
           }
         }
       }
+
+      // ── Convergence failsafe: CI regression check (character bible) ──
+      await detectCIRegression(supabase, documentId, versionId, parsed);
 
       // Stability status
       parsed.stability_status = blockerCount === 0 && highCount <= 3 && polishCount <= 5
@@ -6626,18 +6790,53 @@ ${docTextForScoring}`;
       }
       if (!analysis) throw new Error("No analysis found. Run Analyze first.");
 
-      // Check previous note keys to prevent endless repetition (scoped to this version)
+// Check previous note keys to prevent endless repetition (scoped to this version)
       const { data: prevNotes } = await supabase.from("development_notes")
         .select("note_key, severity, resolved")
         .eq("document_id", documentId)
         .eq("document_version_id", versionId);
-      const previouslyResolved = new Set((prevNotes || []).filter(n => n.resolved).map(n => n.note_key));
-      const existingUnresolved = (prevNotes || []).filter(n => !n.resolved);
-      const previousBlockerCount = existingUnresolved.filter(n => n.severity === 'blocker').length;
+      const previouslyResolved = new Set((prevNotes || []).filter((n: any) => n.resolved).map((n: any) => n.note_key));
+      const existingUnresolved = (prevNotes || []).filter((n: any) => !n.resolved);
+      const previousBlockerCount = existingUnresolved.filter((n: any) => n.severity === 'blocker').length;
+
+      // Also query previous ANALYZE run outputs for blocker history (covers runs that generated notes)
+      let prevAnalyzeBlockerKeys = new Set<string>();
+      try {
+        const { data: prevRuns } = await supabase.from("development_runs")
+          .select("output_json")
+          .eq("version_id", versionId)
+          .eq("run_type", "ANALYZE")
+          .order("created_at", { ascending: false })
+          .limit(3);
+        if (prevRuns) {
+          for (const run of prevRuns) {
+            if (run.output_json?.blocking_issues) {
+              for (const b of run.output_json.blocking_issues) {
+                const nk = b.note_key || b.id;
+                if (nk) prevAnalyzeBlockerKeys.add(nk);
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[dev-engine-v2] prev ANALYZE run query failed (non-fatal):", e);
+      }
 
       let antiRepeatRule = "";
       if (previouslyResolved.size > 0) {
         antiRepeatRule = `\nPREVIOUSLY RESOLVED NOTE KEYS (do NOT re-raise as blockers unless regression detected): ${[...previouslyResolved].join(", ")}`;
+      }
+      // Add previously raised ANALYZE blocker keys to the anti-repeat rule
+      const allKnownBlockerKeys = new Set([...previouslyResolved, ...prevAnalyzeBlockerKeys]);
+      if (allKnownBlockerKeys.size > 0 && previouslyResolved.size === 0) {
+        // Only from ANALYZE runs (not development_notes)
+        antiRepeatRule = `\nPREVIOUSLY RAISED BLOCKER KEYS FROM ANALYZE HISTORY (do NOT re-raise as blockers unless regression detected): ${[...allKnownBlockerKeys].join(", ")}`;
+      } else if (prevAnalyzeBlockerKeys.size > 0) {
+        // Append ANALYZE-run keys to the existing development_notes rule
+        const extraKeys = [...prevAnalyzeBlockerKeys].filter(k => !previouslyResolved.has(k));
+        if (extraKeys.length > 0) {
+          antiRepeatRule += `\nPREVIOUS ANALYZE BLOCKER KEYS (do NOT re-raise unless regression detected): ${extraKeys.join(", ")}`;
+        }
       }
       if (previousBlockerCount === 0 && existingUnresolved.length > 0) {
         antiRepeatRule += `\nPREVIOUS ROUND HAD ZERO BLOCKERS. Do NOT invent new blockers unless drift/regression occurred. Only generate high/polish notes.`;
@@ -6870,9 +7069,14 @@ GENERAL RULES:
 - high_impact_notes: Significant but non-blocking improvements. Max 5.
 - polish_notes: Optional refinements. Max 5.
 - Sort within each tier by structural importance.
-- Do NOT re-raise previously resolved issues as blockers.
-- If an existing note_key persists, use the same key — do NOT rephrase under a new key.
-${deliverableType === "treatment" && notesEffectiveFormat === "film" ? `|- ACT BISECTION AWARENESS: Act 2A + Act 2B within a 3-act film structure is a MIDPOINT SPLIT, NOT a fourth act. Do NOT flag 2A/2B as "too many acts" or "act structure confusion." This is a standard structural choice for feature films where the midpoint divides Act 2. Do NOT suggest collapsing 2A and 2B into a single Act 2 — that is a distinct creative choice, not a structural error. Genuine 4-act projects (e.g. limited series arcs, non-standard formats) should remain unaffected; the rule is specifically about not misreading bisection as a 4th act.${antiRepeatRule}` : ""}
+|- Do NOT re-raise previously resolved issues as blockers.
+|- If an existing note_key persists, use the same key — do NOT rephrase under a new key.
+|- CONVERGENCE & ANTI-INVENT RULES:
+  • If the document convergence status is "converged" or close to converged (few blockers, CI >= 60, GP >= 60), do NOT invent new blockers. The goal at this stage is refinement, not disruption.
+  • Only raise a blocker if there is a genuine, unresolved structural or narrative issue — not because the LLM always generates some blockers.
+  • If all prior notes are resolved and the document is approaching convergence, prefer high_impact_notes or polish_notes over inventing new blocking_issues.
+  • Keep note keys stable across runs — re-raising the same issue under a different key is churn. Use the same note_key for the same issue.
+${deliverableType === "treatment" && notesEffectiveFormat === "film" ? `|- ACT BISECTION AWARENESS: Act 2A + Act 2B within a 3-act film structure is a MIDPOINT SPLIT, NOT a fourth act. Do NOT flag 2A/2B as "too many acts" or "act structure confusion." This is a standard structural choice for feature films where the midpoint divides Act 2. Do NOT suggest collapsing 2A and 2B into a single Act 2 — that is a distinct creative choice, not a structural error. Genuine 4-act projects (e.g. limited series arcs, non-standard formats) should remain unaffected; the rule is specifically about not misreading bisection as a 4th act.${antiRepeatRule}` : `${deliverableType !== "treatment" || notesEffectiveFormat !== "film" ? `|- CONVERGENCE RULES:${antiRepeatRule}` : ""}`}
 
 ${(() => {
   const docTypeNoteScopes: Record<string, string> = {
