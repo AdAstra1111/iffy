@@ -1679,7 +1679,7 @@ CONVERGENCE RULE: An idea that has a clear protagonist, an opposition force, and
   character_bible: `Evaluate as a CHARACTER BIBLE. This is a DEVELOPMENT ARCHITECTURE document — its job is to deepen character specificity and unblock the next development stage, not to pitch or package.
 
 Score on:
-(1) CHARACTER DEPTH — Does each major character have: clear wants vs needs (in conflict), a core contradiction, a specific formative wound, a public mask vs private self, and a distinct voice? Shallow or generic characters are blockers.
+(1) CHARACTER DEPTH — Does each major character have: clear wants vs needs (in conflict), a core contradiction, a specific formative wound, and a public mask vs private self? Shallow or generic characters are blockers.
 (2) ARC DESIGN — Does each principal have a clear transformation arc from opening to resolution? Are internal and external arc trajectories distinct?
 (3) RELATIONSHIP DYNAMICS — Are the key relationship axes between characters mapped? Are power dynamics, tensions, dependencies, and emotional stakes specified?
 (4) THEMATIC INTEGRATION — Does each character embody a thematic question or tension? Is the ensemble's thematic function coherent?
@@ -6236,13 +6236,47 @@ A fully complete grid with specific, unique entries should score CI 75–85. Res
         }
       }
 
+      // ── Convergence history context injection (medium-term fix) ──
+      // Instead of relying on the current ANALYZE output's convergence status (which
+      // gets reset to in_progress when blockers are found), check historical records
+      // to determine if this document was EVER scored as converged. If a prior version
+      // was converged, the AI should strongly bias against inventing new blockers.
+      let convergenceHistoryContext = "";
+      try {
+        const { data: convHistory } = await supabase
+          .from("dev_engine_convergence_history")
+          .select("convergence_status, creative_score, greenlight_score, created_at")
+          .eq("document_id", documentId)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        if (convHistory && convHistory.length > 0) {
+          const priorConverged = convHistory.find(h => h.convergence_status === "converged");
+          if (priorConverged) {
+            const totalConverged = convHistory.filter(h => h.convergence_status === "converged").length;
+            const recentStatus = convHistory[0]?.convergence_status || "Unknown";
+            convergenceHistoryContext = `\n\nCONVERGENCE HISTORY: This document has been scored as CONVERGED ${totalConverged} time(s) in historical runs (last: CI=${priorConverged.creative_score}, GP=${priorConverged.greenlight_score}). Current convergence status: ${recentStatus}.\nCRITICAL RULE: If the document was previously converged, do NOT invent new blockers. The convergence status may appear as "in_progress" due to generated blockers, but the document's underlying quality has already validated as converged. Focus on:\n- Resolving any genuine structural issues (missing characters, corrupted sections)\n- Polish notes for refinement only\n- Do NOT re-raise the same issues under different note_keys\n- If all prior blockers were resolved, raise ONLY polish_notes or high_impact_notes`;
+            console.log(`[dev-engine-v2][convergence-history] Injected convergence history: ${totalConverged} prior converged run(s), last CI=${priorConverged.creative_score}, GP=${priorConverged.greenlight_score}`);
+          } else {
+            // Document has convergence history but never converged — still useful context
+            const highestCI = Math.max(...convHistory.map(h => Number(h.creative_score)).filter(s => !isNaN(s)));
+            const highestGP = Math.max(...convHistory.map(h => Number(h.greenlight_score)).filter(s => !isNaN(s)));
+            if (highestCI >= 60 || highestGP >= 60) {
+              convergenceHistoryContext = `\n\nCONVERGENCE NOTE: This document has never reached full convergence but has achieved scores of CI=${highestCI}, GP=${highestGP} in prior runs. If the document is close to convergence (few blockers, high scores), prefer refinement over inventing new blockers.`;
+              console.log(`[dev-engine-v2][convergence-history] Near-convergence context injected: best CI=${highestCI}, GP=${highestGP}`);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[dev-engine-v2] Convergence history fetch failed (non-fatal):", e);
+      }
+
       const userPrompt = `${analyzeNecBlock}
 PRODUCTION TYPE: ${effectiveProductionType}
 STRATEGIC PRIORITY: ${strategicPriority || "BALANCED"}
 DEVELOPMENT STAGE: ${developmentStage || "IDEA"}
 PROJECT: ${project?.title || "Unknown"}
 LANE: ${analyzeLane} | BUDGET: ${project?.budget_range || "Unknown"}
-${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${canonConformanceContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
+${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${canonConformanceContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}${convergenceHistoryContext}
 
 MATERIAL (${version.plaintext.length} chars total${episodeGridStructuralBlock || seasonScriptStructuralBlock ? " — sampled for scoring stability" : ""}):
 ${docTextForScoring}`;
@@ -6393,6 +6427,68 @@ ${docTextForScoring}`;
       const { demotedKeys } = await detectNoteChurn(supabase, documentId, versionId, effectiveDeliverable, parsed);
       if (demotedKeys.length > 0) {
         console.log(`[dev-engine-v2][convergence] Churn demoted ${demotedKeys.length} blockers to polish: [${demotedKeys.join(", ")}]`);
+      }
+
+      // ── LONG-TERM FIX: Semantic note_key deduplication ──
+      // When generating a new note, compare its semantic content against existing
+      // unresolved development_notes for the same document. If a match is found,
+      // reuse the existing key instead of creating a new one (fixes note_key mutation).
+      if (effectiveDeliverable === "character_bible") {
+        try {
+          // Fetch all existing unresolved notes for this document
+          const { data: existingNotes } = await supabase
+            .from("development_notes")
+            .select("note_key, description, severity")
+            .eq("document_id", documentId)
+            .eq("resolved", false)
+            .limit(50);
+          if (existingNotes && existingNotes.length > 0) {
+            // Simple word-overlap similarity function
+            const wordOverlap = (a: string, b: string): number => {
+              const wordsA = new Set((a || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+              const wordsB = new Set((b || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+              if (wordsA.size === 0 || wordsB.size === 0) return 0;
+              let intersection = 0;
+              for (const w of wordsA) { if (wordsB.has(w)) intersection++; }
+              const union = Math.max(wordsA.size, wordsB.size);
+              return union > 0 ? intersection / union : 0;
+            };
+            // Also check for common thematic synonyms in descriptions
+            const noteTiers = [
+              { arr: parsed.blocking_issues || [], name: "blocking_issues" },
+              { arr: parsed.high_impact_notes || [], name: "high_impact_notes" },
+              { arr: parsed.polish_notes || [], name: "polish_notes" },
+            ];
+            for (const tier of noteTiers) {
+              for (let i = 0; i < tier.arr.length; i++) {
+                const note = tier.arr[i];
+                const noteDesc = note.description || "";
+                const noteKey = note.note_key || note.id || "";
+                if (!noteDesc) continue;
+                // Find best match among existing unresolved notes
+                let bestMatch: { key: string; score: number } | null = null;
+                for (const existing of existingNotes) {
+                  const score = wordOverlap(noteDesc, existing.description || "");
+                  if (score >= 0.4 && (!bestMatch || score > bestMatch.score)) {
+                    bestMatch = { key: existing.note_key, score };
+                  }
+                }
+                if (bestMatch) {
+                  // Reuse the existing note_key — this prevents creating a new
+                  // development_notes row with a different key for the same issue
+                  const oldKey = noteKey;
+                  tier.arr[i].note_key = bestMatch.key;
+                  tier.arr[i].id = bestMatch.key;
+                  tier.arr[i].note_key_deduped = true;
+                  tier.arr[i].original_note_key = oldKey;
+                  console.log(`[dev-engine-v2][note-key-dedup] Re-mapped note_key "${oldKey}" → "${bestMatch.key}" (word overlap: ${(bestMatch.score * 100).toFixed(0)}%)`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[dev-engine-v2] Semantic note_key dedup failed (non-fatal):", e);
+        }
       }
 
       // Collect all deferred notes

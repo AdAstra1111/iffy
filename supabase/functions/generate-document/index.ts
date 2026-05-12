@@ -24,6 +24,7 @@ import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_sha
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
+import { findOrCreateCharacterEntity, findExistingCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
   buildNuancePromptBlock, computeMetrics, melodramaScore, nuanceScore,
   runGate, buildRepairInstruction, computeFingerprint, computeSimilarityRisk,
@@ -1670,28 +1671,81 @@ Example:
             console.log(`[generate-document] Extracted ${characters.length} characters from concept brief`);
           }
 
+          // Dedup guardrail: filter out characters whose names are aliases of other characters in the list
+          // Prevents duplicate bible entries when e.g., "Brother" and "Enki" both appear in project_canon
+          if (Array.isArray(characters) && characters.length > 1) {
+            try {
+              const { data: allAliases } = await serviceClient
+                .from("narrative_entity_aliases")
+                .select("alias_name, canonical_entity_id")
+                .eq("project_id", projectId);
+
+              if (allAliases && allAliases.length > 0) {
+                // Get canonical names for all aliased entities
+                const targetIds = [...new Set(allAliases.map((a: any) => a.canonical_entity_id))];
+                const { data: targetEntities } = await serviceClient
+                  .from("narrative_entities")
+                  .select("id, canonical_name")
+                  .in("id", targetIds);
+
+                if (targetEntities && targetEntities.length > 0) {
+                  // Build alias_lowercase -> canonical_name_lowercase map
+                  const aliasToCanonical = new Map<string, string>();
+                  const entityIdToName = new Map(targetEntities.map((e: any) => [e.id, e.canonical_name]));
+                  // Build lowercased canonical name -> original case canonical name map
+                  const canonicalLowerToOriginal = new Map<string, string>();
+                  for (const e of targetEntities) {
+                    canonicalLowerToOriginal.set(e.canonical_name.toLowerCase(), e.canonical_name);
+                  }
+                  for (const a of allAliases) {
+                    const canonical = entityIdToName.get(a.canonical_entity_id);
+                    if (canonical) {
+                      aliasToCanonical.set(a.alias_name.toLowerCase(), canonical.toLowerCase());
+                    }
+                  }
+
+                  // Build set of names from the input array (lowercased)
+                  const charNameLower = new Set(characters.map((c: any) => c.name.toLowerCase()));
+
+                  // Filter: keep only characters whose name is NOT an alias of another character already in the list
+                  const filtered = characters.filter((c: any) => {
+                    const canonicalLower = aliasToCanonical.get(c.name.toLowerCase());
+                    if (canonicalLower && canonicalLower !== c.name.toLowerCase() && charNameLower.has(canonicalLower)) {
+                      const canonicalOriginal = canonicalLowerToOriginal.get(canonicalLower) || canonicalLower;
+                      console.log(`[generate-document] Dedup guardrail: skipping "${c.name}" (alias of "${canonicalOriginal}")`);
+                      return false;
+                    }
+                    return true;
+                  });
+
+                  if (filtered.length < characters.length) {
+                    console.log(`[generate-document] Dedup guardrail: filtered ${characters.length - filtered.length} alias-based duplicate(s) from character list`);
+                    characters = filtered;
+                  }
+                }
+              }
+            } catch (dedupErr: any) {
+              console.error(`[generate-document] Dedup guardrail error: ${dedupErr?.message || dedupErr}`);
+              // Non-fatal — proceed with original characters array
+            }
+          }
+
           // Step B: For each character, create entity + generate profile
           const profiles: Array<{name: string; role: string; profile: string}> = [];
           let completedCount = 0;
 
           for (const char of characters) {
             try {
-              // Create narrative_entity
-              const entityKey = `char_${char.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 60)}`;
-              await serviceClient.from("narrative_entities").insert({
-                project_id: projectId,
-                entity_key: entityKey,
-                canonical_name: char.name,
-                entity_type: "character",
-                source_kind: "project_canon",
-                source_key: docType,
-                meta_json: {
-                  role: char.role,
-                  extraction_description: char.description,
-                  extracted_from: docType,
-                  bible_version_id: cbVersion!.id,
-                },
-              });
+              // Create or find narrative_entity (dedup-aware)
+              const { entity_id: entityId } = await findOrCreateCharacterEntity(
+                serviceClient,
+                projectId,
+                char.name,
+                char.role,
+                char.description,
+                docType,
+                cbVersion!.id,
+              );
 
               // Generate character profile via LLM
               const profilePrompt = `You are generating a detailed character profile for a character bible. 
