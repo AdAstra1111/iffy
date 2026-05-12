@@ -4,6 +4,7 @@ import { spineToReviewerAlignmentBlock, getSpineState, CLASS_A_SPINE_CHECK_DOC_T
 import { parseSections, findVerbatimInSections } from "../_shared/sectionRepairEngine.ts";
 import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
 import { isSectionRepairSupported, getSectionConfig, findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
+import { deduplicateConceptBriefSections } from "../_shared/deduplicateConceptBriefSections.ts";
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { isCharBibleDepthEnabled, CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
@@ -2481,6 +2482,7 @@ GOALS:
 CRITICAL:
 - Output ONLY the rewritten section content. No JSON, no commentary.
 - Preserve each section's ## header exactly as it appears in the source.
+- Do NOT create duplicate ## sections. Replace the content of the relevant section — do NOT append new sections to the document.
 - Maintain continuity with the previous chunk context provided.`;
 
 const REWRITE_CHUNK_SYSTEM_GRID = `You are rewriting an EPISODE GRID for a vertical drama series.
@@ -9708,7 +9710,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 
     // ── REWRITE-ASSEMBLE (chunked rewrite step 3) ──
     if (action === "rewrite-assemble") {
-      const { projectId, documentId, versionId, planRunId, assembledText, rewriteModeSelected, rewriteModeEffective, rewriteModeReason, rewriteModeDebug, rewriteProbe, deliverableType: assembleDeliverableType } = body;
+      let { projectId, documentId, versionId, planRunId, assembledText, rewriteModeSelected, rewriteModeEffective, rewriteModeReason, rewriteModeDebug, rewriteProbe, deliverableType: assembleDeliverableType } = body;
       if (!projectId || !documentId || !versionId || !assembledText) throw new Error("projectId, documentId, versionId, assembledText required");
 
       // ── FAIL-CLOSED: reject assembled text containing failed-chunk placeholders ──
@@ -9880,6 +9882,12 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         const generatorId = isEpisodicStrategy
           ? "dev-engine-v2-rewrite-episodic"
           : "dev-engine-v2-rewrite-chunked";
+
+        // ── DEDUP: for concept_brief chunked rewrites, deduplicate duplicate ## section headers ──
+        if (effectiveDeliverable === "concept_brief") {
+          assembledText = deduplicateConceptBriefSections(assembledText);
+        }
+
         const { data: nv, error: vErr } = await writeVersionSafe(supabase, {
           documentId,
           versionNumber: nextVersion,
@@ -10569,6 +10577,7 @@ INSTRUCTIONS:
         "Generate the " + (doc.doc_type || "treatment").replace(/_/g, " ") + " for: " + (project.title || "this project") + ".",
         "Production type: " + format + ".",
         "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Preserve the section header exactly as given.",
+        "Do NOT create duplicate ## sections. Replace the content of the relevant section — do NOT append new sections to the document.",
         narrativeBlock,
         constraintPackBlock,
         characterFactsBlock,
@@ -11046,6 +11055,9 @@ INSTRUCTIONS:
         const strippedContent = s.content.replace(/^#{1,6}\s+[^\n]+\n*/," ").trim();
         return `## ${actLabel}\n\n${strippedContent}`;
       }).join("\n\n").replace(/\n{3,}/g, "\n\n");
+
+      // Safety dedup: if this is a concept_brief, clean up any duplicated sections the LLM may have created
+      if (doc.doc_type === "concept_brief") assembledText = deduplicateConceptBriefSections(assembledText);
 
       const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,

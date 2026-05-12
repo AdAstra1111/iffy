@@ -669,7 +669,7 @@ async function runBackgroundJob(body: any) {
 
   // ── Derive computed variables from cached values ────────────────────────────
   if (call1) {
-    marketSheet = call1.market_sheet || {};
+    marketSheet = call1?.market_sheet || {};
     premise = call1.concept_brief?.premise || "";
     worldNotes = call1.concept_brief?.world_building_notes || "";
   }
@@ -911,7 +911,7 @@ Respond with ONLY JSON.`, 16000);
       console.log("[reverse-engineer] market_sheet: tagline =", ms.tagline, "| budget_range =", ms.budget_range, "| project_status =", ms.project_status, "| comparable_titles =", ms.comparable_titles, "| audience_age_range =", ms.audience_age_range);
 
       // ── Stage: idea ─────────────────────────────────────────────────────
-      metadata = call1.metadata;
+      metadata = call1?.metadata;
 
       // Build source citations here so all downstream stages can use them
       const scriptTitle = metadata.title || "Script";
@@ -1046,12 +1046,18 @@ ${beatScript}
 
 Respond with ONLY JSON.`, 14000);
 
+      // ── Null guard: call2 ──────────────────────────────────────────────────
+      if (!call2 || !Array.isArray(call2.beats)) {
+        console.warn("[reverse-engineer] call2 returned null or unparseable output — defaulting to empty beat sheet");
+        call2 = { title: "", total_beats: 0, beats: [] };
+      }
+
       // ── Stage: story_outline ─────────────────────────────────────────────
       updateStage(payload, "story_outline", "running");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-      const beatStructuralLabels = (call2 as any).beats
-        ? (call2 as any).beats.map((b: any) => {
+      const beatStructuralLabels = call2?.beats
+        ? call2?.beats?.map((b: any) => {
             const act = (b.act_affiliation || "").toLowerCase();
             const fn = (b.dramatic_function || "").toLowerCase();
             const actLabel = act || (fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
@@ -1129,10 +1135,29 @@ ${charScript}
 
 Respond with ONLY JSON.`, 14000);
 
+      // ── Name-based dedup: remove exact duplicate characters before alias check ──
+      function dedupCharacterBibleNames(call3: any): void {
+        const characters = call3?.characters;
+        if (!Array.isArray(characters) || characters.length <= 1) return;
+        const seen = new Set<string>();
+        const deduped = characters.filter((c: any) => {
+          const key = (c.name || "").toLowerCase().trim();
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        if (deduped.length < characters.length) {
+          console.log(`[reverse-engineer] Name-based dedup: removed ${characters.length - deduped.length} exact duplicate(s) from character list`);
+          call3.characters = deduped;
+        }
+      }
+
+      dedupCharacterBibleNames(call3);
+
       // ── Dedup guardrail: filter call3.characters removing aliases of other characters in the list ──
       // Mirrors generate-document/index.ts dedup guardrail (lines 1674-1731)
       // Prevents duplicate bible entries when e.g., "Brother" and "Enki" both appear in project_canon
-      async function dedupFilterCharacters(sb: any, project_id: string, call3: any): Promise<void> {
+      async function dedupFilterCharacters(sb: any, project_id: string, call3: any, capturedAliases: Array<{aliasName: string, canonicalName: string}>): Promise<void> {
         const characters = call3?.characters;
         if (!Array.isArray(characters) || characters.length <= 1) return;
         try {
@@ -1168,6 +1193,29 @@ Respond with ONLY JSON.`, 14000);
                 const canonicalLower = aliasToCanonical.get(c.name.toLowerCase());
                 if (canonicalLower && canonicalLower !== c.name.toLowerCase() && charNameLower.has(canonicalLower)) {
                   const canonicalOriginal = canonicalLowerToOriginal.get(canonicalLower) || canonicalLower;
+                  // ── Field merge: merge non-empty alias fields into canonical character ──
+                  const canonicalChar = characters.find((cc: any) => cc.name.toLowerCase() === canonicalLower);
+                  if (canonicalChar && c !== canonicalChar) {
+                    const MERGE_FIELDS = [
+                      'age', 'role', 'physical_description', 'backstory', 'psychology',
+                      'want', 'need', 'fatal_flaw', 'arc', 'voice_and_speech',
+                      'sample_dialogue', 'casting_suggestions',
+                    ];
+                    let merged = 0;
+                    for (const field of MERGE_FIELDS) {
+                      if (c[field] && !canonicalChar[field]) {
+                        canonicalChar[field] = c[field];
+                        merged++;
+                      }
+                    }
+                    if (merged > 0) {
+                      console.log(`[reverse-engineer] Field merge: merged ${merged} field(s) from "${c.name}" into "${canonicalOriginal}"`);
+                    }
+                  }
+                  // ── Capture alias for entity registration ──
+                  if (canonicalOriginal) {
+                    capturedAliases.push({ aliasName: c.name, canonicalName: canonicalOriginal });
+                  }
                   console.log(`[reverse-engineer] Dedup guardrail: skipping "${c.name}" (alias of "${canonicalOriginal}")`);
                   return false;
                 }
@@ -1185,7 +1233,50 @@ Respond with ONLY JSON.`, 14000);
         }
       }
 
-      await dedupFilterCharacters(sb, project_id, call3);
+      const capturedAliases: Array<{aliasName: string, canonicalName: string}> = [];
+      await dedupFilterCharacters(sb, project_id, call3, capturedAliases);
+
+      // ── Create narrative_entities for each character ──
+      if (call3?.characters?.length) {
+        try {
+          const { findOrCreateCharacterEntity } = await import("../_shared/characterDedupUtils.ts");
+          const entityIds = new Map<string, string>();
+          for (const char of call3.characters) {
+            const description = [char.physical_description, char.backstory, char.psychology]
+              .filter((f: any) => f && typeof f === "string")
+              .join(" | ") || "";
+            const result = await findOrCreateCharacterEntity(
+              sb, project_id, char.name, char.role || "supporting", description,
+              "character_bible", "",
+            );
+            entityIds.set(char.name.toLowerCase(), result.entity_id);
+          }
+          // ── Upsert captured aliases ──
+          if (capturedAliases.length > 0) {
+            for (const { aliasName, canonicalName } of capturedAliases) {
+              const canonicalEntityId = entityIds.get(canonicalName.toLowerCase());
+              if (canonicalEntityId) {
+                await sb.from("narrative_entity_aliases")
+                  .upsert({
+                    project_id,
+                    canonical_entity_id: canonicalEntityId,
+                    alias_name: aliasName.toUpperCase().trim(),
+                    alias_type: "fragment",
+                    source: "reverse_engineer_dedup",
+                    confidence: 0.85,
+                    reason: `Auto-dedup: "${aliasName}" is an alias of "${canonicalName}" per entity-aliases table`,
+                  }, {
+                    onConflict: "project_id,canonical_entity_id,alias_name",
+                    ignoreDuplicates: true,
+                  }).catch((err: any) => console.error(`[reverse-engineer] alias upsert failed for "${aliasName}": ${err.message}`));
+              }
+            }
+            console.log(`[reverse-engineer] Registered ${capturedAliases.length} alias(es) from dedup`);
+          }
+        } catch (entityErr: any) {
+          console.error(`[reverse-engineer] Entity creation failed (non-fatal): ${entityErr?.message || entityErr}`);
+        }
+      }
 
       updateStage(payload, "character_bible", "done");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
@@ -1231,10 +1322,10 @@ Respond with ONLY JSON.`, 14000);
       updateStage(payload, "treatment", "running");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-      premise      = (call1.concept_brief as any)?.premise || "";
-      worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
+      premise      = call1?.concept_brief?.premise || "";
+      worldNotes  = call1?.concept_brief?.world_building_notes || "";
       protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
-      beats       = (call2 as any).beats || [];
+      beats       = call2?.beats || [];
 
       // Full beat descriptions — no truncation, all beats
       const allBeatDescriptions = beats.map((b: any) =>
@@ -1304,9 +1395,9 @@ Respond with ONLY JSON.`, 12000);
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
       const marketCallInput = {
-        concept_brief: call1.concept_brief || {},
+        concept_brief: call1?.concept_brief || {},
         structural: {
-          total_beats: (call2 as any).total_beats || 0,
+          total_beats: call2?.total_beats || 0,
           locations_count: allLocations.length,
           characters_count: mergedCharacters.length,
           tone_notes: toneNotes,
@@ -1351,12 +1442,12 @@ Respond with ONLY JSON.`, 8000);
 
       await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
         `${metadata.title} — Concept Brief`,
-        { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...call1.concept_brief },
+        { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...(call1?.concept_brief || {}) },
         { source_citations: [allChunksCitation, ...chunkCitations] });
 
       const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
       // callMarketSheet is the dedicated call — run after beat_sheet has structural metadata
-      const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1.market_sheet || {}), ...callMarketSheet } : (call1.market_sheet || {});
+      const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1?.market_sheet || {}), ...callMarketSheet } : (call1?.market_sheet || {});
       await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
         `${metadata.title} — Market Sheet`,
         { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
@@ -1446,20 +1537,20 @@ Respond with ONLY JSON.`, 8000);
       updateStage(payload, "infer_criteria", "running");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-      beatsText = (call2.beats || []).map((b: any) =>
+      beatsText = (call2?.beats || []).map((b: any) =>
         `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
       ).join("\n");
-      marketSheet = (call1 as any).market_sheet || {};
+      marketSheet = call1?.market_sheet || {};
       const comparables = marketSheet.comparable_titles || [];
 
       callCriteria = await callLLM(`You are a film/TV production analyst. Infer all remaining pitch criteria fields from the document evidence below.
 
 EVIDENCE:
-- Genre: ${(call1 as any).genre || "unknown"}
-- Subgenre: ${(call1 as any).subgenre || "unknown"}
+- Genre: ${call1?.genre || "unknown"}
+- Subgenre: ${call1?.subgenre || "unknown"}
 - Comparable titles: ${comparables.join(", ") || "none"}
 - Market positioning: ${marketSheet.market_positioning || ""}
-- Audience: ${(call1 as any).target_audience || ""}
+- Audience: ${call1?.target_audience || ""}
 
 BEAT SHEET (condensed):
 ${beatsText.slice(0, 4000)}
