@@ -1129,6 +1129,64 @@ ${charScript}
 
 Respond with ONLY JSON.`, 14000);
 
+      // ── Dedup guardrail: filter call3.characters removing aliases of other characters in the list ──
+      // Mirrors generate-document/index.ts dedup guardrail (lines 1674-1731)
+      // Prevents duplicate bible entries when e.g., "Brother" and "Enki" both appear in project_canon
+      async function dedupFilterCharacters(sb: any, project_id: string, call3: any): Promise<void> {
+        const characters = call3?.characters;
+        if (!Array.isArray(characters) || characters.length <= 1) return;
+        try {
+          const { data: allAliases } = await sb
+            .from("narrative_entity_aliases")
+            .select("alias_name, canonical_entity_id")
+            .eq("project_id", project_id);
+
+          if (allAliases && allAliases.length > 0) {
+            const targetIds = [...new Set(allAliases.map((a: any) => a.canonical_entity_id))];
+            const { data: targetEntities } = await sb
+              .from("narrative_entities")
+              .select("id, canonical_name")
+              .in("id", targetIds);
+
+            if (targetEntities && targetEntities.length > 0) {
+              const aliasToCanonical = new Map<string, string>();
+              const entityIdToName = new Map(targetEntities.map((e: any) => [e.id, e.canonical_name]));
+              const canonicalLowerToOriginal = new Map<string, string>();
+              for (const e of targetEntities) {
+                canonicalLowerToOriginal.set(e.canonical_name.toLowerCase(), e.canonical_name);
+              }
+              for (const a of allAliases) {
+                const canonical = entityIdToName.get(a.canonical_entity_id);
+                if (canonical) {
+                  aliasToCanonical.set(a.alias_name.toLowerCase(), canonical.toLowerCase());
+                }
+              }
+
+              const charNameLower = new Set(characters.map((c: any) => c.name.toLowerCase()));
+
+              const filtered = characters.filter((c: any) => {
+                const canonicalLower = aliasToCanonical.get(c.name.toLowerCase());
+                if (canonicalLower && canonicalLower !== c.name.toLowerCase() && charNameLower.has(canonicalLower)) {
+                  const canonicalOriginal = canonicalLowerToOriginal.get(canonicalLower) || canonicalLower;
+                  console.log(`[reverse-engineer] Dedup guardrail: skipping "${c.name}" (alias of "${canonicalOriginal}")`);
+                  return false;
+                }
+                return true;
+              });
+
+              if (filtered.length < characters.length) {
+                console.log(`[reverse-engineer] Dedup guardrail: filtered ${characters.length - filtered.length} alias-based duplicate(s) from character list`);
+                call3.characters = filtered;
+              }
+            }
+          }
+        } catch (dedupErr: any) {
+          console.error(`[reverse-engineer] Dedup guardrail error: ${dedupErr?.message || dedupErr}`);
+        }
+      }
+
+      await dedupFilterCharacters(sb, project_id, call3);
+
       updateStage(payload, "character_bible", "done");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
