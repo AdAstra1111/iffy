@@ -591,6 +591,18 @@ function updateStage(payload: any, stageKey: string, status: string) {
   payload.updated_at = new Date().toISOString();
 }
 
+function waitUntilSafe(p: Promise<any>): boolean {
+  try {
+    // @ts-ignore
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(p);
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
 // ─── Background worker ───────────────────────────────────────────────────────
 async function runBackgroundJob(body: any) {
   console.log("[reverse-engineer] runBackgroundJob start", new Date().toISOString());
@@ -709,7 +721,7 @@ Return ONLY valid JSON:
 SCRIPT PART ${i + 1}/${chunks.length}:
 ${chunks[i]}
 
-Respond with ONLY JSON.`, 8000);
+Respond with ONLY JSON.`, 8000, 60000);
 
         chunkAnalyses.push(chunkResult);
         updateStage(payload, stageKey, "done");
@@ -1513,21 +1525,67 @@ Respond with ONLY JSON.`, 3000);
     payload.error = err?.message;
     payload.updated_at = new Date().toISOString();
   } finally {
-    // ── Save payload (always — persists errors too) ──────────────────────────
+    // ── Save payload (always — persists errors, releases lock) ────────────────
+    const shouldChain = payload.status !== "error" && payload.status !== "done" && currentGroup < 3;
+
+    if (shouldChain) {
+      // Update current_group before save so next invocation picks up where we left
+      payload.current_group = currentGroup + 1;
+    }
+
     payload.is_processing = false;
     payload.updated_at = new Date().toISOString();
     await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // ── Self-chain to next group (fire-and-forget) ────────────────────────────
-    if (payload.status !== "error" && payload.status !== "done" && currentGroup < 3) {
-      payload.current_group = currentGroup + 1;
-      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+    // ── Self-chain to next group (tracked via waitUntil + retry) ──────────────
+    // Fire AFTER is_processing is cleared so the next invocation can acquire the lock.
+    // waitUntilSafe keeps the runtime alive until the fetch completes.
+    if (shouldChain) {
+      const chainUrl = SUPABASE_URL + "/functions/v1/reverse-engineer-script";
+      const chainBody = JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text, format });
+      const chainHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` };
 
-      fetch(SUPABASE_URL + "/functions/v1/reverse-engineer-script", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` },
-        body: JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text, format }),
-      }).catch((err: any) => console.error("[reverse-engineer] self-chain error:", err));
+      const selfChain = (async (): Promise<void> => {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const res = await fetch(chainUrl, {
+              method: "POST",
+              headers: chainHeaders,
+              body: chainBody,
+              signal: AbortSignal.timeout(60000),
+            });
+            if (res.ok) return;
+            console.error(`[reverse-engineer] self-chain attempt ${attempt} HTTP ${res.status}`);
+          } catch (err: any) {
+            console.error(`[reverse-engineer] self-chain attempt ${attempt} error:`, err.message);
+          }
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+        }
+        // All retries exhausted — mark error in DB, preserving accumulated stage data
+        console.error("[reverse-engineer] self-chain failed after 3 retries");
+        try {
+          const { data: current } = await sb.from("narrative_units").select("payload_json").eq("id", jobId).single();
+          if (current?.payload_json && typeof current.payload_json === "object") {
+            current.payload_json.status = "error";
+            current.payload_json.error = "self-chain retries exhausted";
+            current.payload_json.is_processing = false;
+            current.payload_json.updated_at = new Date().toISOString();
+            await sb.from("narrative_units").update({ payload_json: current.payload_json }).eq("id", jobId);
+          } else {
+            // Fallback if payload is missing or unexpected type
+            await sb.from("narrative_units").update({
+              payload_json: { status: "error", error: "self-chain retries exhausted", is_processing: false, updated_at: new Date().toISOString() },
+            }).eq("id", jobId);
+          }
+        } catch {
+          // Last-resort fallback
+          await sb.from("narrative_units").update({
+            payload_json: { status: "error", error: "self-chain retries exhausted", is_processing: false, updated_at: new Date().toISOString() },
+          }).eq("id", jobId);
+        }
+      })();
+
+      waitUntilSafe(selfChain);
     }
   }
 }
