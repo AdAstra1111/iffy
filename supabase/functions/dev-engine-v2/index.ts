@@ -1561,6 +1561,17 @@ GP = production usefulness, communicability, alignment, and readiness of the vis
 Do NOT evaluate: logline, premise, narrative themes, dramatic structure, dialogue, screenplay formatting, or scene construction. These are irrelevant to a VPB.
 A strong VPB with specific, coherent visual systems across all 8 domains should score CI:80+ GP:75+.
 Missing, vague, contradictory, or underdeveloped coverage in any domain is a blocker.`,
+  treatment: `Evaluate as a TREATMENT — a narrative prose document that tells the story in act-by-act summary form, NOT a screenplay.
+
+A treatment is a narrative prose document that tells the story from beginning to end in act-by-act form. It is evaluated as narrative prose, not as a script or screenplay.
+
+KEY RULES:
+- Evaluate story arc, act progression, character motivation clarity, thematic coherence, tonal consistency, and narrative momentum.
+- Act 2 bisection into Act 2a (rising action to midpoint) and Act 2b (midpoint to climax) is a VALID and COMMON convention in feature film treatments. Do NOT flag "too many acts" or "act structure confusion" based on Act 2a/Act 2b labels.
+- Do NOT evaluate dialogue craft, scene dynamics, screenplay formatting (INT./EXT. sluglines, character cues, dialogue blocks), or shot-by-shot construction.
+- For feature film format: expect 3 acts (with optional Act 2a/Act 2b bisection), 90-110 minute implied runtime, midpoint reversal, escalating stakes.
+- A treatment that tells a complete, coherent narrative with clear character arcs and structural momentum should score CI:75+ GP:70+.
+- Gaps in scene-level detail are NOT blockers in a treatment — those belong in the beat sheet or outline.`,
 };
 
 const BEHAVIOR_MODIFIERS: Record<string, string> = {
@@ -1596,7 +1607,7 @@ function resolveFormatAlias(format: string): string {
 }
 
 const FORMAT_EXPECTATIONS: Record<string, string> = {
-  "film": `FORMAT: Feature Film — expect 3-act structure, 90-110 minute runtime, midpoint reversal, escalating stakes.`,
+  "film": `FORMAT: Feature Film — expect 3-act structure (Act 2 may be bisected into Act 2a and Act 2b as a valid convention), 90-110 minute runtime, midpoint reversal, escalating stakes.`,
   "feature": `FORMAT: Feature Film — expect 3-act structure, 90-110 minute runtime, midpoint reversal, escalating stakes.`,
   "tv-series": `FORMAT: TV Series — evaluate pilot structure, series engine sustainability, episode-to-episode hooks.`,
   "limited-series": `FORMAT: Limited Series — evaluate closed narrative arc, episode pacing, thematic unity across episodes.`,
@@ -1859,7 +1870,8 @@ RULES FOR NOTE GENERATION:
 - If high_impact_notes <= 3 AND polish_notes <= 5 AND blockers == 0, set convergence.status to "converged".
 - CONVERGENCE RULE: convergence.status = "converged" if and only if blocking_issues with apply_timing="now" is empty.
 
-${deliverable === "character_bible" ? CHARACTER_BIBLE_DEPTH_EVAL_BLOCK : ""}`;
+${deliverable === "character_bible" ? CHARACTER_BIBLE_DEPTH_EVAL_BLOCK : ""}
+${deliverable === "treatment" && format === "film" ? `ACT BISECTION AWARENESS: Feature film treatments commonly bisect Act 2 into Act 2a (rising action to midpoint) and Act 2b (midpoint to climax). Do NOT generate notes, blockers, or flags about "too many acts" or "act structure confusion" when Act 2a/Act 2b labels are present. The 3-act structure with an Act 2 bisection is a standard, valid convention. Likewise, do NOT flag Act 2a/Act 2b as missing an act — Act 2a and Act 2b together constitute a single Act 2.` : ""}`;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -6860,7 +6872,7 @@ GENERAL RULES:
 - Sort within each tier by structural importance.
 - Do NOT re-raise previously resolved issues as blockers.
 - If an existing note_key persists, use the same key — do NOT rephrase under a new key.
-- ACT BISECTION AWARENESS: Act 2A + Act 2B within a 3-act film structure is a MIDPOINT SPLIT, NOT a fourth act. Do NOT flag 2A/2B as "too many acts" or "act structure confusion." This is a standard structural choice for feature films where the midpoint divides Act 2. Do NOT suggest collapsing 2A and 2B into a single Act 2 — that is a distinct creative choice, not a structural error. Genuine 4-act projects (e.g. limited series arcs, non-standard formats) should remain unaffected; the rule is specifically about not misreading bisection as a 4th act.${antiRepeatRule}
+${deliverableType === "treatment" && notesEffectiveFormat === "film" ? `|- ACT BISECTION AWARENESS: Act 2A + Act 2B within a 3-act film structure is a MIDPOINT SPLIT, NOT a fourth act. Do NOT flag 2A/2B as "too many acts" or "act structure confusion." This is a standard structural choice for feature films where the midpoint divides Act 2. Do NOT suggest collapsing 2A and 2B into a single Act 2 — that is a distinct creative choice, not a structural error. Genuine 4-act projects (e.g. limited series arcs, non-standard formats) should remain unaffected; the rule is specifically about not misreading bisection as a 4th act.${antiRepeatRule}` : ""}
 
 ${(() => {
   const docTypeNoteScopes: Record<string, string> = {
@@ -7663,8 +7675,9 @@ RULES:
 - global_directions: 1-3 overarching tonal/strategic directions.
 - Keep options genuinely distinct — not minor variations of the same fix.
 - EVERY blocker in the input MUST appear as a decision with severity="blocker".
-- NEVER generate decisions about document destination, routing, or storage. Do NOT ask "Which document should receive..." — export/packaging flows produce artifacts, they don't overwrite source documents.
-- NEVER offer options like "Create new Pitch Deck" or "Store in Concept Brief" — these are document-routing questions that don't belong in creative decisions.`;
+|- NEVER generate decisions about document destination, routing, or storage. Do NOT ask "Which document should receive..." — export/packaging flows produce artifacts, they don't overwrite source documents.
+|- NEVER offer options like "Create new Pitch Deck" or "Store in Concept Brief" — these are document-routing questions that don't belong in creative decisions.
+|- FALSE POSITIVE FILTER: If a blocker's description or why_it_matters mentions "Act 2a", "Act 2b", "2a/2b", "act structure confusion", or "too many acts" in the context of a feature film treatment — SKIP this blocker entirely. Do NOT generate decisions for it. Act 2 bisection into Act 2a and Act 2b is a valid and common convention in feature film treatments. These are false positives, not real blockers.`;
 
       const notesForPrompt = [
         ...blockers.map((n: any, i: number) => ({ index: i + 1, id: n.id, severity: "blocker", description: n.description, why_it_matters: n.why_it_matters })),
@@ -8158,7 +8171,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
           console.log(`[dev-engine-v2] rewrite: per-character mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
 
           // Step 1: Parse character bible into per-character sections
-          const sections = parseCharacterBibleSections(fullText);
+          sections = parseCharacterBibleSections(fullText);
 
           if (sections.length > 0) {
             isPerCharRewrite = true;
@@ -8244,10 +8257,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
             //   any + unaffected → preserve body exactly
             const assembledSections: string[] = [];
             let charLoopIndex = 0;
-            let updatedCount = 0;
-            let nonCharacterCount = 0;
             let sectionsCompleted = 0;
-            const updatedNames: string[] = [];
 
             for (const section of sections) {
               if (section.sectionType !== 'character') {
