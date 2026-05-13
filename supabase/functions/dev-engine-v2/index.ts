@@ -29843,6 +29843,7 @@ CRITICAL:
             characters: ver?.characters || [],
           };
         });
+<<<<<<< Updated upstream
 } else {
         // Fallback: split from plaintext — but strategy depends on doc_type
         // For sectioned dev types (treatment, story_outline, etc.), use ## headers.
@@ -29885,7 +29886,7 @@ CRITICAL:
           }
         }
 
-        scenes = boundaries.map((b, i) => {
+scenes = boundaries.map((b, i) => {
           const start = b.index;
           const end = boundaries[i + 1]?.index ?? text.length;
           const sceneText = text.substring(start, end).trim();
