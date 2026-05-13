@@ -9761,7 +9761,6 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 
       // ── SAFETY NET: if rewrite produced no content, fall back to original text ──
       if (!rewrittenChunk || rewrittenChunk.trim().length < 20) {
-        console.warn(`[dev-engine-v2][rewrite-chunk] safety_net_fallback chunk=${chunkIndex + 1} label="${(chunkMeta as any)?.label || 'unknown'}" rewritten_chars=${(rewrittenChunk || '').trim().length} source_chars=${chunkText.length} skipAiCall=${skipAiCall} has_notes=${(plan.approved_notes || []).length > 0} strategy=${strategy}`);
         rewrittenChunk = chunkText;
       }
 
