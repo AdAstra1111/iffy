@@ -12,6 +12,7 @@ import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
 import { SceneRewritePanel } from '@/components/devengine/SceneRewritePanel';
 import {Kh as MomentRewritePanel} from '@/components/devengine/MomentRewritePanel';
+import {Kh as TreatmentRewritePanel} from '@/components/devengine/TreatmentRewritePanel';
 import BeatRewritePanel from '@/components/devengine/BeatRewritePanel';
 import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
 import { DocSetManager } from '@/components/notes/DocSetManager';
@@ -2463,6 +2464,20 @@ export default function ProjectDevelopmentEngine() {
                         postOperationVersionId.current = newVersionId;
                         setSelectedVersionId(newVersionId);
                         sceneRewrite.reset();
+                      }}
+                    />
+                  )}
+                  {/* Treatment rewrite panel — persistent per-act editing for Treatment/Long Treatment docs */}
+                  {isTreatmentDocType(selectedDoc?.doc_type) && selectedDocId && selectedVersionId && (
+                    <TreatmentRewritePanel
+                      projectId={projectId!}
+                      documentId={selectedDocId}
+                      versionId={selectedVersionId}
+                      approvedNotes={allPrioritizedMoves.filter((_, i) => selectedNotes.has(i))}
+                      protectItems={protectItems}
+                      onComplete={(newVersionId) => {
+                        postOperationVersionId.current = newVersionId;
+                        setSelectedVersionId(newVersionId);
                       }}
                     />
                   )}

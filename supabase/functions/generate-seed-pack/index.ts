@@ -9,6 +9,12 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type, prefer, accept, origin, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+interface ContextDocument {
+  doc_type: string;
+  title: string;
+  plaintext: string;
+}
+
 interface SeedPackPayload {
   projectId: string;
   pitch: string;
@@ -17,6 +23,7 @@ interface SeedPackPayload {
   riskOverride?: "robust" | "edge" | "provocative" | null;
   commitOnly?: boolean;
   necOverride?: string | null;
+  contextDocuments?: ContextDocument[];
 }
 
 const SEED_DOC_CONFIGS = [
@@ -242,7 +249,7 @@ serve(async (req) => {
     // Ping support
     if ((body as any).action === "ping") return jsonRes({ ok: true, function: "generate-seed-pack" });
 
-    const { projectId, pitch, lane, targetPlatform, riskOverride, commitOnly, necOverride } = body as SeedPackPayload;
+    const { projectId, pitch, lane, targetPlatform, riskOverride, commitOnly, necOverride, contextDocuments } = body as SeedPackPayload;
 
     if (!projectId || !pitch || !lane) {
       return jsonRes({ success: false, insertedCount: 0, updatedCount: 0, error: "projectId, pitch, and lane are required" }, 400);
@@ -366,6 +373,15 @@ serve(async (req) => {
       riskOverride ?? null,
     );
 
+    let contextBlock = '';
+    if (contextDocuments && contextDocuments.length > 0) {
+      contextBlock = '\n\nREVERSE-ENGINEERED FOUNDATION DOCUMENTS:\n' +
+        contextDocuments.map((d: ContextDocument) =>
+          `\n=== ${d.title} (${d.doc_type}) ===\n${d.plaintext.slice(0, 3000)}`
+        ).join('\n') +
+        '\n\nThese documents were extracted from the full script. The NEC must account for ALL tension sources present in these documents, not just the pitch.';
+    }
+
     const userPrompt = `PROJECT: ${project.title}
 FORMAT: ${project.format || "unknown"}
 GENRES: ${(project.genres || []).join(", ") || "unspecified"}
@@ -378,6 +394,7 @@ RISK OVERRIDE: ${riskOverride || "auto"}
 
 PITCH:
 ${pitch}
+${contextBlock}
 
 Generate the full Pitch Architecture analysis and seed pack now. Return ONLY valid JSON.`;
 
@@ -569,6 +586,42 @@ Preserve the concept. Return the same JSON schema with structural elements stren
       seed_snapshot_id: seedSnapshotId,
       generated_at: generatedAt,
     };
+
+    // ── Ensure blackmail is always a permitted tension source ──
+    // Blackmail is a fundamental plot device that must never be
+    // auto-flagged as a constraint violation. Ensure it appears in
+    // both permitted_elements (display prefix) AND the narrative_energy_contract's
+    // Tension Source Matrix section (parsed by guardrail regexes in
+    // narrativeContextResolver.ts and dev-engine-v2/index.ts).
+
+    // 1. Guarantee permitted_elements has blackmail
+    if (typeof parsed.permitted_elements !== "string" || !parsed.permitted_elements.toLowerCase().includes("blackmail")) {
+      const blackmailEntry = "✓ Blackmail — universally permitted conflict driver for prestige drama, psychological stakes, and character entanglement.";
+      if (typeof parsed.permitted_elements === "string" && parsed.permitted_elements.trim().length > 0) {
+        parsed.permitted_elements += "\n" + blackmailEntry;
+      } else {
+        parsed.permitted_elements = blackmailEntry;
+      }
+    }
+
+    // 2. Inject blackmail into the narrative_energy_contract's Tension Source Matrix
+    //    section so parseTensionSources() and dev-engine-v2's guardrail regex find it.
+    {
+      const tsmHeaderRe = /(tension(?:\s+source(?:\s+matrix)?)[;:?\s]*)/i;
+      const tsmMatch = parsed.narrative_energy_contract.match(tsmHeaderRe);
+      if (tsmMatch) {
+        const afterHeader = parsed.narrative_energy_contract.slice(tsmMatch.index! + tsmMatch[0].length).slice(0, 200);
+        if (!/blackmail/i.test(afterHeader)) {
+          const insertAt = tsmMatch.index! + tsmMatch[0].length;
+          parsed.narrative_energy_contract =
+            parsed.narrative_energy_contract.slice(0, insertAt) +
+            "Blackmail, " +
+            parsed.narrative_energy_contract.slice(insertAt);
+        }
+      } else {
+        parsed.narrative_energy_contract += "\n\nTension Source Matrix: Blackmail";
+      }
+    }
 
     // Build content map for document creation
     // Prepend permitted_elements to the NEC plaintext for stored doc

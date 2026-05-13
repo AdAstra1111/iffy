@@ -1135,20 +1135,123 @@ ${charScript}
 
 Respond with ONLY JSON.`, 14000);
 
-      // ── Name-based dedup: remove exact duplicate characters before alias check ──
+      // ── 4-tier fuzzy dedup: remove near-duplicate characters before alias check ──
+      // Tier 1: exact case-insensitive match
+      // Tier 2: normalized match (strip honorifics + non-alpha)
+      // Tier 3: Levenshtein ≤ 2 for names ≥ 4 chars
+      // Tier 4: word overlap ≥ 0.6 (Jaccard)
+      function levenshteinDistance(a: string, b: string): number {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        const matrix: number[][] = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+          for (let j = 1; j <= a.length; j++) {
+            const cost = b.charAt(i - 1) === a.charAt(j - 1) ? 0 : 1;
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j - 1] + cost,
+            );
+          }
+        }
+        return matrix[b.length][a.length];
+      }
+
+      function normalizeForFuzzy(name: string): string {
+        const honorifics = /\b(dr|mr|mrs|ms|prof|capt|sgt|lt|col|gen|adm|rev|fr|sr|jr|esq|hon|maj|cpt|drs|mx)\b/gi;
+        return name
+          .toLowerCase()
+          .replace(honorifics, '')
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+
       function dedupCharacterBibleNames(call3: any): void {
         const characters = call3?.characters;
         if (!Array.isArray(characters) || characters.length <= 1) return;
         const seen = new Set<string>();
-        const deduped = characters.filter((c: any) => {
-          const key = (c.name || "").toLowerCase().trim();
-          if (!key || seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-        if (deduped.length < characters.length) {
-          console.log(`[reverse-engineer] Name-based dedup: removed ${characters.length - deduped.length} exact duplicate(s) from character list`);
-          call3.characters = deduped;
+        const normalizedSeen = new Set<string>();
+        const keptChars: any[] = [];
+        let tier1 = 0, tier2 = 0, tier3 = 0, tier4 = 0;
+        for (const c of characters) {
+          const name = (c.name || '').trim();
+          if (!name) continue;
+          const lower = name.toLowerCase();
+          // Tier 1: exact case-insensitive
+          if (seen.has(lower)) {
+            tier1++;
+            continue;
+          }
+          seen.add(lower);
+          // Tier 2: normalized match (strip honorifics + non-alpha)
+          try {
+            const normalized = normalizeForFuzzy(name);
+            if (normalized && normalizedSeen.has(normalized)) {
+              tier2++;
+              continue;
+            }
+            if (normalized) normalizedSeen.add(normalized);
+          } catch (e) {
+            console.warn(`[reverse-engineer] Fuzzy dedup Tier 2 error: ${e}`);
+          }
+          // Tier 3: Levenshtein ≤ 2 for names ≥ 4 chars
+          if (name.length >= 4) {
+            try {
+              let isLevenshteinDup = false;
+              for (const kept of keptChars) {
+                const keptName = (kept.name || '').trim();
+                if (keptName.length >= 4) {
+                  const dist = levenshteinDistance(lower, keptName.toLowerCase());
+                  if (dist <= 2) {
+                    isLevenshteinDup = true;
+                    break;
+                  }
+                }
+              }
+              if (isLevenshteinDup) {
+                tier3++;
+                continue;
+              }
+            } catch (e) {
+              console.warn(`[reverse-engineer] Fuzzy dedup Tier 3 error: ${e}`);
+            }
+          }
+          // Tier 4: word overlap ≥ 0.6 (Jaccard)
+          try {
+            let isOverlapDup = false;
+            const nameWords = lower.split(/\s+/).filter(Boolean);
+            const nameWordSet = new Set(nameWords);
+            for (const kept of keptChars) {
+              const keptWords = (kept.name || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+              const keptWordSet = new Set(keptWords);
+              if (nameWordSet.size === 0 || keptWordSet.size === 0) continue;
+              let intersection = 0;
+              for (const w of nameWordSet) {
+                if (keptWordSet.has(w)) intersection++;
+              }
+              const union = nameWordSet.size + keptWordSet.size - intersection;
+              const overlap = union > 0 ? intersection / union : 0;
+              if (overlap >= 0.6) {
+                isOverlapDup = true;
+                break;
+              }
+            }
+            if (isOverlapDup) {
+              tier4++;
+              continue;
+            }
+          } catch (e) {
+            console.warn(`[reverse-engineer] Fuzzy dedup Tier 4 error: ${e}`);
+          }
+          keptChars.push(c);
+        }
+        const removed = characters.length - keptChars.length;
+        if (removed > 0) {
+          console.log(`[reverse-engineer] Fuzzy dedup: removed ${removed} duplicate(s) from ${characters.length} characters (Tier1: ${tier1}, Tier2: ${tier2}, Tier3: ${tier3}, Tier4: ${tier4})`);
+          call3.characters = keptChars;
         }
       }
 

@@ -1526,7 +1526,37 @@ async function ensureSeedPack(
   console.log("[auto-run] calling generate-seed-pack", { projectId, lane });
 
   // Retry loop: attempt generate-seed-pack up to 2 times on partial failure
-  let seedRes: Response | null = null;
+    // Fetch foundation docs (beat_sheet, treatment, character_bible, story_outline)
+    // to provide context to generate-seed-pack so the NEC accounts for all script themes
+    let contextDocuments: { doc_type: string; title: string; plaintext: string }[] | undefined;
+    try {
+      const { data: foundationDocs } = await supabase
+        .from("project_documents")
+        .select("id, doc_type")
+        .eq("project_id", projectId)
+        .in("doc_type", ["beat_sheet", "treatment", "character_bible", "story_outline"]);
+
+      if (foundationDocs && foundationDocs.length > 0) {
+        const ctxDocIds = foundationDocs.map((d: any) => d.id);
+        const { data: ctxVersions } = await supabase
+          .from("project_document_versions")
+          .select("document_id, plaintext")
+          .in("document_id", ctxDocIds)
+          .eq("is_current", true);
+
+        contextDocuments = foundationDocs.map((d: any) => {
+          const ver = (ctxVersions || []).find((v: any) => v.document_id === d.id);
+          return ver
+            ? { doc_type: d.doc_type, title: d.doc_type.replace(/_/g, " "), plaintext: ver.plaintext }
+            : null;
+        }).filter(Boolean) as { doc_type: string; title: string; plaintext: string }[];
+      }
+    } catch {
+      // Foundation doc fetch is best-effort — fall back to pitch-only
+      contextDocuments = undefined;
+    }
+
+    let seedRes: Response | null = null;
   let raw = "";
   let seedResult: any = null;
   let seed_http_status = 0;
@@ -1544,7 +1574,7 @@ async function ensureSeedPack(
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined }),
+        body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined, contextDocuments }),
       });
 
       raw = await seedRes.text();

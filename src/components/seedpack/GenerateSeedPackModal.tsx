@@ -190,6 +190,36 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
     setDocProgress(Object.fromEntries(SEED_DOC_ROWS.map(d => [d.key, 'pending'])) as Record<DocRowKey, DocProgress>);
 
     try {
+      // Fetch foundation docs (beat_sheet, treatment, character_bible, story_outline)
+      // to provide context to generate-seed-pack so the NEC accounts for all script themes
+      let contextDocuments: { doc_type: string; title: string; plaintext: string }[] | undefined;
+      try {
+        const { data: foundationDocs } = await supabase
+          .from('project_documents')
+          .select('id, doc_type')
+          .eq('project_id', projectId)
+          .in('doc_type', ['beat_sheet', 'treatment', 'character_bible', 'story_outline']);
+
+        if (foundationDocs && foundationDocs.length > 0) {
+          const docIds = foundationDocs.map((d: { id: string }) => d.id);
+          const { data: versions } = await supabase
+            .from('project_document_versions')
+            .select('document_id, plaintext')
+            .in('document_id', docIds)
+            .eq('is_current', true);
+
+          contextDocuments = foundationDocs.map((d: { id: string; doc_type: string }) => {
+            const ver = (versions || []).find((v: { document_id: string }) => v.document_id === d.id);
+            return ver
+              ? { doc_type: d.doc_type, title: d.doc_type.replace(/_/g, ' '), plaintext: ver.plaintext }
+              : null;
+          }).filter(Boolean) as { doc_type: string; title: string; plaintext: string }[];
+        }
+      } catch {
+        // Foundation doc fetch is best-effort — fall back to pitch-only if it fails
+        contextDocuments = undefined;
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-seed-pack', {
         body: {
           projectId,
@@ -197,6 +227,7 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
           lane,
           targetPlatform: targetPlatform.trim() || null,
           riskOverride: riskPosture === 'auto' ? null : riskPosture,
+          contextDocuments,
         },
       });
 
