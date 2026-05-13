@@ -9478,6 +9478,32 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         console.warn(`[dev-engine-v2] rewrite-plan: context pack resolution failed (proceeding without):`, ctxErr?.message || ctxErr);
       }
 
+      // ── STALE NOTE FILTER: auto-resolve notes whose content no longer exists in the doc ──
+      let freshNotes = approvedNotes || [];
+      if (Array.isArray(approvedNotes) && approvedNotes.length > 0 && fullText.trim().length > 100) {
+        const STALE_STOP = new Set(["the","and","for","with","not","but","are","was","had","has","its","all","can","you","out","did","get","got","say","see","way","new","now","how","why","use","own","our","two","may","set","put","end","let","try","ask","too","any","old","off","per","big","far","yet","add","run","won","buy","cut","hit","fix","via","ago","lot","bad","top","low","due","per","non","nor","key","per","via","red","hot","ago","lot","bad","top","low","due","non","nor","key"]);
+        const staleIds: string[] = [];
+        const kept: any[] = [];
+        const fullTextLower = fullText.toLowerCase();
+        for (const note of approvedNotes) {
+          if (note.category === "user_direction" || note.category === "direction") { kept.push(note); continue; }
+          const rawText = [note.note, note.title, note.summary, note.note_key, note.resolution_directive, note.description, ...(Array.isArray(note.selectedOptions) ? note.selectedOptions : [])].filter(Boolean).join(" ").toLowerCase();
+          const terms = [...new Set(rawText.replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter((w: string) => w.length > 2 && !STALE_STOP.has(w)))];
+          if (terms.length === 0) { kept.push(note); continue; }
+          terms.some((t: string) => fullTextLower.includes(t)) ? kept.push(note) : note.id && typeof note.id === "string" && note.id.length > 10 && staleIds.push(note.id);
+        }
+        if (staleIds.length > 0) {
+          try {
+            await supabase.from("project_notes").update({ status: "resolved", resolved_by: "auto_stale_detection", resolved_at: new Date().toISOString() }).in("id", staleIds);
+            console.log(`[dev-engine-v2] stale_note: auto-resolved ${staleIds.length} notes: ${staleIds.join(",")}`);
+          } catch (e: any) { console.warn(`[dev-engine-v2] stale_note: resolve failed (non-fatal):`, e.message); }
+        }
+        freshNotes = kept;
+        if (staleIds.length > 0 || kept.length !== approvedNotes.length) {
+          console.log(`[dev-engine-v2] stale_note: ${approvedNotes.length} in → ${kept.length} kept, ${staleIds.length} stale`);
+        }
+      }
+
       const { data: planRun } = await supabase.from("development_runs").insert({
         project_id: projectId,
         document_id: documentId,
@@ -9488,7 +9514,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           total_chunks: chunkTexts.length,
           chunk_char_counts: chunkTexts.map(c => c.length),
           original_char_count: fullText.length,
-          approved_notes: approvedNotes || [],
+          approved_notes: freshNotes,
           protect_items: protectItems || [],
           chunk_texts: chunkTexts,
           doc_type: sourceDocType,
