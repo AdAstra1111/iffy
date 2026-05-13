@@ -1123,8 +1123,8 @@ Return ONLY valid JSON:
       "casting_suggestions": ["string"]
     }
   ],
-  "relationship_dynamics": "string",
-  "ensemble_notes": "string"
+  "relationship_dynamics": "string — structured per-pair blocks. Each pair: DEFAULT MODE, A NEEDS FROM B, B NEEDS FROM A, POWER LEVERAGE (A leverage ↔ B leverage), FRICTION AXIS, BREAK CONDITION, RECOVERY PATTERN, SCENE TYPES GENERATED [free text] (category), ARC TURNING POINT [place, Act]",
+  "ensemble_notes": "string — structured blocks: GROUP DEFAULT, FACTION MAP, FRACTURE POINT, RECOVERY PATTERN, GLUE CHARACTER, FRICTION PAIR, TONAL BALANCE (character role), ENSEMBLE SCENE STRUCTURE"
 }
 
 PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (covers all characters from all script chunks):

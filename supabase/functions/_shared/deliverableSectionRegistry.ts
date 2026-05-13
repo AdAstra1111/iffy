@@ -98,6 +98,7 @@ const CHARACTER_BIBLE_SECTIONS: SectionDefinition[] = [
   { section_key: "supporting_cast", label: "Supporting Cast", match_mode: "heading_regex", match_pattern: "^#+\\s*supporting\\s*cast|^#+\\s*supporting\\s*characters|^#+\\s*character\\s*group[:\\s]+supporting", allows_partial_rewrite: true, repair_mode: "replace_section", order: 2 },
   { section_key: "relationships", label: "Relationships & Dynamics", match_mode: "heading_regex", match_pattern: "^#+\\s*relationships|^#+\\s*dynamics|^#+\\s*relationships\\s*(&|and)\\s*dynamics", allows_partial_rewrite: true, repair_mode: "replace_section", order: 3 },
   { section_key: "character_arcs", label: "Character Arcs", match_mode: "heading_regex", match_pattern: "^#+\\s*character\\s*arcs?|^#+\\s*arcs?", allows_partial_rewrite: true, repair_mode: "replace_section", order: 4 },
+  { section_key: "ensemble_notes", label: "Ensemble Notes", match_mode: "heading_regex", match_pattern: "^#+\\s*ensemble\\s*notes", allows_partial_rewrite: true, repair_mode: "replace_section", order: 5 },
 ];
 
 const SEASON_ARC_SECTIONS: SectionDefinition[] = [

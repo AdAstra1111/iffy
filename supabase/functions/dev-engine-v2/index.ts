@@ -8733,10 +8733,15 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this section: "${section.name}".
 - Apply ONLY the approved notes that reference ${section.sectionType === 'relationship_dynamics' ? 'relationship dynamics' : 'ensemble dynamics'}.
 - Preserve the section header exactly as provided.
-- Output the FULL rewritten section in natural prose.
-- If no notes apply to this section, return the original text verbatim unchanged.
+- Output STRUCTURED FIELD FORMAT, not natural prose. Each field on its own line with the field name in CAPS followed by colon.
+${section.sectionType === 'relationship_dynamics'
+  ? '- Fields: DEFAULT MODE, A NEEDS FROM B, B NEEDS FROM A, POWER LEVERAGE (format: A leverage ↔ B leverage), FRICTION AXIS, BREAK CONDITION, RECOVERY PATTERN, SCENE TYPES GENERATED [free text] (category), ARC TURNING POINT [place, Act]'
+  : '- Fields: GROUP DEFAULT, FACTION MAP, FRACTURE POINT, RECOVERY PATTERN, GLUE CHARACTER, FRICTION PAIR, TONAL BALANCE (character role), ENSEMBLE SCENE STRUCTURE'}
+- Each RELATIONSHIP block covers ONE named pair. Use "Character A ↔ Character B" as the block heading inside the section.
+- Base your analysis on the script evidence in the ORIGINAL CONTENT above.
+- If no notes apply to this section, return the ORIGINAL CONTENT unchanged.
 - Do NOT output any other sections. Do NOT output the full bible.
-- Return valid JSON with "rewritten_text" containing ONLY this section's content.`;
+- Return valid JSON with "rewritten_text" containing ONLY this section's structured content.`;
 
                   try {
                     let rawSection = await perCharLLM(perCharSystemBase, nonCharUserPrompt);
