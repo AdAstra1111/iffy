@@ -1799,6 +1799,52 @@ function resolveFormatAlias(format: string): string {
   return FORMAT_ALIASES[lower] || FORMAT_ALIASES[format] || format;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// FALSE POSITIVE BLOCKER FILTER — hard code-level post-filter
+// ═══════════════════════════════════════════════════════════════
+// The prompt-level ACT BISECTION AWARENESS guidance reduces but does not
+// eliminate LLM-generated false positives about Act 2a/Act 2b. This code-level
+// filter catches any that slip through and prevents them from persisting
+// in development_notes or being returned in the analysis/notes response.
+function filterFalsePositiveBlockers(parsed: any, deliverableType: string, format: string): any {
+  // Only apply to film treatments — the only context where Act 2 bisection
+  // (Act 2a / Act 2b) is a valid standard convention.
+  if (deliverableType !== "treatment" || format !== "film") return parsed;
+
+  const falsePositivePatterns = [
+    "act 2a",
+    "act 2b",
+    "2a/2b",
+    "act structure confusion",
+    "too many acts",
+  ];
+
+  // Handle both key names: blocking_issues (analyze output) and blockers (notes output)
+  const issues = parsed.blocking_issues || parsed.blockers || [];
+  if (!Array.isArray(issues) || issues.length === 0) return parsed;
+
+  const beforeCount = issues.length;
+
+  const filtered = issues.filter((issue: any) => {
+    if (!issue) return false;
+    const desc = (issue.description || "").toLowerCase();
+    const why = (issue.why_it_matters || "").toLowerCase();
+    return !falsePositivePatterns.some(
+      (pattern) => desc.includes(pattern) || why.includes(pattern)
+    );
+  });
+
+  const removedCount = beforeCount - filtered.length;
+  if (removedCount > 0) {
+    console.log(`[dev-engine-v2][false-positive-filter] Removed ${removedCount} false positive blocker(s) for ${deliverableType}/${format}`);
+  }
+
+  if (parsed.blocking_issues) parsed.blocking_issues = filtered;
+  if (parsed.blockers) parsed.blockers = filtered;
+
+  return parsed;
+}
+
 const FORMAT_EXPECTATIONS: Record<string, string> = {
   "film": `FORMAT: Feature Film — expect 3-act structure (Act 2 may be bisected into Act 2a and Act 2b as a valid convention), 90-110 minute runtime, midpoint reversal, escalating stakes.`,
   "feature": `FORMAT: Feature Film — expect 3-act structure, 90-110 minute runtime, midpoint reversal, escalating stakes.`,
@@ -6898,6 +6944,11 @@ ${docTextForScoring}`;
         }
       }
 
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Remove LLM-generated false positives about Act 2a/Act 2b that
+      // slipped past prompt-level guidance.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, effectiveFormat);
+
       return new Response(JSON.stringify({ run, analysis: parsed }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -7961,6 +8012,11 @@ ${(() => {
           parsed.resolution_summary.blockers_remaining = finalBlockerCount;
         }
       }
+
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Remove LLM-generated false positives about Act 2a/Act 2b that
+      // slipped past prompt-level guidance.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, notesEffectiveFormat);
 
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({
         project_id: projectId,
