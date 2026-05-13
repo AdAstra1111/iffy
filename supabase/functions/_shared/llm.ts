@@ -405,15 +405,34 @@ export async function callLLM(opts: CallLLMOptions): Promise<CallLLMResult> {
     const effectiveKey = apiKey || gateway.apiKey;
     const effectiveUrl = gateway.url;
 
-    const response = await fetch(effectiveUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${effectiveKey}`,
-        "Content-Type": "application/json",
-        ...(effectiveUrl.includes("openrouter.ai") ? { "HTTP-Referer": "https://iffy.app", "X-Title": "IFFY" } : {}),
-      },
-      body: JSON.stringify(body),
-    });
+    // AbortController with 45s timeout to prevent indefinite hang
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    let response: Response;
+    try {
+      response = await fetch(effectiveUrl, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${effectiveKey}`,
+          "Content-Type": "application/json",
+          ...(effectiveUrl.includes("openrouter.ai") ? { "HTTP-Referer": "https://iffy.app", "X-Title": "IFFY" } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      const isTimeout = fetchErr?.name === "AbortError";
+      console.error(`AI fetch error (attempt ${attempt + 1}/${retries}):`, isTimeout ? "TIMEOUT after 45s" : (fetchErr?.message || fetchErr));
+      if (attempt < retries - 1) {
+        const delay = Math.pow(2, attempt) * 3000;
+        console.log(`Retrying after ${isTimeout ? "timeout" : "connection error"} in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+        continue;
+      }
+      throw new Error(isTimeout ? "FETCH_TIMEOUT" : `AI connection failed after ${retries} attempts: ${fetchErr?.message || "unknown"}`);
+    }
+    clearTimeout(timeoutId);
 
     if (response.status === 429) throw new Error("RATE_LIMIT");
     if (response.status === 402) throw new Error("PAYMENT_REQUIRED");

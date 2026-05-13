@@ -1035,6 +1035,9 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
   const effectiveUrl = gw.url;
   const effectiveKey = gw.apiKey || apiKey;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // AbortController with 55s timeout to prevent indefinite hang (AI gen can be slower)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 55000);
     let response: Response;
     try {
       response = await fetch(effectiveUrl, {
@@ -1047,18 +1050,21 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
           max_tokens: maxTokens,
           ...(seed !== undefined ? { seed } : {}),
         }),
+        signal: controller.signal,
       });
     } catch (fetchErr: any) {
-      // Connection-level error (e.g. "error reading a body from connection")
-      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, fetchErr?.message || fetchErr);
+      clearTimeout(timeoutId);
+      const isTimeout = fetchErr?.name === "AbortError";
+      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, isTimeout ? "TIMEOUT after 55s" : (fetchErr?.message || fetchErr));
       if (attempt < MAX_RETRIES - 1) {
         const delay = Math.pow(2, attempt) * 3000;
-        console.log(`Retrying after connection error in ${delay}ms...`);
+        console.log(`Retrying after ${isTimeout ? "timeout" : "connection error"} in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
-      throw new Error(`AI connection failed after ${MAX_RETRIES} attempts: ${fetchErr?.message || "unknown"}`);
+      throw new Error(`${isTimeout ? "FETCH_TIMEOUT" : `AI connection failed after ${MAX_RETRIES} attempts`}: ${fetchErr?.message || "unknown"}`);
     }
+    clearTimeout(timeoutId);
 
     // Read body safely — connection can drop during body read
     let text: string;
