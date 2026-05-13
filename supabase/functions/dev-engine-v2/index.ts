@@ -6696,6 +6696,10 @@ ${docTextForScoring}`;
       // ── Convergence failsafe: iteration cap (character bible) ──
       const capReached = await checkDevRunIterationCap(supabase, documentId, versionId, parsed);
 
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Run BEFORE stability computations so blocker counts are accurate.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, effectiveFormat);
+
       // Blocker-based convergence override: only NOW blockers gate convergence
       const blockerCount = (parsed.blocking_issues || []).length;
       const highCount = (parsed.high_impact_notes || []).length;
@@ -6943,11 +6947,6 @@ ${docTextForScoring}`;
           }
         }
       }
-
-      // ── FALSE POSITIVE BLOCKER FILTER ──
-      // Remove LLM-generated false positives about Act 2a/Act 2b that
-      // slipped past prompt-level guidance.
-      parsed = filterFalsePositiveBlockers(parsed, deliverableType, effectiveFormat);
 
       return new Response(JSON.stringify({ run, analysis: parsed }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -7685,6 +7684,10 @@ ${(() => {
         console.warn("[dev-engine-v2] Constraint solver failed (non-fatal):", e);
       }
 
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Run BEFORE stability computations so blocker counts are accurate.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, notesEffectiveFormat);
+
       // Compute resolution summary
       const resolvedCount = existingUnresolved.filter(n => !currentNoteKeys.has(n.note_key)).length;
       const regressedCount = allTieredNotes.filter((n: any) => n.id && previouslyResolved.has(n.id)).length;
@@ -8012,11 +8015,6 @@ ${(() => {
           parsed.resolution_summary.blockers_remaining = finalBlockerCount;
         }
       }
-
-      // ── FALSE POSITIVE BLOCKER FILTER ──
-      // Remove LLM-generated false positives about Act 2a/Act 2b that
-      // slipped past prompt-level guidance.
-      parsed = filterFalsePositiveBlockers(parsed, deliverableType, notesEffectiveFormat);
 
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({
         project_id: projectId,

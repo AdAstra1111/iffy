@@ -332,6 +332,7 @@ export default function ProjectDevelopmentEngine() {
   const [softGateOpen, setSoftGateOpen] = useState(false);
   const [pendingStageAction, setPendingStageAction] = useState<(() => void) | null>(null);
   const [driftOverrideOpen, setDriftOverrideOpen] = useState(false);
+  const [isApplyingRewrite, setIsApplyingRewrite] = useState(false);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
@@ -1198,260 +1199,399 @@ export default function ProjectDevelopmentEngine() {
   }, [latestNotes, latestAnalysis]);
 
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
-    // beatSheetApprovedNotes — component-level for BeatRewritePanel render (line ~2271)
-    // handleRewrite has its own local enrichedNotes for decision directives
-    const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
-    const protectItems = latestNotes?.protect || latestAnalysis?.protect || [];
-    const textLength = (selectedVersion?.plaintext || selectedDoc?.plaintext || '').length;
+    setIsApplyingRewrite(true);
+    try {
+      // beatSheetApprovedNotes — component-level for BeatRewritePanel render (line ~2271)
+      // handleRewrite has its own local enrichedNotes for decision directives
+      const approved = allPrioritizedMoves.filter((_, i) => selectedNotes.has(i));
+      const protectItems = latestNotes?.protect || latestAnalysis?.protect || [];
+      const textLength = (selectedVersion?.plaintext || selectedDoc?.plaintext || '').length;
 
-    // Build decision directives: resolve option details from notes
-    let decisionDirectives: any[] = [];
-    if (decisions && Object.keys(decisions).length > 0) {
-      for (const [noteId, optionId] of Object.entries(decisions)) {
-        if (!optionId) continue;
+      // Build decision directives: resolve option details from notes
+      let decisionDirectives: any[] = [];
+      if (decisions && Object.keys(decisions).length > 0) {
+        for (const [noteId, optionId] of Object.entries(decisions)) {
+          if (!optionId) continue;
 
-        // Handle "Other" — user-proposed custom solution
-        if (optionId === '__other__') {
-          const customText = notesCustomDirections[noteId];
-          if (customText) {
-            // Search ALL tiers for the note, not just blockers/high
-            const allTieredNotes = [...(tieredNotes.blockers || []), ...(tieredNotes.high || []), ...(tieredNotes.polish || [])];
-            const note = allTieredNotes.find((n: any) => (n.id || n.note_key) === noteId);
-            decisionDirectives.push({
-              note_id: noteId,
-              note_description: note?.description || note?.note || '',
-              selected_option: 'User-proposed solution',
-              what_changes: [customText],
-            });
+          // Handle "Other" — user-proposed custom solution
+          if (optionId === '__other__') {
+            const customText = notesCustomDirections[noteId];
+            if (customText) {
+              // Search ALL tiers for the note, not just blockers/high
+              const allTieredNotes = [...(tieredNotes.blockers || []), ...(tieredNotes.high || []), ...(tieredNotes.polish || [])];
+              const note = allTieredNotes.find((n: any) => (n.id || n.note_key) === noteId);
+              decisionDirectives.push({
+                note_id: noteId,
+                note_description: note?.description || note?.note || '',
+                selected_option: 'User-proposed solution',
+                what_changes: [customText],
+              });
+            }
+            continue;
           }
-          continue;
-        }
 
-        // Find the note and its selected option — search all tiers
-        const allTieredNotesForDecision = [...(tieredNotes.blockers || []), ...(tieredNotes.high || []), ...(tieredNotes.polish || [])];
-        const note = allTieredNotesForDecision.find((n: any) => n.id === noteId);
-        if (note?.decisions) {
-          const option = note.decisions.find((d: any) => d.option_id === optionId);
-          if (option) {
-            decisionDirectives.push({
-              note_id: noteId,
-              note_description: note.description,
-              selected_option: option.title,
-              what_changes: option.what_changes,
-            });
+          // Find the note and its selected option — search all tiers
+          const allTieredNotesForDecision = [...(tieredNotes.blockers || []), ...(tieredNotes.high || []), ...(tieredNotes.polish || [])];
+          const note = allTieredNotesForDecision.find((n: any) => n.id === noteId);
+          if (note?.decisions) {
+            const option = note.decisions.find((d: any) => d.option_id === optionId);
+            if (option) {
+              decisionDirectives.push({
+                note_id: noteId,
+                note_description: note.description,
+                selected_option: option.title,
+                what_changes: option.what_changes,
+              });
+            }
           }
         }
       }
-    }
 
-    // Combine approved notes with decision directives
-    let enrichedNotes = approved.map((note: any) => {
-      const directive = decisionDirectives.find(d => d.note_id === note.id);
-      if (directive) {
-        return {
-          ...note,
-          resolution_directive: `Apply: "${directive.selected_option}". Changes: ${directive.what_changes.join(', ')}.`,
-        };
-      }
-      return note;
-    });
-
-    // Inject any decision directives (especially "Other" custom directions) that weren't matched
-    // to an approved/checked note — these are user-authored creative notes that must always be included
-    const matchedNoteIds = new Set(enrichedNotes.map((n: any) => n.id));
-    const unmatchedDirectives = decisionDirectives.filter(d => !matchedNoteIds.has(d.note_id));
-    for (const directive of unmatchedDirectives) {
-      enrichedNotes.push({
-        id: directive.note_id,
-        category: 'user_direction',
-        description: directive.note_description,
-        note: `USER DIRECTION: ${directive.selected_option}. ${directive.what_changes.join(', ')}`,
-        resolution_directive: `Apply: "${directive.selected_option}". Changes: ${directive.what_changes.join(', ')}.`,
-        impact: 'high',
-        severity: 'blocker',
+      // Combine approved notes with decision directives
+      let enrichedNotes = approved.map((note: any) => {
+        const directive = decisionDirectives.find(d => d.note_id === note.id);
+        if (directive) {
+          return {
+            ...note,
+            resolution_directive: `Apply: "${directive.selected_option}". Changes: ${directive.what_changes.join(', ')}.`,
+          };
+        }
+        return note;
       });
-    }
 
-
-    if (globalDirections && globalDirections.length > 0) {
-      const directionNotes = globalDirections.map((d: any) => ({
-        category: 'direction',
-        note: `GLOBAL DIRECTION: ${d.direction} — ${d.why}`,
-        impact: 'high',
-        severity: 'direction',
-      }));
-      enrichedNotes.push(...directionNotes);
-    }
-
-    // Safety fallback: if enrichedNotes is empty but allPrioritizedMoves has items,
-    // use all items directly (handles case where selectedNotes state lagged behind at click time)
-    if (enrichedNotes.length === 0 && allPrioritizedMoves.length > 0) {
-      enrichedNotes = allPrioritizedMoves.map((n: any) => ({ ...n }));
-    }
-
-    // Record decisions after rewrite
-    const afterRewrite = () => {
-      recordResolutions({
-        projectId: projectId!,
-        source: decisions && Object.keys(decisions).length > 0 ? 'dev_engine_decision' : 'dev_engine_rewrite',
-        notes: enrichedNotes.filter((n: any) => n.severity !== 'direction'),
-        selectedOptions: decisions ? Object.entries(decisions).filter(([,v]) => !!v).map(([noteId, optionId]) => ({
-          note_id: noteId, option_id: optionId, custom_direction: notesCustomDirections[noteId] || undefined,
-        })) : undefined,
-        globalDirections: globalDirections,
-        currentDocTypeKey: selectedDeliverableType,
-      }).catch(e => console.warn('[decisions] record failed:', e));
-    };
-
-    // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
-    // NOTE: beat_sheet Apply All is handled exclusively by BeatRewritePanel's own "Apply All" button — skip sectioned rewrite
-    if (selectedDoc?.doc_type === 'beat_sheet') {
-      // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
-      return;
-    }
-    // Treatment docs: route to per-act pipeline via direct supabase invoke instead of chunked pipeline
-    // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
-    // Notes/decisions enrichment is already done above — enrichedNotes contains all context
-    if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
-      setTreatmentRewritePending(true);
-      const vid = selectedVersionId;
-      const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
-      
-      try {
-        const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-          body: {
-            action: taAction,
-            projectId,
-            documentId: selectedDocId,
-            versionId: vid,
-            approvedNotes: enrichedNotes,
-            protectItems,
-          },
+      // Inject any decision directives (especially "Other" custom directions) that weren't matched
+      // to an approved/checked note — these are user-authored creative notes that must always be included
+      const matchedNoteIds = new Set(enrichedNotes.map((n: any) => n.id));
+      const unmatchedDirectives = decisionDirectives.filter(d => !matchedNoteIds.has(d.note_id));
+      for (const directive of unmatchedDirectives) {
+        enrichedNotes.push({
+          id: directive.note_id,
+          category: 'user_direction',
+          description: directive.note_description,
+          note: `USER DIRECTION: ${directive.selected_option}. ${directive.what_changes.join(', ')}`,
+          resolution_directive: `Apply: "${directive.selected_option}". Changes: ${directive.what_changes.join(', ')}.`,
+          impact: 'high',
+          severity: 'blocker',
         });
-        if (invokeError) throw invokeError;
-        if (result?.success) {
-          toast.success('Treatment rewritten — per-act pipeline completed');
-          afterRewrite();
-          qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-        }
-      } catch (err: any) {
-        console.error('[treatment] per-act rewrite failed:', err);
-        toast.error('Per-act rewrite failed: ' + (err?.message || 'Unknown error'));
-        // Fallback to chunked pipeline if per-act fails
-        toast.info('Falling back to sectioned rewrite...');
-        const provenance = {
-          rewriteModeSelected: 'auto',
-          rewriteModeEffective: 'chunk',
-          rewriteModeReason: 'per_act_failed_fallback',
-          rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
-          rewriteProbe: null,
-        };
-        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
-        afterRewrite();
-      } finally {
-        setTreatmentRewritePending(false);
       }
-      return;
-    }
-    // Concept Brief: route to surgical per-section pipeline via direct invoke instead of chunked pipeline
-    // Hits sectionedRewriteTypes handler at dev-engine-v2:10052 which has dedup + per-section surgical matching
-    if (selectedDoc?.doc_type === 'concept_brief' && selectedDocId && selectedVersionId) {
-      try {
-        const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-          body: {
-            action: 'concept_brief',
-            projectId,
-            documentId: selectedDocId,
-            versionId: selectedVersionId,
-            approvedNotes: enrichedNotes,
-            protectItems,
-          },
-        });
-        if (invokeError) throw invokeError;
-        if (result?.success) {
-          toast.success('Concept brief rewritten — per-section pipeline completed');
-          afterRewrite();
-          qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
-        }
-      } catch (err: any) {
-        console.error('[concept_brief] per-section rewrite failed:', err);
-        toast.error('Per-section rewrite failed: ' + (err?.message || 'Unknown error'));
-        // Fallback to chunked pipeline
-        toast.info('Falling back to sectioned rewrite...');
-        const provenance = {
-          rewriteModeSelected: 'auto',
-          rewriteModeEffective: 'chunk',
-          rewriteModeReason: 'per_section_failed_fallback',
-          rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
-          rewriteProbe: null,
-        };
-        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
-        afterRewrite();
+
+
+      if (globalDirections && globalDirections.length > 0) {
+        const directionNotes = globalDirections.map((d: any) => ({
+          category: 'direction',
+          note: `GLOBAL DIRECTION: ${d.direction} — ${d.why}`,
+          impact: 'high',
+          severity: 'direction',
+        }));
+        enrichedNotes.push(...directionNotes);
       }
-      return;
-    }
-    // Sectioned rewrite for character_bible, concept_brief, etc. — uses rewrite pipeline with progress UI
-    // (story_outline is handled above via momentPipeline)
-    if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
-      const provenance = {
-        rewriteModeSelected: 'auto',
-        rewriteModeEffective: 'chunk',
-        rewriteModeReason: 'sectioned_doc_type_act_by_act',
-        rewriteModeDebug: {
-          docType: selectedDoc.doc_type,
-          decision_timestamp: new Date().toISOString(),
-        },
-        rewriteProbe: null,
+
+      // Safety fallback: if enrichedNotes is empty but allPrioritizedMoves has items,
+      // use all items directly (handles case where selectedNotes state lagged behind at click time)
+      if (enrichedNotes.length === 0 && allPrioritizedMoves.length > 0) {
+        enrichedNotes = allPrioritizedMoves.map((n: any) => ({ ...n }));
+      }
+
+      // Record decisions after rewrite
+      const afterRewrite = () => {
+        recordResolutions({
+          projectId: projectId!,
+          source: decisions && Object.keys(decisions).length > 0 ? 'dev_engine_decision' : 'dev_engine_rewrite',
+          notes: enrichedNotes.filter((n: any) => n.severity !== 'direction'),
+          selectedOptions: decisions ? Object.entries(decisions).filter(([,v]) => !!v).map(([noteId, optionId]) => ({
+            note_id: noteId, option_id: optionId, custom_direction: notesCustomDirections[noteId] || undefined,
+          })) : undefined,
+          globalDirections: globalDirections,
+          currentDocTypeKey: selectedDeliverableType,
+        }).catch(e => console.warn('[decisions] record failed:', e));
       };
-      rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
-      afterRewrite();
-      return;
-    }
 
-    // story_outline: always route to moment pipeline — skip scene/chunk fallback
-    if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
-      if (allPrioritizedMoves.length > 0) {
-        // Apply approved notes through moment pipeline
-        const result = await momentPipeline.enqueue(
-          selectedDocId, selectedVersionId, enrichedNotes, protectItems, undefined
-        );
-        if (result) {
-          momentPipeline.processAll(selectedVersionId, selectedDocId);
+      // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
+      // NOTE: beat_sheet Apply All is handled exclusively by BeatRewritePanel's own "Apply All" button — skip sectioned rewrite
+      if (selectedDoc?.doc_type === 'beat_sheet') {
+        // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
+        return;
+      }
+      // Treatment docs: route to per-act pipeline via direct supabase invoke instead of chunked pipeline
+      // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
+      // Notes/decisions enrichment is already done above — enrichedNotes contains all context
+      if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
+        setTreatmentRewritePending(true);
+        const vid = selectedVersionId;
+        const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
+        
+        try {
+          const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
+            body: {
+              action: taAction,
+              projectId,
+              documentId: selectedDocId,
+              versionId: vid,
+              approvedNotes: enrichedNotes,
+              protectItems,
+            },
+          });
+          if (invokeError) throw invokeError;
+          if (result?.success) {
+            toast.success('Treatment rewritten — per-act pipeline completed');
+            afterRewrite();
+            qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+          }
+        } catch (err: any) {
+          console.error('[treatment] per-act rewrite failed:', err);
+          toast.error('Per-act rewrite failed: ' + (err?.message || 'Unknown error'));
+          // Fallback to chunked pipeline if per-act fails
+          toast.info('Falling back to sectioned rewrite...');
+          const provenance = {
+            rewriteModeSelected: 'auto',
+            rewriteModeEffective: 'chunk',
+            rewriteModeReason: 'per_act_failed_fallback',
+            rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
+            rewriteProbe: null,
+          };
+          rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
+          afterRewrite();
+        } finally {
+          setTreatmentRewritePending(false);
+        }
+        return;
+      }
+      // Concept Brief: route to surgical per-section pipeline via direct invoke instead of chunked pipeline
+      // Hits sectionedRewriteTypes handler at dev-engine-v2:10052 which has dedup + per-section surgical matching
+      if (selectedDoc?.doc_type === 'concept_brief' && selectedDocId && selectedVersionId) {
+        try {
+          const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
+            body: {
+              action: 'concept_brief',
+              projectId,
+              documentId: selectedDocId,
+              versionId: selectedVersionId,
+              approvedNotes: enrichedNotes,
+              protectItems,
+            },
+          });
+          if (invokeError) throw invokeError;
+          if (result?.success) {
+            toast.success('Concept brief rewritten — per-section pipeline completed');
+            afterRewrite();
+            qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+          }
+        } catch (err: any) {
+          console.error('[concept_brief] per-section rewrite failed:', err);
+          toast.error('Per-section rewrite failed: ' + (err?.message || 'Unknown error'));
+          // Fallback to chunked pipeline
+          toast.info('Falling back to sectioned rewrite...');
+          const provenance = {
+            rewriteModeSelected: 'auto',
+            rewriteModeEffective: 'chunk',
+            rewriteModeReason: 'per_section_failed_fallback',
+            rewriteModeDebug: { docType: selectedDoc.doc_type, decision_timestamp: new Date().toISOString() },
+            rewriteProbe: null,
+          };
+          rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
           afterRewrite();
         }
-      } else {
-        toast.info('Add notes to apply before rewriting.');
+        return;
       }
-      return;
-    }
+      // Sectioned rewrite for character_bible, concept_brief, etc. — uses rewrite pipeline with progress UI
+      // (story_outline is handled above via momentPipeline)
+      if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
+        const provenance = {
+          rewriteModeSelected: 'auto',
+          rewriteModeEffective: 'chunk',
+          rewriteModeReason: 'sectioned_doc_type_act_by_act',
+          rewriteModeDebug: {
+            docType: selectedDoc.doc_type,
+            decision_timestamp: new Date().toISOString(),
+          },
+          rewriteProbe: null,
+        };
+        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
+        afterRewrite();
+        return;
+      }
 
-    if (textLength > 30000 && selectedDocId && selectedVersionId) {
-      // Character bibles use per-character rewrite via dev-engine-v2, not scene pipeline
-      if (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') {
-        const charSelectedOptions = decisions
+      // story_outline: always route to moment pipeline — skip scene/chunk fallback
+      if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
+        if (allPrioritizedMoves.length > 0) {
+          // Apply approved notes through moment pipeline
+          const result = await momentPipeline.enqueue(
+            selectedDocId, selectedVersionId, enrichedNotes, protectItems, undefined
+          );
+          if (result) {
+            momentPipeline.processAll(selectedVersionId, selectedDocId);
+            afterRewrite();
+          }
+        } else {
+          toast.info('Add notes to apply before rewriting.');
+        }
+        return;
+      }
+
+      if (textLength > 30000 && selectedDocId && selectedVersionId) {
+        // Character bibles use per-character rewrite via dev-engine-v2, not scene pipeline
+        if (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') {
+          const charSelectedOptions = decisions
+            ? Object.entries(decisions)
+                .filter(([, v]) => !!v)
+                .map(([noteId, optionId]) => ({
+                  note_id: noteId,
+                  option_id: optionId,
+                  custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
+                }))
+            : undefined;
+          rewrite.mutate({
+            approvedNotes: enrichedNotes,
+            protectItems,
+            deliverableType: selectedDeliverableType,
+            developmentBehavior: projectBehavior,
+            format: projectFormat,
+            selectedOptions: charSelectedOptions,
+            globalDirections: globalDirections || [],
+          }, {
+            onSuccess: afterRewrite,
+            onError: (err: any) => {
+              // Auto-redirect to chunked pipeline if server says document is too long
+              if (err?.needsPipeline && selectedDocId && selectedVersionId) {
+                console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to chunked pipeline`);
+                toast.info('Document too large for single-pass — using chunked rewrite pipeline.');
+                rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
+                afterRewrite();
+              } else {
+                toast.error(err?.message || 'Rewrite failed');
+              }
+            },
+          });
+          afterRewrite();
+          return;
+        }
+
+        const selected = sceneRewrite.selectedRewriteMode;
+
+        let probe = sceneRewrite.probeResult;
+        if (!probe && selected !== 'chunk') {
+          probe = await sceneRewrite.probe(selectedDocId, selectedVersionId) ?? null;
+        }
+
+        let effectiveMode: 'scene' | 'chunk' = 'chunk';
+        let rewriteModeReason = 'fallback_error';
+
+        if (selected === 'chunk') {
+          effectiveMode = 'chunk';
+          rewriteModeReason = 'user_selected_chunk';
+        } else if (selected === 'scene') {
+          if (probe?.has_scenes === false) {
+            effectiveMode = 'chunk';
+            rewriteModeReason = 'fallback_scene_unavailable';
+            toast.warning('No scenes detected — falling back to chunk rewrite.');
+          } else {
+            effectiveMode = 'scene';
+            rewriteModeReason = 'user_selected_scene';
+          }
+        } else {
+          // Section-based doc types ALWAYS use chunk rewrite — scene rewrite would produce screenplay format
+          if (selectedDoc?.doc_type && SECTIONED_REWRITE_TYPES.has(selectedDoc.doc_type)) {
+            effectiveMode = 'chunk';
+            rewriteModeReason = 'sectioned_doc_type';
+          } else if (probe?.has_scenes) {
+            effectiveMode = 'scene';
+            rewriteModeReason = 'auto_probe_scene';
+          } else {
+            effectiveMode = 'chunk';
+            rewriteModeReason = 'auto_probe_chunk';
+          }
+        }
+
+        const provenance = {
+          rewriteModeSelected: selected,
+          rewriteModeEffective: effectiveMode,
+          rewriteModeReason,
+          rewriteProbe: probe ? {
+            has_scenes: probe.has_scenes,
+            scenes_count: probe.scenes_count,
+            script_chars: probe.script_chars,
+          } : null,
+          rewriteModeDebug: {
+            selected,
+            probed_has_scenes: probe?.has_scenes ?? null,
+            probed_scenes_count: probe?.scenes_count ?? null,
+            probed_script_chars: probe?.script_chars ?? null,
+            decision_timestamp: new Date().toISOString(),
+          },
+        };
+
+        if (effectiveMode === 'scene') {
+          // Build scope plan via backend for real contracts
+          if (selectedDocId && selectedVersionId && enrichedNotes.length > 0) {
+            const scopePlan = await sceneRewrite.planScope(selectedDocId, selectedVersionId, enrichedNotes);
+
+            if (scopePlan) {
+              const totalScenes = sceneRewrite.totalScenesInScript || probe?.scenes_count || scopePlan.target_scene_numbers.length;
+
+              // Only do selective if we have fewer targets than total scenes
+              if (scopePlan.target_scene_numbers.length < totalScenes) {
+                toast.info(`Selective rewrite: ${scopePlan.target_scene_numbers.length} scenes targeted (${totalScenes} total)`);
+                const enqueueResult = await sceneRewrite.enqueue(
+                  selectedDocId, selectedVersionId, enrichedNotes, protectItems,
+                  scopePlan.target_scene_numbers,
+                );
+                if (enqueueResult) {
+                  sceneRewrite.processAll(selectedVersionId);
+                }
+              } else {
+                // All scenes targeted — full rewrite
+                const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
+                if (enqueueResult) {
+                  sceneRewrite.processAll(selectedVersionId);
+                }
+              }
+            } else {
+              // Scope plan failed, fall back to full rewrite
+              const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
+              if (enqueueResult) {
+                sceneRewrite.processAll(selectedVersionId);
+              }
+            }
+          } else {
+            if (selectedDocId && selectedVersionId) {
+              const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
+              if (enqueueResult) {
+                sceneRewrite.processAll(selectedVersionId);
+              }
+            }
+          }
+        } else {
+          rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
+        }
+        afterRewrite();
+      } else {
+        // Build selectedOptions for the edge function so it gets crisp decision directives
+        // (especially custom "Other" directions — these go into SELECTED DECISION OPTIONS block)
+        const selectedOptionsForRewrite = decisions
           ? Object.entries(decisions)
               .filter(([, v]) => !!v)
               .map(([noteId, optionId]) => ({
                 note_id: noteId,
                 option_id: optionId,
-                custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
+                custom_direction: notesCustomDirections[noteId] || undefined,
               }))
           : undefined;
+
         rewrite.mutate({
           approvedNotes: enrichedNotes,
           protectItems,
           deliverableType: selectedDeliverableType,
           developmentBehavior: projectBehavior,
           format: projectFormat,
-          selectedOptions: charSelectedOptions,
+          selectedOptions: selectedOptionsForRewrite,
           globalDirections: globalDirections || [],
         }, {
           onSuccess: afterRewrite,
           onError: (err: any) => {
             // Auto-redirect to chunked pipeline if server says document is too long
             if (err?.needsPipeline && selectedDocId && selectedVersionId) {
-              console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to chunked pipeline`);
-              toast.info('Document too large for single-pass — using chunked rewrite pipeline.');
+              console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to episodic/chunked pipeline`);
+              toast.info('Document too large for single-pass — using episode-scoped rewrite pipeline.');
               rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
               afterRewrite();
             } else {
@@ -1459,143 +1599,9 @@ export default function ProjectDevelopmentEngine() {
             }
           },
         });
-        afterRewrite();
-        return;
       }
-
-      const selected = sceneRewrite.selectedRewriteMode;
-
-      let probe = sceneRewrite.probeResult;
-      if (!probe && selected !== 'chunk') {
-        probe = await sceneRewrite.probe(selectedDocId, selectedVersionId) ?? null;
-      }
-
-      let effectiveMode: 'scene' | 'chunk' = 'chunk';
-      let rewriteModeReason = 'fallback_error';
-
-      if (selected === 'chunk') {
-        effectiveMode = 'chunk';
-        rewriteModeReason = 'user_selected_chunk';
-      } else if (selected === 'scene') {
-        if (probe?.has_scenes === false) {
-          effectiveMode = 'chunk';
-          rewriteModeReason = 'fallback_scene_unavailable';
-          toast.warning('No scenes detected — falling back to chunk rewrite.');
-        } else {
-          effectiveMode = 'scene';
-          rewriteModeReason = 'user_selected_scene';
-        }
-      } else {
-        // Section-based doc types ALWAYS use chunk rewrite — scene rewrite would produce screenplay format
-        if (selectedDoc?.doc_type && SECTIONED_REWRITE_TYPES.has(selectedDoc.doc_type)) {
-          effectiveMode = 'chunk';
-          rewriteModeReason = 'sectioned_doc_type';
-        } else if (probe?.has_scenes) {
-          effectiveMode = 'scene';
-          rewriteModeReason = 'auto_probe_scene';
-        } else {
-          effectiveMode = 'chunk';
-          rewriteModeReason = 'auto_probe_chunk';
-        }
-      }
-
-      const provenance = {
-        rewriteModeSelected: selected,
-        rewriteModeEffective: effectiveMode,
-        rewriteModeReason,
-        rewriteProbe: probe ? {
-          has_scenes: probe.has_scenes,
-          scenes_count: probe.scenes_count,
-          script_chars: probe.script_chars,
-        } : null,
-        rewriteModeDebug: {
-          selected,
-          probed_has_scenes: probe?.has_scenes ?? null,
-          probed_scenes_count: probe?.scenes_count ?? null,
-          probed_script_chars: probe?.script_chars ?? null,
-          decision_timestamp: new Date().toISOString(),
-        },
-      };
-
-      if (effectiveMode === 'scene') {
-        // Build scope plan via backend for real contracts
-        if (selectedDocId && selectedVersionId && enrichedNotes.length > 0) {
-          const scopePlan = await sceneRewrite.planScope(selectedDocId, selectedVersionId, enrichedNotes);
-
-          if (scopePlan) {
-            const totalScenes = sceneRewrite.totalScenesInScript || probe?.scenes_count || scopePlan.target_scene_numbers.length;
-
-            // Only do selective if we have fewer targets than total scenes
-            if (scopePlan.target_scene_numbers.length < totalScenes) {
-              toast.info(`Selective rewrite: ${scopePlan.target_scene_numbers.length} scenes targeted (${totalScenes} total)`);
-              const enqueueResult = await sceneRewrite.enqueue(
-                selectedDocId, selectedVersionId, enrichedNotes, protectItems,
-                scopePlan.target_scene_numbers,
-              );
-              if (enqueueResult) {
-                sceneRewrite.processAll(selectedVersionId);
-              }
-            } else {
-              // All scenes targeted — full rewrite
-              const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-              if (enqueueResult) {
-                sceneRewrite.processAll(selectedVersionId);
-              }
-            }
-          } else {
-            // Scope plan failed, fall back to full rewrite
-            const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-            if (enqueueResult) {
-              sceneRewrite.processAll(selectedVersionId);
-            }
-          }
-        } else {
-          if (selectedDocId && selectedVersionId) {
-            const enqueueResult = await sceneRewrite.enqueue(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-            if (enqueueResult) {
-              sceneRewrite.processAll(selectedVersionId);
-            }
-          }
-        }
-      } else {
-        rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
-      }
-      afterRewrite();
-    } else {
-      // Build selectedOptions for the edge function so it gets crisp decision directives
-      // (especially custom "Other" directions — these go into SELECTED DECISION OPTIONS block)
-      const selectedOptionsForRewrite = decisions
-        ? Object.entries(decisions)
-            .filter(([, v]) => !!v)
-            .map(([noteId, optionId]) => ({
-              note_id: noteId,
-              option_id: optionId,
-              custom_direction: notesCustomDirections[noteId] || undefined,
-            }))
-        : undefined;
-
-      rewrite.mutate({
-        approvedNotes: enrichedNotes,
-        protectItems,
-        deliverableType: selectedDeliverableType,
-        developmentBehavior: projectBehavior,
-        format: projectFormat,
-        selectedOptions: selectedOptionsForRewrite,
-        globalDirections: globalDirections || [],
-      }, {
-        onSuccess: afterRewrite,
-        onError: (err: any) => {
-          // Auto-redirect to chunked pipeline if server says document is too long
-          if (err?.needsPipeline && selectedDocId && selectedVersionId) {
-            console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to episodic/chunked pipeline`);
-            toast.info('Document too large for single-pass — using episode-scoped rewrite pipeline.');
-            rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-            afterRewrite();
-          } else {
-            toast.error(err?.message || 'Rewrite failed');
-          }
-        },
-      });
+    } finally {
+      setIsApplyingRewrite(false);
     }
   };
 
@@ -2936,9 +2942,9 @@ export default function ProjectDevelopmentEngine() {
                     Object.keys(notesDecisions).length > 0 ? notesDecisions : undefined,
                     latestNotes?.global_directions || [],
                   )}
-                  disabled={isLoading || rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle' || (selectedNotes.size === 0 && Object.values(notesDecisions).filter(Boolean).length === 0)}
+                  disabled={isLoading || isApplyingRewrite || rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle' || (selectedNotes.size === 0 && Object.values(notesDecisions).filter(Boolean).length === 0)}
                 >
-                  {(rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle') ? (
+                  {(isApplyingRewrite || rewrite.isPending || treatmentRewritePending || rewritePipeline.status !== 'idle') ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
