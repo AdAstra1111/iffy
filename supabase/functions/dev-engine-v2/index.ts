@@ -13434,6 +13434,8 @@ Previous attempt problems: ${validation.reasons.join("; ")}`;
             .from("project_document_versions")
             .select("plaintext, version_number")
             .eq("document_id", d.id)
+            .eq("is_current", true)
+            .eq("approval_status", "approved")
             .order("version_number", { ascending: false })
             .limit(1)
             .single();

@@ -206,7 +206,8 @@ export function GenerateSeedPackModal({ open, onOpenChange, projectId, defaultLa
             .from('project_document_versions')
             .select('document_id, plaintext')
             .in('document_id', docIds)
-            .eq('is_current', true);
+            .eq('is_current', true)
+            .eq('approval_status', 'approved');
 
           contextDocuments = foundationDocs.map((d: { id: string; doc_type: string }) => {
             const ver = (versions || []).find((v: { document_id: string }) => v.document_id === d.id);
