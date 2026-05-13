@@ -9253,6 +9253,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       if (!version) throw new Error("Version not found");
 
       const fullText = version.plaintext || "";
+      console.log(`[dev-engine-v2] rewrite-plan: versionId=${versionId} fullText.length=${fullText.length} trimLen=${fullText.trim().length}`);
       const { data: sourceDoc } = await supabase.from("project_documents")
         .select("doc_type")
         .eq("id", documentId)
