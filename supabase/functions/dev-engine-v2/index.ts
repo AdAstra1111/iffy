@@ -1035,9 +1035,9 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
   const effectiveUrl = gw.url;
   const effectiveKey = gw.apiKey || apiKey;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-    // AbortController with 55s timeout to prevent indefinite hang (AI gen can be slower)
+    // AbortController with 120s timeout to prevent indefinite hang (AI gen can be slower)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 55000);
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
     let response: Response;
     try {
       response = await fetch(effectiveUrl, {
@@ -1055,7 +1055,7 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
     } catch (fetchErr: any) {
       clearTimeout(timeoutId);
       const isTimeout = fetchErr?.name === "AbortError";
-      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, isTimeout ? "TIMEOUT after 55s" : (fetchErr?.message || fetchErr));
+      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, isTimeout ? "TIMEOUT after 120s" : (fetchErr?.message || fetchErr));
       if (attempt < MAX_RETRIES - 1) {
         const delay = Math.pow(2, attempt) * 3000;
         console.log(`Retrying after ${isTimeout ? "timeout" : "connection error"} in ${delay}ms...`);
