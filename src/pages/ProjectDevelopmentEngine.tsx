@@ -1359,6 +1359,17 @@ export default function ProjectDevelopmentEngine() {
 
       // Sectioned rewrite for character_bible, concept_brief, etc. — uses rewrite pipeline with progress UI
       // (story_outline is handled above via momentPipeline)
+
+      // ── Fail-closed guard: check version has meaningful content before routing to sectioned rewrite ──
+      if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
+        const proseContent = selectedVersion?.plaintext || selectedDoc?.plaintext || '';
+        if (!proseContent || proseContent.trim().length < 10) {
+          toast.warning('Document version appears to have no content — cannot apply notes. Generate the document first.');
+          console.warn(`[handleRewrite] blocked — ${selectedDoc?.doc_type} version ${selectedVersionId} has no plaintext content`);
+          return;
+        }
+      }
+
       if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
         const provenance = {
           rewriteModeSelected: 'auto',

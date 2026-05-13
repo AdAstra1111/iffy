@@ -405,6 +405,11 @@ export function useRewritePipeline(projectId: string | undefined) {
       pushActivity('info', 'Assembling final text…');
       const assembledText = rewrittenChunks.join('\n\n');
 
+      // ── Fail-closed guard: reject empty assembled text ──
+      if (!assembledText || assembledText.trim().length < 10) {
+        throw new Error('Rewrite produced no content — document version may be empty');
+      }
+
       // ── Immediate display: inject assembled content into cache NOW,
       // before the backend save completes. The user sees the document
       // immediately; the cache refreshes naturally when the real version lands.

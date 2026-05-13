@@ -9771,7 +9771,14 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
     // ── REWRITE-ASSEMBLE (chunked rewrite step 3) ──
     if (action === "rewrite-assemble") {
       let { projectId, documentId, versionId, planRunId, assembledText, rewriteModeSelected, rewriteModeEffective, rewriteModeReason, rewriteModeDebug, rewriteProbe, deliverableType: assembleDeliverableType } = body;
-      if (!projectId || !documentId || !versionId || !assembledText) throw new Error("projectId, documentId, versionId, assembledText required");
+      if (!projectId || !documentId || !versionId || !assembledText) {
+        const missing: string[] = [];
+        if (!projectId) missing.push('projectId');
+        if (!documentId) missing.push('documentId');
+        if (!versionId) missing.push('versionId');
+        if (!assembledText || !assembledText.trim()) missing.push('assembledText');
+        throw new Error('Missing required params: ' + missing.join(', '));
+      }
 
       // ── FAIL-CLOSED: reject assembled text containing failed-chunk placeholders ──
       if (containsFailedPlaceholders(assembledText)) {
