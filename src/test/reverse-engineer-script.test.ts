@@ -256,7 +256,7 @@ function buildMarketSheetPlaintext(data: any): string {
     lines.push("- **Market Risk** → No comparable titles identified — market fit is unvalidated until comps are established.");
     lines.push("");
   }
-  const riskCount = lines.filter(l => l.startsWith("- **")).length;
+  const riskCount = lines.filter(l => l.startsWith("- **Budget Risk") || l.startsWith("- **Market Risk")).length;
   if (riskCount === 0) {
     lines.push("*Risk analysis incomplete — populate during development.*", "");
   }
@@ -1142,43 +1142,58 @@ describe("buildCharacterBiblePlaintext", () => {
 
 describe("buildBeatSheetPlaintext", () => {
   it("groups beats by act and renders them", () => {
-    const beats = [
-      { number: 1, name: "Opening", act: "act_1", description: "Start", turning_point: "No" },
-      { number: 2, name: "Inciting", act: "act_1", description: "Event happens", turning_point: "Yes" },
-    ];
-    const result = buildBeatSheetPlaintext(beats);
-    expect(result).toContain("## ACT 1");
-    expect(result).toContain("## Beat 1: Opening");
-    expect(result).toContain("## Beat 2: Inciting");
+    const data = {
+      title: "Test Beat Sheet",
+      total_beats: 2,
+      beats: [
+        { number: 1, name: "Opening", act: "act_1", description: "Start", turning_point: "No" },
+        { number: 2, name: "Inciting", act: "act_1", description: "Event happens", turning_point: "Yes" },
+      ],
+    };
+    const result = buildBeatSheetPlaintext(data);
+    expect(result).toContain("## ACT ONE \u2014 Setup");
+    expect(result).toContain("### Beat 1: Opening");
+    expect(result).toContain("### Beat 2: Inciting");
+    expect(result).toContain("Start");
+    expect(result).toContain("Event happens");
   });
 
-  it("returns empty string for empty array", () => {
-    expect(buildBeatSheetPlaintext([])).toBe("");
+  it("returns header for empty beats array", () => {
+    const result = buildBeatSheetPlaintext({ beats: [], title: "Test", total_beats: 0 });
+    expect(result).toContain("# Test \u2014 Beat Sheet");
+    expect(result).not.toContain("### Beat");
   });
 
-  it("returns empty string for non-beat data", () => {
-    expect(buildBeatSheetPlaintext([{ foo: "bar" }])).toBe("");
+  it("renders non-beat entries with default values", () => {
+    const result = buildBeatSheetPlaintext({ beats: [{ foo: "bar" }], title: "Test", total_beats: 1 });
+    expect(result).toContain("### Beat ?: Beat ?");
   });
 
   it("handles beat with optional fields", () => {
-    const beats = [
-      { number: 1, name: "Test Beat", act: "act_1", description: "Desc", scene: "Int. Room", emotional_shift: "Hopeful", page_range: "1-5", structural_purpose: "Setup" },
-    ];
-    const result = buildBeatSheetPlaintext(beats);
-    expect(result).toContain("**Scene:** Int. Room");
-    expect(result).toContain("**Emotional shift:** Hopeful");
-    expect(result).toContain("**Page range:** 1-5");
-    expect(result).toContain("**Structural purpose:** Setup");
+    const data = {
+      title: "Test Beat Sheet",
+      total_beats: 1,
+      beats: [
+        { number: 1, name: "Test Beat", act: "act_1", description: "Desc", emotional_shift: "Hopeful", page_range: "1-5" },
+      ],
+    };
+    const result = buildBeatSheetPlaintext(data);
+    expect(result).toContain("*Page 1-5*");
+    expect(result).toContain("**Shift:** Hopeful");
   });
 
   it("sorts acts in canonical order", () => {
-    const beats = [
-      { number: 1, name: "Beat", act: "act_3", description: "A" },
-      { number: 2, name: "Beat", act: "act_1", description: "B" },
-    ];
-    const result = buildBeatSheetPlaintext(beats);
-    const act1Pos = result.indexOf("ACT 1");
-    const act3Pos = result.indexOf("ACT 3");
+    const data = {
+      title: "Test Beat Sheet",
+      total_beats: 2,
+      beats: [
+        { number: 1, name: "Beat", act: "act_3", description: "A" },
+        { number: 2, name: "Beat", act: "act_1", description: "B" },
+      ],
+    };
+    const result = buildBeatSheetPlaintext(data);
+    const act1Pos = result.indexOf("ACT ONE \u2014 Setup");
+    const act3Pos = result.indexOf("ACT THREE \u2014 Climax");
     expect(act1Pos).toBeLessThan(act3Pos);
   });
 });

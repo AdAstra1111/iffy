@@ -30275,6 +30275,10 @@ scenes = boundaries.map((b, i) => {
           status: "running",
           target_scene_numbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
         }).select("id").single();
+        if (insertErr || !insertResult) {
+          console.error("[story-outline-enqueue] insert failed:", insertErr?.message, "(runId:", runId, ")");
+          throw new Error(insertErr?.message || "Failed to create rewrite run record");
+        }
         if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
           (globalThis as any).EdgeRuntime.waitUntil(
             (async () => {
