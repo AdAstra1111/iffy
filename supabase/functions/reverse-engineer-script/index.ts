@@ -443,6 +443,141 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return String(data ?? "");
   }
 
+  // Beat sheet plaintext formatter — renders canonical markdown matching the
+  // YETI_Beat_Sheet_Formatted-2026-05-10 reference format.
+  // Data shape: { title, total_beats, beats: [...], structural_notes, pacing_notes, turning_points }
+  function buildBeatSheetPlaintext(data: any): string {
+    const lines: string[] = [];
+    const title = data.title || "Beat Sheet";
+    const totalBeats = data.total_beats ?? 0;
+
+    // ── Title and metadata header ──
+    lines.push(`# ${title} — Beat Sheet`, "");
+    lines.push(`**Project:** ${title}  |  **Total Beats:** ${totalBeats}  |  **Format:** Feature Film`, "");
+    lines.push("---", "");
+
+    // ── Canonical act label map (LLM returns "Act 1" / "Act 2A" etc.) ──
+    const actMap: Record<string, string> = {
+      "act 1": "ACT ONE — Setup",
+      "act 2a": "ACT TWO A — The Journey",
+      "act 2b": "ACT TWO B — Descent",
+      "act 3": "ACT THREE — Climax",
+      "act 4": "ACT FOUR — Denouement",
+    };
+    // Also accept underscore format for backward compatibility
+    const actMapUnderscore: Record<string, string> = {
+      "act_1": "ACT ONE — Setup",
+      "act_2a": "ACT TWO A — The Journey",
+      "act_2b": "ACT TWO B — Descent",
+      "act_3": "ACT THREE — Climax",
+      "act_4": "ACT FOUR — Denouement",
+    };
+    const actOrder = ["ACT ONE — Setup", "ACT TWO A — The Journey", "ACT TWO B — Descent", "ACT THREE — Climax", "ACT FOUR — Denouement"];
+
+    // ── Group beats by act ──
+    const actGroups: Record<string, any[]> = {};
+    const beats = Array.isArray(data.beats) ? data.beats : [];
+    for (const beat of beats) {
+      const raw = (beat.act_affiliation || beat.act || "").trim();
+      const lower = raw.toLowerCase();
+      const label = actMap[lower] || actMapUnderscore[lower] || raw || "ACT ONE — Setup";
+      if (!actGroups[label]) actGroups[label] = [];
+      actGroups[label].push(beat);
+    }
+
+    const sortedActs = actOrder.filter(a => actGroups[a]);
+
+    // ── Render each act group ──
+    for (const actLabel of sortedActs) {
+      const group = actGroups[actLabel];
+      group.sort((a: any, b: any) => (a.number || 0) - (b.number || 0));
+
+      lines.push(`## ${actLabel}  `, "");
+      lines.push(`**${group.length} beats**  `, "");
+      lines.push("");
+
+      for (const beat of group) {
+        const num = beat.number ?? "?";
+        const name = beat.name || `Beat ${num}`;
+        const pageRange = beat.page_range || "";
+        const shift = beat.emotional_shift || beat.emotionalShift || "";
+        const func = beat.dramatic_function || beat.dramaticFunction || "";
+        const state = beat.protagonist_state || beat.protagonistState || "";
+        const tp = beat.turning_point || beat.turningPoint || "";
+
+        // Beat header (trailing spaces for markdown line break)
+        lines.push(`### Beat ${num}: ${name}  `, "");
+        if (pageRange) {
+          lines.push(`*Page ${pageRange}*  `, "");
+        }
+        if (beat.description) {
+          lines.push(beat.description, "");
+        }
+        // Blockquote: Shift, Function, Protagonist state
+        if (shift || func || state) {
+          const parts: string[] = [];
+          if (shift) parts.push(`**Shift:** ${shift}`);
+          if (func) parts.push(`**Function:** ${func}`);
+          if (state) parts.push(`**Protagonist:** ${state}`);
+          lines.push(`> ${parts.join(" | ")}`, "");
+        }
+        // Turning point marker (separate blockquote line)
+        if (tp && tp !== "No" && tp !== "no") {
+          lines.push(`> **★ TURNING POINT — ${tp}**`, "");
+        }
+        lines.push("");
+      }
+
+      // Act separator
+      lines.push("---", "");
+    }
+
+    // ── Structural Overview ──
+    const hasStructural = data.structural_notes || data.pacing_notes || (Array.isArray(data.turning_points) && data.turning_points.length > 0);
+    if (hasStructural) {
+      lines.push("## Structural Overview", "");
+      lines.push("");
+
+      // Pacing
+      if (data.pacing_notes) {
+        lines.push("### Pacing", "");
+        lines.push(data.pacing_notes, "");
+      }
+
+      // Turning Point Architecture table
+      const tpArray = Array.isArray(data.turning_points) ? data.turning_points : [];
+      if (tpArray.length > 0) {
+        lines.push("### Turning Point Architecture", "");
+        lines.push("");
+        lines.push("| # | Page | Beat | Function |");
+        lines.push("|---|------|------|----------|");
+        tpArray.forEach((tp: any, idx: number) => {
+          const p = tp.page || "";
+          const desc = tp.description || "";
+          const tpNum = idx + 1;
+          // Find matching beat for the turning point table
+          const match = beats.find((b: any) => {
+            const bp = (b.page_range || "").split("-");
+            const start = bp[0];
+            const end = bp[1] || bp[0];
+            return String(start) === String(p) || String(end) === String(p) || String(b.number) === String(idx + 1);
+          });
+          const beatName = match?.name || "";
+          lines.push(`| ${tpNum} | ${p} | ${beatName} | ${desc} |`);
+        });
+        lines.push("");
+      }
+
+      // Key Themes (structural notes)
+      if (data.structural_notes) {
+        lines.push("### Key Themes", "");
+        lines.push(data.structural_notes, "");
+      }
+    }
+
+    return lines.join("\n").trim();
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
@@ -479,45 +614,9 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
       return JSON.stringify(data);
     }
 
-    // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
-    if (docType === "beat_sheet" && Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
-      const first = data[0];
-      const isBeat = ("number" in first || "name" in first) && ("act_affiliation" in first || "act" in first || "description" in first || "scene" in first);
-      if (isBeat) {
-        const actGroups: Record<string, any[]> = {};
-        for (const beat of data) {
-          const actKey = beat.act_affiliation || beat.act || "ACT 1";
-          if (!actGroups[actKey]) actGroups[actKey] = [];
-          actGroups[actKey].push(beat);
-        }
-        const actOrder = ["act_1","act_2a","act_2b","act_2","act_3","act_4"];
-        const sortedActs = Object.keys(actGroups).sort((a, b) => {
-          const ai = actOrder.indexOf(a.toLowerCase());
-          const bi = actOrder.indexOf(b.toLowerCase());
-          if (ai === -1 && bi === -1) return a.localeCompare(b);
-          if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi;
-        });
-        return sortedActs.map(actName => {
-          const beats = actGroups[actName];
-          const label = actName.replace(/^act_/i, "ACT ").replace(/_/g, " ").trim();
-          const actLines = [`## ${label}`];
-          for (const beat of beats) {
-            const num = beat.number ?? beat.id ?? "?";
-            const name = beat.name ?? beat.title ?? `Beat ${num}`;
-            actLines.push(`## Beat ${num}: ${name}`);
-            const tp = beat.turning_point || beat.turningPoint || "No";
-            actLines.push(`**Act:** ${label}`);
-            actLines.push(`**Turning point:** ${tp}`);
-            if (beat.scene || beat.location) actLines.push(`**Scene:** ${beat.scene || beat.location}`);
-            if (beat.description) actLines.push(`**What happens:** ${beat.description}`);
-            if (beat.structural_purpose || beat.structuralPurpose) actLines.push(`**Structural purpose:** ${beat.structural_purpose || beat.structuralPurpose}`);
-            if (beat.protagonist_state || beat.protagonistState) actLines.push(`**Protagonist state:** ${beat.protagonist_state || beat.protagonistState}`);
-            if (beat.emotional_shift || beat.emotionalShift) actLines.push(`**Emotional shift:** ${beat.emotional_shift || beat.emotionalShift}`);
-            if (beat.page_range) actLines.push(`**Page range:** ${beat.page_range}`);
-          }
-          return actLines.join("\n");
-        }).join("\n\n");
-      }
+    // ── BEAT SHEET / FORMAT RULES: dedicated plaintext formatter ──
+    if (docType === "beat_sheet" || docType === "format_rules") {
+      return buildBeatSheetPlaintext(data);
     }
 
     if (Array.isArray(data)) {
