@@ -30266,9 +30266,10 @@ scenes = boundaries.map((b, i) => {
         // We create a run record, fire the rewrite async via waitUntil,
         // and return immediately so the frontend can poll status.
         const runId = crypto.randomUUID();
+        console.log("[story-outline-enqueue] generating runId:", runId);
         const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
         const effUserId = user?.id || proj?.user_id || null;
-        await supabase.from("rewrite_runs").insert({
+        const { data: insertResult, error: insertErr } = await supabase.from("rewrite_runs").insert({
           id: runId, project_id: projectId, user_id: effUserId,
           source_doc_id: sourceDocId, source_version_id: sourceVersionId,
           status: "running",
