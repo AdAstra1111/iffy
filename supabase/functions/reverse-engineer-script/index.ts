@@ -474,6 +474,11 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
       return buildTreatmentPlaintext(data);
     }
 
+    // ── STORY OUTLINE: store as JSON so backend can parse entries for moment rewrite ──
+    if (docType === "story_outline" || docType === "season_arc" || docType === "episode_grid") {
+      return JSON.stringify(data);
+    }
+
     // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
     if (docType === "beat_sheet" && Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
       const first = data[0];
