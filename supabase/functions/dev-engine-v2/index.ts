@@ -8653,6 +8653,16 @@ if (
               `[dev-engine-v2] rewrite: per-character — ${totalAffected}/${sections.length} characters affected by notes`
             );
 
+            // If no characters match the notes but notes exist, fall through to single-pass
+            // generic rewrite instead of creating a version with identical content.
+            if (totalAffected === 0 && approvedNotes && approvedNotes.length > 0) {
+              console.log(
+                `[dev-engine-v2] rewrite: per-character — no characters matched by notes, falling through to generic single-pass rewrite`
+              );
+              isPerCharRewrite = false;
+              rewrittenText = "";
+            }
+
             // Step 2.5: Initialize progress state — clear stale "Complete" flags from source version
             // This ensures the frontend sees bg_generating: true immediately on first poll,
             // instead of stale bg_completed_at from the previous generation/rewrite.
