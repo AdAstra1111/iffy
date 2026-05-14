@@ -379,7 +379,7 @@ export default function ProjectDevelopmentEngine() {
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
 
   // Structured viewer support
-  const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief']);
+  const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief', 'character_bible']);
   const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'concept_brief', 'character_bible']); // story_outline uses per-moment JSON handler via MomentRewritePanel
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
@@ -1409,6 +1409,47 @@ export default function ProjectDevelopmentEngine() {
         }
       }
 
+      // Character bibles: route to per-character single-pass rewrite via dev-engine-v2
+      // This shows the CharacterBibleProgress UI and uses the rewrite.mutate path.
+      // Do NOT route through the chunk-based sectioned rewrite pipeline below.
+      if ((selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
+        const charSelectedOptions = decisions
+          ? Object.entries(decisions)
+              .filter(([, v]) => !!v)
+              .map(([noteId, optionId]) => ({
+                note_id: noteId,
+                option_id: optionId,
+                custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
+              }))
+          : undefined;
+        rewrite.mutate({
+          approvedNotes: enrichedNotes,
+          protectItems,
+          deliverableType: selectedDeliverableType,
+          developmentBehavior: projectBehavior,
+          format: projectFormat,
+          selectedOptions: charSelectedOptions,
+          globalDirections: globalDirections || [],
+        }, {
+          onSuccess: (data: any) => {
+            postOperationVersionId.current = data?.newVersion?.id || null;
+            afterRewrite();
+          },
+          onError: (err: any) => {
+            // Fallback to chunked pipeline if server rejects
+            if (err?.needsPipeline && selectedDocId && selectedVersionId) {
+              console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to chunked pipeline`);
+              toast.info('Document too large for single-pass — using chunked rewrite pipeline.');
+              rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
+              afterRewrite();
+            } else {
+              toast.error(err?.message || 'Rewrite failed');
+            }
+          },
+        });
+        return;
+      }
+
       if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
         const provenance = {
           rewriteModeSelected: 'auto',
@@ -1443,45 +1484,6 @@ export default function ProjectDevelopmentEngine() {
       }
 
       if (textLength > 30000 && selectedDocId && selectedVersionId) {
-        // Character bibles use per-character rewrite via dev-engine-v2, not scene pipeline
-        if (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') {
-          const charSelectedOptions = decisions
-            ? Object.entries(decisions)
-                .filter(([, v]) => !!v)
-                .map(([noteId, optionId]) => ({
-                  note_id: noteId,
-                  option_id: optionId,
-                  custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
-                }))
-            : undefined;
-          rewrite.mutate({
-            approvedNotes: enrichedNotes,
-            protectItems,
-            deliverableType: selectedDeliverableType,
-            developmentBehavior: projectBehavior,
-            format: projectFormat,
-            selectedOptions: charSelectedOptions,
-            globalDirections: globalDirections || [],
-          }, {
-            onSuccess: (data: any) => {
-              postOperationVersionId.current = data?.newVersion?.id || null;
-              afterRewrite();
-            },
-            onError: (err: any) => {
-              // Auto-redirect to chunked pipeline if server says document is too long
-              if (err?.needsPipeline && selectedDocId && selectedVersionId) {
-                console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to chunked pipeline`);
-                toast.info('Document too large for single-pass — using chunked rewrite pipeline.');
-                rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-                afterRewrite();
-              } else {
-                toast.error(err?.message || 'Rewrite failed');
-              }
-            },
-          });
-          return;
-        }
-
         const selected = sceneRewrite.selectedRewriteMode;
 
         let probe = sceneRewrite.probeResult;
