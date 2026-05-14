@@ -217,20 +217,6 @@ export default function ProjectDevelopmentEngine() {
     },
   });
 
-  // Auto-trigger Generate Options after notes land — fires via flag + useEffect
-  // instead of inline setTimeout, so React Query's internal state machine has
-  // finished propagating before we call mutate().
-  useEffect(() => {
-    if (!pendingAutoTrigger) return;
-    if (!selectedDocId || !selectedVersionId || typeof generateOptionsMutation?.mutate !== 'function') {
-      setPendingAutoTrigger(false);
-      return;
-    }
-    generateOptionsMutation.mutate(undefined, {
-      onSettled: () => setPendingAutoTrigger(false),
-    });
-  }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
-
   const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual', 'cascade']);
   const initialTab = (() => { const t = searchParams.get('tab'); return t && VALID_TABS.has(t) ? t : 'notes'; })();
   const [intelligenceTab, setIntelligenceTab] = useState(initialTab);
@@ -373,6 +359,21 @@ export default function ProjectDevelopmentEngine() {
     driftEvents, latestDrift, acknowledgeDrift, resolveDrift,
     approvedVersionMap,
   } = useDevEngineV2(projectId);
+
+  // Auto-trigger Generate Options after notes land — fires via flag + useEffect
+  // instead of inline setTimeout. Placed AFTER useDevEngineV2 so that
+  // selectedDocId/selectedVersionId are not in the Temporal Dead Zone
+  // when React evaluates the dependency array.
+  useEffect(() => {
+    if (!pendingAutoTrigger) return;
+    if (!selectedDocId || !selectedVersionId || typeof generateOptionsMutation?.mutate !== 'function') {
+      setPendingAutoTrigger(false);
+      return;
+    }
+    generateOptionsMutation.mutate(undefined, {
+      onSettled: () => setPendingAutoTrigger(false),
+    });
+  }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
 
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
