@@ -219,9 +219,9 @@ export function useRewritePipeline(projectId: string | undefined) {
   // Per-episode unit state for episode-workspace UI
   const [episodeUnits, setEpisodeUnits] = useState<EpisodeUnit[]>([]);
 
-  const invalidate = useCallback(() => {
+  const invalidate = useCallback((versionId?: string) => {
     if (!projectId) return;
-    invalidateDevEngine(qc, { projectId });
+    invalidateDevEngine(qc, { projectId, versionId });
     qc.invalidateQueries({ predicate: (q) => Array.isArray(q.queryKey) && q.queryKey.some(k => k === 'dev-v2-versions') });
   }, [qc, projectId]);
 
@@ -446,7 +446,7 @@ export function useRewritePipeline(projectId: string | undefined) {
         smoothedPercent: 100, etaMs: null,
       }));
 
-      invalidate();
+      invalidate(assembleResult.newVersion?.id);
       const mins = assembleResult.estimatedMinutes ? ` (~${assembleResult.estimatedMinutes} mins)` : '';
       pushActivity('success', `Rewrite complete — ${assembledText.length.toLocaleString()} chars${mins}`);
       toast.success(`Full rewrite complete — ${assembledText.length.toLocaleString()} chars${mins}`);

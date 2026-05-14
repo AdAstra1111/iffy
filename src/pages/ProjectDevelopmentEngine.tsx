@@ -557,6 +557,7 @@ export default function ProjectDevelopmentEngine() {
   const [autoReviewEnabled, setAutoReviewEnabled] = useState(false);
   const postOperationVersionId = useRef<string | null>(null);
   const prevVersionId = useRef(selectedVersionId);
+  const pendingPostOpAutoReview = useRef(false);
 
   // Re-resolve when version changes (always safe — never triggers review)
   useEffect(() => {
@@ -567,11 +568,24 @@ export default function ProjectDevelopmentEngine() {
       // never from plain navigation.
       if (postOperationVersionId.current === selectedVersionId) {
         postOperationVersionId.current = null;
-        // Small delay to let queries settle
-        setTimeout(() => handleRunEngine(), 600);
+        pendingPostOpAutoReview.current = true;
       }
     }
   }, [selectedVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Run auto-review once the post-operation version data is actually available.
+  // The version query (['dev-v2-versions', docId]) needs to refetch first, or
+  // selectedVersion will be undefined/old. Waiting on selectedVersion directly
+  // is reliable — no fragile setTimeout required.
+  useEffect(() => {
+    if (pendingPostOpAutoReview.current && selectedVersion && selectedVersion.id === selectedVersionId) {
+      pendingPostOpAutoReview.current = false;
+      if ((selectedVersion as any)?.meta_json?.bg_generating !== true) {
+        runAnalysisWithContext();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVersion, selectedVersionId]);
 
   // After large rewrite pipeline completes → mark new version as post-operation
   useEffect(() => {
@@ -580,7 +594,7 @@ export default function ProjectDevelopmentEngine() {
       setSelectedVersionId(rewritePipeline.newVersionId);
       rewritePipeline.reset();
     }
-  }, [rewritePipeline.status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rewritePipeline.status, rewritePipeline.newVersionId]);
 
   // After small rewrite or convert completes → mark upcoming version as post-operation
   useEffect(() => {
@@ -1424,7 +1438,10 @@ export default function ProjectDevelopmentEngine() {
             selectedOptions: charSelectedOptions,
             globalDirections: globalDirections || [],
           }, {
-            onSuccess: afterRewrite,
+            onSuccess: (data: any) => {
+              postOperationVersionId.current = data?.newVersion?.id || null;
+              afterRewrite();
+            },
             onError: (err: any) => {
               // Auto-redirect to chunked pipeline if server says document is too long
               if (err?.needsPipeline && selectedDocId && selectedVersionId) {
@@ -1437,7 +1454,6 @@ export default function ProjectDevelopmentEngine() {
               }
             },
           });
-          afterRewrite();
           return;
         }
 
@@ -1561,7 +1577,10 @@ export default function ProjectDevelopmentEngine() {
           selectedOptions: selectedOptionsForRewrite,
           globalDirections: globalDirections || [],
         }, {
-          onSuccess: afterRewrite,
+          onSuccess: (data: any) => {
+            postOperationVersionId.current = data?.newVersion?.id || null;
+            afterRewrite();
+          },
           onError: (err: any) => {
             // Auto-redirect to chunked pipeline if server says document is too long
             if (err?.needsPipeline && selectedDocId && selectedVersionId) {
