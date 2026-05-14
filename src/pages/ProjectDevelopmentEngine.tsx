@@ -995,7 +995,14 @@ export default function ProjectDevelopmentEngine() {
       previousVersionId: prevVersion?.id,
     }, {
       onSuccess: (analysisResult: any) => {
-        generateNotes.mutate(analysisResult);
+        generateNotes.mutate(analysisResult, {
+          onSuccess: () => {
+            // Auto-trigger Generate Options after notes land, so users don't have to click manually
+            if (selectedDocId && selectedVersionId) {
+              setTimeout(() => generateOptionsMutation.mutate(), 500);
+            }
+          },
+        });
       },
     });
   };
