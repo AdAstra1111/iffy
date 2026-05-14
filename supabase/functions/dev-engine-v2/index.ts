@@ -30352,9 +30352,12 @@ scenes = boundaries.map((b, i) => {
           );
         }
         // Parse entries count BEFORE waitUntil (it's available right after JSON.parse)
+        // Need our own query — `version` inside waitUntil isn't in scope here
+        const { data: _previewVer } = await supabase.from("project_document_versions")
+          .select("plaintext").eq("id", sourceVersionId).maybeSingle();
         const _entriesPreview = (() => {
           try {
-            const trimmed = (version?.plaintext || "").trim();
+            const trimmed = (_previewVer?.plaintext || "").trim();
             if (trimmed.startsWith("{")) {
               const preview = JSON.parse(trimmed);
               return Array.isArray(preview.entries) ? preview.entries.length : 0;
