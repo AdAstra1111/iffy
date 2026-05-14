@@ -661,6 +661,7 @@ async function runBackgroundJob(body: any) {
     mergedCharacters: string[], regexOrphans: string[], allChunksCitation: string, chunkCitations: string[],
     beatScriptLineEnd: number, partialCitation: string, ideaResolverHash: string | undefined,
     synthSummary: string, beatsText: string, marketSheet: any, premise: string, worldNotes: string,
+    projectTitle: string,
     protagonist: string, beats: any[];
 
   // ── Load cached outputs from previous groups ────────────────────────────────
@@ -688,6 +689,7 @@ async function runBackgroundJob(body: any) {
   partialCitation = so.partialCitation;
   ideaResolverHash = so.ideaResolverHash;
   synthSummary = so.synthSummary;
+  projectTitle = so.projectTitle;
 
   // ── Derive computed variables from cached values ────────────────────────────
   if (call1) {
@@ -937,7 +939,7 @@ Respond with ONLY JSON.`, 16000);
 
       // Query the real project title from the projects table (not the LLM-extracted one)
       const { data: projectRow } = await sb.from("projects").select("title").eq("id", project_id).single();
-      const projectTitle = projectRow?.title || metadata.title || "Untitled";
+      projectTitle = projectRow?.title || metadata.title || "Untitled";
 
       // Build source citations here so all downstream stages can use them
       const scriptTitle = projectTitle || "Script";
@@ -1021,6 +1023,7 @@ Respond with ONLY JSON.`, 14000);
       so.partialCitation = partialCitation;
       so.ideaResolverHash = ideaResolverHash;
       so.callIdea = callIdea;
+      so.projectTitle = projectTitle;
       payload.stage_outputs = so;
     }
 
