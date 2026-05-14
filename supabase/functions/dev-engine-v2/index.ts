@@ -8653,15 +8653,17 @@ if (
               `[dev-engine-v2] rewrite: per-character — ${totalAffected}/${sections.length} characters affected by notes`
             );
 
-            // If no characters match the notes but notes exist, fall through to single-pass
-            // generic rewrite instead of creating a version with identical content.
+            // If no characters match the notes but notes exist, treat ALL sections as affected
+            // so that every character gets a focused per-character rewrite instead of silently
+            // doing nothing or falling to a generic single-pass call.
+            let rewriteAll = false;
             if (totalAffected === 0 && approvedNotes && approvedNotes.length > 0) {
               console.log(
-                `[dev-engine-v2] rewrite: per-character — no characters matched by notes, falling through to generic single-pass rewrite`
+                `[dev-engine-v2] rewrite: per-character — no specific characters named in notes, rewriting ALL sections`
               );
-              isPerCharRewrite = false;
-              rewrittenText = "";
+              rewriteAll = true;
             }
+            const effectiveTotalAffected = rewriteAll ? sections.length : totalAffected;
 
             // Step 2.5: Initialize progress state — clear stale "Complete" flags from source version
             // This ensures the frontend sees bg_generating: true immediately on first poll,
@@ -8672,7 +8674,7 @@ if (
                   meta_json: {
                     bg_generating: true,
                     characters_total: sections.filter(s => s.sectionType === 'character').length,
-                    characters_to_rewrite: totalAffected,
+                    characters_to_rewrite: effectiveTotalAffected,
                     characters_list: sections.map(s => s.name),
                     characters_completed: 0,
                     sections_total: sections.length,
@@ -8711,7 +8713,7 @@ if (
             for (const section of sections) {
               if (section.sectionType !== 'character') {
                 // ── Non-character section (Relationship Dynamics / Ensemble Notes) ──
-                if (isAffected(section)) {
+                if (rewriteAll || isAffected(section)) {
                   nonCharacterCount++;
                   sectionsCompleted++;
                   console.log(
@@ -8818,7 +8820,7 @@ ${section.sectionType === 'relationship_dynamics'
                   sectionsCompleted++;
                   assembledSections.push(section.body);
                 }
-              } else if (isAffected(section)) {
+              } else if (rewriteAll || isAffected(section)) {
                 charLoopIndex++;
                 sectionsCompleted++;
                 console.log(
@@ -8908,7 +8910,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                         ...((version as any)?.meta_json || {}),
                         bg_generating: true,
                         characters_total: sections.filter(s => s.sectionType === 'character').length,
-                        characters_to_rewrite: totalAffected,
+                        characters_to_rewrite: effectiveTotalAffected,
                         characters_list: sections.map(s => s.name),
                         // NEW: unified section tracking for surgical rewrite
                         sections_total: sections.length,
@@ -8977,7 +8979,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             };
 
             console.log(
-              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${totalAffected} affected sections rewritten, ${sections.length - totalAffected} unaffected sections preserved`
+              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${effectiveTotalAffected} affected sections rewritten, ${sections.length - effectiveTotalAffected} unaffected sections preserved`
             );
           }
         }
