@@ -8590,11 +8590,12 @@ MATERIAL TO REWRITE:\n${fullText}`;
       let nonCharacterCount = 0;
       const updatedNames: string[] = [];
 
-      if (
+if (
         (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible") &&
         fullText.trim().length > 100
       ) {
-        const perCharNotes = [userNotes, additionalContext, (rewriteNotes || []).join("\n")].filter(Boolean).join("\n\n");
+        try {
+        const perCharNotes = [userNotes, additionalContext, (rewriteNotes || []).join("\\n")].filter(Boolean).join("\\n\\n");
         // Only trigger per-character mode if we have actual notes to apply
         if (perCharNotes.trim() || (approvedNotes && approvedNotes.length > 0)) {
           console.log(`[dev-engine-v2] rewrite: per-character mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
@@ -8625,21 +8626,20 @@ MATERIAL TO REWRITE:\n${fullText}`;
                 return enKeywords.test(allNoteText);
               }
 
-              // Character sections: exact name match (existing logic)
+              // Character sections: exact name match with word boundaries
+              // e.g. "Ann" should not match "Annie" or "Manny"
               const nameLower = section.name.toLowerCase();
-              // Check exact word boundary match to avoid false positives
-              // e.g. "Ann" matching "Annie" or "Manny"
               const namePattern = new RegExp(
-                nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "\\b" + nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b",
                 "i"
               );
               if (namePattern.test(allNoteText)) return true;
 
-              // Voice-specific matching: if note text references voice/speech patterns
-              // without naming a specific character, flag character sections with
-              // substantial existing content for potential improvement
-              const voiceKeywords = /\b(voice|speech|dialogue pattern|verbal|register|vocabulary)\b/i;
-              if (voiceKeywords.test(allNoteText) && section.body.length > 100) {
+              // Voice-specific matching only triggers when BOTH the character name
+              // AND a voice keyword appear in the same note — prevents a single
+              // generic note about "voice" from flagging every character.
+              const nameAndVoice = /\b(voice|speech|dialogue pattern|verbal|register|vocabulary)\b/i;
+              if (nameAndVoice.test(allNoteText) && namePattern.test(allNoteText) && section.body.length > 100) {
                 return true;
               }
 
@@ -8971,6 +8971,11 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             );
           }
         }
+        } catch (perCharErr: any) {
+            console.error("[dev-engine-v2] rewrite: per-character processing failed (falling through to single-pass):", perCharErr?.message);
+            isPerCharRewrite = false;
+            rewrittenText = "";
+        }
       }
 
       if (!isPerCharRewrite) {
@@ -9156,19 +9161,24 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         }
       }
 
-      // ── Style eval on rewrite output ──
-      const rwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";
-      const { target: rwStyleTarget } = await loadVoiceTargets(supabase, projectId, rwLane);
-      const rwStyleEval = await runStyleEval(supabase, rewrittenText, projectId, documentId, newVersion.id, rwLane, rwStyleTarget);
-      if (rwStyleEval) {
-        // Merge style eval meta into version meta_json
-        const mergedMeta = { ...(newVersion.meta_json || {}), ...rwStyleEval.metaFields };
-        await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
-        newVersion.meta_json = mergedMeta;
+      // ── Style eval on rewrite output (non-fatal — failure must not block success response) ──
+      try {
+        const rwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";
+        const { target: rwStyleTarget } = await loadVoiceTargets(supabase, projectId, rwLane);
+        const rwStyleEval = await runStyleEval(supabase, rewrittenText, projectId, documentId, newVersion.id, rwLane, rwStyleTarget);
+        if (rwStyleEval) {
+          const mergedMeta = { ...(newVersion.meta_json || {}), ...rwStyleEval.metaFields };
+          await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = mergedMeta;
+        }
+      } catch (styleErr: any) {
+        console.warn("[dev-engine-v2] rewrite: style eval failed (non-fatal):", styleErr?.message);
       }
 
-      // Store rewrite run with schema_version and deliverable metadata
-      const { data: run } = await supabase.from("development_runs").insert({
+      // Store rewrite run with schema_version and deliverable metadata (non-fatal)
+      let run: any = null;
+      try {
+        const runResult = await supabase.from("development_runs").insert({
         project_id: projectId,
         document_id: documentId,
         version_id: newVersion.id,
@@ -9186,6 +9196,10 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         format: effectiveFormat,
         schema_version: SCHEMA_VERSION,
       }).select().single();
+            run = runResult;
+          } catch (runErr: any) {
+            console.warn("[dev-engine-v2] rewrite: development_runs insert failed (non-fatal):", runErr?.message);
+          }
 
       // ── Mark approved notes as resolved immediately after rewrite ──
       // Without this, approved notes are never marked resolved in development_notes,
@@ -9767,7 +9781,11 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             // Extract section label from the first ## header in the chunk
             const headerMatch = chunkText.match(/^##\s+(.+)/m);
             const sectionLabel = headerMatch ? headerMatch[1].trim() : "";
-            const labelWords = (sectionLabel || "")
+            // Strip parenthetical role — e.g. "1. Sarah (Protagonist)" → "1. Sarah"
+            // This prevents generic role words like "protagonist", "antagonist" from
+            // matching note text and triggering unnecessary full rewrites.
+            const nameOnly = sectionLabel.replace(/\s*\([^)]*\)\s*/g, "").trim();
+            const labelWords = (nameOnly || sectionLabel || "")
               .toLowerCase()
               .replace(/[^a-z0-9\s]/g, " ")
               .split(/\s+/)
@@ -10080,13 +10098,17 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // Store canonConstraintBlock for use in development_runs output_json
       const violationConstraintBlock = canonConstraintBlock;
 
-      // ── Style eval on chunked rewrite output ──
-      const chunkStyleTarget = (await loadVoiceTargets(supabase, projectId, chunkLane)).target;
-      const chunkStyleEval = await runStyleEval(supabase, assembledText, projectId, documentId, newVersion.id, chunkLane, chunkStyleTarget);
-      if (chunkStyleEval) {
-        const mergedMeta = { ...(newVersion.meta_json || {}), ...chunkStyleEval.metaFields };
-        await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
-        newVersion.meta_json = mergedMeta;
+      // ── Style eval on chunked rewrite output (non-fatal — wrapped in try/catch) ──
+      try {
+        const chunkStyleTarget = (await loadVoiceTargets(supabase, projectId, chunkLane)).target;
+        const chunkStyleEval = await runStyleEval(supabase, assembledText, projectId, documentId, newVersion.id, chunkLane, chunkStyleTarget);
+        if (chunkStyleEval) {
+          const mergedMeta = { ...(newVersion.meta_json || {}), ...chunkStyleEval.metaFields };
+          await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = mergedMeta;
+        }
+      } catch (styleErr: any) {
+        console.warn("[dev-engine-v2] rewrite-assemble: style eval failed (non-fatal):", styleErr?.message);
       }
 
       const isEpisodicRun = planOutput?.strategy === "episodic_indexed";
@@ -10098,30 +10120,58 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           : `Episode-scoped rewrite across ${runEpisodeCount} episodes. Applied ${notesCount} notes.`)
         : `Full chunked rewrite. Applied ${notesCount} notes.`;
 
-      const { data: run } = await supabase.from("development_runs").insert({
-        project_id: projectId,
-        document_id: documentId,
-        version_id: newVersion.id,
-        user_id: user.id,
-        run_type: "REWRITE",
-        output_json: {
-          rewrite_mode_used: isEpisodicRun ? "episodic" : "chunk",
-          rewrite_mode_selected: rewriteModeSelected || "auto",
-          rewrite_mode_effective: rewriteModeEffective || (isEpisodicRun ? "episodic" : "chunk"),
-          rewrite_mode_reason: rewriteModeReason || (isEpisodicRun ? "episodic_indexed" : "auto_probe_chunk"),
-          rewrite_mode_debug: rewriteModeDebug || null,
-          rewrite_probe: rewriteProbe || null,
-          rewritten_text: `[${assembledText.length} chars]`,
-          changes_summary: changesSummaryText,
-          source_version_id: versionId,
-          source_doc_id: documentId,
-          ...(isEpisodicRun ? { episode_count: runEpisodeCount, affected_episodes: runAffectedCount } : {}),
-          canon_violations: violationConstraintBlock ? (cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || 0) : 0,
-          canon_violation_constraint_block: violationConstraintBlock || null,
-          human_review_flag: humanReviewFlag || false,
-        },
-        schema_version: SCHEMA_VERSION,
-      }).select().single();
+      let run: any = null;
+      try {
+        const { data: runData } = await supabase.from("development_runs").insert({
+          project_id: projectId,
+          document_id: documentId,
+          version_id: newVersion.id,
+          user_id: user.id,
+          run_type: "REWRITE",
+          output_json: {
+            rewrite_mode_used: isEpisodicRun ? "episodic" : "chunk",
+            rewrite_mode_selected: rewriteModeSelected || "auto",
+            rewrite_mode_effective: rewriteModeEffective || (isEpisodicRun ? "episodic" : "chunk"),
+            rewrite_mode_reason: rewriteModeReason || (isEpisodicRun ? "episodic_indexed" : "auto_probe_chunk"),
+            rewrite_mode_debug: rewriteModeDebug || null,
+            rewrite_probe: rewriteProbe || null,
+            rewritten_text: `[${assembledText.length} chars]`,
+            changes_summary: changesSummaryText,
+            source_version_id: versionId,
+            source_doc_id: documentId,
+            ...(isEpisodicRun ? { episode_count: runEpisodeCount, affected_episodes: runAffectedCount } : {}),
+            canon_violations: violationConstraintBlock ? (cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || 0) : 0,
+            canon_violation_constraint_block: violationConstraintBlock || null,
+            human_review_flag: humanReviewFlag || false,
+          },
+          schema_version: SCHEMA_VERSION,
+        }).select().single();
+        run = runData;
+      } catch (runErr: any) {
+        console.warn("[dev-engine-v2] rewrite-assemble: development_runs insert failed (non-fatal):", runErr?.message);
+      }
+
+      // ── Mark approved notes as resolved after chunked rewrite ──
+      // Without this, approved notes from the plan run are never marked resolved,
+      // so the next notes run sees them as still-open and re-raises them indefinitely.
+      const assembleApprovedNotes = planOutput?.approved_notes || [];
+      if (Array.isArray(assembleApprovedNotes) && assembleApprovedNotes.length > 0) {
+        const assembleNoteIds = assembleApprovedNotes
+          .map((n: any) => n.id || n.note_key)
+          .filter(Boolean);
+        if (assembleNoteIds.length > 0) {
+          try {
+            await supabase.from("development_notes")
+              .update({ resolved: true, resolved_in_version: newVersion.id })
+              .eq("document_id", documentId)
+              .eq("resolved", false)
+              .in("note_key", assembleNoteIds);
+            console.log(`[dev-engine-v2] rewrite-assemble: marked ${assembleNoteIds.length} approved notes resolved`, assembleNoteIds);
+          } catch (resolveErr: any) {
+            console.warn("[dev-engine-v2] rewrite-assemble: mark-resolved failed (non-fatal):", resolveErr?.message);
+          }
+        }
+      }
 
       // Trigger async convergence scoring in background
       if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
@@ -29941,7 +29991,6 @@ CRITICAL:
             characters: ver?.characters || [],
           };
         });
-<<<<<<< Updated upstream
 } else {
         // Fallback: split from plaintext — but strategy depends on doc_type
         // For sectioned dev types (treatment, story_outline, etc.), use ## headers.
