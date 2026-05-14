@@ -997,10 +997,13 @@ export default function ProjectDevelopmentEngine() {
       onSuccess: (analysisResult: any) => {
         generateNotes.mutate(analysisResult, {
           onSuccess: () => {
-            // Auto-trigger Generate Options after notes land, so users don't have to click manually
-            if (selectedDocId && selectedVersionId) {
-              setTimeout(() => generateOptionsMutation.mutate(), 500);
-            }
+            // Auto-trigger Generate Options after notes land — wraps in try/catch
+            // to avoid "assignment to constant variable" edge cases in mutation internals
+            try {
+              if (selectedDocId && selectedVersionId && typeof generateOptionsMutation?.mutate === 'function') {
+                setTimeout(() => { try { generateOptionsMutation.mutate(); } catch {} }, 500);
+              }
+            } catch {}
           },
         });
       },
