@@ -192,6 +192,9 @@ export default function ProjectDevelopmentEngine() {
   }, [uiMode, setUIMode]);
   // Execution mode preference (persists to job when one exists, otherwise local)
   const [localExecutionMode, setLocalExecutionMode] = useState<ExecutionMode>('full_autopilot');
+  // Auto-trigger Generate Options after notes land — flag-based to avoid const assignment
+  // errors in React Query internals when chaining mutations in onSuccess callbacks.
+  const [pendingAutoTrigger, setPendingAutoTrigger] = useState(false);
   const qc = useQueryClient();
 
   // Generate decision options mutation (used by Rewrite Plan card fallback)
@@ -213,6 +216,21 @@ export default function ProjectDevelopmentEngine() {
       invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
     },
   });
+
+  // Auto-trigger Generate Options after notes land — fires via flag + useEffect
+  // instead of inline setTimeout, so React Query's internal state machine has
+  // finished propagating before we call mutate().
+  useEffect(() => {
+    if (!pendingAutoTrigger) return;
+    if (!selectedDocId || !selectedVersionId || typeof generateOptionsMutation?.mutate !== 'function') {
+      setPendingAutoTrigger(false);
+      return;
+    }
+    generateOptionsMutation.mutate(undefined, {
+      onSettled: () => setPendingAutoTrigger(false),
+    });
+  }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
+
   const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual', 'cascade']);
   const initialTab = (() => { const t = searchParams.get('tab'); return t && VALID_TABS.has(t) ? t : 'notes'; })();
   const [intelligenceTab, setIntelligenceTab] = useState(initialTab);
@@ -997,13 +1015,9 @@ export default function ProjectDevelopmentEngine() {
       onSuccess: (analysisResult: any) => {
         generateNotes.mutate(analysisResult, {
           onSuccess: () => {
-            // Auto-trigger Generate Options after notes land — wraps in try/catch
-            // to avoid "assignment to constant variable" edge cases in mutation internals
-            try {
-              if (selectedDocId && selectedVersionId && typeof generateOptionsMutation?.mutate === 'function') {
-                setTimeout(() => { try { generateOptionsMutation.mutate(); } catch {} }, 500);
-              }
-            } catch {}
+            // Signal auto-trigger via flag — the useEffect above handles
+            // firing generateOptionsMutation after React finishes re-rendering.
+            setPendingAutoTrigger(true);
           },
         });
       },
