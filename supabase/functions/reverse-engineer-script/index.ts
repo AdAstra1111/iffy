@@ -426,6 +426,23 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return lines.join("\n").trim();
   }
 
+  // ── TREATMENT: per-act prose sections matching the acts JSON shape ──
+  function buildTreatmentPlaintext(data: any): string {
+    if (!data || typeof data !== "object") return String(data ?? "");
+    if (data.acts && typeof data.acts === "object") {
+      const actOrder = ["act_1", "act_2a", "act_2b", "act_3", "act_4"];
+      return actOrder
+        .filter(key => data.acts[key] && typeof data.acts[key] === "string" && data.acts[key].trim().length > 0)
+        .map(key => {
+          const label = key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+          return `## ${label}\n\n${data.acts[key].trim()}`;
+        })
+        .join("\n\n---\n\n");
+    }
+    if (typeof data.treatment === "string") return data.treatment;
+    return String(data ?? "");
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
@@ -450,6 +467,11 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     // ── MARKET SHEET / VERTICAL MARKET SHEET: canonical prose format ──
     if (docType === "market_sheet" || docType === "vertical_market_sheet") {
       return buildMarketSheetPlaintext(data);
+    }
+
+    // ── TREATMENT: per-act markdown sections ──
+    if (docType === "treatment") {
+      return buildTreatmentPlaintext(data);
     }
 
     // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
@@ -913,8 +935,12 @@ Respond with ONLY JSON.`, 16000);
       // ── Stage: idea ─────────────────────────────────────────────────────
       metadata = call1?.metadata;
 
+      // Query the real project title from the projects table (not the LLM-extracted one)
+      const { data: projectRow } = await sb.from("projects").select("title").eq("id", project_id).single();
+      const projectTitle = projectRow?.title || metadata.title || "Untitled";
+
       // Build source citations here so all downstream stages can use them
-      const scriptTitle = metadata.title || "Script";
+      const scriptTitle = projectTitle || "Script";
       const allLinesStart = lineRanges[0]?.startLine ?? 1;
       const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
       allChunksCitation = scriptTitle + ", lines " + allLinesStart + "–" + allLinesEnd;
@@ -958,7 +984,7 @@ ${ideaScriptExcerpt}
 Respond with ONLY JSON.`, 14000);
 
       const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
-        title: metadata.title || "Untitled",
+        title: projectTitle,
         logline: metadata.logline || "",
         premise: "",
         genre: metadata.genre || null,
@@ -969,7 +995,7 @@ Respond with ONLY JSON.`, 14000);
         target_audience: metadata.target_audience || null,
       };
       await storeDoc(sb, project_id, script_document_id, user_id, "idea", "creative_primary",
-        (ideaData.title || metadata.title || "Script") + " — Idea",
+        (ideaData.title || projectTitle) + " — Idea",
         ideaData,
         { source_citations: [allChunksCitation, ...chunkCitations] },
         ideaResolverHash
@@ -1430,6 +1456,11 @@ Respond with ONLY JSON.`, 14000);
       protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
       beats       = call2?.beats || [];
 
+      // Detect act structure from beat sheet
+      const actAffiliationValues = [...new Set(beats.map((b: any) => b.act_affiliation).filter(Boolean))];
+      const hasAct4 = actAffiliationValues.some((a: string) => a.toLowerCase().includes("act 4"));
+      const impliedActs = hasAct4 ? "The story has a dedicated Act 4 for the confrontation/climax section." : "The story follows a 3-act structure.";
+
       // Full beat descriptions — no truncation, all beats
       const allBeatDescriptions = beats.map((b: any) =>
         `Beat ${b.number} [${b.name}]: ${b.description || ""}`
@@ -1468,11 +1499,18 @@ REMEMBER:
 - Character voice in the prose should match their established psychology
 - Act breaks should match the beat_sheet exactly
 
-Return valid JSON:
+// ACT STRUCTURE CONTEXT — derived from beat sheet
+      // ${impliedActs}
+
+      Return valid JSON:
 {
-  "title": "string",
-  "treatment": "string — full prose narrative, paragraphs per act, no structure markers except act transitions",
-  "act_breaks": [{"act_number": 1, "description": "string"}]
+  "acts": {
+    "act_1": "string — full prose narrative for Act 1 (Setup). Establish the world, the characters, the central tension.",
+    "act_2a": "string — full prose narrative for Act 2A (first half of complication), or empty string if story structure doesn't use 2A/2B split.",
+    "act_2b": "string — full prose narrative for Act 2B (second half of complication), or empty string if story structure doesn't use 2A/2B split.",
+    "act_3": "string — full prose narrative for Act 3 (Resolution). Climax and denouement.",
+    "act_4": "string — full prose narrative for Act 4 (only if this story has a dedicated confrontation/climax section that needs its own act beyond the 3-act structure). Empty string if not needed."
+  }
 }
 
 PRIMARY CONTEXT — FULL BEAT DESCRIPTIONS (all beats, complete arc):
@@ -1544,16 +1582,16 @@ Respond with ONLY JSON.`, 8000);
       const isTV = format === "tv-series";
 
       await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
-        `${metadata.title} — Concept Brief`,
-        { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...(call1?.concept_brief || {}) },
+        `${projectTitle} — Concept Brief`,
+        { title: projectTitle, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...(call1?.concept_brief || {}) },
         { source_citations: [allChunksCitation, ...chunkCitations] });
 
       const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
       // callMarketSheet is the dedicated call — run after beat_sheet has structural metadata
       const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1?.market_sheet || {}), ...callMarketSheet } : (call1?.market_sheet || {});
       await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
-        `${metadata.title} — Market Sheet`,
-        { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
+        `${projectTitle} — Market Sheet`,
+        { title: projectTitle, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
 
       const arcType = isTV ? "season_arc" : "treatment";
       // Store callTreatment response directly — FormattedDocContent knows how to render:
@@ -1561,28 +1599,28 @@ Respond with ONLY JSON.`, 8000);
       //   act_breaks: array → "Act 1", "Act 2" etc. via dedicated renderer
       //   treatment_narrative (legacy) → treated as prose string by generic handler
       await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
-        `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
+        `${projectTitle} — ${isTV ? "Season Arc" : "Treatment"}`,
         typeof callTreatment === "string" ? { treatment: callTreatment } : callTreatment,
         { source_citations: [partialCitation] });
 
       const beatType = isTV ? "format_rules" : "beat_sheet";
       await storeDoc(sb, project_id, script_document_id, user_id, beatType, "creative_primary",
-        `${metadata.title} — Beat Sheet`, call2,
+        `${projectTitle} — Beat Sheet`, call2,
         { source_citations: [partialCitation] });
 
       await storeDoc(sb, project_id, script_document_id, user_id, "character_bible", "creative_primary",
-        `${metadata.title} — Character Bible`, call3,
+        `${projectTitle} — Character Bible`, call3,
         { source_citations: [partialCitation] });
 
       const outlineType = isTV ? "episode_grid" : "story_outline";
       await storeDoc(sb, project_id, script_document_id, user_id, outlineType, "creative_primary",
-        `${metadata.title} — Story Outline`,
-        typeof callStoryOutline === "object" ? callStoryOutline : { title: metadata.title, format, entries: [] });
+        `${projectTitle} — Story Outline`,
+        typeof callStoryOutline === "object" ? callStoryOutline : { title: projectTitle, format, entries: [] });
 
       // Write all extracted canonical fields back to canon_json so downstream drift detection is accurate
       try {
         const canonUpdate = {
-          title: metadata.title,
+          title: projectTitle,
           logline: (call1 as any)?.metadata?.logline || null,
           format: (call1 as any)?.metadata?.format || format,
           genre: (call1 as any)?.metadata?.genre || null,
@@ -1761,14 +1799,14 @@ Respond with ONLY JSON.`, 3000);
         console.warn("[reverse-engineer] criteria population failed (non-fatal):", criteriaErr);
       }
 
-      await sb.from("projects").update({ title: metadata.title, lifecycle_stage: outlineType }).eq("id", project_id);
+      await sb.from("projects").update({ lifecycle_stage: outlineType }).eq("id", project_id);
 
       // Mark all stages done
       for (const s of JOB_STAGES) updateStage(payload, s.key, "done");
       payload.status = "done";
       payload.current_stage = "done";
       payload.updated_at = new Date().toISOString();
-      payload.result = { title: metadata.title, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
+      payload.result = { title: projectTitle, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
     }
 
   } catch (err: any) {
