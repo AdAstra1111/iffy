@@ -30269,7 +30269,7 @@ scenes = boundaries.map((b, i) => {
         const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
         const effUserId = user?.id || proj?.user_id || null;
         await supabase.from("rewrite_runs").insert({
-          project_id: projectId, user_id: effUserId,
+          id: runId, project_id: projectId, user_id: effUserId,
           source_doc_id: sourceDocId, source_version_id: sourceVersionId,
           status: "running",
           target_scene_numbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
