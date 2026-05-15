@@ -30462,7 +30462,7 @@ scenes = boundaries.map((b, i) => {
         const _outerApiKey = OPENROUTER_API_KEY;
 
         // Helper: use waitUntil if available, with safe fallback
-        function _bgGuard(p: Promise<any>): boolean {
+        const _bgGuard = (p: Promise<any>): boolean => {
           try {
             const rt = (globalThis as any).EdgeRuntime;
             if (typeof rt !== "undefined" && rt?.waitUntil) {
@@ -30471,7 +30471,7 @@ scenes = boundaries.map((b, i) => {
             }
           } catch {}
           return false;
-        }
+        };
 
         const BGE_TASK = (async () => {
           let _innerSupabase: ReturnType<typeof createClient> | null = null;
