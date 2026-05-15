@@ -30281,6 +30281,10 @@ scenes = boundaries.map((b, i) => {
         console.log("[story-outline-enqueue] generating runId:", runId);
         const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
         const effUserId = user?.id || proj?.user_id || null;
+        console.log("[story-outline-enqueue] auth context:", {
+          userId: user?.id, projUserId: proj?.user_id, effUserId,
+          sourceDocId, sourceVersionId, projectId,
+        });
         const { data: insertResult, error: insertErr } = await supabase.from("rewrite_runs").insert({
           id: runId, project_id: projectId, user_id: effUserId,
           source_doc_id: sourceDocId, source_version_id: sourceVersionId,
@@ -30288,9 +30292,17 @@ scenes = boundaries.map((b, i) => {
           target_scene_numbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
         }).select("id").single();
         if (insertErr || !insertResult) {
-          console.error("[story-outline-enqueue] insert failed:", insertErr?.message, "(runId:", runId, ")");
+          console.error("[story-outline-enqueue] insert failed:", insertErr?.message, "(runId:", runId, ")", {
+            error: insertErr, insertResult,
+          });
           throw new Error(insertErr?.message || "Failed to create rewrite run record");
         }
+        console.log("[story-outline-enqueue] insert succeeded", {
+          runId, insertResultId: insertResult.id,
+          idsMatch: runId === insertResult.id,
+          projectId, sourceDocId, sourceVersionId,
+          effUserId, insertErr,
+        });
         console.log("[story-outline-enqueue] inserted rewrite_runs row", {
           runId, projectId, sourceDocId, sourceVersionId,
           effUserId, insertResultId: insertResult.id,
