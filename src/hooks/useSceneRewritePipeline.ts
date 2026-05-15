@@ -110,12 +110,12 @@ const initialState: SceneRewriteState = {
   runId: null,
 };
 
-async function callEngine(action: string, extra: Record<string, any> = {}) {
+async function callEngine(action: string, extra: Record<string, any> = {}, timeoutMs = 120_000) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
     method: 'POST',
@@ -457,7 +457,17 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
           await new Promise(r => setTimeout(r, 1000));
           pollCount++;
           
-          const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId });
+          const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId }, 30_000).catch((err: any) => {
+            // Handle abort/timeout gracefully — don't crash the polling loop.
+            // Safari reports abort as "signal is aborted without reason".
+            if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
+              console.warn('[sceneRewrite] status poll aborted (timeout?), retrying…', {
+                pollCount, isMomentMode,
+              });
+              return null;
+            }
+            throw err; // re-throw non-abort errors
+          });
           
           if (status && status.total !== undefined) {
             const pct = status.total > 0 ? Math.floor((status.done / status.total) * 100) : 0;
