@@ -224,8 +224,9 @@ function parseBeatSheet(plaintext: string): Act[] {
       const line = numberedLines[i];
       const trimmed = line.trim();
 
-      // Act header: ## Act 1 Beats / ## Act 2 Beats (with 'Beats' plural)
-      const actMatch = trimmed.match(/^##\s+Act\s+(\d+)\s+Beats/i);
+      // Act header: ## Act 1 Beats / ## Act 1: Setup — Beats / ## Act 2A: Rising Action — Beats
+      const actMatch = trimmed.match(/^##\s+Act\s+([\w]+)\s*(?::[^]*?)?Beats/i) || 
+                       trimmed.match(/^##\s+Act\s+(\w+[\w\s]*?)\s*[—–-]\s*Beats/i);
       if (actMatch) {
         // flush any pending beat
         if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
