@@ -30792,7 +30792,7 @@ scenes = boundaries.map((b, i) => {
 
       // Get run record to find the output version
       let { data: run } = await supabase.from("rewrite_runs")
-        .select("source_doc_id, source_version_id, status, meta_json")
+        .select("source_doc_id, source_version_id, status, meta_json, user_id")
         .eq("id", runId).maybeSingle();
 
       // Retry the runId lookup up to 3 times with 500ms delay.
@@ -30806,7 +30806,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, attempt: retries,
         });
         const { data: retryRun } = await supabase.from("rewrite_runs")
-          .select("source_doc_id, source_version_id, status, meta_json")
+          .select("source_doc_id, source_version_id, status, meta_json, user_id")
           .eq("id", runId).maybeSingle();
         if (retryRun) {
           run = retryRun;
@@ -30822,7 +30822,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, sourceVersionId: body.sourceVersionId,
         });
         const { data: fallbackRun } = await supabase.from("rewrite_runs")
-          .select("id, source_doc_id, source_version_id, status, meta_json")
+          .select("id, source_doc_id, source_version_id, status, meta_json, user_id")
           .eq("project_id", projectId)
           .eq("source_version_id", body.sourceVersionId)
           .in("status", ["running", "queued"])
@@ -30851,13 +30851,17 @@ scenes = boundaries.map((b, i) => {
         sourceDocId: run.source_doc_id,
         sourceVersionId: run.source_version_id,
         status: run.status,
+        userId: run.user_id,
       });
 
-      // Get the latest version created by this run (output version)
+      // Get the latest version created by this run (output version).
+      // Use run.user_id (the actual column) instead of run.meta_json?.user_id
+      // (always null — meta_json is never set on the enqueue insert).
+      const userIdFilter = run.user_id || null;
       const { data: version } = await supabase.from("project_document_versions")
         .select("id, plaintext, version_number, meta_json")
         .eq("document_id", run.source_doc_id)
-        .eq("created_by", run.meta_json?.user_id || null)
+        .eq("created_by", userIdFilter)
         .order("version_number", { ascending: false })
         .limit(1).single();
 
