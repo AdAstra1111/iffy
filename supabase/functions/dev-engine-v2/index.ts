@@ -31072,7 +31072,7 @@ scenes = boundaries.map((b, i) => {
 
       // Get run record to find the output version
       let { data: run } = await supabase.from("rewrite_runs")
-        .select("source_doc_id, source_version_id, status, meta_json, user_id")
+        .select("source_doc_id, source_version_id, status, id")
         .eq("id", runId).maybeSingle();
 
       // Retry the runId lookup up to 3 times with 500ms delay.
@@ -31086,7 +31086,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, attempt: retries,
         });
         const { data: retryRun } = await supabase.from("rewrite_runs")
-          .select("source_doc_id, source_version_id, status, meta_json, user_id")
+          .select("source_doc_id, source_version_id, status, id")
           .eq("id", runId).maybeSingle();
         if (retryRun) {
           run = retryRun;
@@ -31102,7 +31102,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, sourceVersionId: body.sourceVersionId,
         });
         const { data: fallbackRun } = await supabase.from("rewrite_runs")
-          .select("id, source_doc_id, source_version_id, status, meta_json, user_id")
+          .select("id, source_doc_id, source_version_id, status")
           .eq("project_id", projectId)
           .eq("source_version_id", body.sourceVersionId)
           .in("status", ["running", "queued"])
@@ -31122,7 +31122,7 @@ scenes = boundaries.map((b, i) => {
         // regardless of runId or sourceVersionId. This bypasses any
         // runId mismatch or timing issue entirely.
         const { data: latestRun } = await supabase.from("rewrite_runs")
-          .select("id, source_doc_id, source_version_id, status, meta_json, user_id")
+          .select("id, source_doc_id, source_version_id, status, user_id")
           .eq("project_id", projectId)
           .in("status", ["running", "queued"])
           .order("created_at", { ascending: false })
