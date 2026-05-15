@@ -458,15 +458,25 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
           pollCount++;
           
           const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId }, 30_000).catch((err: any) => {
-            // Handle abort/timeout gracefully — don't crash the polling loop.
-            // Safari reports abort as "signal is aborted without reason".
-            if (err?.name === 'AbortError' || err?.message?.includes('aborted')) {
-              console.warn('[sceneRewrite] status poll aborted (timeout?), retrying…', {
+            // Handle transient errors gracefully — don't crash the polling loop.
+            // - AbortError / "signal is aborted" = request timed out or was cancelled
+            // - TypeError / "failed to fetch" = network error (Vercel proxy cold start, DNS, etc.)
+            const transient = (
+              err?.name === 'AbortError' ||
+              err?.message?.includes('aborted') ||
+              err?.name === 'TypeError' ||
+              err?.message?.includes('Failed to fetch') ||
+              err?.message?.includes('NetworkError')
+            );
+            if (transient) {
+              console.warn('[sceneRewrite] status poll transient error, retrying…', {
                 pollCount, isMomentMode,
+                errorName: err?.name,
+                errorMessage: err?.message?.slice(0, 80),
               });
               return null;
             }
-            throw err; // re-throw non-abort errors
+            throw err; // re-throw non-transient errors
           });
           
           if (status && status.total !== undefined) {
