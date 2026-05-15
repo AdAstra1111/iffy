@@ -30850,15 +30850,37 @@ scenes = boundaries.map((b, i) => {
       }
 
       if (!run) {
-        // Don't return "Run not found" — the row may not have propagated yet.
-        // Return a retry signal so the frontend polling loop keeps trying
-        // without crashing or showing an error toast.
-        return new Response(JSON.stringify({ 
-          total: 0, done: 0, queued: 0, running: 0, failed: 0, 
-          status: "retry", 
-        }), { 
-          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Ultimate fallback: query the latest active run for this project
+        // regardless of runId or sourceVersionId. This bypasses any
+        // runId mismatch or timing issue entirely.
+        const { data: latestRun } = await supabase.from("rewrite_runs")
+          .select("id, source_doc_id, source_version_id, status, meta_json, user_id")
+          .eq("project_id", projectId)
+          .in("status", ["running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestRun) {
+          console.log("[story-outline-status] ultimate fallback succeeded — found latest project run", {
+            foundRunId: latestRun.id, originalRunId: runId,
+            sourceVersionId: latestRun.source_version_id,
+            status: latestRun.status,
+          });
+          run = latestRun;
+        } else {
+          // If we STILL can't find any run, return retry signal.
+          // The polling loop will keep trying.
+          console.warn("[story-outline-status] no run found via any lookup path", {
+            runId, projectId,
+            expectedSourceVersionId: body.sourceVersionId || "(not sent)",
+          });
+          return new Response(JSON.stringify({ 
+            total: 0, done: 0, queued: 0, running: 0, failed: 0, 
+            status: "retry", 
+          }), { 
+            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
 
       console.log("[story-outline-status] run found", {
