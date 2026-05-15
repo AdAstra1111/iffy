@@ -577,6 +577,7 @@ export default function ProjectDevelopmentEngine() {
   const postOperationVersionId = useRef<string | null>(null);
   const prevVersionId = useRef(selectedVersionId);
   const pendingPostOpAutoReview = useRef(false);
+  const beatSheetTriggerRef = useRef<(() => void) | null>(null);
 
   // Re-resolve when version changes (always safe — never triggers review)
   useEffect(() => {
@@ -1349,9 +1350,9 @@ export default function ProjectDevelopmentEngine() {
       };
 
       // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
-      // NOTE: beat_sheet Apply All is handled exclusively by BeatRewritePanel's own "Apply All" button — skip sectioned rewrite
+      // NOTE: beat_sheet Apply All is handled by BeatRewritePanel via applyAllTriggerRef
       if (selectedDoc?.doc_type === 'beat_sheet') {
-        // BeatRewritePanel.onApplyAll handles beat-by-beat rewrite; do nothing here
+        beatSheetTriggerRef.current?.();
         return;
       }
       // Treatment docs: route to per-act pipeline via direct supabase invoke instead of chunked pipeline
@@ -2473,6 +2474,7 @@ export default function ProjectDevelopmentEngine() {
                       version={selectedVersion as any}
                       approvedNotes={beatSheetApprovedNotes}
                       protectItems={protectItems}
+                      applyAllTriggerRef={beatSheetTriggerRef}
                       onApplyAllStart={() => setTreatmentRewritePending(true)}
                       onApplyAllDone={() => setTreatmentRewritePending(false)}
                       onComplete={(newVersionId) => {
@@ -2958,7 +2960,7 @@ export default function ProjectDevelopmentEngine() {
               )}
 
               {/* ═══ UNIFIED BIG BUTTON: Apply All Notes & Decisions ═══ */}
-              {allPrioritizedMoves.length > 0 && selectedDoc?.doc_type !== 'beat_sheet' && (
+              {allPrioritizedMoves.length > 0 && (
                 <Button
                   size="lg"
                   className="w-full h-12 text-sm font-semibold gap-2"

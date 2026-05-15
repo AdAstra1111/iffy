@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ interface BeatRewritePanelProps {
   onComplete?: (newVersionId: string) => void;
   onApplyAllStart?: () => void;
   onApplyAllDone?: () => void;
+  /** External ref to trigger Apply All from parent */
+  applyAllTriggerRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -665,6 +667,7 @@ function RewriteModal({
 
 export default function BeatRewritePanel({
   projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAllStart, onApplyAllDone,
+  applyAllTriggerRef,
 }: BeatRewritePanelProps) {
   const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
   const [rewriteTarget, setRewriteTarget] = useState<Beat | null>(null);
@@ -674,6 +677,18 @@ export default function BeatRewritePanel({
 
   const plaintext = version?.plaintext || '';
   const acts = useMemo(() => parseBeatSheet(plaintext), [plaintext]);
+
+  // Expose handleApplyAll to parent via ref
+  const handleApplyAllRef = useRef(handleApplyAll);
+  handleApplyAllRef.current = handleApplyAll;
+  useEffect(() => {
+    if (applyAllTriggerRef) {
+      applyAllTriggerRef.current = () => handleApplyAllRef.current();
+    }
+    return () => {
+      if (applyAllTriggerRef) applyAllTriggerRef.current = null;
+    };
+  }, [applyAllTriggerRef]);
 
   // Auto-expand all acts on mount
   useEffect(() => {
