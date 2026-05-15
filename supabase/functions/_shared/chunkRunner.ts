@@ -1200,6 +1200,18 @@ export async function explodeBeatSheetChunks(
   assembledContent: string,
   oldChunkCount: number,
 ): Promise<void> {
+  // Guard: skip if already exploded (check if beat chunks exist)
+  const { data: existingChunks } = await supabase
+    .from("project_document_chunks")
+    .select("chunk_key")
+    .eq("document_id", documentId)
+    .eq("version_id", versionId)
+    .limit(1);
+  if ((existingChunks || []).length > 0 && (existingChunks[0]?.chunk_key || "").startsWith("beat_")) {
+    console.log(`[chunkRunner][explode] Already exploded — skipping`);
+    return;
+  }
+
   const beats = parseBeatSheetIntoBeats(assembledContent);
   if (beats.length === 0) {
     console.log(`[chunkRunner][explode] No beats found in assembled content — skipping`);
