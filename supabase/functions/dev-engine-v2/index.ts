@@ -30311,13 +30311,14 @@ scenes = boundaries.map((b, i) => {
         if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
           (globalThis as any).EdgeRuntime.waitUntil(
             (async () => {
+              let bgSupabase: ReturnType<typeof createClient> | null = null;
               try {
                 const _gw = resolveGateway();
                 const _apiKey = _gw.apiKey;
                 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
                 const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
                 const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-                const bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+                bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
                   auth: { persistSession: false, autoRefreshToken: false },
                   global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
                 });
@@ -30391,7 +30392,13 @@ scenes = boundaries.map((b, i) => {
                 await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
               } catch (err: any) {
                 console.error("[story-outline-bg] rewrite failed:", err?.message);
-                await bgSupabase.from("rewrite_runs").update({ status: "failed", summary: err?.message }).eq("id", runId);
+                if (bgSupabase) {
+                  await bgSupabase.from("rewrite_runs").update({ status: "failed", summary: err?.message }).eq("id", runId).catch((e: any) => {
+                    console.error("[story-outline-bg] failed to update run status:", e?.message);
+                  });
+                } else {
+                  console.error("[story-outline-bg] cannot update run status — bgSupabase not initialized");
+                }
               }
             })()
           );
