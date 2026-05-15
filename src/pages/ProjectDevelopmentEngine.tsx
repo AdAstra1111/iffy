@@ -1331,7 +1331,7 @@ export default function ProjectDevelopmentEngine() {
         enrichedNotes = allPrioritizedMoves.map((n: any) => ({ ...n }));
       }
 
-      // Record decisions after rewrite
+      // Record decisions after rewrite, then auto-trigger options generation
       const afterRewrite = () => {
         recordResolutions({
           projectId: projectId!,
@@ -1343,6 +1343,9 @@ export default function ProjectDevelopmentEngine() {
           globalDirections: globalDirections,
           currentDocTypeKey: selectedDeliverableType,
         }).catch(e => console.warn('[decisions] record failed:', e));
+        // Direct auto-trigger: ensures options regenerate after every rewrite/decision,
+        // bypassing the auto-review chain (which only fires when autoReviewEnabled is true — default false).
+        setPendingAutoTrigger(true);
       };
 
       // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types

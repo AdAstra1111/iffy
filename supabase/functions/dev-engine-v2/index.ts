@@ -30791,21 +30791,44 @@ scenes = boundaries.map((b, i) => {
       if (!projectId) throw new Error("projectId required");
 
       // Get run record to find the output version
-      const { data: run } = await supabase.from("rewrite_runs")
+      let { data: run } = await supabase.from("rewrite_runs")
         .select("source_doc_id, source_version_id, status, meta_json")
         .eq("id", runId).maybeSingle();
 
+      // Fallback: try to find run by sourceVersionId when runId lookup fails.
+      // This handles frontend stale-runId scenarios where the ref/sessionStorage
+      // carries a runId from a previous session that no longer matches reality.
+      if (!run && body.sourceVersionId) {
+        console.warn("[story-outline-status] Run not found by runId — falling back to sourceVersionId", {
+          runId, projectId, sourceVersionId: body.sourceVersionId,
+        });
+        const { data: fallbackRun } = await supabase.from("rewrite_runs")
+          .select("id, source_doc_id, source_version_id, status, meta_json")
+          .eq("project_id", projectId)
+          .eq("source_version_id", body.sourceVersionId)
+          .in("status", ["running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackRun) {
+          console.log("[story-outline-status] fallback succeeded — found run by sourceVersionId", {
+            foundRunId: fallbackRun.id, originalRunId: runId,
+          });
+          run = fallbackRun;
+        }
+      }
+
       if (!run) {
-        console.warn("[story-outline-status] Run not found", {
+        console.warn("[story-outline-status] Run not found (final)", {
           runId, projectId,
-          sourceVersionId: null, // not in query result
+          sourceVersionId: null,
           expectedSourceVersionId: body.sourceVersionId || "(not sent)",
         });
         return new Response(JSON.stringify({ error: "Run not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       console.log("[story-outline-status] run found", {
-        runId, projectId,
+        runId: run.id || runId, projectId,
         sourceDocId: run.source_doc_id,
         sourceVersionId: run.source_version_id,
         status: run.status,
