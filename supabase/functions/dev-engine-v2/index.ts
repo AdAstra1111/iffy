@@ -30361,7 +30361,18 @@ scenes = boundaries.map((b, i) => {
                   const systemMsg = "You are rewriting ONE moment of a story outline for \"" + (proj?.title || "this project") + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are — do NOT change them.\n- The previous and next moments are provided for continuity context.\n- Maintain consistent voice, pacing, and narrative tone with adjacent moments.\n- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.\n- Do NOT merge, split, or reorder moments. Rewrite only this one moment.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"" + notesCtx + "}";
                   let rewrittenEntry = entry;
                   try {
-                    const raw = await callAI(_apiKey, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
+                    // Per-moment timeout: 30s per AI call to prevent hanging on slow responses.
+                    // The waitUntil has a ~300s lifetime limit, so we need to process fast.
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), 30_000);
+                    const rawPromise = callAI(_apiKey, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
+                    const raw = await Promise.race([
+                      rawPromise,
+                      new Promise<string>((_, reject) => {
+                        controller.signal.addEventListener("abort", () => reject(new Error("Moment timeout")));
+                      }),
+                    ]);
+                    clearTimeout(timer);
                     const m = (raw || "").match(/\{[\s\S]*?\}/);
                     if (m) {
                       const p = JSON.parse(m[0]);
