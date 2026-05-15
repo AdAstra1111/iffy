@@ -1059,11 +1059,11 @@ async function processStoryOutlineRewrite(
   const { data: doc } = await bgSupabase.from("project_documents").select("doc_type").eq("id", sourceDocId).single();
   if (doc?.doc_type !== "story_outline") throw new Error("Not a story outline");
   const { data: version } = await bgSupabase.from("project_document_versions").select("plaintext, version_number").eq("id", sourceVersionId).single();
-  if (!version) return;
+  if (!version) throw new Error("Source version not found (id: " + sourceVersionId + ")");
   const trimmed = (version.plaintext || "").trim();
-  if (!trimmed.startsWith("{")) return;
+  if (!trimmed.startsWith("{")) throw new Error("Source version plaintext is not JSON object");
   const storyOutlineJSON = JSON.parse(trimmed);
-  if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) return;
+  if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("Story outline has no entries to rewrite");
   const totalEntries = storyOutlineJSON.entries.length;
   const newVersionNumber = (version.version_number || 1) + 1;
   const { data: projData } = await bgSupabase.from("projects").select("title, format, assigned_lane, user_id").eq("id", projectId).maybeSingle();
@@ -1082,6 +1082,7 @@ async function processStoryOutlineRewrite(
     char_count: (e.description || "").length,
     meta_json: { label: e.title || "Moment " + (e.number || (idx + 1)), moment_number: e.number || (idx + 1) },
   })));
+  const rewrittenEntries: any[] = [];
   for (let i = 0; i < storyOutlineJSON.entries.length; i++) {
     await bgSupabase.from("project_document_chunks").update({ status: "running" }).eq("version_id", newVer.id).eq("chunk_index", i);
     const entry = storyOutlineJSON.entries[i];
@@ -1114,12 +1115,13 @@ async function processStoryOutlineRewrite(
         if (p.description) rewrittenEntry = { number: entryNum, title: entry.title || p.title || "", description: p.description };
       }
     } catch { /* keep original */ }
+    rewrittenEntries.push(rewrittenEntry);
     await bgSupabase.from("project_document_chunks").update({ status: "done", content: rewrittenEntry.description, char_count: rewrittenEntry.description.length }).eq("version_id", newVer.id).eq("chunk_index", i);
   }
   const outputJSON = {
     title: storyOutlineJSON.title || projData?.title || proj?.title || "Story Outline",
     format: storyOutlineJSON.format || projData?.format || "film",
-    entries: storyOutlineJSON.entries.map((e: any, idx: number) => ({ number: e.number || (idx + 1), title: e.title, description: e.description })),
+    entries: rewrittenEntries.map((e: any) => ({ number: e.number, title: e.title, description: e.description })),
   };
   await bgSupabase.from("project_document_versions").update({ plaintext: JSON.stringify(outputJSON, null, 2), meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries } }).eq("id", newVer.id);
   await bgSupabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", sourceDocId);
@@ -30454,52 +30456,60 @@ scenes = boundaries.map((b, i) => {
           effUserId, insertResultId: insertResult.id,
           targetSceneNumbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
         });
-        if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
-          // Use EdgeRuntime.waitUntil if available (Supabase native background task)
-          (globalThis as any).EdgeRuntime.waitUntil(
-            (async () => {
-              let bgSupabase: ReturnType<typeof createClient> | null = null;
-              try {
-                const _gw = resolveGateway();
-                const _apiKey = _gw.apiKey;
-                const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-                const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-                const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-                bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-                  auth: { persistSession: false, autoRefreshToken: false },
-                  global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
-                });
-                await processStoryOutlineRewrite(bgSupabase, _apiKey, {
-                  runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers,
-                  user, proj,
-                });
-                await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
-              } catch (err: any) {
-                console.error("[story-outline-bg] rewrite failed:", err?.message);
-                if (bgSupabase) {
-                  await bgSupabase.from("rewrite_runs").update({ status: "failed", summary: err?.message }).eq("id", runId).catch((e: any) => {
-                    console.error("[story-outline-bg] failed to update run status:", e?.message);
-                  });
-                } else {
-                  console.error("[story-outline-bg] cannot update run status — bgSupabase not initialized");
-                }
-              }
-            })()
-          );
-        } else {
-          // EdgeRuntime not available: self-chain via HTTP to process in a new invocation.
-          // This ensures the background task runs even when waitUntil isn't supported.
-          console.log("[story-outline-enqueue] EdgeRuntime not available — using self-chain fallback");
-          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-          const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-          (async () => {
+        // Capture outer supabase (service_role) for error reporting — always available.
+        const _outerSupabase = supabase;
+        // Use _apiKey from outer scope (already resolved at line 5654)
+        const _outerApiKey = OPENROUTER_API_KEY;
+
+        // Helper: use waitUntil if available, with safe fallback
+        function _bgGuard(p: Promise<any>): boolean {
+          try {
+            const rt = (globalThis as any).EdgeRuntime;
+            if (typeof rt !== "undefined" && rt?.waitUntil) {
+              rt.waitUntil(p);
+              return true;
+            }
+          } catch {}
+          return false;
+        }
+
+        const BGE_TASK = (async () => {
+          let _innerSupabase: ReturnType<typeof createClient> | null = null;
+          try {
+            const bUrl   = Deno.env.get("SUPABASE_URL")!;
+            const bAnon  = Deno.env.get("SUPABASE_ANON_KEY")!;
+            const bSvc   = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE")
+                       ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+            _innerSupabase = createClient(bUrl, bAnon, {
+              auth: { persistSession: false, autoRefreshToken: false },
+              global: { headers: { Authorization: `Bearer ${bSvc}` } },
+            });
+            await processStoryOutlineRewrite(_innerSupabase, _outerApiKey, {
+              runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers,
+              user, proj,
+            });
+            await _innerSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
+          } catch (err: any) {
+            console.error("[story-outline-bg] rewrite failed:", err?.message);
+            // Use outer supabase (always works) for error status — never trust _innerSupabase in catch
+            await _outerSupabase.from("rewrite_runs")
+              .update({ status: "failed", summary: err?.message?.slice(0, 500) ?? "Unknown error" })
+              .eq("id", runId)
+              .catch((e2: any) => console.error("[story-outline-bg] outer status-update failed:", e2?.message));
+          }
+        })();
+
+        if (!_bgGuard(BGE_TASK)) {
+          // EdgeRuntime.waitUntil unavailable — self-chain via HTTP.
+          console.log("[story-outline-enqueue] waitUntil unavailable — self-chain fallback");
+          const SELF_PROMISE = (async () => {
             try {
-              const resp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+              const sUrl = Deno.env.get("SUPABASE_URL")!;
+              const sKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE")
+                        ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+              const resp = await fetch(`${sUrl}/functions/v1/dev-engine-v2`, {
                 method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${supabaseServiceKey}`,
-                },
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${sKey}` },
                 body: JSON.stringify({
                   action: "process_story_outline_rewrite",
                   runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers,
@@ -30508,12 +30518,23 @@ scenes = boundaries.map((b, i) => {
               });
               if (!resp.ok) {
                 const errText = await resp.text().catch(() => "unknown");
-                console.error("[story-outline-enqueue] self-chain failed:", resp.status, errText.slice(0, 200));
+                console.error("[story-outline-enqueue] self-chain HTTP failed:", resp.status, errText.slice(0, 200));
+                // Self-chain failed — mark run as failed via outer supabase
+                await _outerSupabase.from("rewrite_runs")
+                  .update({ status: "failed", summary: `Self-chain HTTP ${resp.status}` })
+                  .eq("id", runId)
+                  .catch((e2: any) => console.error("[story-outline-enqueue] status-update after self-chain failure:", e2?.message));
               }
-            } catch (selfChainErr: any) {
-              console.error("[story-outline-enqueue] self-chain error:", selfChainErr?.message);
+            } catch (selfErr: any) {
+              console.error("[story-outline-enqueue] self-chain error:", selfErr?.message);
+              await _outerSupabase.from("rewrite_runs")
+                .update({ status: "failed", summary: selfErr?.message?.slice(0, 200) ?? "Self-chain error" })
+                .eq("id", runId)
+                .catch((e2: any) => console.error("[story-outline-enqueue] status-update after self-chain exception:", e2?.message));
             }
           })();
+          // Try waitUntil one more time for the self-chain fetch; if it fails, fire-and-forget (error handler already set up)
+          _bgGuard(SELF_PROMISE);
         }
         // Parse entries count BEFORE waitUntil (it's available right after JSON.parse)
         // Need our own query — `version` inside waitUntil isn't in scope here
