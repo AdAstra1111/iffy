@@ -370,6 +370,15 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         smoothedPercent: 0,
         lastProgressAt: Date.now(),
         runId: newRunId,
+        // Pre-populate moment list so the UI shows all moments immediately
+        scenes: isMomentMode && result.totalScenes > 0
+          ? Array.from({ length: result.totalScenes }, (_, i) => ({
+              scene_number: i + 1,
+              scene_heading: `Moment ${i + 1}`,
+              status: 'pending' as const,
+              attempts: 0,
+            }))
+          : s.scenes,
       }));
       pushActivity('success', isSelective
         ? `Enqueued ${targetSceneNumbers!.length} target scene jobs (run ${(result.runId || '?').slice(0, 8)})`
