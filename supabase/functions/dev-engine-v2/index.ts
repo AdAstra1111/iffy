@@ -5798,6 +5798,66 @@ serve(async (req) => {
     }
 
     // ══════════════════════════════════════════════
+    // TEST_REWRITE_ONE_MOMENT — diagnostic: rewrite a single story outline moment synchronously.
+    // Returns the AI output so we can verify the pipeline works end-to-end.
+    // ══════════════════════════════════════════════
+    if (action === "test_rewrite_one_moment") {
+      const { sourceDocId, sourceVersionId, projectId, approvedNotes, momentIndex } = body;
+      if (!sourceDocId || !sourceVersionId || !projectId) throw new Error("sourceDocId, sourceVersionId, projectId required");
+
+      // Fetch the source doc and version
+      const { data: version } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", sourceVersionId).single();
+      if (!version) throw new Error("Source version not found");
+      const trimmed = (version.plaintext || "").trim();
+      if (!trimmed.startsWith("{")) throw new Error("Not JSON");
+      const storyOutlineJSON = JSON.parse(trimmed);
+      if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("No entries");
+
+      const idx = typeof momentIndex === "number" ? momentIndex : 0;
+      const entry = storyOutlineJSON.entries[idx];
+      if (!entry) throw new Error("Moment index out of range");
+
+      const { data: projData } = await supabase.from("projects").select("title, format").eq("id", projectId).maybeSingle();
+      const projectTitle = projData?.title || "this project";
+
+      const prevEntry = idx > 0 ? storyOutlineJSON.entries[idx - 1] : null;
+      const nextEntry = idx < storyOutlineJSON.entries.length - 1 ? storyOutlineJSON.entries[idx + 1] : null;
+      const entryNum = entry.number || (idx + 1);
+
+      let ctx = "";
+      if (prevEntry) ctx += "\nPREVIOUS MOMENT (" + (prevEntry.number || idx) + "):\nTitle: " + (prevEntry.title || "") + "\nDescription: " + (prevEntry.description || "");
+      ctx += "\n\nCURRENT MOMENT (" + entryNum + "):\nTitle: " + (entry.title || "") + "\nDescription: " + (entry.description || "");
+      if (nextEntry) ctx += "\n\nNEXT MOMENT (" + (nextEntry.number || (idx + 2)) + "):\nTitle: " + (nextEntry.title || "") + "\nDescription: " + (nextEntry.description || "");
+
+      const notesCtx = (approvedNotes || []).length > 0
+        ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map((n: any) => "- " + (n.description || n.note || "")).join("\n")
+        : "";
+
+      const systemMsg = "You are rewriting ONE moment of a story outline for \"" + projectTitle + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are.\n- Write vivid present-tense prose. 2-5 sentences.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"}";
+
+      const raw = await callAI(OPENROUTER_API_KEY, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE:" + ctx, 0.0, 2000);
+      const m = (raw || "").match(/\{[\s\S]*?\}/);
+      let rewritten = entry;
+      if (m) {
+        try {
+          const p = JSON.parse(m[0]);
+          if (p.description) rewritten = { number: entryNum, title: entry.title || p.title || "", description: p.description };
+        } catch {}
+      }
+
+      return new Response(JSON.stringify({
+        original: { number: entry.number || (idx+1), title: entry.title, description: (entry.description || "").slice(0, 200) },
+        rewritten: { number: rewritten.number, title: rewritten.title, description: (rewritten.description || "").slice(0, 500) },
+        raw_ai_output: (raw || "").slice(0, 1000),
+        moment_index: idx,
+        total_moments: storyOutlineJSON.entries.length,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ══════════════════════════════════════════════
     // ANALYZE — strict routing: deliverable → format → behavior
     // ══════════════════════════════════════════════
     if (action === "analyze") {
