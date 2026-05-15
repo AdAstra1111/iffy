@@ -5798,6 +5798,44 @@ serve(async (req) => {
     }
 
     // ══════════════════════════════════════════════
+    // _DB_DIAG — check rewrite_runs state for a project
+    // ══════════════════════════════════════════════
+    if (action === "_db_diag") {
+      const { projectId, runId } = body;
+      const results: any = {};
+      
+      // Check latest runs
+      const { data: runs } = await supabase.from("rewrite_runs")
+        .select("id, project_id, source_doc_id, source_version_id, status, summary, created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      results.runs = runs || [];
+      
+      // Check specific run
+      if (runId) {
+        const { data: specificRun } = await supabase.from("rewrite_runs")
+          .select("id, project_id, source_doc_id, source_version_id, status, summary, created_at")
+          .eq("id", runId)
+          .maybeSingle();
+        results.specificRun = specificRun || null;
+        // Check what the status endpoint would see
+        const { data: runByStatus } = await supabase.from("rewrite_runs")
+          .select("id, status")
+          .eq("project_id", projectId)
+          .in("status", ["running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        results.latestActiveRun = runByStatus || null;
+      }
+      
+      return new Response(JSON.stringify(results), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    // ══════════════════════════════════════════════
     // TEST_REWRITE_ONE_MOMENT — diagnostic: rewrite a single story outline moment synchronously.
     // Looks up latest story outline doc/version automatically — only needs projectId.
     // Returns the AI output so we can verify the pipeline works end-to-end.
