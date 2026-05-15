@@ -1098,17 +1098,8 @@ async function processStoryOutlineRewrite(
     const systemMsg = "You are rewriting ONE moment of a story outline for \"" + projectTitle + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are — do NOT change them.\n- The previous and next moments are provided for continuity context.\n- Maintain consistent voice, pacing, and narrative tone with adjacent moments.\n- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.\n- Do NOT merge, split, or reorder moments. Rewrite only this one moment.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"" + notesCtx + "}";
     let rewrittenEntry = entry;
     try {
-      // Per-moment timeout: 30s per AI call to prevent hanging on slow responses.
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 30_000);
-      const rawPromise = callAI(_apiKey, FAST_MODEL, systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
-      const raw = await Promise.race([
-        rawPromise,
-        new Promise<string>((_, reject) => {
-          controller.signal.addEventListener("abort", () => reject(new Error("Moment timeout")));
-        }),
-      ]);
-      clearTimeout(timer);
+      // Use Google Gemini direct (free tier) instead of OpenRouter
+      const raw = await callGoogleGemini(systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
       const m = (raw || "").match(/\{[\s\S]*?\}/);
       if (m) {
         const p = JSON.parse(m[0]);
@@ -1224,6 +1215,81 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
     throw new Error(`AI call failed: ${response.status}`);
   }
   throw new Error("AI call failed after retries");
+}
+
+/**
+ * Call Google Gemini directly (free tier — 1,500 req/day).
+ * Uses GOOGLE_AI_API_KEY from env if available, otherwise falls back to OpenRouter.
+ * Gemini API has OpenAI-incompatible format, so this is a separate function.
+ */
+async function callGoogleGemini(system: string, user: string, temperature = 0.0, maxTokens = 2000): Promise<string> {
+  const apiKey = Deno.env.get("GOOGLE_AI_API_KEY");
+  if (!apiKey) {
+    // Fallback: use OpenRouter gateway
+    const gw = resolveGateway();
+    return callAI(gw.apiKey, FAST_MODEL, system, user, temperature, maxTokens);
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const body = {
+    system_instruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: "text/plain" },
+  };
+
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const text = await res.text();
+      if (!res.ok) {
+        console.error(`Google Gemini error (attempt ${attempt + 1}):`, res.status, text);
+        if (res.status === 429) { // rate limited on free tier
+          const delay = Math.pow(2, attempt) * 5000;
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+          continue;
+        }
+        throw new Error(`Google Gemini call failed: ${res.status} ${text}`);
+      }
+      const data = JSON.parse(text);
+      const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (!content.trim()) {
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+      }
+      return content;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err?.name === "AbortError") {
+        console.error(`Google Gemini timeout (attempt ${attempt + 1})`);
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+          continue;
+        }
+        throw new Error("Google Gemini timeout after retries");
+      }
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Google Gemini call failed after retries");
 }
 
 const STRICT_JSON_RULES = `CRITICAL: Return ONLY valid JSON. No markdown fences. No trailing commas. All keys in double quotes. No comments. No extra text before or after the JSON object.`;
