@@ -1076,7 +1076,7 @@ async function processStoryOutlineRewrite(
   if (!newVer?.id) return;
   await bgSupabase.from("project_document_versions").update({ is_current: false }).eq("document_id", sourceDocId).neq("id", newVer.id);
   await bgSupabase.from("project_document_chunks").insert(storyOutlineJSON.entries.map((e: any, idx: number) => ({
-    version_id: newVer.id, chunk_index: idx,
+    document_id: sourceDocId, version_id: newVer.id, chunk_index: idx,
     chunk_key: "moment_" + (e.number || (idx + 1)),
     status: "pending",
     char_count: (e.description || "").length,
@@ -31072,7 +31072,7 @@ scenes = boundaries.map((b, i) => {
 
       // Get run record to find the output version
       let { data: run } = await supabase.from("rewrite_runs")
-        .select("source_doc_id, source_version_id, status, id")
+        .select("source_doc_id, source_version_id, status, id, user_id")
         .eq("id", runId).maybeSingle();
 
       // Retry the runId lookup up to 3 times with 500ms delay.
@@ -31086,7 +31086,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, attempt: retries,
         });
         const { data: retryRun } = await supabase.from("rewrite_runs")
-          .select("source_doc_id, source_version_id, status, id")
+          .select("source_doc_id, source_version_id, status, id, user_id")
           .eq("id", runId).maybeSingle();
         if (retryRun) {
           run = retryRun;
@@ -31102,7 +31102,7 @@ scenes = boundaries.map((b, i) => {
           runId, projectId, sourceVersionId: body.sourceVersionId,
         });
         const { data: fallbackRun } = await supabase.from("rewrite_runs")
-          .select("id, source_doc_id, source_version_id, status")
+          .select("id, source_doc_id, source_version_id, status, user_id")
           .eq("project_id", projectId)
           .eq("source_version_id", body.sourceVersionId)
           .in("status", ["running", "queued"])
