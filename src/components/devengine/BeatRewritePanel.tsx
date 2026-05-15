@@ -277,6 +277,68 @@ function parseBeatSheet(plaintext: string): Act[] {
 
 
 
+  // ── PLAIN TEXT MODE: "ACT ONE — Setup" / "BEAT 1: NAME" (all-caps, no ## headers) ──
+  {
+    const ptLines = plaintext.split('\n');
+    const ptActs: Act[] = [];
+    let ptCurrentAct: Act | null = null;
+    let ptBeatLines: string[] = [];
+    let ptBeatMeta: { id: string; name: string } | null = null;
+
+    function ptFlushBeat() {
+      if (!ptCurrentAct || !ptBeatMeta) return;
+      const raw = ptBeatLines.join('\n').trim();
+      ptCurrentAct.beats.push({
+        id: ptBeatMeta.id,
+        name: ptBeatMeta.name,
+        act: ptCurrentAct.name,
+        turningPoint: false,
+        turningPointLabel: 'No',
+        scene: '',
+        description: raw || ptBeatMeta.name,
+        structuralPurpose: '',
+        protagonistState: '',
+        emotionalShift: '',
+        raw,
+      });
+      ptBeatMeta = null;
+      ptBeatLines = [];
+    }
+
+    for (const line of ptLines) {
+      const trimmed = line.trim();
+      // Act header: "ACT ONE — Setup", "ACT 1 — Setup", "ACT ONE", "ACT 2A — Rising Action"
+      const ptActMatch = trimmed.match(/^ACT\s+(\w+[\w\s]*?)(?:\s*[—–-]\s*.*)?$/i);
+      if (ptActMatch && !trimmed.match(/^BEAT\s/i)) {
+        ptFlushBeat();
+        if (ptCurrentAct) ptActs.push(ptCurrentAct);
+        const actLabel = ptActMatch[1].trim();
+        ptCurrentAct = { name: 'ACT ' + actLabel, beats: [] };
+        continue;
+      }
+      // Beat header: "BEAT 1: NAME", "BEAT 1 — NAME", "BEAT 1 NAME"
+      const ptBeatMatch = trimmed.match(/^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/i);
+      if (ptBeatMatch) {
+        ptFlushBeat();
+        ptBeatMeta = { id: ptBeatMatch[1], name: ptBeatMatch[2].trim() };
+        ptBeatLines = [line];
+        continue;
+      }
+      if (ptBeatMeta) {
+        ptBeatLines.push(line);
+      }
+    }
+    ptFlushBeat();
+    if (ptCurrentAct) ptActs.push(ptCurrentAct);
+
+    if (ptActs.length > 0) {
+      const totalBeats = ptActs.reduce((s, a) => s + a.beats.length, 0);
+      console.log('[BeatRewritePanel] plain text parse: ' + ptActs.length + ' acts, ' + totalBeats + ' beats');
+      return ptActs;
+    }
+  }
+
+
   // ── MARKDOWN MODE: existing parser for markdown-formatted beat sheets ──
   const lines = plaintext.split('\n');
   const acts: Act[] = [];
