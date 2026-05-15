@@ -427,12 +427,16 @@ export default function TreatmentRewritePanel({
 
       const newVersionNumber = (currentVersion?.version_number || 0) + 1;
 
+      // Get current user for created_by
+      const { data: { user } } = await supabase.auth.getUser();
+      
       // Create new version with assembled text
       const { data: newVersion, error: createError } = await sb
         .from('project_document_versions')
         .insert({
           document_id: documentId,
           version_number: newVersionNumber,
+          created_by: user?.id || null,
           label: currentVersion?.label || null,
           plaintext: assembledText,
           meta_json: {
