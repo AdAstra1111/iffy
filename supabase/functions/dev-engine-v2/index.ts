@@ -30838,12 +30838,15 @@ scenes = boundaries.map((b, i) => {
       }
 
       if (!run) {
-        console.warn("[story-outline-status] Run not found (final)", {
-          runId, projectId,
-          sourceVersionId: null,
-          expectedSourceVersionId: body.sourceVersionId || "(not sent)",
+        // Don't return "Run not found" — the row may not have propagated yet.
+        // Return a retry signal so the frontend polling loop keeps trying
+        // without crashing or showing an error toast.
+        return new Response(JSON.stringify({ 
+          total: 0, done: 0, queued: 0, running: 0, failed: 0, 
+          status: "retry", 
+        }), { 
+          status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
-        return new Response(JSON.stringify({ error: "Run not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
       console.log("[story-outline-status] run found", {
