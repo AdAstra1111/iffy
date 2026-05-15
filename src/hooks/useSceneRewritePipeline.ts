@@ -447,6 +447,11 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         setState(s => ({ ...s, mode: 'processing', smoothedPercent: 0 }));
         pushActivity('info', 'Moment rewrite running in background…');
         
+        // Initial delay: give the waitUntil background task time to create
+        // the rewrite_runs row and first chunks before the first poll.
+        await new Promise(r => setTimeout(r, 2000));
+        pushActivity('info', 'Polling for background rewrite status…');
+        
         let pollCount = 0;
         while (!stopRef.current && pollCount < 300) { // max 5 min
           await new Promise(r => setTimeout(r, 1000));

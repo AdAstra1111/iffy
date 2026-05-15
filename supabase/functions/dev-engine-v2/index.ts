@@ -30795,6 +30795,25 @@ scenes = boundaries.map((b, i) => {
         .select("source_doc_id, source_version_id, status, meta_json")
         .eq("id", runId).maybeSingle();
 
+      // Retry the runId lookup up to 3 times with 500ms delay.
+      // This handles transient read-after-write consistency issues
+      // across the Supabase connection pool.
+      let retries = 0;
+      while (!run && retries < 3) {
+        await new Promise(r => setTimeout(r, 500));
+        retries++;
+        console.warn("[story-outline-status] retrying runId lookup", {
+          runId, projectId, attempt: retries,
+        });
+        const { data: retryRun } = await supabase.from("rewrite_runs")
+          .select("source_doc_id, source_version_id, status, meta_json")
+          .eq("id", runId).maybeSingle();
+        if (retryRun) {
+          run = retryRun;
+          console.log("[story-outline-status] retry succeeded", { runId, attempt: retries });
+        }
+      }
+
       // Fallback: try to find run by sourceVersionId when runId lookup fails.
       // This handles frontend stale-runId scenarios where the ref/sessionStorage
       // carries a runId from a previous session that no longer matches reality.
