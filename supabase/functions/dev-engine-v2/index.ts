@@ -30910,7 +30910,7 @@ scenes = boundaries.map((b, i) => {
 
       // Check chunks for this version
       const { data: chunks } = await supabase.from("project_document_chunks")
-        .select("chunk_index, status, chunk_key")
+        .select("chunk_index, status, chunk_key, meta_json")
         .eq("version_id", version.id)
         .order("chunk_index", { ascending: true });
 
@@ -30923,6 +30923,13 @@ scenes = boundaries.map((b, i) => {
       const runStatus = run.status || "running";
       const isComplete = runStatus === "done" || runStatus === "failed" || (total > 0 && done === total);
 
+      const moments = (chunks || []).map(c => ({
+        chunk_index: c.chunk_index,
+        scene_number: c.chunk_index + 1,
+        scene_heading: (c.meta_json?.label as string) || c.chunk_key || `Moment ${c.chunk_index + 1}`,
+        status: c.status,
+      }));
+
       return new Response(JSON.stringify({
         total, done, queued, running, failed,
         status: isComplete ? (runStatus === "failed" ? "failed" : "done") : "processing",
@@ -30930,6 +30937,7 @@ scenes = boundaries.map((b, i) => {
         newVersionId: version.id,
         newVersionNumber: version.version_number,
         isComplete,
+        moments,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

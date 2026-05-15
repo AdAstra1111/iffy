@@ -488,6 +488,12 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
               queued: status.queued, 
               running: status.running, 
               failed: status.failed,
+              scenes: status.moments?.map((m: any) => ({
+                scene_number: m.scene_number,
+                scene_heading: m.scene_heading,
+                status: m.status,
+                attempts: 0,
+              })) || s.scenes,
               smoothedPercent: pct, 
               lastProgressAt: Date.now() 
             }));
