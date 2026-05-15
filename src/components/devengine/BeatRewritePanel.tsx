@@ -742,10 +742,14 @@ export default function BeatRewritePanel({
     if (latestVid !== versionId) onComplete?.(latestVid);
   };
 
-  // Expose handleApplyAll to parent via applyAllTriggerRef (after handleApplyAll is defined, avoids TDZ)
+  // Expose handleApplyAll to parent via applyAllTriggerRef
+  // Use a ref to avoid stale closure — always calls the latest handleApplyAll
+  const handleApplyAllLatestRef = useRef<() => void>(() => {});  
+  handleApplyAllLatestRef.current = handleApplyAll;
+
   useEffect(() => {
     if (applyAllTriggerRef) {
-      applyAllTriggerRef.current = () => handleApplyAll();
+      applyAllTriggerRef.current = () => handleApplyAllLatestRef.current();
     }
     return () => {
       if (applyAllTriggerRef) applyAllTriggerRef.current = null;
