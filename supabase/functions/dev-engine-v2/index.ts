@@ -1101,7 +1101,7 @@ async function processStoryOutlineRewrite(
       // Per-moment timeout: 30s per AI call to prevent hanging on slow responses.
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 30_000);
-      const rawPromise = callAI(_apiKey, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
+      const rawPromise = callAI(_apiKey, FAST_MODEL, systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
       const raw = await Promise.race([
         rawPromise,
         new Promise<string>((_, reject) => {
@@ -5850,7 +5850,7 @@ serve(async (req) => {
 
       const systemMsg = "You are rewriting ONE moment of a story outline for \"" + projectTitle + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are.\n- Write vivid present-tense prose. 2-5 sentences.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"}";
 
-      const raw = await callAI(OPENROUTER_API_KEY, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE:" + ctx, 0.0, 2000);
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, systemMsg, "MOMENT TO REWRITE:" + ctx, 0.0, 2000);
       const m = (raw || "").match(/\{[\s\S]*?\}/);
       let rewritten = entry;
       if (m) {
