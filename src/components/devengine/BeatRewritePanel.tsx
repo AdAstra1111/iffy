@@ -305,6 +305,9 @@ function parseBeatSheet(plaintext: string): Act[] {
       ptBeatLines = [];
     }
 
+    // Always start with a default act — beats may exist without act headers
+    ptCurrentAct = { name: 'ACT 1', beats: [] };
+
     for (const line of ptLines) {
       const trimmed = line.trim();
       // Act header: "ACT ONE — Setup", "ACT 1 — Setup", "ACT ONE", "ACT 2A — Rising Action"
@@ -329,7 +332,7 @@ function parseBeatSheet(plaintext: string): Act[] {
       }
     }
     ptFlushBeat();
-    if (ptCurrentAct) ptActs.push(ptCurrentAct);
+    ptActs.push(ptCurrentAct);
 
     if (ptActs.length > 0) {
       const totalBeats = ptActs.reduce((s, a) => s + a.beats.length, 0);
@@ -379,6 +382,9 @@ function parseBeatSheet(plaintext: string): Act[] {
     currentBeatMeta = {};
   }
 
+  // Always start with a default act — beats may exist without act headers
+  currentAct = { name: 'ACT 1', beats: [] };
+
   for (const line of lines) {
     const trimmed = line.trim();
 
@@ -407,7 +413,7 @@ function parseBeatSheet(plaintext: string): Act[] {
   }
 
   flushBeat();
-  if (currentAct) acts.push(currentAct);
+  acts.push(currentAct);
   return acts;
 }
 
