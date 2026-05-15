@@ -5799,24 +5799,38 @@ serve(async (req) => {
 
     // ══════════════════════════════════════════════
     // TEST_REWRITE_ONE_MOMENT — diagnostic: rewrite a single story outline moment synchronously.
+    // Looks up latest story outline doc/version automatically — only needs projectId.
     // Returns the AI output so we can verify the pipeline works end-to-end.
     // ══════════════════════════════════════════════
     if (action === "test_rewrite_one_moment") {
-      const { sourceDocId, sourceVersionId, projectId, approvedNotes, momentIndex } = body;
-      if (!sourceDocId || !sourceVersionId || !projectId) throw new Error("sourceDocId, sourceVersionId, projectId required");
+      const { projectId, sourceVersionId, approvedNotes, momentIndex } = body;
+      if (!projectId) throw new Error("projectId required");
 
-      // Fetch the source doc and version
+      // Find the story outline document
+      let docId = body.sourceDocId;
+      let verId = sourceVersionId;
+      if (!docId || !verId) {
+        const { data: docs } = await supabase.from("project_documents")
+          .select("id, latest_version_id").eq("project_id", projectId).eq("doc_type", "story_outline").limit(1).maybeSingle();
+        if (docs) {
+          docId = docs.id;
+          verId = docs.latest_version_id;
+        }
+      }
+      if (!docId || !verId) throw new Error("Could not find story outline doc/version for project " + projectId + " — pass sourceDocId and sourceVersionId explicitly");
+
+      // Fetch the source version
       const { data: version } = await supabase.from("project_document_versions")
-        .select("plaintext, version_number").eq("id", sourceVersionId).single();
-      if (!version) throw new Error("Source version not found");
+        .select("plaintext, version_number").eq("id", verId).single();
+      if (!version) throw new Error("Source version not found: " + verId);
       const trimmed = (version.plaintext || "").trim();
-      if (!trimmed.startsWith("{")) throw new Error("Not JSON");
+      if (!trimmed.startsWith("{")) throw new Error("Story outline plaintext is not JSON (starts with: " + trimmed.slice(0, 50) + ")");
       const storyOutlineJSON = JSON.parse(trimmed);
-      if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("No entries");
+      if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("No entries in story outline JSON");
 
       const idx = typeof momentIndex === "number" ? momentIndex : 0;
       const entry = storyOutlineJSON.entries[idx];
-      if (!entry) throw new Error("Moment index out of range");
+      if (!entry) throw new Error("Moment index " + idx + " out of range (0-" + (storyOutlineJSON.entries.length - 1) + ")");
 
       const { data: projData } = await supabase.from("projects").select("title, format").eq("id", projectId).maybeSingle();
       const projectTitle = projData?.title || "this project";
@@ -5847,11 +5861,11 @@ serve(async (req) => {
       }
 
       return new Response(JSON.stringify({
+        docId, versionId: verId, versionNumber: version.version_number,
+        moment_index: idx, total_moments: storyOutlineJSON.entries.length,
         original: { number: entry.number || (idx+1), title: entry.title, description: (entry.description || "").slice(0, 200) },
         rewritten: { number: rewritten.number, title: rewritten.title, description: (rewritten.description || "").slice(0, 500) },
         raw_ai_output: (raw || "").slice(0, 1000),
-        moment_index: idx,
-        total_moments: storyOutlineJSON.entries.length,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
