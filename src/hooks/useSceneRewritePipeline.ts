@@ -353,6 +353,11 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
       if (newRunId && projectId) {
         saveRunId(projectId, sourceVersionId, newRunId);
       }
+      console.debug('[sceneRewrite] enqueue received runId', {
+        runId: newRunId, projectId, sourceVersionId, isMomentMode,
+        savedToSession: !!newRunId && !!projectId,
+        expectedLength: newRunId?.length,
+      });
       setState(s => ({
         ...s,
         mode: 'processing',
@@ -395,6 +400,10 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
       if (currentRunId) {
         runIdRef.current = currentRunId;
         setState(s => ({ ...s, runId: currentRunId }));
+        console.debug('[sceneRewrite] recovered runId from sessionStorage', {
+          runId: currentRunId, projectId, sourceVersionId,
+          isMomentMode, runIdRefVal: !!runIdRef.current,
+        });
       }
     }
     if (!currentRunId) {
@@ -405,13 +414,23 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         saveRunId(projectId, sourceVersionId, currentRunId);
         setState(s => ({ ...s, runId: currentRunId }));
         pushActivity('info', `Recovered runId from database: ${currentRunId.slice(0, 8)}`);
+        console.debug('[sceneRewrite] recovered runId from DB', {
+          runId: currentRunId, projectId, sourceVersionId, isMomentMode,
+        });
       }
     }
     if (!currentRunId) {
+      console.warn('[sceneRewrite] no runId found via any recovery path', {
+        projectId, sourceVersionId, isMomentMode,
+        runIdRef: runIdRef.current,
+      });
       toast.error('Missing runId — please enqueue again.');
       pushActivity('error', 'Missing runId — please enqueue again.');
       return;
     }
+    console.debug('[sceneRewrite] using runId for poll', {
+      runId: currentRunId, projectId, sourceVersionId, isMomentMode,
+    });
     processingRef.current = true;
     stopRef.current = false;
     durationsRef.current = [];

@@ -30291,6 +30291,11 @@ scenes = boundaries.map((b, i) => {
           console.error("[story-outline-enqueue] insert failed:", insertErr?.message, "(runId:", runId, ")");
           throw new Error(insertErr?.message || "Failed to create rewrite run record");
         }
+        console.log("[story-outline-enqueue] inserted rewrite_runs row", {
+          runId, projectId, sourceDocId, sourceVersionId,
+          effUserId, insertResultId: insertResult.id,
+          targetSceneNumbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
+        });
         if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
           (globalThis as any).EdgeRuntime.waitUntil(
             (async () => {
@@ -30791,8 +30796,20 @@ scenes = boundaries.map((b, i) => {
         .eq("id", runId).maybeSingle();
 
       if (!run) {
+        console.warn("[story-outline-status] Run not found", {
+          runId, projectId,
+          sourceVersionId: null, // not in query result
+          expectedSourceVersionId: body.sourceVersionId || "(not sent)",
+        });
         return new Response(JSON.stringify({ error: "Run not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
+
+      console.log("[story-outline-status] run found", {
+        runId, projectId,
+        sourceDocId: run.source_doc_id,
+        sourceVersionId: run.source_version_id,
+        status: run.status,
+      });
 
       // Get the latest version created by this run (output version)
       const { data: version } = await supabase.from("project_document_versions")
