@@ -678,18 +678,6 @@ export default function BeatRewritePanel({
   const plaintext = version?.plaintext || '';
   const acts = useMemo(() => parseBeatSheet(plaintext), [plaintext]);
 
-  // Expose handleApplyAll to parent via ref
-  const handleApplyAllRef = useRef(handleApplyAll);
-  handleApplyAllRef.current = handleApplyAll;
-  useEffect(() => {
-    if (applyAllTriggerRef) {
-      applyAllTriggerRef.current = () => handleApplyAllRef.current();
-    }
-    return () => {
-      if (applyAllTriggerRef) applyAllTriggerRef.current = null;
-    };
-  }, [applyAllTriggerRef]);
-
   // Auto-expand all acts on mount
   useEffect(() => {
     setExpandedActs(new Set(acts.map(a => a.name)));
@@ -753,6 +741,16 @@ export default function BeatRewritePanel({
     onApplyAllDone?.();
     if (latestVid !== versionId) onComplete?.(latestVid);
   };
+
+  // Expose handleApplyAll to parent via applyAllTriggerRef (after handleApplyAll is defined, avoids TDZ)
+  useEffect(() => {
+    if (applyAllTriggerRef) {
+      applyAllTriggerRef.current = () => handleApplyAll();
+    }
+    return () => {
+      if (applyAllTriggerRef) applyAllTriggerRef.current = null;
+    };
+  }, [applyAllTriggerRef]);
 
   if (!plaintext) {
     return (
