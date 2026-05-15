@@ -31163,12 +31163,26 @@ scenes = boundaries.map((b, i) => {
       // Use run.user_id (the actual column) instead of run.meta_json?.user_id
       // (always null — meta_json is never set on the enqueue insert).
       const userIdFilter = run.user_id || null;
-      const { data: version } = await supabase.from("project_document_versions")
+      let { data: version } = await supabase.from("project_document_versions")
         .select("id, plaintext, version_number, meta_json")
         .eq("document_id", run.source_doc_id)
         .eq("created_by", userIdFilter)
         .order("version_number", { ascending: false })
         .limit(1).single();
+
+      // Fallback: if created_by filter didn't match, try without it.
+      // This handles cases where run.user_id doesn't match the version's created_by
+      // (e.g. background task sets a different user_id, or run was inserted without user_id).
+      if (!version) {
+        console.warn("[story-outline-status] created_by filter missed — falling back to unfiltered latest version");
+        const { data: fallbackVersion } = await supabase.from("project_document_versions")
+          .select("id, plaintext, version_number, meta_json")
+          .eq("document_id", run.source_doc_id)
+          .order("version_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackVersion) version = fallbackVersion;
+      }
 
       if (!version) {
         return new Response(JSON.stringify({ total: 0, done: 0, queued: 0, running: 0, failed: 0, status: "no_output_version" }), {
