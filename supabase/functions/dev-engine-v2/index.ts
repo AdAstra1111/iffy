@@ -5804,6 +5804,29 @@ serve(async (req) => {
       const { projectId, runId } = body;
       const results: any = {};
       
+      // Query with same columns as get_story_outline_rewrite_status
+      if (runId) {
+        const { data: runStatusStyle } = await supabase.from("rewrite_runs")
+          .select("source_doc_id, source_version_id, status, meta_json, user_id")
+          .eq("id", runId).maybeSingle();
+        results.statusEndpointQuery = runStatusStyle || null;
+        results.statusEndpointQueryError = runStatusStyle === null ? "returned null" : "found";
+      }
+      
+      // Also check with meta_json in select to isolate the issue
+      if (runId) {
+        const { data: withMeta } = await supabase.from("rewrite_runs")
+          .select("id, status, meta_json, user_id")
+          .eq("id", runId).maybeSingle();
+        results.withMeta = withMeta || null;
+      }
+      if (runId) {
+        const { data: withoutMeta } = await supabase.from("rewrite_runs")
+          .select("id, status")
+          .eq("id", runId).maybeSingle();
+        results.withoutMeta = withoutMeta || null;
+      }
+      
       // Check latest runs
       const { data: runs } = await supabase.from("rewrite_runs")
         .select("id, project_id, source_doc_id, source_version_id, status, summary, created_at")
@@ -5811,24 +5834,6 @@ serve(async (req) => {
         .order("created_at", { ascending: false })
         .limit(5);
       results.runs = runs || [];
-      
-      // Check specific run
-      if (runId) {
-        const { data: specificRun } = await supabase.from("rewrite_runs")
-          .select("id, project_id, source_doc_id, source_version_id, status, summary, created_at")
-          .eq("id", runId)
-          .maybeSingle();
-        results.specificRun = specificRun || null;
-        // Check what the status endpoint would see
-        const { data: runByStatus } = await supabase.from("rewrite_runs")
-          .select("id, status")
-          .eq("project_id", projectId)
-          .in("status", ["running", "queued"])
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        results.latestActiveRun = runByStatus || null;
-      }
       
       return new Response(JSON.stringify(results), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
