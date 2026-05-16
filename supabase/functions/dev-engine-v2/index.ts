@@ -8381,14 +8381,14 @@ ${(() => {
       if (!analysis) {
         const { data: latestRun } = await supabase.from("development_runs")
           .select("output_json").eq("version_id", versionId).eq("run_type", "ANALYZE")
-          .order("created_at", { ascending: false }).limit(1).single();
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         analysis = latestRun?.output_json;
       }
       let notes = notesJson;
       if (!notes) {
         const { data: latestNotes } = await supabase.from("development_runs")
           .select("output_json").eq("version_id", versionId).eq("run_type", "NOTES")
-          .order("created_at", { ascending: false }).limit(1).single();
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         notes = latestNotes?.output_json;
       }
 
