@@ -1008,7 +1008,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const PRO_MODEL = "google/gemini-2.5-pro";
+const PRO_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 const FAST_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 const ANALYZE_MODEL = "openai/gpt-4.1-mini"; // deterministic at temp=0+seed — reasoning models (o4-mini) ignore both
 const BALANCED_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
