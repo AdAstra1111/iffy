@@ -39,5 +39,6 @@ jobs:
             create-document-version \
             devseed-autopilot \
             generate-lookbook-image \
+            project-folder-engine \
             --project-ref hdfderbphdobomkdjypc \
             --no-verify-jwt
