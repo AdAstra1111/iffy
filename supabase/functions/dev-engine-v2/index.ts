@@ -39359,8 +39359,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
       const fullText = version.plaintext || "";
 
-      // 2. Dual-format beat parser: handles both ## Beat N: headers (classic) and
-      //    numbered markdown format (1. **Beat Name** \n prose) from RE pipeline.
+      // 2. Multi-format beat parser: handles all formats the frontend BeatRewritePanel supports
       function parseBeatsFromText(text: string): Array<{ beat: string; start: number; end: number }> {
         // Try ## Beat header format first
         const headerPattern = /^##\s+Beat\s+\d+/gm;
@@ -39376,17 +39375,63 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
           }));
         }
 
+        // Try ### Beat header (h3) format
+        const headerPatternH3 = /^###\s+Beat\s+\d+/gm;
+        const headerStartsH3: number[] = [];
+        let hm3: RegExpExecArray | null;
+        while ((hm3 = headerPatternH3.exec(text)) !== null) headerStartsH3.push(hm3.index);
+
+        if (headerStartsH3.length > 0) {
+          return headerStartsH3.map((start, i) => ({
+            beat: text.slice(start, i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length),
+            start,
+            end: i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length,
+          }));
+        }
+
         // Fallback: numbered markdown format "N. **Beat Name**"
         const numberedPattern = /^\d+\.\s+\*\*/gm;
         const numberedStarts: number[] = [];
         let nm: RegExpExecArray | null;
         while ((nm = numberedPattern.exec(text)) !== null) numberedStarts.push(nm.index);
 
-        return numberedStarts.map((start, i) => ({
-          beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
-          start,
-          end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
-        }));
+        if (numberedStarts.length > 0) {
+          return numberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
+          }));
+        }
+
+        // Fallback: plain numbered "N. Name" (no bold markers)
+        const plainNumberedPattern = /^\d+\.\s+(?!\*\*)/gm;
+        const plainNumberedStarts: number[] = [];
+        let pnm: RegExpExecArray | null;
+        while ((pnm = plainNumberedPattern.exec(text)) !== null) plainNumberedStarts.push(pnm.index);
+
+        if (plainNumberedStarts.length > 0) {
+          return plainNumberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length,
+          }));
+        }
+
+        // Fallback: plain text "BEAT N: Name" format
+        const beatTextPattern = /^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/gim;
+        const beatTextStarts: number[] = [];
+        let btm: RegExpExecArray | null;
+        while ((btm = beatTextPattern.exec(text)) !== null) beatTextStarts.push(btm.index);
+
+        if (beatTextStarts.length > 0) {
+          return beatTextStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length,
+          }));
+        }
+
+        return [];
       }
 
       const parsedBeats = parseBeatsFromText(fullText);
@@ -39427,10 +39472,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       ].join("\n\n");
 
       // 6. Call LLM to rewrite only that beat
-      const _gw = resolveGateway();
-      const _apiKey = _gw.apiKey;
-      if (!_apiKey) throw new Error("No AI gateway key configured");
-      const rewrittenBeat = await callAI(_apiKey, "sonnet", systemPrompt, beatPrompt, 0.3, 4000);
+      const rewrittenBeat = await callGoogleGemini(systemPrompt, beatPrompt, 0.3, 4000);
 
       // 7. Simple string replacement — splice rewritten beat into original document
       const updatedDocument = fullText.slice(0, targetBeatEntry.start)
