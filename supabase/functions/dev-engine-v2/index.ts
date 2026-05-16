@@ -7719,7 +7719,7 @@ ${(() => {
 
       const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
       const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
-      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+      let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] notes: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "notes", snippet: raw.slice(0, 300) }), {
