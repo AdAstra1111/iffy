@@ -1009,9 +1009,9 @@ const corsHeaders = {
 };
 
 const PRO_MODEL = "google/gemini-2.5-pro";
-const FAST_MODEL = "google/gemini-2.0-flash-exp"; // free tier on OpenRouter
+const FAST_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 const ANALYZE_MODEL = "openai/gpt-4.1-mini"; // deterministic at temp=0+seed — reasoning models (o4-mini) ignore both
-const BALANCED_MODEL = "google/gemini-2.0-flash-exp"; // free tier on OpenRouter
+const BALANCED_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 
 const SCHEMA_VERSION = "v3";
 const MAX_DEVELOPMENT_RUN_LOOPS = 10; // Force-converge after N ANALYZE iterations
