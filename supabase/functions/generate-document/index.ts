@@ -1,3 +1,5 @@
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
+chdir: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
 // generate-document v2026-03-27T09 — canonical version creation convergence
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {
@@ -1058,7 +1060,7 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         : "";
 
       const storyOutlineRule = (docType === "story_outline" || docType === "architecture")
-        ? `## STORY OUTLINE FORMAT (MANDATORY)\nWrite 12–20 scene summaries as present-tense prose paragraphs. Each scene: 3–5 sentences describing what happens, the dramatic purpose, and the emotional shift. No sluglines. No character cues. No dialogue formatting. Example: "Elias arrives at the outpost at dawn, exhausted from the helicopter transfer..."`
+        ? `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. Break EACH act from the Treatment into 5-8 individual moments. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all acts.`
         : "";
 
       // ── Stage Identity Prompt Injection ──
@@ -1068,7 +1070,9 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         `You are a professional development document generator for film/TV projects. Creative direction in this prompt must be honoured — implement the intent with full craft across the full document. Never ignore, dilute, or reinterpret creative direction away from what was asked.`,
         `Generate a ${docType.replace(/_/g, " ")} document for the project "${project.title}".`,
         `Production type: ${project.format || "film"}`,
-        `## OUTPUT FORMAT RULE (MANDATORY)\nOutput PLAIN MARKDOWN TEXT only. Do NOT output JSON, XML, code blocks, or any structured data format. Do NOT wrap your response in \`\`\`json or \`\`\`markdown fences. Begin directly with the document content (e.g. a heading like "# CONCEPT BRIEF" or "## LOGLINE"). No preamble.`,
+        docType === "story_outline"
+          ? `## OUTPUT FORMAT RULE (MANDATORY)\nOutput VALID JSON ONLY. Follow the template JSON structure exactly. Do NOT output markdown, code fences, or anything outside the JSON object. No preamble.`
+          : `## OUTPUT FORMAT RULE (MANDATORY)\nOutput PLAIN MARKDOWN TEXT only. Do NOT output JSON, XML, code blocks, or any structured data format. Do NOT wrap your response in \`\`\`json or \`\`\`markdown fences. Begin directly with the document content (e.g. a heading like "# CONCEPT BRIEF" or "## LOGLINE"). No preamble.`,
         stageIdentityBlock,
         screenplayProhibition,
         storyOutlineRule,

@@ -1,3 +1,5 @@
+shell-init: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
+chdir: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
 /**
  * docTypeTemplates.ts — Canonical scaffold templates for each document type.
  *
@@ -438,25 +440,30 @@ If you find yourself writing about any character — STOP. That content belongs 
 
     // ─────────────────────────────────────────────────────────────────────────────
     case "story_outline":
-      return `# STORY OUTLINE: ${title}
+      return `
+OUTPUT AS VALID JSON ONLY. Use this exact structure:
+{
+  "title": "${title}",
+  "format": "${format}",
+  "entries": [
+    {
+      "number": 1,
+      "title": "Moment 1: [title — concise, evocative]",
+      "description": "3-5 sentences describing what happens in this moment, the dramatic purpose, and the emotional shift."
+    },
+    {
+      "number": 2,
+      "title": "Moment 2: [title]",
+      "description": "..."
+    }
+  ]
+}
 
-## LOGLINE
-[IMPORT from concept_brief.logline — one sentence. Copy exactly. Do not regenerate.]
+Match the act structure from the Treatment. Break EACH act into 7-8 individual moments (each ${""}entry${""} = one moment). Write vivid present-tense prose for each description. No INT./EXT. sluglines. No character cues. No dialogue formatting.
 
-## TONE
-[IMPORT from treatment.tone — 1 paragraph. Copy exactly. Do not reinterpret.]
+Include the LOGLINE (import from concept_brief.logline — copy exactly) in the first entry description. Include the TONE (import from treatment.tone — copy exactly) in the first entry description.
 
-## SCENE SUMMARIES
-[GENERATE — each scene = 3–5 sentences with dramatic purpose + emotional shift. Format:]
-## Scene [N]: [title]
-**What happens:** [3–5 sentences]
-**Dramatic purpose:** [the character's goal, obstacle, discovery]
-**Connection:** [how this scene connects to the next scene]
-
-[Continue for all scenes in the story.]
-
-## STRUCTURAL NOTE
-[EVOLVE from treatment act structure — reference the three-act spine. Do not contradict treatment's act divisions.]`;
+Cover all acts from the treatment — Act 1 through Act 4. Each act should have 5-8 moments. Total ~25-32 entries.`;
     // ─────────────────────────────────────────────────────────────────────────────
     case "beat_sheet":
       return `# BEAT SHEET: ${title}
