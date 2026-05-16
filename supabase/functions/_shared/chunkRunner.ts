@@ -1112,14 +1112,14 @@ function parseBeatSheetIntoBeats(plaintext: string): ParsedBeat[] {
 
   // Split on beat headers — matches ### N. Name or **N. Name** or ### Name
   const beatBlocks: string[] = [];
-  const parts = plaintext.split(/(?=^#{1,3}\s+\d*\.?\s*|^\*{2}\d+\.?\s*)/m);
+  const parts = plaintext.split(/(?=^#{3}\s+\d*\.?\s*|^\*{2}\d+\.?\s*)/m);
 
   for (const block of parts) {
     const trimmed = block.trim();
     if (!trimmed) continue;
 
     // Extract beat number and title from header
-    const headerMatch = trimmed.match(/^#{1,3}\s+(\d*\.?)\s*([^\n]+)|^\*{2}(\d*\.?)\s*([^*\n]+)\*{2}/m);
+    const headerMatch = trimmed.match(/^#{3}\s+(\d*\.?)\s*([^\n]+)|^\*{2}(\d*\.?)\s*([^*\n]+)\*{2}/m);
     if (!headerMatch) continue;
 
     const rawNum = headerMatch[1] || headerMatch[3] || "";
