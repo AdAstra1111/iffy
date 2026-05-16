@@ -39389,6 +39389,20 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
           }));
         }
 
+        // Fallback: ### N. Title format (h1/h2/h3 followed by number and period)
+        const h3NumberedPattern = /^#{1,3}\s+\d+\.?\s+/gm;
+        const h3NumberedStarts: number[] = [];
+        let hn3: RegExpExecArray | null;
+        while ((hn3 = h3NumberedPattern.exec(text)) !== null) h3NumberedStarts.push(hn3.index);
+
+        if (h3NumberedStarts.length > 0) {
+          return h3NumberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length,
+          }));
+        }
+
         // Fallback: numbered markdown format "N. **Beat Name**"
         const numberedPattern = /^\d+\.\s+\*\*/gm;
         const numberedStarts: number[] = [];
