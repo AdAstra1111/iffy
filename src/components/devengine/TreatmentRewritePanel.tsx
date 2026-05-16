@@ -1,32 +1,81 @@
 /**
- * TreatmentRewritePanel — Persistent per-act editing panel for Treatment and Long Treatment documents.
+ * TreatmentRewritePanel — Persistent per-act editing panel for Treatment and Long Treatment docs.
  *
- * Polls treatment_acts from the DB, displays each act in an expandable/editable card,
- * and provides controls for per-act saving, full-panel rewrite, and assembly.
+ * Polls treatment_acts by treatment_id, displays expandable act cards with editable content,
+ * per-act rewrite buttons, save, and assemble-all functionality.
  *
- * Architecture: Self-contained component (no external pipeline hook). Treatment docs
- * rewrite via dev-engine-v2 { action: "rewrite", deliverableType } route.
+ * Unlike TreatmentActsProgress (which only renders during active rewrite),
+ * this panel persists after generation completes so the user can review, edit,
+ * and selectively rewrite individual acts.
  */
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  CheckCircle2, Loader2, AlertCircle, ChevronRight, ChevronDown,
-  RotateCcw, Info, Sparkles, Save, Edit3, Eye, Package, Square,
-  Play, Clock, AlertTriangle, Bug, XCircle,
-} from 'lucide-react';
+
+import { useState, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Card, CardContent } from '@/components/ui/card';
+import {
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  RotateCcw,
+  Save,
+  Play,
+  BookOpen,
+  Shield,
+  Target,
+  GitBranch,
+  AlertTriangle,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  Eye,
+  Square,
+  Package,
+} from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ProcessProgressBar } from './ProcessProgressBar';
-import { ActivityTimeline } from './ActivityTimeline';
 
-const sb = supabase as any;
+// ─── Types ──────────────────────────────────────────────────────────────────
 
-// ── Types ────────────────────────────────────────────────────────────────────
+interface ActBlueprint {
+  actKey?: string;
+  actNumber?: number;
+  label?: string;
+  functionDescription?: string;
+  canonConstraints?: string[];
+  targetingNotes?: string[];
+  hasPrecedingContext?: boolean;
+}
+
+interface CharacterState {
+  current_desire?: string;
+  current_fear?: string;
+  emotional_state?: string;
+  relationship_states?: Record<string, string>;
+}
+
+interface PendingArc {
+  character?: string;
+  arc_description?: string;
+  tension_level?: string | number;
+}
+
+interface UnresolvedTension {
+  tension?: string;
+  introduced_in_act?: string | number;
+  escalation_level?: string | number;
+}
+
+interface ArcStateDeltas {
+  character_states?: Record<string, CharacterState>;
+  pending_arcs?: PendingArc[];
+  unresolved_tensions?: UnresolvedTension[];
+}
 
 interface TreatmentActRow {
   id: string;
@@ -35,8 +84,8 @@ interface TreatmentActRow {
   label: string;
   content: string | null;
   content_hash: string | null;
-  act_blueprint: Record<string, any> | null;
-  arc_state_deltas: Record<string, any> | null;
+  act_blueprint: ActBlueprint | null;
+  arc_state_deltas: ArcStateDeltas | null;
   status: string;
   error_message: string | null;
   created_at: string;
@@ -47,50 +96,198 @@ interface TreatmentRewritePanelProps {
   projectId: string;
   documentId: string;
   versionId: string;
-  docType: string;
-  approvedNotes?: any[];
-  protectItems?: string[];
+  approvedNotes: any[];
+  protectItems: string[];
   onComplete?: (newVersionId: string) => void;
-  onApplyAllStart?: () => void;
-  onApplyAllDone?: () => void;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const TERMINAL = new Set(['done', 'failed']);
-
-function StatusBadge({ status }: { status: string }) {
+function ActStatusBadge({ status }: { status: string }) {
   switch (status) {
-    case 'done': return <Badge variant="default" className="bg-green-600 text-xs"><CheckCircle2 className="h-3 w-3 mr-1" />Done</Badge>;
-    case 'rewriting': return <Badge variant="default" className="bg-blue-600 text-xs animate-pulse"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Rewriting</Badge>;
-    case 'failed': return <Badge variant="destructive" className="text-xs"><AlertCircle className="h-3 w-3 mr-1" />Failed</Badge>;
-    case 'pending': return <Badge variant="secondary" className="text-xs"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
-    default: return <Badge variant="outline" className="text-xs">{status}</Badge>;
+    case 'done':
+      return (
+        <Badge variant="default" className="bg-green-600 text-xs gap-1">
+          <CheckCircle2 className="h-3 w-3" />
+          Done
+        </Badge>
+      );
+    case 'rewriting':
+      return (
+        <Badge variant="default" className="bg-blue-600 text-xs gap-1 animate-pulse">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Rewriting
+        </Badge>
+      );
+    case 'failed':
+      return (
+        <Badge variant="destructive" className="text-xs gap-1">
+          <XCircle className="h-3 w-3" />
+          Failed
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="secondary" className="text-xs gap-1">
+          <Clock className="h-3 w-3" />
+          Pending
+        </Badge>
+      );
   }
 }
 
-function formatActLabel(act: TreatmentActRow): string {
-  return act.label || `Act ${act.act_number} — ${act.act_key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}`;
+function BlueprintSection({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+        {icon}
+        {label}
+      </div>
+      {children}
+    </div>
+  );
 }
 
-// ── Panel ────────────────────────────────────────────────────────────────────
+function ConstraintList({ items, emptyText = 'None' }: { items?: string[]; emptyText?: string }) {
+  if (!items || items.length === 0) {
+    return <p className="text-xs text-muted-foreground/50 italic">{emptyText}</p>;
+  }
+  return (
+    <ul className="space-y-1">
+      {items.map((item, i) => (
+        <li key={i} className="flex items-start gap-1.5 text-xs text-foreground/80">
+          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-muted-foreground/40 shrink-0" />
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function ArcStateSection({ deltas }: { deltas: ArcStateDeltas | null }) {
+  if (!deltas) return <p className="text-xs text-muted-foreground/50 italic">No arc-state data</p>;
+
+  const { character_states, pending_arcs, unresolved_tensions } = deltas;
+  const hasAny =
+    (character_states && Object.keys(character_states).length > 0) ||
+    (pending_arcs && pending_arcs.length > 0) ||
+    (unresolved_tensions && unresolved_tensions.length > 0);
+
+  if (!hasAny) return <p className="text-xs text-muted-foreground/50 italic">No arc-state data from prior acts</p>;
+
+  return (
+    <div className="space-y-3">
+      {character_states && Object.keys(character_states).length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Character States</p>
+          <div className="space-y-2">
+            {Object.entries(character_states).map(([name, state]) => (
+              <div key={name} className="pl-2 border-l border-border/40">
+                <p className="text-xs font-medium text-foreground/90">{name}</p>
+                {state.current_desire && (
+                  <p className="text-[10px] text-muted-foreground">
+                    <span className="text-foreground/60">Wants:</span> {state.current_desire}
+                  </p>
+                )}
+                {state.current_fear && (
+                  <p className="text-[10px] text-muted-foreground">
+                    <span className="text-foreground/60">Fears:</span> {state.current_fear}
+                  </p>
+                )}
+                {state.emotional_state && (
+                  <p className="text-[10px] text-muted-foreground">
+                    <span className="text-foreground/60">State:</span> {state.emotional_state}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {pending_arcs && pending_arcs.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Pending Arcs</p>
+          <div className="space-y-1.5">
+            {pending_arcs.map((arc, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                <GitBranch className="h-3 w-3 text-muted-foreground/50 shrink-0 mt-0.5" />
+                <span>
+                  {arc.character && <span className="font-medium">{arc.character}: </span>}
+                  {arc.arc_description}
+                  {arc.tension_level != null && (
+                    <span className="ml-1 text-[10px] text-muted-foreground/60">(tension: {arc.tension_level})</span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {unresolved_tensions && unresolved_tensions.length > 0 && (
+        <div>
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Unresolved Tensions</p>
+          <div className="space-y-1.5">
+            {unresolved_tensions.map((t, i) => (
+              <div key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                <AlertTriangle className="h-3 w-3 text-amber-500/60 shrink-0 mt-0.5" />
+                <span>
+                  {t.tension}
+                  {t.introduced_in_act != null && (
+                    <span className="ml-1 text-[10px] text-muted-foreground/60">
+                      (act {t.introduced_in_act}
+                      {t.escalation_level != null ? `, escalation: ${t.escalation_level}` : ''})
+                    </span>
+                  )}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function TreatmentRewritePanel({
-  projectId, documentId, versionId, docType, approvedNotes, protectItems, onComplete, onApplyAllStart, onApplyAllDone,
+  projectId,
+  documentId,
+  versionId,
+  approvedNotes,
+  protectItems,
+  onComplete,
 }: TreatmentRewritePanelProps) {
-  const queryClient = useQueryClient();
-  const [expandedActId, setExpandedActId] = useState<string | null>(null);
-  const [editContents, setEditContents] = useState<Record<string, string>>({});
-  const [savingActId, setSavingActId] = useState<string | null>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewText, setPreviewText] = useState('');
-  const [rewritingAll, setRewritingAll] = useState(false);
-  const [assembling, setAssembling] = useState(false);
-  const [initialized, setInitialized] = useState(false);
-  const startGuardRef = useRef(false);
+  const qc = useQueryClient();
+  // ── Untyped DB client for tables not in the generated types ──
+  const sb = supabase as any;
 
-  // ── Poll treatment_acts ──────────────────────────────────────────────────────
+  // ── State for progress during per-act pipeline ──
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineProgress, setPipelineProgress] = useState<{ done: number; total: number; status: 'idle' | 'working' | 'complete' | 'error' }>({
+    done: 0,
+    total: 0,
+    status: 'idle',
+  });
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
 
+  // ── State for act card expansion ──
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // ── State for per-act content editing ──
+  const [editingContent, setEditingContent] = useState<Record<string, string>>({});
+  const [savingAct, setSavingAct] = useState<Record<string, boolean>>({});
+
+  // ── State for blueprint collapsible per card ──
+  const [blueprintExpanded, setBlueprintExpanded] = useState<Record<string, boolean>>({});
+
+  // ── Guard refs ──
+  const rewriteGuardRef = useRef(false);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Query: fetch treatment_acts with polling ──
   const { data: acts = [], isLoading, isError } = useQuery<TreatmentActRow[]>({
     queryKey: ['treatment-rewrite-acts', documentId],
     queryFn: async () => {
@@ -107,249 +304,197 @@ export default function TreatmentRewritePanel({
     refetchInterval: (query) => {
       const rows = query.state.data;
       if (!rows || rows.length === 0) return 5000;
+      const TERMINAL = new Set(['done', 'failed']);
       const allTerminal = rows.every((r: TreatmentActRow) => TERMINAL.has(r.status));
       return allTerminal ? false : 5000;
     },
-    staleTime: 15_000,
   });
 
   const safeActs = Array.isArray(acts) ? acts : [];
-  const total = safeActs.length;
-  const doneCount = safeActs.filter(a => a.status === 'done').length;
-  const failedCount = safeActs.filter(a => a.status === 'failed').length;
-  const isWorking = safeActs.some(a => a.status === 'rewriting' || a.status === 'pending');
-  const allDone = total > 0 && doneCount === total;
+  const totalActs = safeActs.length;
+  const doneActs = safeActs.filter(a => a.status === 'done').length;
+  const isAnyRewriting = safeActs.some(a => a.status === 'rewriting');
 
-  useEffect(() => {
-    if (!initialized && safeActs.length > 0) {
-      // Initialize edit contents from act content
-      const init: Record<string, string> = {};
-      for (const act of safeActs) {
-        init[act.id] = act.content || '';
-      }
-      setEditContents(prev => {
-        // Only set if not already initialized
-        if (Object.keys(prev).length === 0) return init;
-        return prev;
-      });
-      setInitialized(true);
-    }
-  }, [safeActs, initialized]);
-
-  // Sync edit contents when acts refresh (new content from backend)
-  useEffect(() => {
-    if (initialized) {
-      setEditContents(prev => {
-        const next = { ...prev };
-        let changed = false;
-        for (const act of safeActs) {
-          const existing = prev[act.id];
-          if (existing === undefined && act.content) {
-            next[act.id] = act.content;
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    }
-  }, [safeActs, initialized]);
-
-  // ── Notify on complete ────────────────────────────────────────────────────────
-
-  const [newVersionId, setNewVersionId] = useState<string | null>(null);
-  useEffect(() => {
-    if (newVersionId && onComplete) {
-      onComplete(newVersionId);
-    }
-  }, [newVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Act editing ──────────────────────────────────────────────────────────────
-
-  const handleActContentChange = useCallback((actId: string, value: string) => {
-    setEditContents(prev => ({ ...prev, [actId]: value }));
-  }, []);
-
-  const handleSaveAct = async (act: TreatmentActRow) => {
-    if (savingActId) return;
-    setSavingActId(act.id);
-    try {
-      const newContent = editContents[act.id] || '';
-      const { error } = await sb
-        .from('treatment_acts')
-        .update({
-          content: newContent,
-          content_hash: null, // force content_hash recalculation by backend
-          revised_at: new Date().toISOString(),
-        })
-        .eq('id', act.id);
-      if (error) throw error;
-      toast.success(`${formatActLabel(act)} saved`);
-      queryClient.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
-    } catch (err: any) {
-      toast.error('Save failed: ' + (err?.message || 'Unknown error'));
-    } finally {
-      setSavingActId(null);
-    }
-  };
-
-  // ── Rewrite All ─────────────────────────────────────────────────────────────
-
-  const handleRewriteAll = async () => {
-    if (startGuardRef.current || rewritingAll) return;
-    startGuardRef.current = true;
-    setRewritingAll(true);
-    onApplyAllStart?.();
+  // ── Per-act rewrite: runs the full per-act pipeline via dev-engine-v2 ──
+  const handleRewriteAct = async () => {
+    if (rewriteGuardRef.current) return;
+    rewriteGuardRef.current = true;
+    setPipelineRunning(true);
+    setPipelineProgress({ done: 0, total: 4, status: 'working' });
+    setPipelineError(null);
 
     try {
-      const deliverableType = docType === 'long_treatment' ? 'long_treatment' : 'treatment';
+      const action = 'rewrite';
+
       const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
         body: {
-          action: 'rewrite',
-          deliverableType,
+          action,
+          deliverableType: 'treatment',
           projectId,
           documentId,
           versionId,
-          approvedNotes: approvedNotes || [],
-          protectItems: protectItems || [],
+          approvedNotes,
+          protectItems,
         },
       });
-      if (invokeError) throw invokeError;
-      if (result?.error) throw new Error(result.error);
 
-      toast.success('Treatment rewrite started — per-act pipeline running');
-      queryClient.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
+      if (invokeError) throw invokeError;
+
+      if (result?.success) {
+        setPipelineProgress({ done: 4, total: 4, status: 'complete' });
+        toast.success('Treatment rewrite completed');
+        qc.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', documentId] });
+
+        // Notify parent of new version
+        if (result.new_version_id && onComplete) {
+          onComplete(result.new_version_id);
+        }
+      } else {
+        throw new Error(result?.error || 'Per-act rewrite returned unsuccessful');
+      }
     } catch (err: any) {
-      console.error('[TreatmentRewritePanel] rewrite all failed:', err);
-      toast.error('Rewrite failed: ' + (err?.message || 'Unknown error'));
+      console.error('[treatment-rewrite-panel] per-act rewrite failed:', err);
+      setPipelineProgress(p => ({ ...p, status: 'error' }));
+      setPipelineError(err?.message || 'Rewrite failed');
+      toast.error('Treatment rewrite failed: ' + (err?.message || 'Unknown error'));
     } finally {
-      setRewritingAll(false);
-      startGuardRef.current = false;
-      onApplyAllDone?.();
+      setPipelineRunning(false);
+      rewriteGuardRef.current = false;
     }
   };
 
-  // ── Assembly ─────────────────────────────────────────────────────────────────
+  // ── Save a single act's content ──
+  const handleSaveAct = async (act: TreatmentActRow, content: string) => {
+    const actId = act.id;
+    setSavingAct(prev => ({ ...prev, [actId]: true }));
 
-  const handleAssemble = async () => {
-    if (assembling) return;
-    setAssembling(true);
     try {
-      // Build full treatment text from all act contents
-      const actOrder = ['act_1', 'act_2a', 'act_2b', 'act_3'];
-      const sorted = [...safeActs].sort((a, b) => a.act_number - b.act_number);
-      const sections: string[] = [];
-      for (const act of sorted) {
-        const content = editContents[act.id] || act.content || '';
-        const label = formatActLabel(act);
-        sections.push(`## ${label}\n\n${content.trim()}`);
-      }
-      const plaintext = sections.join('\n\n');
+      const { error } = await sb
+        .from('treatment_acts')
+        .update({ content, revised_at: new Date().toISOString() })
+        .eq('id', actId);
 
-      // Create new version
-      const { data: newVer, error: verError } = await sb
+      if (error) throw error;
+
+      toast.success(`${act.label || `Act ${act.act_number}`} saved`);
+      // Clear editing state for this act
+      setEditingContent(prev => {
+        const next = { ...prev };
+        delete next[actId];
+        return next;
+      });
+      qc.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
+    } catch (err: any) {
+      console.error('[treatment-rewrite-panel] save act failed:', err);
+      toast.error('Failed to save: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setSavingAct(prev => ({ ...prev, [actId]: false }));
+    }
+  };
+
+  // ── Assemble all acts into a new version ──
+  const handleAssembleAll = async () => {
+    const assembledActs = safeActs.filter(a => a.status === 'done' && a.content);
+    if (assembledActs.length === 0) {
+      toast.error('No completed acts to assemble');
+      return;
+    }
+
+    // Build the full treatment text from act content
+    const assembledText = assembledActs
+      .map(act => `## ${act.label || `Act ${act.act_number}`}\n\n${act.content}`)
+      .join('\n\n');
+
+    if (!assembledText.trim()) {
+      toast.error('Acts have no content to assemble');
+      return;
+    }
+
+    setPipelineRunning(true);
+    setPipelineProgress({ done: 0, total: 1, status: 'working' });
+    setPipelineError(null);
+
+    try {
+      // Get current version to copy its metadata
+      const { data: currentVersion, error: verError } = await sb
+        .from('project_document_versions')
+        .select('version_number, label, meta_json')
+        .eq('id', versionId)
+        .single();
+
+      if (verError) throw verError;
+
+      const newVersionNumber = (currentVersion?.version_number || 0) + 1;
+
+      // Get current user for created_by
+      const { data: { user } } = await supabase.auth.getUser();
+      
+      // Create new version with assembled text
+      const { data: newVersion, error: createError } = await sb
         .from('project_document_versions')
         .insert({
           document_id: documentId,
-          version_number: null, // let DB auto-increment
-          plaintext,
-          is_current: true,                   // fix d: new version must be current
-          approval_status: 'draft',
+          version_number: newVersionNumber,
+          created_by: user?.id || null,
+          label: currentVersion?.label || null,
+          plaintext: assembledText,
           meta_json: {
-            source: 'treatment_rewrite_panel',
-            source_version_id: versionId,
-            act_count: sorted.length,
-            assembled_at: new Date().toISOString(),
+            ...(currentVersion?.meta_json || {}),
+            run_type: 'TREATMENT_MANUAL_ASSEMBLE',
+            pipeline: 'per_act_manual',
+            assembled_from_acts: true,
           },
-          change_summary: `Assembled from ${sorted.length} act(s) via TreatmentRewritePanel`,
+          approval_status: 'draft',
+          is_current: true,
         })
-        .select('id')
+        .select()
         .single();
-      if (verError) throw verError;
 
-      // Mark old version as not current
-      if (versionId) {
-        await sb
-          .from('project_document_versions')
-          .update({ is_current: false })
-          .eq('id', versionId);
-      }
+      if (createError) throw createError;
 
       // Update document's latest_version_id
-      const { error: docError } = await sb
+      const { error: updateError } = await sb
         .from('project_documents')
-        .update({ latest_version_id: newVer.id })
+        .update({ latest_version_id: newVersion.id })
         .eq('id', documentId);
-      if (docError) throw docError;
 
-      toast.success('New version assembled');
-      setNewVersionId(newVer.id);
-      queryClient.invalidateQueries({ queryKey: ['dev-v2-versions', documentId] });
-      queryClient.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
+      if (updateError) console.warn('[treatment-rewrite-panel] update latest_version_id failed:', updateError);
+
+      setPipelineProgress({ done: 1, total: 1, status: 'complete' });
+      toast.success(`Treatment assembled — v${newVersionNumber} created`);
+
+      qc.invalidateQueries({ queryKey: ['dev-v2-versions', documentId] });
+
+      if (onComplete) {
+        onComplete(newVersion.id);
+      }
     } catch (err: any) {
-      console.error('[TreatmentRewritePanel] assemble failed:', err);
+      console.error('[treatment-rewrite-panel] assemble failed:', err);
+      setPipelineProgress(p => ({ ...p, status: 'error' }));
+      setPipelineError(err?.message || 'Assembly failed');
       toast.error('Assembly failed: ' + (err?.message || 'Unknown error'));
     } finally {
-      setAssembling(false);
+      setPipelineRunning(false);
     }
   };
 
-  // ── Preview ─────────────────────────────────────────────────────────────────
-
-  const handlePreview = () => {
-    const actOrder = ['act_1', 'act_2a', 'act_2b', 'act_3'];
-    const sorted = [...safeActs].sort((a, b) => a.act_number - b.act_number);
-    const sections: string[] = [];
-    for (const act of sorted) {
-      const content = editContents[act.id] || act.content || '';
-      const label = formatActLabel(act);
-      sections.push(`## ${label}\n\n${content.trim()}`);
-    }
-    setPreviewText(sections.join('\n\n'));
-    setPreviewOpen(true);
+  // ── Helpers for card state ──
+  const getEditedContent = (act: TreatmentActRow): string => {
+    return editingContent[act.id] !== undefined ? editingContent[act.id] : (act.content || '');
   };
 
-  // ── Retry failed ────────────────────────────────────────────────────────────
-
-  const handleRetryFailed = async () => {
-    if (rewritingAll) return;
-    setRewritingAll(true);
-    onApplyAllStart?.();
-    try {
-      const deliverableType = docType === 'long_treatment' ? 'long_treatment' : 'treatment';
-      const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-        body: {
-          action: 'rewrite',
-          deliverableType,
-          projectId,
-          documentId,
-          versionId,
-          approvedNotes: approvedNotes || [],
-          protectItems: protectItems || [],
-          retryFailed: true,
-        },
-      });
-      if (invokeError) throw invokeError;
-      if (result?.error) throw new Error(result.error);
-      toast.success('Retrying failed acts');
-      queryClient.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });
-    } catch (err: any) {
-      toast.error('Retry failed: ' + (err?.message || 'Unknown error'));
-    } finally {
-      setRewritingAll(false);
-      onApplyAllDone?.();
-    }
+  const hasUnsavedChanges = (act: TreatmentActRow): boolean => {
+    return editingContent[act.id] !== undefined && editingContent[act.id] !== (act.content || '');
   };
 
-  // ── Compute state flags ─────────────────────────────────────────────────────
+  const toggleBlueprint = (actId: string) => {
+    setBlueprintExpanded(prev => ({ ...prev, [actId]: !prev[actId] }));
+  };
 
-  const canStart = total === 0 || (!isWorking && safeActs.every(a => TERMINAL.has(a.status) || a.status === 'pending'));
-  const canRetryFailed = failedCount > 0 && !isWorking;
-  const canAssemble = allDone && !newVersionId;
-  const canPreview = total > 0 && doneCount > 0;
-  const needsInitialGenerate = total === 0;
+  // ── Render ──
 
-  const stuckMinutes = 10;
-  const hasStuckRewrite = false; // treatment_acts don't have a "claimed_at" concept
+  const showAssemble = safeActs.filter(a => a.status === 'done' && a.content).length > 0 && !isAnyRewriting;
 
   return (
     <div className="rounded-lg border bg-card p-3 space-y-3">
@@ -357,229 +502,277 @@ export default function TreatmentRewritePanel({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">
-            {docType === 'long_treatment' ? 'Long Treatment' : 'Treatment'} — Per-Act Rewrite
-          </span>
-          {total > 0 && (
+          <span className="text-sm font-medium">Treatment — Per-Act Editor</span>
+          {totalActs > 0 && (
             <span className="text-xs text-muted-foreground">
-              {doneCount}/{total} acts
+              {doneActs}/{totalActs} acts
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
-          {needsInitialGenerate ? (
-            <Button size="sm" variant="default" onClick={handleRewriteAll} disabled={rewritingAll} className="h-7 text-xs gap-1">
-              {rewritingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
-              Generate Acts
+          {(pipelineProgress.status === 'complete' || showAssemble) && !pipelineRunning && (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={handleAssembleAll}
+              disabled={pipelineRunning}
+              className="h-7 text-xs gap-1"
+            >
+              <Package className="h-3 w-3" /> Assemble All
             </Button>
-          ) : (
-            <>
-              {!isWorking && (
-                <>
-                  {/* Fix b: per-act button renamed to "Rewrite All" */}
-                  <Button size="sm" variant="default" onClick={handleRewriteAll} disabled={rewritingAll} className="h-7 text-xs gap-1">
-                    {rewritingAll ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
-                    {rewritingAll ? 'Rewriting…' : 'Rewrite All'}
-                  </Button>
-                  {canRetryFailed && (
-                    <Button size="sm" variant="outline" onClick={handleRetryFailed} className="h-7 text-xs gap-1">
-                      <RotateCcw className="h-3 w-3" /> Retry Failed
-                    </Button>
-                  )}
-                  {canPreview && (
-                    <Button size="sm" variant="outline" onClick={handlePreview} className="h-7 text-xs gap-1">
-                      <Eye className="h-3 w-3" /> Preview
-                    </Button>
-                  )}
-                  {canAssemble && (
-                    <Button size="sm" variant="default" onClick={handleAssemble} disabled={assembling} className="h-7 text-xs gap-1">
-                      {assembling ? <Loader2 className="h-3 w-3 animate-spin" /> : <Package className="h-3 w-3" />}
-                      {assembling ? 'Assembling…' : 'Assemble'}
-                    </Button>
-                  )}
-                </>
-              )}
-              {isWorking && (
-                <span className="text-xs text-blue-500 flex items-center gap-1">
-                  <Loader2 className="h-3 w-3 animate-spin" /> In progress…
-                </span>
-              )}
-            </>
+          )}
+          {!pipelineRunning && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleRewriteAct}
+              disabled={pipelineRunning || !versionId}
+              className="h-7 text-xs gap-1"
+            >
+              <RotateCcw className="h-3 w-3" /> Rewrite All
+            </Button>
+          )}
+          {pipelineRunning && (
+            <Button size="sm" variant="ghost" disabled className="h-7 text-xs gap-1">
+              <Loader2 className="h-3 w-3 animate-spin" /> Working…
+            </Button>
           )}
         </div>
       </div>
 
-      {/* Progress bar */}
-      {total > 0 && (
+      {/* Pipeline progress */}
+      {(pipelineProgress.status === 'working' || pipelineProgress.status === 'complete' || pipelineProgress.status === 'error') && (
         <ProcessProgressBar
-          percent={total > 0 ? Math.round((doneCount / total) * 100) : 0}
-          actualPercent={total > 0 ? Math.round((doneCount / total) * 100) : 0}
-          phase={isWorking ? 'processing' : allDone ? 'complete' : 'idle'}
-          label={isWorking ? `Rewriting act ${doneCount + 1} of ${total}…` : allDone ? 'All acts complete' : 'Ready'}
-          status={isWorking ? 'working' : allDone ? 'success' : failedCount > 0 ? 'warn' : 'working'}
+          percent={pipelineProgress.status === 'complete' ? 100 : pipelineProgress.status === 'error' ? 0 : 50}
+          actualPercent={pipelineProgress.status === 'complete' ? 100 : pipelineProgress.status === 'error' ? 0 : (pipelineProgress.done / Math.max(pipelineProgress.total, 1)) * 100}
+          phase={pipelineProgress.status === 'working' ? 'rewriting' : pipelineProgress.status === 'complete' ? 'done' : 'error'}
+          label={pipelineProgress.status === 'working' ? 'Rewriting acts…' : pipelineProgress.status === 'complete' ? 'Rewrite complete' : 'Rewrite failed'}
+          status={pipelineProgress.status === 'complete' ? 'success' : pipelineProgress.status === 'error' ? 'error' : 'working'}
         />
       )}
 
-      {/* Error display */}
-      {isError && (
-        <div className="text-xs text-destructive p-2 bg-destructive/10 rounded flex items-center gap-1">
-          <XCircle className="h-3 w-3" /> Failed to load treatment acts
-        </div>
-      )}
-
-      {/* Success banner */}
-      {newVersionId && (
-        <div className="text-xs space-y-1 p-2 rounded bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
-          <div className="text-green-600 font-medium flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" /> New version assembled
-          </div>
-          <div className="text-muted-foreground">
-            All {doneCount} act(s) combined into a single treatment document.
-          </div>
+      {/* Error message */}
+      {pipelineError && (
+        <div className="text-xs text-destructive p-2 rounded bg-destructive/5 border border-destructive/20">
+          {pipelineError}
         </div>
       )}
 
       {/* Act cards */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-[200px] gap-2 text-muted-foreground text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading acts…
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading acts…
+        </div>
+      ) : isError ? (
+        <div className="flex items-center gap-2 text-destructive/70 text-sm py-8 justify-center">
+          <XCircle className="h-4 w-4" />
+          Failed to load acts
         </div>
       ) : safeActs.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-[200px] gap-3 text-muted-foreground text-sm">
-          <Sparkles className="h-8 w-8 opacity-30" />
-          <p>No acts yet. Click "Generate Acts" or "Rewrite All" to create treatment acts.</p>
+        <div className="flex items-center gap-2 text-muted-foreground text-sm py-8 justify-center">
+          <Clock className="h-4 w-4" />
+          No acts yet — generate the treatment first.
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
           {safeActs.map((act) => {
-            const isExpanded = expandedActId === act.id;
             const isDone = act.status === 'done';
-            const isFailed = act.status === 'failed';
             const isRewriting = act.status === 'rewriting';
-            const content = editContents[act.id] !== undefined ? editContents[act.id] : (act.content || '');
-            const isSaving = savingActId === act.id;
-            const hasEdits = content !== (act.content || '');
+            const isFailed = act.status === 'failed';
+            const isExpanded = expandedId === act.id;
+            const currentContent = getEditedContent(act);
+            const hasChanges = hasUnsavedChanges(act);
+            const isSaving = savingAct[act.id] || false;
+            const showBlueprint = blueprintExpanded[act.id];
+            const bp = act.act_blueprint;
 
             return (
-              <Card key={act.id} className={`transition-all ${isRewriting ? 'border-blue-500/30 animate-pulse' : isFailed ? 'border-destructive/30' : ''}`}>
-                <CardHeader
-                  className="p-3 pb-2 flex flex-row items-center justify-between cursor-pointer hover:bg-muted/30"
-                  onClick={() => setExpandedActId(prev => prev === act.id ? null : act.id)}
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    {isExpanded ? <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />}
-                    <CardTitle className="text-sm font-semibold truncate">{formatActLabel(act)}</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {hasEdits && (
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-amber-400/50 text-amber-500">
-                        Edited
-                      </Badge>
-                    )}
-                    <StatusBadge status={act.status} />
-                  </div>
-                </CardHeader>
-
-                {isExpanded && (
-                  <CardContent className="p-3 pt-2 space-y-2">
-                    {/* Editable textarea */}
-                    <textarea
-                      className="w-full min-h-[200px] text-xs font-mono p-3 rounded border bg-background resize-y focus:outline-none focus:ring-1 focus:ring-primary"
-                      value={content}
-                      onChange={(e) => handleActContentChange(act.id, e.target.value)}
-                      disabled={isRewriting}
-                      placeholder={isRewriting ? 'Rewriting…' : 'Edit act content…'}
-                    />
-
-                    {/* Error message */}
-                    {isFailed && act.error_message && (
-                      <div className="text-xs text-destructive flex items-start gap-1 p-2 bg-destructive/10 rounded">
-                        <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
-                        {act.error_message}
-                      </div>
-                    )}
-
-                    {/* Per-act actions */}
-                    <div className="flex items-center gap-1">
-                      <Button
-                        size="sm"
-                        variant={hasEdits ? "default" : "outline"}
-                        onClick={() => handleSaveAct(act)}
-                        disabled={isSaving || isRewriting}
-                        className="h-7 text-xs gap-1"
-                      >
-                        {isSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                        {isSaving ? 'Saving…' : hasEdits ? 'Save Changes' : 'Save'}
-                      </Button>
-                      {act.content != null && (
-                        <span className="text-[10px] text-muted-foreground/60 ml-1">
-                          {act.content.split(/\s+/).filter(Boolean).length.toLocaleString()} words
-                        </span>
+              <Card
+                key={act.id}
+                className={`transition-all duration-300 ${
+                  isDone
+                    ? 'border-border/40'
+                    : isRewriting
+                      ? 'border-blue-500/30 animate-pulse'
+                      : isFailed
+                        ? 'border-destructive/40'
+                        : 'border-border/20 opacity-40'
+                }`}
+              >
+                <CardContent className="p-3">
+                  {/* Act header row */}
+                  <div
+                    className="flex items-center justify-between cursor-pointer"
+                    onClick={() => isDone && setExpandedId(prev => prev === act.id ? null : act.id)}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <ActStatusBadge status={act.status} />
+                      <h4 className="text-xs font-semibold text-foreground uppercase tracking-wide truncate">
+                        {act.label || `Act ${act.act_number}`}
+                      </h4>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Actions visible when collapsed */}
+                      {isDone && (
+                        <>
+                          {hasChanges && (
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-6 text-[10px] gap-1"
+                              disabled={isSaving}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSaveAct(act, currentContent);
+                              }}
+                            >
+                              {isSaving ? (
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              ) : (
+                                <Save className="h-2.5 w-2.5" />
+                              )}
+                              Save
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-[10px] gap-1"
+                            disabled={pipelineRunning}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRewriteAct();
+                            }}
+                          >
+                            <RotateCcw className="h-2.5 w-2.5" /> Rewrite All
+                          </Button>
+                        </>
+                      )}
+                      {isExpanded ? (
+                        <ChevronUp className="h-3.5 w-3.5 text-muted-foreground/60" />
+                      ) : (
+                        <ChevronDown className="h-3.5 w-3.5 text-muted-foreground/60" />
                       )}
                     </div>
-                  </CardContent>
-                )}
+                  </div>
 
-                {!isExpanded && isDone && content && (
-                  <CardContent className="p-3 pt-0">
-                    <p className="text-xs text-muted-foreground line-clamp-2 whitespace-pre-wrap">
-                      {content.slice(0, 200)}{content.length > 200 ? '…' : ''}
-                    </p>
-                  </CardContent>
-                )}
+                  {/* Error message */}
+                  {isFailed && act.error_message && (
+                    <div className="flex items-start gap-2 mt-2 p-2 rounded bg-destructive/10 border border-destructive/20">
+                      <XCircle className="h-3.5 w-3.5 text-destructive shrink-0 mt-0.5" />
+                      <p className="text-xs text-destructive/90">{act.error_message}</p>
+                    </div>
+                  )}
+
+                  {/* Rewriting indicator */}
+                  {isRewriting && (
+                    <p className="text-xs text-muted-foreground/70 italic mt-2">Rewriting…</p>
+                  )}
+
+                  {/* Pending indicator */}
+                  {act.status === 'pending' && (
+                    <p className="text-xs text-muted-foreground/40 italic mt-2">Pending</p>
+                  )}
+
+                  {/* Expanded content area */}
+                  {isExpanded && isDone && (
+                    <div className="mt-3 space-y-3">
+                      {/* Editable content textarea */}
+                      <div>
+                        <label className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1 block">
+                          Content
+                        </label>
+                        <textarea
+                          className="w-full min-h-[120px] text-xs text-foreground/80 leading-relaxed p-2 rounded border border-border/40 bg-background resize-y font-mono focus:outline-none focus:ring-1 focus:ring-primary/50"
+                          value={currentContent}
+                          onChange={(e) =>
+                            setEditingContent(prev => ({ ...prev, [act.id]: e.target.value }))
+                          }
+                          spellCheck={false}
+                        />
+
+                        {/* Save bar when edited */}
+                        {hasChanges && (
+                          <div className="flex items-center justify-end gap-1 mt-1.5">
+                            <span className="text-[10px] text-amber-500/70 italic mr-2">Unsaved changes</span>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="h-6 text-[10px] gap-1"
+                              disabled={isSaving}
+                              onClick={() => handleSaveAct(act, currentContent)}
+                            >
+                              {isSaving ? (
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              ) : (
+                                <Save className="h-2.5 w-2.5" />
+                              )}
+                              Save Changes
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Blueprint section — collapsible */}
+                      <div>
+                        <button
+                          type="button"
+                          className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => toggleBlueprint(act.id)}
+                        >
+                          <BookOpen className="h-3 w-3" />
+                          Blueprint
+                          {showBlueprint
+                            ? <ChevronUp className="h-3 w-3 ml-1" />
+                            : <ChevronDown className="h-3 w-3 ml-1" />}
+                        </button>
+
+                        {showBlueprint && (
+                          <div className="mt-2 space-y-3 pl-1 border-l-2 border-border/20 pl-3">
+                            {/* Function description */}
+                            {bp?.functionDescription && (
+                              <BlueprintSection icon={<BookOpen className="h-3 w-3" />} label="Function">
+                                <p className="text-xs text-foreground/80 leading-relaxed">{bp.functionDescription}</p>
+                              </BlueprintSection>
+                            )}
+
+                            {/* Canon constraints */}
+                            <BlueprintSection icon={<Shield className="h-3 w-3" />} label="Canon Constraints">
+                              <ConstraintList items={bp?.canonConstraints} emptyText="No canon constraints" />
+                            </BlueprintSection>
+
+                            {/* Targeting notes */}
+                            {bp?.targetingNotes && bp.targetingNotes.length > 0 && (
+                              <BlueprintSection icon={<Target className="h-3 w-3" />} label="Notes Targeting This Act">
+                                <ConstraintList items={bp.targetingNotes} />
+                              </BlueprintSection>
+                            )}
+
+                            {/* Arc-state deltas */}
+                            <BlueprintSection icon={<GitBranch className="h-3 w-3" />} label="Arc-State from Prior Acts">
+                              <ArcStateSection deltas={act.arc_state_deltas} />
+                            </BlueprintSection>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
               </Card>
             );
           })}
         </div>
       )}
 
-      {/* Summary stats */}
-      {total > 0 && (
-        <div className="flex gap-3 text-xs text-muted-foreground">
-          {safeActs.filter(a => a.status === 'pending').length > 0 && <span>Pending: {safeActs.filter(a => a.status === 'pending').length}</span>}
-          {safeActs.filter(a => a.status === 'rewriting').length > 0 && <span className="text-blue-500">Rewriting: {safeActs.filter(a => a.status === 'rewriting').length}</span>}
-          {doneCount > 0 && <span className="text-green-500">Done: {doneCount}</span>}
-          {failedCount > 0 && <span className="text-destructive">Failed: {failedCount}</span>}
-        </div>
+      {/* Bottom info text */}
+      {safeActs.length > 0 && (
+        <p className="text-[11px] text-muted-foreground/60 text-center">
+          {isAnyRewriting
+            ? 'Rewrite in progress — status updates every few seconds.'
+            : 'Edit act content directly, save changes, then assemble into a new version.'}
+        </p>
       )}
-
-      {/* Activity/debug panel */}
-      {import.meta.env.DEV && (
-        <details className="text-xs">
-          <summary className="cursor-pointer text-muted-foreground flex items-center gap-1">
-            <Bug className="h-3 w-3" /> Debug
-          </summary>
-          <div className="mt-1 space-y-1 pl-4">
-            <Button size="sm" variant="outline" className="h-6 text-[10px]"
-              onClick={() => console.log('[TreatmentRewritePanel] State:', {
-                total, doneCount, failedCount, isWorking, allDone,
-                newVersionId, rewritingAll, assembling, initialized,
-                expandedActId, editCount: Object.keys(editContents).length,
-              })}>
-              Log state
-            </Button>
-          </div>
-        </details>
-      )}
-
-      {/* Preview modal */}
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle className="text-sm">
-              Treatment Preview
-              <span className="font-normal text-muted-foreground ml-2">
-                {doneCount} acts • {previewText.split(/\s+/).filter(Boolean).length.toLocaleString()} words
-              </span>
-            </DialogTitle>
-          </DialogHeader>
-          <ScrollArea className="flex-1 min-h-0">
-            <pre className="text-xs whitespace-pre-wrap font-mono p-3 bg-muted/30 rounded">
-              {previewText || 'No content yet.'}
-            </pre>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

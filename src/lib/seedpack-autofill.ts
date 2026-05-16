@@ -38,7 +38,8 @@ export async function loadSeedDocs(projectId: string): Promise<SeedDoc[]> {
     .from('project_document_versions')
     .select('document_id, plaintext')
     .in('document_id', docIds)
-    .eq('is_current', true);
+    .eq('is_current', true)
+    .eq('approval_status', 'approved');
 
   if (!versions) return [];
 

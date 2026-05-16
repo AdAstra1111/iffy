@@ -865,7 +865,7 @@ ${coverageContext ? "\nMode: Coverage Transformer" : "Mode: Greenlight Radar —
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.5-flash",
+          model: "deepseek/deepseek-chat",
           messages: [
             { role: "system", content: currentSystemPrompt },
             { role: "user", content: currentUserPrompt },

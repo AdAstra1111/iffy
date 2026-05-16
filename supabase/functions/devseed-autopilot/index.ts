@@ -792,7 +792,7 @@ async function executeSeedWritingVoice(
   const presetList = relevantPresets.map(p => `- ${p.id}: "${p.label}" — ${p.summary}`).join("\n");
 
   const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || "";
-  const BALANCED_MODEL = "google/gemini-2.5-flash";
+  const BALANCED_MODEL = "deepseek/deepseek-chat";
 
   const systemPrompt = `You are a script development expert. Given a project's concept brief and a list of writing voice presets, select the single best matching preset. Respond with ONLY the preset id (e.g. "elevated_genre_feature"). No explanation.`;
   const userPrompt = `PROJECT: ${project?.title || "Untitled"}

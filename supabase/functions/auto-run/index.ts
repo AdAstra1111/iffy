@@ -222,6 +222,7 @@ async function getCurrentVersionForDoc(supabase: any, documentId: string): Promi
     .select("id, plaintext, meta_json")
     .eq("document_id", documentId)
     .eq("is_current", true)
+    .eq("approval_status", "approved")
     .order("version_number", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -355,6 +356,7 @@ async function completionGate(
               .select("plaintext")
               .eq("document_id", doc.id)
               .eq("is_current", true)
+              .eq("approval_status", "approved")
               .maybeSingle();
             if (!ver?.plaintext || ver.plaintext.length === 0) missing.push(req + " (empty)");
           }
@@ -1279,7 +1281,8 @@ async function getDocCharCounts(supabase: any, projectId: string, docTypes: stri
       .from("project_document_versions")
       .select("document_id, plaintext")
       .in("document_id", docIds)
-      .eq("is_current", true);
+      .eq("is_current", true)
+      .eq("approval_status", "approved");
     versions = vers || [];
   }
 
@@ -1445,7 +1448,8 @@ async function ensureSeedPack(
         .from("project_document_versions")
         .select("document_id, plaintext")
         .in("document_id", docIds)
-        .eq("is_current", true);
+        .eq("is_current", true)
+        .eq("approval_status", "approved");
 
       const MIN_SEED_CHARS = 20;
       const docsWithContent = new Set(
@@ -1514,6 +1518,7 @@ async function ensureSeedPack(
       .select("plaintext")
       .eq("document_id", ideaDocs[0].id)
       .eq("is_current", true)
+      .eq("approval_status", "approved")
       .limit(1)
       .single();
     const ideaText = currentVer?.plaintext || "";
@@ -1526,8 +1531,38 @@ async function ensureSeedPack(
   console.log("[auto-run] calling generate-seed-pack", { projectId, lane });
 
   // Retry loop: attempt generate-seed-pack up to 2 times on partial failure
+  // Fetch foundation docs (beat_sheet, treatment, character_bible, story_outline)
+  // to provide context to generate-seed-pack so the NEC accounts for all script themes
+  let contextDocuments: { doc_type: string; title: string; plaintext: string }[] | undefined;
+  try {
+    const { data: foundationDocs } = await supabase
+      .from("project_documents")
+      .select("id, doc_type")
+      .eq("project_id", projectId)
+      .in("doc_type", ["beat_sheet", "treatment", "character_bible", "story_outline"]);
+
+    if (foundationDocs && foundationDocs.length > 0) {
+      const ctxDocIds = foundationDocs.map((d: any) => d.id);
+      const { data: ctxVersions } = await supabase
+        .from("project_document_versions")
+        .select("document_id, plaintext")
+        .in("document_id", ctxDocIds)
+        .eq("is_current", true)
+        .eq("approval_status", "approved");
+
+      contextDocuments = foundationDocs.map((d: any) => {
+        const ver = (ctxVersions || []).find((v: any) => v.document_id === d.id);
+        return ver
+          ? { doc_type: d.doc_type, title: d.doc_type.replace(/_/g, " "), plaintext: ver.plaintext }
+          : null;
+      }).filter(Boolean) as { doc_type: string; title: string; plaintext: string }[];
+    }
+  } catch {
+    // Foundation doc fetch is best-effort — fall back to pitch-only
+    contextDocuments = undefined;
+  }
+
   let seedRes: Response | null = null;
-  let raw = "";
   let seedResult: any = null;
   let seed_http_status = 0;
   let attempt = 0;
@@ -1544,7 +1579,7 @@ async function ensureSeedPack(
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined }),
+        body: JSON.stringify({ projectId, pitch, lane, userId: userId || undefined, contextDocuments }),
       });
 
       raw = await seedRes.text();
@@ -1634,6 +1669,7 @@ async function ensureSeedPack(
         .select("document_id, plaintext")
         .in("document_id", postDocIds)
         .eq("is_current", true)
+        .eq("approval_status", "approved")
     : { data: [] };
 
   const postMinChars = 20;
@@ -7587,7 +7623,7 @@ Deno.serve(async (req) => {
             .order("created_at", { ascending: false }).limit(1).maybeSingle();
           if (sidDoc) {
             const { data: sidVer } = await supabase.from("project_document_versions")
-              .select("id, plaintext, meta_json").eq("document_id", sidDoc.id).eq("is_current", true).maybeSingle();
+              .select("id, plaintext, meta_json").eq("document_id", sidDoc.id).eq("is_current", true).eq("approval_status", "approved").maybeSingle();
             if (sidVer?.plaintext) {
               const sidResult = validateStageIdentity(currentDoc, sidVer.plaintext, sidVer.meta_json as Record<string, any> | undefined);
               if (sidResult && !sidResult.pass) {
@@ -8371,6 +8407,7 @@ Deno.serve(async (req) => {
                 .select("id, depends_on_resolver_hash")
                 .eq("document_id", necDoc.id)
                 .eq("is_current", true)
+                .eq("approval_status", "approved")
                 .limit(1)
                 .maybeSingle();
               const necHash = necVer?.depends_on_resolver_hash || null;

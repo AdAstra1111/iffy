@@ -35,6 +35,36 @@ const JOB_STAGES = [
   { key: "storing_docs",   label: "Saving foundation documents..." },
 ];
 
+// ─── Groups for self-chained execution ────────────────────────────────────────
+const GROUPS = [
+  { key: 0, stages: ["structure_1", "structure_2", "structure_3"] },
+  { key: 1, stages: ["synthesise", "idea"] },
+  { key: 2, stages: ["beat_sheet", "story_outline", "character_bible"] },
+  { key: 3, stages: ["treatment", "market_sheet", "infer_criteria", "storing_docs"] },
+];
+
+const SELF_URL = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/reverse-engineer-script`;
+const LOCK_TTL_MS = 5 * 60 * 1000; // 5 min — release stale locks
+
+function determineGroup(stageKey: string): number {
+  for (const g of GROUPS) {
+    if (g.stages.includes(stageKey)) return g.key;
+  }
+  return -1;
+}
+
+function getNextGroupKey(currentGroup: number): number | null {
+  const next = currentGroup + 1;
+  return next < GROUPS.length ? next : null;
+}
+
+function isLockStale(payload: any): boolean {
+  if (!payload.is_processing) return false;
+  const since = payload.is_processing_since;
+  if (!since) return true;
+  return Date.now() - new Date(since).getTime() > LOCK_TTL_MS;
+}
+
 // ─── Regex character extraction helper ───────────────────────────────────────
 function extractRegexCharacters(scriptText: string): string[] {
   const regex = /\b[A-Z][A-Z\s]{2,}\b/g;
@@ -396,6 +426,158 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
     return lines.join("\n").trim();
   }
 
+  // ── TREATMENT: per-act prose sections matching the acts JSON shape ──
+  function buildTreatmentPlaintext(data: any): string {
+    if (!data || typeof data !== "object") return String(data ?? "");
+    if (data.acts && typeof data.acts === "object") {
+      const actOrder = ["act_1", "act_2a", "act_2b", "act_3", "act_4"];
+      return actOrder
+        .filter(key => data.acts[key] && typeof data.acts[key] === "string" && data.acts[key].trim().length > 0)
+        .map(key => {
+          const label = key.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+          return `## ${label}\n\n${data.acts[key].trim()}`;
+        })
+        .join("\n\n---\n\n");
+    }
+    if (typeof data.treatment === "string") return data.treatment;
+    return String(data ?? "");
+  }
+
+  // Beat sheet plaintext formatter — renders canonical markdown matching the
+  // YETI_Beat_Sheet_Formatted-2026-05-10 reference format.
+  // Data shape: { title, total_beats, beats: [...], structural_notes, pacing_notes, turning_points }
+  function buildBeatSheetPlaintext(data: any): string {
+    const lines: string[] = [];
+    const title = data.title || "Beat Sheet";
+    const totalBeats = data.total_beats ?? 0;
+
+    // ── Title and metadata header ──
+    lines.push(`# ${title} — Beat Sheet`, "");
+    lines.push(`**Project:** ${title}  |  **Total Beats:** ${totalBeats}  |  **Format:** Feature Film`, "");
+    lines.push("---", "");
+
+    // ── Canonical act label map (LLM returns "Act 1" / "Act 2A" etc.) ──
+    const actMap: Record<string, string> = {
+      "act 1": "ACT ONE — Setup",
+      "act 2a": "ACT TWO A — The Journey",
+      "act 2b": "ACT TWO B — Descent",
+      "act 3": "ACT THREE — Climax",
+      "act 4": "ACT FOUR — Denouement",
+    };
+    // Also accept underscore format for backward compatibility
+    const actMapUnderscore: Record<string, string> = {
+      "act_1": "ACT ONE — Setup",
+      "act_2a": "ACT TWO A — The Journey",
+      "act_2b": "ACT TWO B — Descent",
+      "act_3": "ACT THREE — Climax",
+      "act_4": "ACT FOUR — Denouement",
+    };
+    const actOrder = ["ACT ONE — Setup", "ACT TWO A — The Journey", "ACT TWO B — Descent", "ACT THREE — Climax", "ACT FOUR — Denouement"];
+
+    // ── Group beats by act ──
+    const actGroups: Record<string, any[]> = {};
+    const beats = Array.isArray(data.beats) ? data.beats : [];
+    for (const beat of beats) {
+      const raw = (beat.act_affiliation || beat.act || "").trim();
+      const lower = raw.toLowerCase();
+      const label = actMap[lower] || actMapUnderscore[lower] || raw || "ACT ONE — Setup";
+      if (!actGroups[label]) actGroups[label] = [];
+      actGroups[label].push(beat);
+    }
+
+    const sortedActs = actOrder.filter(a => actGroups[a]);
+
+    // ── Render each act group ──
+    for (const actLabel of sortedActs) {
+      const group = actGroups[actLabel];
+      group.sort((a: any, b: any) => (a.number || 0) - (b.number || 0));
+
+      lines.push(`## ${actLabel}  `, "");
+      lines.push(`**${group.length} beats**  `, "");
+      lines.push("");
+
+      for (const beat of group) {
+        const num = beat.number ?? "?";
+        const name = beat.name || `Beat ${num}`;
+        const pageRange = beat.page_range || "";
+        const shift = beat.emotional_shift || beat.emotionalShift || "";
+        const func = beat.dramatic_function || beat.dramaticFunction || "";
+        const state = beat.protagonist_state || beat.protagonistState || "";
+        const tp = beat.turning_point || beat.turningPoint || "";
+
+        // Beat header (trailing spaces for markdown line break)
+        lines.push(`### Beat ${num}: ${name}  `, "");
+        if (pageRange) {
+          lines.push(`*Page ${pageRange}*  `, "");
+        }
+        if (beat.description) {
+          lines.push(beat.description, "");
+        }
+        // Blockquote: Shift, Function, Protagonist state
+        if (shift || func || state) {
+          const parts: string[] = [];
+          if (shift) parts.push(`**Shift:** ${shift}`);
+          if (func) parts.push(`**Function:** ${func}`);
+          if (state) parts.push(`**Protagonist:** ${state}`);
+          lines.push(`> ${parts.join(" | ")}`, "");
+        }
+        // Turning point marker (separate blockquote line)
+        if (tp && tp !== "No" && tp !== "no") {
+          lines.push(`> **★ TURNING POINT — ${tp}**`, "");
+        }
+        lines.push("");
+      }
+
+      // Act separator
+      lines.push("---", "");
+    }
+
+    // ── Structural Overview ──
+    const hasStructural = data.structural_notes || data.pacing_notes || (Array.isArray(data.turning_points) && data.turning_points.length > 0);
+    if (hasStructural) {
+      lines.push("## Structural Overview", "");
+      lines.push("");
+
+      // Pacing
+      if (data.pacing_notes) {
+        lines.push("### Pacing", "");
+        lines.push(data.pacing_notes, "");
+      }
+
+      // Turning Point Architecture table
+      const tpArray = Array.isArray(data.turning_points) ? data.turning_points : [];
+      if (tpArray.length > 0) {
+        lines.push("### Turning Point Architecture", "");
+        lines.push("");
+        lines.push("| # | Page | Beat | Function |");
+        lines.push("|---|------|------|----------|");
+        tpArray.forEach((tp: any, idx: number) => {
+          const p = tp.page || "";
+          const desc = tp.description || "";
+          const tpNum = idx + 1;
+          // Find matching beat for the turning point table
+          const match = beats.find((b: any) => {
+            const bp = (b.page_range || "").split("-");
+            const start = bp[0];
+            const end = bp[1] || bp[0];
+            return String(start) === String(p) || String(end) === String(p) || String(b.number) === String(idx + 1);
+          });
+          const beatName = match?.name || "";
+          lines.push(`| ${tpNum} | ${p} | ${beatName} | ${desc} |`);
+        });
+        lines.push("");
+      }
+
+      // Key Themes (structural notes)
+      if (data.structural_notes) {
+        lines.push("### Key Themes", "");
+        lines.push(data.structural_notes, "");
+      }
+    }
+
+    return lines.join("\n").trim();
+  }
+
   // Smart plaintext formatter for structured docs (beat_sheet, story_outline, concept_brief)
   // - Arrays of objects (beats/entries): formatted individually
   // - Object fields within beats/entries: skipped
@@ -422,45 +604,19 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
       return buildMarketSheetPlaintext(data);
     }
 
-    // ── BEAT SHEET: emit proper ## Act / ## Beat N: markdown ──
-    if (docType === "beat_sheet" && Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null) {
-      const first = data[0];
-      const isBeat = ("number" in first || "name" in first) && ("act_affiliation" in first || "act" in first || "description" in first || "scene" in first);
-      if (isBeat) {
-        const actGroups: Record<string, any[]> = {};
-        for (const beat of data) {
-          const actKey = beat.act_affiliation || beat.act || "ACT 1";
-          if (!actGroups[actKey]) actGroups[actKey] = [];
-          actGroups[actKey].push(beat);
-        }
-        const actOrder = ["act_1","act_2a","act_2b","act_2","act_3","act_4"];
-        const sortedActs = Object.keys(actGroups).sort((a, b) => {
-          const ai = actOrder.indexOf(a.toLowerCase());
-          const bi = actOrder.indexOf(b.toLowerCase());
-          if (ai === -1 && bi === -1) return a.localeCompare(b);
-          if (ai === -1) return 1; if (bi === -1) return -1; return ai - bi;
-        });
-        return sortedActs.map(actName => {
-          const beats = actGroups[actName];
-          const label = actName.replace(/^act_/i, "ACT ").replace(/_/g, " ").trim();
-          const actLines = [`## ${label}`];
-          for (const beat of beats) {
-            const num = beat.number ?? beat.id ?? "?";
-            const name = beat.name ?? beat.title ?? `Beat ${num}`;
-            actLines.push(`## Beat ${num}: ${name}`);
-            const tp = beat.turning_point || beat.turningPoint || "No";
-            actLines.push(`**Act:** ${label}`);
-            actLines.push(`**Turning point:** ${tp}`);
-            if (beat.scene || beat.location) actLines.push(`**Scene:** ${beat.scene || beat.location}`);
-            if (beat.description) actLines.push(`**What happens:** ${beat.description}`);
-            if (beat.structural_purpose || beat.structuralPurpose) actLines.push(`**Structural purpose:** ${beat.structural_purpose || beat.structuralPurpose}`);
-            if (beat.protagonist_state || beat.protagonistState) actLines.push(`**Protagonist state:** ${beat.protagonist_state || beat.protagonistState}`);
-            if (beat.emotional_shift || beat.emotionalShift) actLines.push(`**Emotional shift:** ${beat.emotional_shift || beat.emotionalShift}`);
-            if (beat.page_range) actLines.push(`**Page range:** ${beat.page_range}`);
-          }
-          return actLines.join("\n");
-        }).join("\n\n");
-      }
+    // ── TREATMENT: per-act markdown sections ──
+    if (docType === "treatment") {
+      return buildTreatmentPlaintext(data);
+    }
+
+    // ── STORY OUTLINE: store as JSON so backend can parse entries for moment rewrite ──
+    if (docType === "story_outline" || docType === "season_arc" || docType === "episode_grid") {
+      return JSON.stringify(data);
+    }
+
+    // ── BEAT SHEET / FORMAT RULES: dedicated plaintext formatter ──
+    if (docType === "beat_sheet" || docType === "format_rules") {
+      return buildBeatSheetPlaintext(data);
     }
 
     if (Array.isArray(data)) {
@@ -545,6 +701,9 @@ function makePayload(jobId: string, initial = false) {
     status: initial ? "running" : "pending",
     current_stage: initial ? JOB_STAGES[0].key : "pending",
     stages: JOB_STAGES.reduce((acc: any, s) => { acc[s.key] = { label: s.label, status: initial && s.key === JOB_STAGES[0].key ? "running" : "pending" }; return acc; }, {}),
+    stage_outputs: {},
+    current_group: 0,
+    is_processing: false,
     result: null,
     error: null,
     created_at: new Date().toISOString(),
@@ -556,6 +715,18 @@ function updateStage(payload: any, stageKey: string, status: string) {
   if (payload.stages?.[stageKey]) payload.stages[stageKey].status = status;
   payload.current_stage = stageKey;
   payload.updated_at = new Date().toISOString();
+}
+
+function waitUntilSafe(p: Promise<any>): boolean {
+  try {
+    // @ts-ignore
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime?.waitUntil) {
+      // @ts-ignore
+      EdgeRuntime.waitUntil(p);
+      return true;
+    }
+  } catch {}
+  return false;
 }
 
 // ─── Background worker ───────────────────────────────────────────────────────
@@ -571,27 +742,97 @@ async function runBackgroundJob(body: any) {
   const { data: job } = await sb.from("narrative_units").select("id, payload_json").eq("id", jobId).single();
   console.log("[reverse-engineer] job loaded:", job?.id, new Date().toISOString());
   if (!job) { console.error("[reverse-engineer] job not found:", jobId); return; }
-  if (!job) { console.error("[reverse-engineer] job not found:", jobId); return; }
 
   // Deep clone payload so we can modify safely
   let payload = JSON.parse(JSON.stringify(job.payload_json || {}));
   if (!payload.stages) payload = makePayload(jobId);
 
-  // ── Split full script into 3 chunks for complete coverage ────────────────
+  // ── Concurrency guard ──────────────────────────────────────────────────────
+  if (payload.is_processing === true) {
+    if (isLockStale(payload)) {
+      console.log("[reverse-engineer] stale lock detected (age > " + (LOCK_TTL_MS / 1000) + "s) — overriding, proceeding with execution");
+      // Fall through — the lock is stale, we'll re-acquire below
+    } else {
+      console.log("[reverse-engineer] job already processing, skipping duplicate invocation");
+      return;
+    }
+  }
+
+  // ── Declare all shared variables ────────────────────────────────────────────
+  let chunkAnalyses: any, call1: any, call2: any, call3: any, callStoryOutline: any, callTreatment: any,
+    callMarketSheet: any, callCriteria: any, callIdea: any, metadata: any, allCharacters: string[],
+    allLocations: string[], allEvents: string[], allThemes: string[], toneNotes: string,
+    mergedCharacters: string[], regexOrphans: string[], allChunksCitation: string, chunkCitations: string[],
+    beatScriptLineEnd: number, partialCitation: string, ideaResolverHash: string | undefined,
+    synthSummary: string, beatsText: string, marketSheet: any, premise: string, worldNotes: string,
+    projectTitle: string,
+    protagonist: string, beats: any[];
+
+  // ── Load cached outputs from previous groups ────────────────────────────────
+  const so = payload.stage_outputs || {};
+  chunkAnalyses = so.chunkAnalyses;
+  call1 = so.call1;
+  call2 = so.call2;
+  call3 = so.call3;
+  callStoryOutline = so.callStoryOutline;
+  callTreatment = so.callTreatment;
+  callMarketSheet = so.callMarketSheet;
+  callCriteria = so.callCriteria;
+  callIdea = so.callIdea;
+  metadata = so.metadata;
+  allCharacters = so.allCharacters;
+  allLocations = so.allLocations;
+  allEvents = so.allEvents;
+  allThemes = so.allThemes;
+  toneNotes = so.toneNotes;
+  mergedCharacters = so.mergedCharacters;
+  regexOrphans = so.regexOrphans;
+  allChunksCitation = so.allChunksCitation;
+  chunkCitations = so.chunkCitations;
+  beatScriptLineEnd = so.beatScriptLineEnd;
+  partialCitation = so.partialCitation;
+  ideaResolverHash = so.ideaResolverHash;
+  synthSummary = so.synthSummary;
+  projectTitle = so.projectTitle;
+
+  // ── Derive computed variables from cached values ────────────────────────────
+  if (call1) {
+    marketSheet = call1?.market_sheet || {};
+    premise = call1.concept_brief?.premise || "";
+    worldNotes = call1.concept_brief?.world_building_notes || "";
+  }
+  if (call2 && call2.beats) {
+    beats = call2.beats;
+    beatsText = beats.map((b: any) =>
+      `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
+    ).join("\n");
+  }
+  if (call3 && call3.characters?.[0]) {
+    protagonist = call3.characters[0].name || "The protagonist";
+  }
+
+  // ── Split full script into 3 chunks (every group needs this) ───────────────
   const { chunks, lineRanges } = chunkScriptWithLines(script_text, 3);
   console.log(`[reverse-engineer] script length: ${script_text.length} chars, chunks: ${chunks.map(c => c.length)}, lineRanges: ${JSON.stringify(lineRanges)}`);
 
+  const currentGroup = payload.current_group ?? 0;
+
+  // ── Group routing ──────────────────────────────────────────────────────────
   try {
-    // ── Stages 1-3: Analyse each chunk ──────────────────────────────────────
-    const chunkAnalyses: any[] = [];
-    const chunkStageKeys = ["structure_1", "structure_2", "structure_3"] as const;
+    payload.is_processing = true;
+    payload.is_processing_since = new Date().toISOString();
 
-    for (let i = 0; i < chunks.length; i++) {
-      const stageKey = chunkStageKeys[i];
-      updateStage(payload, stageKey, "running");
-      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+    // ─── GROUP 0: structure_1, structure_2, structure_3 ──────────────────────
+    if (currentGroup === 0) {
+      const chunkStageKeys = ["structure_1", "structure_2", "structure_3"] as const;
+      chunkAnalyses = [];
 
-      const chunkResult = await callLLM(`You are a senior film/TV analyst. This is part ${i + 1} of ${chunks.length} of a ${format} script.
+      for (let i = 0; i < chunks.length; i++) {
+        const stageKey = chunkStageKeys[i];
+        updateStage(payload, stageKey, "running");
+        await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+        const chunkResult = await callLLM(`You are a senior film/TV analyst. This is part ${i + 1} of ${chunks.length} of a ${format} script.
 Analyse this section and extract all characters, locations, events, and themes you can identify.
 IMPORTANT: Return ONLY raw JSON with no thinking, no explanation, no markdown.
 
@@ -608,73 +849,80 @@ Return ONLY valid JSON:
 SCRIPT PART ${i + 1}/${chunks.length}:
 ${chunks[i]}
 
-Respond with ONLY JSON.`, 8000);
+Respond with ONLY JSON.`, 8000, 60000);
 
-      chunkAnalyses.push(chunkResult);
-      updateStage(payload, stageKey, "done");
+        chunkAnalyses.push(chunkResult);
+        updateStage(payload, stageKey, "done");
+        await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      }
+
+      // Save stage outputs for next group
+      so.chunkAnalyses = chunkAnalyses;
+      payload.stage_outputs = so;
+    }
+
+    // ─── GROUP 1: synthesise, idea ───────────────────────────────────────────
+    else if (currentGroup === 1) {
+      // ── Stage: synthesise ────────────────────────────────────────────────
+      updateStage(payload, "synthesise", "running");
       await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
-    }
 
-    // ── Stage 4: Synthesise all chunks into concept brief + market sheet ────
-    updateStage(payload, "synthesise", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      allCharacters = [...new Set(chunkAnalyses.flatMap((c: any) => c.characters_seen || []))];
+      allLocations  = [...new Set(chunkAnalyses.flatMap((c: any) => c.locations_seen || []))];
+      allEvents     = chunkAnalyses.flatMap((c: any) => c.key_events || []);
+      allThemes     = [...new Set(chunkAnalyses.flatMap((c: any) => c.themes || []))];
+      toneNotes     = chunkAnalyses.map((c: any, i: number) => `Part ${i+1}: ${c.tone_notes || ""}`).join(" | ");
 
-    const allCharacters = [...new Set(chunkAnalyses.flatMap(c => c.characters_seen || []))];
-    const allLocations  = [...new Set(chunkAnalyses.flatMap(c => c.locations_seen || []))];
-    const allEvents     = chunkAnalyses.flatMap(c => c.key_events || []);
-    const allThemes     = [...new Set(chunkAnalyses.flatMap(c => c.themes || []))];
-    const toneNotes     = chunkAnalyses.map((c, i) => `Part ${i+1}: ${c.tone_notes || ""}`).join(" | ");
+      // ── Regex pre-pass: merge ALL-CAPS names into allCharacters ──────────
+      const regexNames = extractRegexCharacters(script_text);
+      const allCharactersSet = new Set(allCharacters);
+      for (const name of regexNames) {
+        const lc = name.toLowerCase();
+        const alreadyPresent = [...allCharactersSet].some(c => c.toLowerCase().includes(lc) || lc.includes(c.toLowerCase()));
+        if (!alreadyPresent && name.length >= 3) allCharactersSet.add(name);
+      }
+      mergedCharacters = [...allCharactersSet];
 
-    // ── Regex pre-pass: merge ALL-CAPS names into allCharacters ──────────────
-    const regexNames = extractRegexCharacters(script_text);
-    const allCharactersSet = new Set(allCharacters);
-    for (const name of regexNames) {
-      const lc = name.toLowerCase();
-      const alreadyPresent = [...allCharactersSet].some(c => c.toLowerCase().includes(lc) || lc.includes(c.toLowerCase()));
-      if (!alreadyPresent && name.length >= 3) allCharactersSet.add(name);
-    }
-    const mergedCharacters = [...allCharactersSet];
+      // Check against narrative_entities canonical roster
+      regexOrphans = [];
+      try {
+        const { data: canonEntities } = await sb
+          .from("narrative_entities")
+          .select("id, name, variant_names")
+          .eq("project_id", project_id)
+          .eq("entity_type", "character");
 
-    // Check against narrative_entities canonical roster
-    let regexOrphans: string[] = [];
-    try {
-      const { data: canonEntities } = await sb
-        .from("narrative_entities")
-        .select("id, name, variant_names")
-        .eq("project_id", project_id)
-        .eq("entity_type", "character");
+        if (canonEntities && canonEntities.length > 0) {
+          const canonNames = new Set(
+            canonEntities.flatMap((e: any) => [e.name, ...(e.variant_names || [])]).map((n: string) => n.toLowerCase())
+          );
+          regexOrphans = regexNames.filter(n => !canonNames.has(n.toLowerCase()));
+          console.log(`[reverse-engineer] regex: ${regexNames.length} names found, ${regexOrphans.length} not in canonical`);
 
-      if (canonEntities && canonEntities.length > 0) {
-        const canonNames = new Set(
-          canonEntities.flatMap((e: any) => [e.name, ...(e.variant_names || [])]).map((n: string) => n.toLowerCase())
-        );
-        regexOrphans = regexNames.filter(n => !canonNames.has(n.toLowerCase()));
-        console.log(`[reverse-engineer] regex: ${regexNames.length} names found, ${regexOrphans.length} not in canonical`);
-
-        if (regexOrphans.length > 0) {
-          try {
-            await sb.from("reverse_engineer_context").upsert({
-              project_id,
-              regex_found_names: regexOrphans,
-              locked_entity_ids: canonEntities.map((e: any) => e.id),
-              locked_scene_ids: [],
-              created_by: user_id || "system",
-            }, { onConflict: "project_id" });
-          } catch (rceErr) {
-            console.warn("[reverse-engineer] reverse_engineer_context write failed (non-fatal):", rceErr);
+          if (regexOrphans.length > 0) {
+            try {
+              await sb.from("reverse_engineer_context").upsert({
+                project_id,
+                regex_found_names: regexOrphans,
+                locked_entity_ids: canonEntities.map((e: any) => e.id),
+                locked_scene_ids: [],
+                created_by: user_id || "system",
+              }, { onConflict: "project_id" });
+            } catch (rceErr) {
+              console.warn("[reverse-engineer] reverse_engineer_context write failed (non-fatal):", rceErr);
+            }
           }
         }
+      } catch (e) {
+        console.warn("[reverse-engineer] canonical check failed (non-fatal):", e);
       }
-    } catch (e) {
-      console.warn("[reverse-engineer] canonical check failed (non-fatal):", e);
-    }
 
-    const synthSummary = `CHARACTERS: ${mergedCharacters.join(", ")}\nLOCATIONS: ${allLocations.join(", ")}\nKEY EVENTS:\n${allEvents.map(e => `- ${e}`).join("\n")}\nTHEMES: ${allThemes.join(", ")}\nTONE: ${toneNotes}`;
+      synthSummary = `CHARACTERS: ${mergedCharacters.join(", ")}\nLOCATIONS: ${allLocations.join(", ")}\nKEY EVENTS:\n${allEvents.map(e => `- ${e}`).join("\n")}\nTHEMES: ${allThemes.join(", ")}\nTONE: ${toneNotes}`;
 
-    // Use beginning of script for title/logline + synthesis summary for full picture
-    const scriptHead = script_text.slice(0, 8000);
+      // Use beginning of script for title/logline + synthesis summary for full picture
+      const scriptHead = script_text.slice(0, 8000);
 
-    const call1 = await callLLM(`You are a senior film/TV analyst. You have analysed a complete ${format} script in chunks. Below is:
+      call1 = await callLLM(`You are a senior film/TV analyst. You have analysed a complete ${format} script in chunks. Below is:
 1. The script opening (for title, logline, voice)
 2. A synthesis of what was found across ALL parts
 
@@ -781,37 +1029,41 @@ ${synthSummary}
 
 Respond with ONLY JSON.`, 16000);
 
-    updateStage(payload, "synthesise", "done");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      updateStage(payload, "synthesise", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // Debug: log the raw genre/subgenre/tone from synthesis stage so we can see exactly what the LLM returned
-    console.log("[reverse-engineer] call1 genre =", (call1 as any)?.metadata?.genre, "| subgenre =", (call1 as any)?.metadata?.subgenre, "| tone =", (call1 as any)?.metadata?.tone);
-    // Debug: log market_sheet fields so we can see what was inferred vs left null
-    const ms = (call1 as any)?.market_sheet || {};
-    console.log("[reverse-engineer] market_sheet: tagline =", ms.tagline, "| budget_range =", ms.budget_range, "| project_status =", ms.project_status, "| comparable_titles =", ms.comparable_titles, "| audience_age_range =", ms.audience_age_range);
+      // Debug: log the raw genre/subgenre/tone from synthesis stage so we can see exactly what the LLM returned
+      console.log("[reverse-engineer] call1 genre =", (call1 as any)?.metadata?.genre, "| subgenre =", (call1 as any)?.metadata?.subgenre, "| tone =", (call1 as any)?.metadata?.tone);
+      // Debug: log market_sheet fields so we can see what was inferred vs left null
+      const ms = (call1 as any)?.market_sheet || {};
+      console.log("[reverse-engineer] market_sheet: tagline =", ms.tagline, "| budget_range =", ms.budget_range, "| project_status =", ms.project_status, "| comparable_titles =", ms.comparable_titles, "| audience_age_range =", ms.audience_age_range);
 
-    // ── Stage 4.5: Idea document ─────────────────────────────────────────────
-    const { metadata } = call1;
+      // ── Stage: idea ─────────────────────────────────────────────────────
+      metadata = call1?.metadata;
 
-    // Build source citations here so all downstream stages can use them
-    const scriptTitle = metadata.title || "Script";
-    const allLinesStart = lineRanges[0]?.startLine ?? 1;
-    const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
-    const allChunksCitation = scriptTitle + ", lines " + allLinesStart + "–" + allLinesEnd;
-    const chunkCitations = lineRanges.map((r: any, i: number) => scriptTitle + ", lines " + r.startLine + "–" + r.endLine + " (part " + (i + 1) + ")");
-    const beatScriptLineEnd = script_text.slice(0, 80000).split("\n").length;
-    const partialCitation   = scriptTitle + ", lines 1–" + beatScriptLineEnd;
+      // Query the real project title from the projects table (not the LLM-extracted one)
+      const { data: projectRow } = await sb.from("projects").select("title").eq("id", project_id).single();
+      projectTitle = projectRow?.title || metadata.title || "Untitled";
 
-    updateStage(payload, "idea", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // Build source citations here so all downstream stages can use them
+      const scriptTitle = projectTitle || "Script";
+      const allLinesStart = lineRanges[0]?.startLine ?? 1;
+      const allLinesEnd   = lineRanges[lineRanges.length - 1]?.endLine ?? script_text.split("\n").length;
+      allChunksCitation = scriptTitle + ", lines " + allLinesStart + "–" + allLinesEnd;
+      chunkCitations = lineRanges.map((r: any, i: number) => scriptTitle + ", lines " + r.startLine + "–" + r.endLine + " (part " + (i + 1) + ")");
+      beatScriptLineEnd = script_text.slice(0, 80000).split("\n").length;
+      partialCitation   = scriptTitle + ", lines 1–" + beatScriptLineEnd;
 
-    // Fetch project resolver hash so Idea version stays in sync with project state
-    const { data: projRow } = await sb.from("projects").select("resolved_qualifications_hash").eq("id", project_id).single();
-    const ideaResolverHash = projRow?.resolved_qualifications_hash || undefined;
+      updateStage(payload, "idea", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // Dedicated idea call: full synthesis + script voice excerpt
-    const ideaScriptExcerpt = script_text.slice(0, 2000);
-    const callIdea = await callLLM(`Given the full synthesis and script opening, write the creative seed document.
+      // Fetch project resolver hash so Idea version stays in sync with project state
+      const { data: projRow } = await sb.from("projects").select("resolved_qualifications_hash").eq("id", project_id).single();
+      ideaResolverHash = projRow?.resolved_qualifications_hash || undefined;
+
+      // Dedicated idea call: full synthesis + script voice excerpt
+      const ideaScriptExcerpt = script_text.slice(0, 2000);
+      callIdea = await callLLM(`Given the full synthesis and script opening, write the creative seed document.
 
 The logline must be 1-2 sentences that hook immediately — it should make someone want to see this story.
 Genre, subgenre, tone, themes, and target_audience must all be consistent with each other.
@@ -837,34 +1089,58 @@ ${ideaScriptExcerpt}
 
 Respond with ONLY JSON.`, 14000);
 
-    const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
-      title: metadata.title || "Untitled",
-      logline: metadata.logline || "",
-      premise: "",
-      genre: metadata.genre || null,
-      subgenre: metadata.subgenre || null,
-      hook: "",
-      tone: metadata.tone || null,
-      themes: metadata.themes || [],
-      target_audience: metadata.target_audience || null,
-    };
-    await storeDoc(sb, project_id, script_document_id, user_id, "idea", "creative_primary",
-      (ideaData.title || metadata.title || "Script") + " — Idea",
-      ideaData,
-      { source_citations: [allChunksCitation, ...chunkCitations] },
-      ideaResolverHash
-    );
-    updateStage(payload, "idea", "done");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      const ideaData = typeof callIdea === "object" ? { ...callIdea } : {
+        title: projectTitle,
+        logline: metadata.logline || "",
+        premise: "",
+        genre: metadata.genre || null,
+        subgenre: metadata.subgenre || null,
+        hook: "",
+        tone: metadata.tone || null,
+        themes: metadata.themes || [],
+        target_audience: metadata.target_audience || null,
+      };
+      await storeDoc(sb, project_id, script_document_id, user_id, "idea", "creative_primary",
+        (ideaData.title || projectTitle) + " — Idea",
+        ideaData,
+        { source_citations: [allChunksCitation, ...chunkCitations] },
+        ideaResolverHash
+      );
+      updateStage(payload, "idea", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // ── Stage 5: Beat sheet (use full script head + synthesis) ──────────────
-    updateStage(payload, "beat_sheet", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Save stage outputs for next group ────────────────────────────────
+      so.chunkAnalyses = chunkAnalyses;
+      so.call1 = call1;
+      so.synthSummary = synthSummary;
+      so.metadata = metadata;
+      so.allCharacters = allCharacters;
+      so.allLocations = allLocations;
+      so.allEvents = allEvents;
+      so.allThemes = allThemes;
+      so.toneNotes = toneNotes;
+      so.mergedCharacters = mergedCharacters;
+      so.regexOrphans = regexOrphans;
+      so.allChunksCitation = allChunksCitation;
+      so.chunkCitations = chunkCitations;
+      so.beatScriptLineEnd = beatScriptLineEnd;
+      so.partialCitation = partialCitation;
+      so.ideaResolverHash = ideaResolverHash;
+      so.callIdea = callIdea;
+      so.projectTitle = projectTitle;
+      payload.stage_outputs = so;
+    }
 
-    // Synthesis-first context: synthSummary covers all 3 chunks completely.
-    // Raw script excerpt kept as supplementary reference for style/voice only.
-    const beatScript = script_text.slice(0, 15000);
-    const call2 = await callLLM(`Extract a beat sheet from this ${format} script. Use the full structural arc.
+    // ─── GROUP 2: beat_sheet, story_outline, character_bible ──────────────────
+    else if (currentGroup === 2) {
+      // ── Stage: beat_sheet ────────────────────────────────────────────────
+      updateStage(payload, "beat_sheet", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+      // Synthesis-first context: synthSummary covers all 3 chunks completely.
+      // Raw script excerpt kept as supplementary reference for style/voice only.
+      const beatScript = script_text.slice(0, 15000);
+      call2 = await callLLM(`Extract a beat sheet from this ${format} script. Use the full structural arc.
 
 IMPORTANT — beat naming:
 - Each beat "name" must be a SHORT, EVOCATIVE DESCRIPTIVE TITLE (1-6 words)
@@ -903,21 +1179,27 @@ ${beatScript}
 
 Respond with ONLY JSON.`, 14000);
 
-    // ── Stage 6: Story outline (dedicated call — not a beat_sheet slice) ───
-    updateStage(payload, "story_outline", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Null guard: call2 ──────────────────────────────────────────────────
+      if (!call2 || !Array.isArray(call2.beats)) {
+        console.warn("[reverse-engineer] call2 returned null or unparseable output — defaulting to empty beat sheet");
+        call2 = { title: "", total_beats: 0, beats: [] };
+      }
 
-    const beatStructuralLabels = (call2 as any).beats
-      ? (call2 as any).beats.map((b: any) => {
-          const act = (b.act_affiliation || "").toLowerCase();
-          const fn = (b.dramatic_function || "").toLowerCase();
-          const actLabel = act || (fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
-                            fn.includes('midpoint') ? 'Midpoint' :
-                            fn.includes('climax') || fn.includes('finale') ? 'Finale' : 'Act 2');
-          return `Beat ${b.number} [${actLabel}]`;
-        }).join("\n")
-      : "";
-    const callStoryOutline = await callLLM(`Given the full story arc (synthSummary) and structural beat labels, produce an abbreviated story sequence.
+      // ── Stage: story_outline ─────────────────────────────────────────────
+      updateStage(payload, "story_outline", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+      const beatStructuralLabels = call2?.beats
+        ? call2?.beats?.map((b: any) => {
+            const act = (b.act_affiliation || "").toLowerCase();
+            const fn = (b.dramatic_function || "").toLowerCase();
+            const actLabel = act || (fn.includes('actbreak') || b.number <= 3 ? 'Act 1' :
+                              fn.includes('midpoint') ? 'Midpoint' :
+                              fn.includes('climax') || fn.includes('finale') ? 'Finale' : 'Act 2');
+            return `Beat ${b.number} [${actLabel}]`;
+          }).join("\n")
+        : "";
+      callStoryOutline = await callLLM(`Given the full story arc (synthSummary) and structural beat labels, produce an abbreviated story sequence.
 
 RULES:
 - Each entry: number, title (a short structural label), and description (1-2 sentences of narrative prose)
@@ -942,16 +1224,16 @@ ${beatStructuralLabels}
 
 Respond with ONLY JSON.`, 14000);
 
-    updateStage(payload, "story_outline", "done");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      updateStage(payload, "story_outline", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // ── Stage 7: Character bible ─────────────────────────────────────────────
-    updateStage(payload, "character_bible", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Stage: character_bible ──────────────────────────────────────────
+      updateStage(payload, "character_bible", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // Synthesis-first: synthSummary is complete across all chunks. Script excerpt for style only.
-    const charScript = script_text.slice(0, 15000);
-    const call3 = await callLLM(`Write a complete character bible for this ${format} script.
+      // Synthesis-first: synthSummary is complete across all chunks. Script excerpt for style only.
+      const charScript = script_text.slice(0, 15000);
+      call3 = await callLLM(`Write a complete character bible for this ${format} script.
 
 CRITICAL ORDERING RULE: Characters array MUST be ordered by narrative importance — protagonist(s) first, then antagonist(s), then supporting roles in descending order of screen time and story weight, then recurring/minor roles last. NEVER alphabetical order.
 
@@ -974,8 +1256,8 @@ Return ONLY valid JSON:
       "casting_suggestions": ["string"]
     }
   ],
-  "relationship_dynamics": "string",
-  "ensemble_notes": "string"
+  "relationship_dynamics": "string — structured per-pair blocks. Each pair: DEFAULT MODE, A NEEDS FROM B, B NEEDS FROM A, POWER LEVERAGE (A leverage ↔ B leverage), FRICTION AXIS, BREAK CONDITION, RECOVERY PATTERN, SCENE TYPES GENERATED [free text] (category), ARC TURNING POINT [place, Act]",
+  "ensemble_notes": "string — structured blocks: GROUP DEFAULT, FACTION MAP, FRACTURE POINT, RECOVERY PATTERN, GLUE CHARACTER, FRICTION PAIR, TONAL BALANCE (character role), ENSEMBLE SCENE STRUCTURE"
 }
 
 PRIMARY CONTEXT — FULL SCRIPT ANALYSIS (covers all characters from all script chunks):
@@ -986,21 +1268,312 @@ ${charScript}
 
 Respond with ONLY JSON.`, 14000);
 
-    // ── Stage 6.5: Treatment synthesis ──────────────────────────────────────
-    updateStage(payload, "treatment", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── 4-tier fuzzy dedup: remove near-duplicate characters before alias check ──
+      // Tier 1: exact case-insensitive match
+      // Tier 2: normalized match (strip honorifics + non-alpha)
+      // Tier 3: Levenshtein ≤ 2 for names ≥ 4 chars
+      // Tier 4: word overlap ≥ 0.6 (Jaccard)
+      function levenshteinDistance(a: string, b: string): number {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        const matrix: number[][] = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+          for (let j = 1; j <= a.length; j++) {
+            const cost = b.charAt(i - 1) === a.charAt(j - 1) ? 0 : 1;
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j - 1] + cost,
+            );
+          }
+        }
+        return matrix[b.length][a.length];
+      }
 
-    const premise      = (call1.concept_brief as any)?.premise || "";
-    const worldNotes  = (call1.concept_brief as any)?.world_building_notes || "";
-    const protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
-    const beats       = (call2 as any).beats || [];
+      function normalizeForFuzzy(name: string): string {
+        const honorifics = /\b(dr|mr|mrs|ms|prof|capt|sgt|lt|col|gen|adm|rev|fr|sr|jr|esq|hon|maj|cpt|drs|mx)\b/gi;
+        return name
+          .toLowerCase()
+          .replace(honorifics, '')
+          .replace(/[^a-z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
 
-    // Full beat descriptions — no truncation, all beats
-    const allBeatDescriptions = beats.map((b: any) =>
-      `Beat ${b.number} [${b.name}]: ${b.description || ""}`
-    ).join("\n");
+      function dedupCharacterBibleNames(call3: any): void {
+        const characters = call3?.characters;
+        if (!Array.isArray(characters) || characters.length <= 1) return;
+        const seen = new Set<string>();
+        const normalizedSeen = new Set<string>();
+        const keptChars: any[] = [];
+        let tier1 = 0, tier2 = 0, tier3 = 0, tier4 = 0;
+        for (const c of characters) {
+          const name = (c.name || '').trim();
+          if (!name) continue;
+          const lower = name.toLowerCase();
+          // Tier 1: exact case-insensitive
+          if (seen.has(lower)) {
+            tier1++;
+            continue;
+          }
+          seen.add(lower);
+          // Tier 2: normalized match (strip honorifics + non-alpha)
+          try {
+            const normalized = normalizeForFuzzy(name);
+            if (normalized && normalizedSeen.has(normalized)) {
+              tier2++;
+              continue;
+            }
+            if (normalized) normalizedSeen.add(normalized);
+          } catch (e) {
+            console.warn(`[reverse-engineer] Fuzzy dedup Tier 2 error: ${e}`);
+          }
+          // Tier 3: Levenshtein ≤ 2 for names ≥ 4 chars
+          if (name.length >= 4) {
+            try {
+              let isLevenshteinDup = false;
+              for (const kept of keptChars) {
+                const keptName = (kept.name || '').trim();
+                if (keptName.length >= 4) {
+                  const dist = levenshteinDistance(lower, keptName.toLowerCase());
+                  if (dist <= 2) {
+                    isLevenshteinDup = true;
+                    break;
+                  }
+                }
+              }
+              if (isLevenshteinDup) {
+                tier3++;
+                continue;
+              }
+            } catch (e) {
+              console.warn(`[reverse-engineer] Fuzzy dedup Tier 3 error: ${e}`);
+            }
+          }
+          // Tier 4: word overlap ≥ 0.6 (Jaccard)
+          try {
+            let isOverlapDup = false;
+            const nameWords = lower.split(/\s+/).filter(Boolean);
+            const nameWordSet = new Set(nameWords);
+            for (const kept of keptChars) {
+              const keptWords = (kept.name || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+              const keptWordSet = new Set(keptWords);
+              if (nameWordSet.size === 0 || keptWordSet.size === 0) continue;
+              let intersection = 0;
+              for (const w of nameWordSet) {
+                if (keptWordSet.has(w)) intersection++;
+              }
+              const union = nameWordSet.size + keptWordSet.size - intersection;
+              const overlap = union > 0 ? intersection / union : 0;
+              if (overlap >= 0.6) {
+                isOverlapDup = true;
+                break;
+              }
+            }
+            if (isOverlapDup) {
+              tier4++;
+              continue;
+            }
+          } catch (e) {
+            console.warn(`[reverse-engineer] Fuzzy dedup Tier 4 error: ${e}`);
+          }
+          keptChars.push(c);
+        }
+        const removed = characters.length - keptChars.length;
+        if (removed > 0) {
+          console.log(`[reverse-engineer] Fuzzy dedup: removed ${removed} duplicate(s) from ${characters.length} characters (Tier1: ${tier1}, Tier2: ${tier2}, Tier3: ${tier3}, Tier4: ${tier4})`);
+          call3.characters = keptChars;
+        }
+      }
 
-    const callTreatment = await callLLM(`You are writing descriptive narrative prose for a feature film production.
+      dedupCharacterBibleNames(call3);
+
+      // ── Dedup guardrail: filter call3.characters removing aliases of other characters in the list ──
+      // Mirrors generate-document/index.ts dedup guardrail (lines 1674-1731)
+      // Prevents duplicate bible entries when e.g., "Brother" and "Enki" both appear in project_canon
+      async function dedupFilterCharacters(sb: any, project_id: string, call3: any, capturedAliases: Array<{aliasName: string, canonicalName: string}>): Promise<void> {
+        const characters = call3?.characters;
+        if (!Array.isArray(characters) || characters.length <= 1) return;
+        try {
+          const { data: allAliases } = await sb
+            .from("narrative_entity_aliases")
+            .select("alias_name, canonical_entity_id")
+            .eq("project_id", project_id);
+
+          if (allAliases && allAliases.length > 0) {
+            const targetIds = [...new Set(allAliases.map((a: any) => a.canonical_entity_id))];
+            const { data: targetEntities } = await sb
+              .from("narrative_entities")
+              .select("id, canonical_name")
+              .in("id", targetIds);
+
+            if (targetEntities && targetEntities.length > 0) {
+              const aliasToCanonical = new Map<string, string>();
+              const entityIdToName = new Map(targetEntities.map((e: any) => [e.id, e.canonical_name]));
+              const canonicalLowerToOriginal = new Map<string, string>();
+              for (const e of targetEntities) {
+                canonicalLowerToOriginal.set(e.canonical_name.toLowerCase(), e.canonical_name);
+              }
+              for (const a of allAliases) {
+                const canonical = entityIdToName.get(a.canonical_entity_id);
+                if (canonical) {
+                  aliasToCanonical.set(a.alias_name.toLowerCase(), canonical.toLowerCase());
+                }
+              }
+
+              const charNameLower = new Set(characters.map((c: any) => c.name.toLowerCase()));
+
+              const filtered = characters.filter((c: any) => {
+                const canonicalLower = aliasToCanonical.get(c.name.toLowerCase());
+                if (canonicalLower && canonicalLower !== c.name.toLowerCase() && charNameLower.has(canonicalLower)) {
+                  const canonicalOriginal = canonicalLowerToOriginal.get(canonicalLower) || canonicalLower;
+                  // ── Field merge: merge non-empty alias fields into canonical character ──
+                  const canonicalChar = characters.find((cc: any) => cc.name.toLowerCase() === canonicalLower);
+                  if (canonicalChar && c !== canonicalChar) {
+                    const MERGE_FIELDS = [
+                      'age', 'role', 'physical_description', 'backstory', 'psychology',
+                      'want', 'need', 'fatal_flaw', 'arc', 'voice_and_speech',
+                      'sample_dialogue', 'casting_suggestions',
+                    ];
+                    let merged = 0;
+                    for (const field of MERGE_FIELDS) {
+                      if (c[field] && !canonicalChar[field]) {
+                        canonicalChar[field] = c[field];
+                        merged++;
+                      }
+                    }
+                    if (merged > 0) {
+                      console.log(`[reverse-engineer] Field merge: merged ${merged} field(s) from "${c.name}" into "${canonicalOriginal}"`);
+                    }
+                  }
+                  // ── Capture alias for entity registration ──
+                  if (canonicalOriginal) {
+                    capturedAliases.push({ aliasName: c.name, canonicalName: canonicalOriginal });
+                  }
+                  console.log(`[reverse-engineer] Dedup guardrail: skipping "${c.name}" (alias of "${canonicalOriginal}")`);
+                  return false;
+                }
+                return true;
+              });
+
+              if (filtered.length < characters.length) {
+                console.log(`[reverse-engineer] Dedup guardrail: filtered ${characters.length - filtered.length} alias-based duplicate(s) from character list`);
+                call3.characters = filtered;
+              }
+            }
+          }
+        } catch (dedupErr: any) {
+          console.error(`[reverse-engineer] Dedup guardrail error: ${dedupErr?.message || dedupErr}`);
+        }
+      }
+
+      const capturedAliases: Array<{aliasName: string, canonicalName: string}> = [];
+      await dedupFilterCharacters(sb, project_id, call3, capturedAliases);
+
+      // ── Create narrative_entities for each character ──
+      if (call3?.characters?.length) {
+        try {
+          const { findOrCreateCharacterEntity } = await import("../_shared/characterDedupUtils.ts");
+          const entityIds = new Map<string, string>();
+          for (const char of call3.characters) {
+            const description = [char.physical_description, char.backstory, char.psychology]
+              .filter((f: any) => f && typeof f === "string")
+              .join(" | ") || "";
+            const result = await findOrCreateCharacterEntity(
+              sb, project_id, char.name, char.role || "supporting", description,
+              "character_bible", "",
+            );
+            entityIds.set(char.name.toLowerCase(), result.entity_id);
+          }
+          // ── Upsert captured aliases ──
+          if (capturedAliases.length > 0) {
+            for (const { aliasName, canonicalName } of capturedAliases) {
+              const canonicalEntityId = entityIds.get(canonicalName.toLowerCase());
+              if (canonicalEntityId) {
+                await sb.from("narrative_entity_aliases")
+                  .upsert({
+                    project_id,
+                    canonical_entity_id: canonicalEntityId,
+                    alias_name: aliasName.toUpperCase().trim(),
+                    alias_type: "fragment",
+                    source: "reverse_engineer_dedup",
+                    confidence: 0.85,
+                    reason: `Auto-dedup: "${aliasName}" is an alias of "${canonicalName}" per entity-aliases table`,
+                  }, {
+                    onConflict: "project_id,canonical_entity_id,alias_name",
+                    ignoreDuplicates: true,
+                  }).catch((err: any) => console.error(`[reverse-engineer] alias upsert failed for "${aliasName}": ${err.message}`));
+              }
+            }
+            console.log(`[reverse-engineer] Registered ${capturedAliases.length} alias(es) from dedup`);
+          }
+        } catch (entityErr: any) {
+          console.error(`[reverse-engineer] Entity creation failed (non-fatal): ${entityErr?.message || entityErr}`);
+        }
+      }
+
+      updateStage(payload, "character_bible", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+      // ── Update derived variables ─────────────────────────────────────────
+      if (call2?.beats) {
+        beats = call2.beats;
+        beatsText = beats.map((b: any) =>
+          `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
+        ).join("\n");
+      }
+      if (call3?.characters?.[0]) {
+        protagonist = call3.characters[0].name || "The protagonist";
+      }
+
+      // ── Save stage outputs for next group ────────────────────────────────
+      so.chunkAnalyses = chunkAnalyses;
+      so.call1 = call1;
+      so.call2 = call2;
+      so.callStoryOutline = callStoryOutline;
+      so.call3 = call3;
+      so.synthSummary = synthSummary;
+      so.metadata = metadata;
+      so.allCharacters = allCharacters;
+      so.allLocations = allLocations;
+      so.allEvents = allEvents;
+      so.allThemes = allThemes;
+      so.toneNotes = toneNotes;
+      so.mergedCharacters = mergedCharacters;
+      so.regexOrphans = regexOrphans;
+      so.allChunksCitation = allChunksCitation;
+      so.chunkCitations = chunkCitations;
+      so.beatScriptLineEnd = beatScriptLineEnd;
+      so.partialCitation = partialCitation;
+      so.ideaResolverHash = ideaResolverHash;
+      so.callIdea = callIdea;
+      payload.stage_outputs = so;
+    }
+
+    // ─── GROUP 3: treatment, market_sheet, infer_criteria, storing_docs ───────
+    else if (currentGroup === 3) {
+      // ── Stage: treatment ────────────────────────────────────────────────
+      updateStage(payload, "treatment", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+      premise      = call1?.concept_brief?.premise || "";
+      worldNotes  = call1?.concept_brief?.world_building_notes || "";
+      protagonist = (call3 as any)?.characters?.[0]?.name || "The protagonist";
+      beats       = call2?.beats || [];
+
+      // Detect act structure from beat sheet
+      const actAffiliationValues = [...new Set(beats.map((b: any) => b.act_affiliation).filter(Boolean))];
+      const hasAct4 = actAffiliationValues.some((a: string) => a.toLowerCase().includes("act 4"));
+      const impliedActs = hasAct4 ? "The story has a dedicated Act 4 for the confrontation/climax section." : "The story follows a 3-act structure.";
+
+      // Full beat descriptions — no truncation, all beats
+      const allBeatDescriptions = beats.map((b: any) =>
+        `Beat ${b.number} [${b.name}]: ${b.description || ""}`
+      ).join("\n");
+
+      callTreatment = await callLLM(`You are writing descriptive narrative prose for a feature film production.
 This prose will be used as a foundational corpus for AI image and video generation.
 It must capture the sensory and emotional texture of each scene — not just the plot events.
 
@@ -1033,11 +1606,18 @@ REMEMBER:
 - Character voice in the prose should match their established psychology
 - Act breaks should match the beat_sheet exactly
 
-Return valid JSON:
+// ACT STRUCTURE CONTEXT — derived from beat sheet
+      // ${impliedActs}
+
+      Return valid JSON:
 {
-  "title": "string",
-  "treatment": "string — full prose narrative, paragraphs per act, no structure markers except act transitions",
-  "act_breaks": [{"act_number": 1, "description": "string"}]
+  "acts": {
+    "act_1": "string — full prose narrative for Act 1 (Setup). Establish the world, the characters, the central tension.",
+    "act_2a": "string — full prose narrative for Act 2A (first half of complication), or empty string if story structure doesn't use 2A/2B split.",
+    "act_2b": "string — full prose narrative for Act 2B (second half of complication), or empty string if story structure doesn't use 2A/2B split.",
+    "act_3": "string — full prose narrative for Act 3 (Resolution). Climax and denouement.",
+    "act_4": "string — full prose narrative for Act 4 (only if this story has a dedicated confrontation/climax section that needs its own act beyond the 3-act structure). Empty string if not needed."
+  }
 }
 
 PRIMARY CONTEXT — FULL BEAT DESCRIPTIONS (all beats, complete arc):
@@ -1056,24 +1636,24 @@ WORLD NOTES: ${worldNotes}
 
 Respond with ONLY JSON.`, 12000);
 
-    updateStage(payload, "treatment", "done");
+      updateStage(payload, "treatment", "done");
 
-    // ── Stage 8: Market sheet (dedicated call — not embedded in call1) ────
-    updateStage(payload, "market_sheet", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Stage: market_sheet ─────────────────────────────────────────────
+      updateStage(payload, "market_sheet", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const marketCallInput = {
-      concept_brief: call1.concept_brief || {},
-      structural: {
-        total_beats: (call2 as any).total_beats || 0,
-        locations_count: allLocations.length,
-        characters_count: mergedCharacters.length,
-        tone_notes: toneNotes,
-      },
-      format,
-    };
+      const marketCallInput = {
+        concept_brief: call1?.concept_brief || {},
+        structural: {
+          total_beats: call2?.total_beats || 0,
+          locations_count: allLocations.length,
+          characters_count: mergedCharacters.length,
+          tone_notes: toneNotes,
+        },
+        format,
+      };
 
-    const callMarketSheet = await callLLM(`Given the concept brief and structural analysis, produce the commercial context document.
+      callMarketSheet = await callLLM(`Given the concept brief and structural analysis, produce the commercial context document.
 
 RULES:
 - Comparable titles must be genuinely comparable — tone + subject matter + target demographic, not obvious defaults
@@ -1099,127 +1679,126 @@ ${JSON.stringify(marketCallInput, null, 2)}
 
 Respond with ONLY JSON.`, 8000);
 
-    updateStage(payload, "market_sheet", "done");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      updateStage(payload, "market_sheet", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    // ── Store documents ────────────────────────────────────────────────────
-    updateStage(payload, "storing_docs", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Stage: storing_docs ──────────────────────────────────────────────
+      updateStage(payload, "storing_docs", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const isTV = format === "tv-series";
+      const isTV = format === "tv-series";
 
-    await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
-      `${metadata.title} — Concept Brief`,
-      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...call1.concept_brief },
-      { source_citations: [allChunksCitation, ...chunkCitations] });
+      await storeDoc(sb, project_id, script_document_id, user_id, "concept_brief", "creative_primary",
+        `${projectTitle} — Concept Brief`,
+        { title: projectTitle, logline: metadata.logline, genre: metadata.genre, subgenre: metadata.subgenre, tone: metadata.tone, themes: metadata.themes || [], target_audience: metadata.target_audience, ...(call1?.concept_brief || {}) },
+        { source_citations: [allChunksCitation, ...chunkCitations] });
 
-    const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
-    // callMarketSheet is the dedicated call — run after beat_sheet has structural metadata
-    const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1.market_sheet || {}), ...callMarketSheet } : (call1.market_sheet || {});
-    await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
-      `${metadata.title} — Market Sheet`,
-      { title: metadata.title, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
+      const marketType = isTV ? "vertical_market_sheet" : "market_sheet";
+      // callMarketSheet is the dedicated call — run after beat_sheet has structural metadata
+      const marketSheetData = typeof callMarketSheet === "object" ? { ...(call1?.market_sheet || {}), ...callMarketSheet } : (call1?.market_sheet || {});
+      await storeDoc(sb, project_id, script_document_id, user_id, marketType, "creative_primary",
+        `${projectTitle} — Market Sheet`,
+        { title: projectTitle, logline: metadata.logline, genre: metadata.genre, format, ...marketSheetData });
 
-    const arcType = isTV ? "season_arc" : "treatment";
-    // Store callTreatment response directly — FormattedDocContent knows how to render:
-    //   treatment: string  → prose narrative
-    //   act_breaks: array → "Act 1", "Act 2" etc. via dedicated renderer
-    //   treatment_narrative (legacy) → treated as prose string by generic handler
-    await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
-      `${metadata.title} — ${isTV ? "Season Arc" : "Treatment"}`,
-      typeof callTreatment === "string" ? { treatment: callTreatment } : callTreatment,
-      { source_citations: [partialCitation] });
+      const arcType = isTV ? "season_arc" : "treatment";
+      // Store callTreatment response directly — FormattedDocContent knows how to render:
+      //   treatment: string  → prose narrative
+      //   act_breaks: array → "Act 1", "Act 2" etc. via dedicated renderer
+      //   treatment_narrative (legacy) → treated as prose string by generic handler
+      await storeDoc(sb, project_id, script_document_id, user_id, arcType, "creative_primary",
+        `${projectTitle} — ${isTV ? "Season Arc" : "Treatment"}`,
+        typeof callTreatment === "string" ? { treatment: callTreatment } : callTreatment,
+        { source_citations: [partialCitation] });
 
-    const beatType = isTV ? "format_rules" : "beat_sheet";
-    await storeDoc(sb, project_id, script_document_id, user_id, beatType, "creative_primary",
-      `${metadata.title} — Beat Sheet`, call2,
-      { source_citations: [partialCitation] });
+      const beatType = isTV ? "format_rules" : "beat_sheet";
+      await storeDoc(sb, project_id, script_document_id, user_id, beatType, "creative_primary",
+        `${projectTitle} — Beat Sheet`, call2,
+        { source_citations: [partialCitation] });
 
-    await storeDoc(sb, project_id, script_document_id, user_id, "character_bible", "creative_primary",
-      `${metadata.title} — Character Bible`, call3,
-      { source_citations: [partialCitation] });
+      await storeDoc(sb, project_id, script_document_id, user_id, "character_bible", "creative_primary",
+        `${projectTitle} — Character Bible`, call3,
+        { source_citations: [partialCitation] });
 
-    const outlineType = isTV ? "episode_grid" : "story_outline";
-    await storeDoc(sb, project_id, script_document_id, user_id, outlineType, "creative_primary",
-      `${metadata.title} — Story Outline`,
-      typeof callStoryOutline === "object" ? callStoryOutline : { title: metadata.title, format, entries: [] });
+      const outlineType = isTV ? "episode_grid" : "story_outline";
+      await storeDoc(sb, project_id, script_document_id, user_id, outlineType, "creative_primary",
+        `${projectTitle} — Story Outline`,
+        typeof callStoryOutline === "object" ? callStoryOutline : { title: projectTitle, format, entries: [] });
 
-    // Write all extracted canonical fields back to canon_json so downstream drift detection is accurate
-    try {
-      const canonUpdate = {
-        title: metadata.title,
-        logline: (call1 as any)?.metadata?.logline || null,
-        format: (call1 as any)?.metadata?.format || format,
-        genre: (call1 as any)?.metadata?.genre || null,
-        subgenre: (call1 as any)?.metadata?.subgenre || null,
-        tone: (call1 as any)?.metadata?.tone || null,
-        themes: (call1 as any)?.metadata?.themes || [],
-        target_audience: (call1 as any)?.metadata?.target_audience || null,
-        premise: (call1 as any)?.concept_brief?.premise || null,
-        voice_profile: (call1 as any)?.voice_profile || null,
-        characters: (call3 as any)?.characters || [],
-      };
-      const { data: canon } = await sb.from("project_canon").select("project_id, canon_json").eq("project_id", project_id).maybeSingle();
-      if (canon) {
-        await sb.from("project_canon").update({ canon_json: { ...(canon.canon_json || {}), ...canonUpdate } }).eq("project_id", project_id);
-      } else {
-        await sb.from("project_canon").insert({ project_id, canon_json: canonUpdate });
+      // Write all extracted canonical fields back to canon_json so downstream drift detection is accurate
+      try {
+        const canonUpdate = {
+          title: projectTitle,
+          logline: (call1 as any)?.metadata?.logline || null,
+          format: (call1 as any)?.metadata?.format || format,
+          genre: (call1 as any)?.metadata?.genre || null,
+          subgenre: (call1 as any)?.metadata?.subgenre || null,
+          tone: (call1 as any)?.metadata?.tone || null,
+          themes: (call1 as any)?.metadata?.themes || [],
+          target_audience: (call1 as any)?.metadata?.target_audience || null,
+          premise: (call1 as any)?.concept_brief?.premise || null,
+          voice_profile: (call1 as any)?.voice_profile || null,
+          characters: (call3 as any)?.characters || [],
+        };
+        const { data: canon } = await sb.from("project_canon").select("project_id, canon_json").eq("project_id", project_id).maybeSingle();
+        if (canon) {
+          await sb.from("project_canon").update({ canon_json: { ...(canon.canon_json || {}), ...canonUpdate } }).eq("project_id", project_id);
+        } else {
+          await sb.from("project_canon").insert({ project_id, canon_json: canonUpdate });
+        }
+      } catch (canonErr) {
+        console.warn("[reverse-engineer] canon_json write failed (non-fatal):", canonErr);
       }
-    } catch (canonErr) {
-      console.warn("[reverse-engineer] canon_json write failed (non-fatal):", canonErr);
-    }
 
-    // ── Stage 7: Infer remaining criteria from beats + characters ─────────────────────
-
-    // ── Cleanup: delete seed versions so user only sees reverse-engineered content ──
-    try {
-      const { data: seedVersions } = await sb
-        .from("project_document_versions")
-        .select("id, document_id")
-        .eq("label", "initial_baseline_seed")
-        .in("document_id", await sb.from("project_documents").select("id").eq("project_id", project_id).then((r: any) => r.data.map((d: any) => d.id)));
-      if (seedVersions?.length) {
-        const seedIds = seedVersions.map((v: any) => v.id);
-        // Clear latest_version_id refs pointing to deleted seed versions
-        await sb.from("project_documents")
-          .update({ latest_version_id: null })
-          .in("id", seedVersions.map((v: any) => v.document_id));
-        // Delete the seed versions
-        await sb.from("project_document_versions").delete().in("id", seedIds);
-        // Point each doc back to its remaining (reverse-engineered) version
-        const { data: remaining } = await sb
+      // ── Cleanup: delete seed versions so user only sees reverse-engineered content ──
+      try {
+        const { data: seedVersions } = await sb
           .from("project_document_versions")
           .select("id, document_id")
-          .eq("label", "v1 (reverse-engineered)")
-          .in("document_id", seedVersions.map((v: any) => v.document_id));
-        if (remaining?.length) {
-          for (const v of remaining) {
-            await sb.from("project_documents").update({ latest_version_id: v.id }).eq("id", v.document_id);
+          .eq("label", "initial_baseline_seed")
+          .in("document_id", await sb.from("project_documents").select("id").eq("project_id", project_id).then((r: any) => r.data.map((d: any) => d.id)));
+        if (seedVersions?.length) {
+          const seedIds = seedVersions.map((v: any) => v.id);
+          // Clear latest_version_id refs pointing to deleted seed versions
+          await sb.from("project_documents")
+            .update({ latest_version_id: null })
+            .in("id", seedVersions.map((v: any) => v.document_id));
+          // Delete the seed versions
+          await sb.from("project_document_versions").delete().in("id", seedIds);
+          // Point each doc back to its remaining (reverse-engineered) version
+          const { data: remaining } = await sb
+            .from("project_document_versions")
+            .select("id, document_id")
+            .eq("label", "v1 (reverse-engineered)")
+            .in("document_id", seedVersions.map((v: any) => v.document_id));
+          if (remaining?.length) {
+            for (const v of remaining) {
+              await sb.from("project_documents").update({ latest_version_id: v.id }).eq("id", v.document_id);
+            }
           }
+          console.log(`[reverse-engineer] cleaned up ${seedVersions.length} seed versions`);
         }
-        console.log(`[reverse-engineer] cleaned up ${seedVersions.length} seed versions`);
+      } catch (cleanupErr) {
+        console.warn("[reverse-engineer] seed version cleanup failed (non-fatal):", cleanupErr);
       }
-    } catch (cleanupErr) {
-      console.warn("[reverse-engineer] seed version cleanup failed (non-fatal):", cleanupErr);
-    }
 
-    updateStage(payload, "infer_criteria", "running");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+      // ── Stage: infer_criteria ───────────────────────────────────────────
+      updateStage(payload, "infer_criteria", "running");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-    const beatsText = (call2.beats || []).map((b: any) =>
-      `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
-    ).join("\n");
-    const marketSheet = (call1 as any).market_sheet || {};
-    const comparables = marketSheet.comparable_titles || [];
+      beatsText = (call2?.beats || []).map((b: any) =>
+        `Beat ${b.number}: ${b.name} — ${(b.description || "").slice(0, 200)} | Tone: ${b.emotional_shift || ""}`
+      ).join("\n");
+      marketSheet = call1?.market_sheet || {};
+      const comparables = marketSheet.comparable_titles || [];
 
-    const callCriteria = await callLLM(`You are a film/TV production analyst. Infer all remaining pitch criteria fields from the document evidence below.
+      callCriteria = await callLLM(`You are a film/TV production analyst. Infer all remaining pitch criteria fields from the document evidence below.
 
 EVIDENCE:
-- Genre: ${(call1 as any).genre || "unknown"}
-- Subgenre: ${(call1 as any).subgenre || "unknown"}
+- Genre: ${call1?.genre || "unknown"}
+- Subgenre: ${call1?.subgenre || "unknown"}
 - Comparable titles: ${comparables.join(", ") || "none"}
 - Market positioning: ${marketSheet.market_positioning || ""}
-- Audience: ${(call1 as any).target_audience || ""}
+- Audience: ${call1?.target_audience || ""}
 
 BEAT SHEET (condensed):
 ${beatsText.slice(0, 4000)}
@@ -1251,99 +1830,161 @@ Return ONLY valid JSON:
 
 Respond with ONLY JSON.`, 3000);
 
-    let inferred: any = {};
-    try { inferred = extractJSON(callCriteria); }
-    catch (e) { console.warn("[reverse-engineer] criteria inference JSON parse failed:", String(callCriteria).slice(0, 500)); }
-    if (Object.keys(inferred).length === 0) {
-      console.warn("[reverse-engineer] criteria inference returned empty — raw output:", String(callCriteria).slice(0, 1000));
-    }
-
-    updateStage(payload, "infer_criteria", "done");
-    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
-
-    // ── Auto-populate pitch criteria from extracted metadata + inferred fields ─────
-    try {
-      const marketSheet = (call2 as any)?.market_sheet || {};
-
-      // criteria_json — pitch-facing fields
-      const criteriaFields: Record<string, any> = {};
-      if (metadata.genre)                               criteriaFields.genre             = metadata.genre;
-      if (inferred.subgenre)                            criteriaFields.subgenre          = inferred.subgenre;
-      if (inferred.toneAnchor)                          criteriaFields.toneAnchor        = inferred.toneAnchor;
-      if (metadata.target_audience)                      criteriaFields.audience         = metadata.target_audience;
-      if (inferred.rating)                              criteriaFields.rating           = inferred.rating;
-      if (marketSheet.comparable_titles?.length)         criteriaFields.prohibitedComps = marketSheet.comparable_titles;
-      if (marketSheet.market_positioning)                 criteriaFields.differentiateBy  = marketSheet.market_positioning;
-      if (inferred.settingType)                          criteriaFields.settingType      = inferred.settingType;
-      if (inferred.locationVibe)                          criteriaFields.locationVibe      = inferred.locationVibe;
-      if (inferred.runtimeMin)                           criteriaFields.runtimeMin       = String(inferred.runtimeMin);
-      if (inferred.runtimeMax)                           criteriaFields.runtimeMax       = String(inferred.runtimeMax);
-
-      // guardrails qualifications — all fields for pipeline + CriteriaPanel
-      const fmtFromLLM = (metadata as any).format;
-      const fmtSubtype = fmtFromLLM || (isTV ? 'tv-series' : 'film');
-      const quals: Record<string, any> = {
-        format_subtype: fmtSubtype,
-        genre: metadata.genre || null,
-        subgenre: (inferred.subgenre || metadata.subgenre) || null,
-        tone: (inferred.toneAnchor || metadata.tone) || null,
-        target_audience: metadata.target_audience || null,
-        audience_age_range: inferred.rating || null,
-        comparable_titles: marketSheet.comparable_titles?.length ? marketSheet.comparable_titles : null,
-        market_positioning: marketSheet.market_positioning || null,
-        platformTarget: inferred.platformTarget || null,
-        assigned_lane: inferred.lane || null,
-        budget_range: inferred.budgetBand || null,
-        runtimeMin: inferred.runtimeMin || null,
-        runtimeMax: inferred.runtimeMax || null,
-        settingType: inferred.settingType || null,
-        locationVibe: inferred.locationVibe || null,
-        _inference_confidence: inferred.confidence || null,
-        _inference_evidence: inferred.evidence || null,
-      };
-
-      // Read current guardrails_config
-      const { data: projRow } = await sb.from("projects")
-        .select("guardrails_config, criteria_json")
-        .eq("id", project_id).single();
-
-      const gc = (projRow?.guardrails_config as any) || {};
-      gc.overrides = gc.overrides || {};
-      if (Object.keys(quals).length > 0) {
-        gc.overrides.qualifications = { ...(gc.overrides.qualifications || {}), ...quals };
+      let inferred: any = {};
+      try { inferred = extractJSON(callCriteria); }
+      catch (e) { console.warn("[reverse-engineer] criteria inference JSON parse failed:", String(callCriteria).slice(0, 500)); }
+      if (Object.keys(inferred).length === 0) {
+        console.warn("[reverse-engineer] criteria inference returned empty — raw output:", String(callCriteria).slice(0, 1000));
       }
-      gc.derived_from_reverse_engineer = {
-        populated_at: new Date().toISOString(),
-        script_document_id: script_document_id,
-      };
 
-      await sb.from("projects").update({
-        criteria_json: criteriaFields,
-        guardrails_config: gc,
-      }).eq("id", project_id);
+      updateStage(payload, "infer_criteria", "done");
+      await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
 
-      console.log("[reverse-engineer] criteria populated:", Object.keys(criteriaFields).join(", "));
-    } catch (criteriaErr) {
-      console.warn("[reverse-engineer] criteria population failed (non-fatal):", criteriaErr);
+      // ── Auto-populate pitch criteria from extracted metadata + inferred fields ─────
+      try {
+        const marketSheet2 = (call2 as any)?.market_sheet || {};
+
+        // criteria_json — pitch-facing fields
+        const criteriaFields: Record<string, any> = {};
+        if (metadata.genre)                               criteriaFields.genre             = metadata.genre;
+        if (inferred.subgenre)                            criteriaFields.subgenre          = inferred.subgenre;
+        if (inferred.toneAnchor)                          criteriaFields.toneAnchor        = inferred.toneAnchor;
+        if (metadata.target_audience)                      criteriaFields.audience         = metadata.target_audience;
+        if (inferred.rating)                              criteriaFields.rating           = inferred.rating;
+        if (marketSheet2.comparable_titles?.length)         criteriaFields.prohibitedComps = marketSheet2.comparable_titles;
+        if (marketSheet2.market_positioning)                 criteriaFields.differentiateBy  = marketSheet2.market_positioning;
+        if (inferred.settingType)                          criteriaFields.settingType      = inferred.settingType;
+        if (inferred.locationVibe)                          criteriaFields.locationVibe      = inferred.locationVibe;
+        if (inferred.runtimeMin)                           criteriaFields.runtimeMin       = String(inferred.runtimeMin);
+        if (inferred.runtimeMax)                           criteriaFields.runtimeMax       = String(inferred.runtimeMax);
+
+        // guardrails qualifications — all fields for pipeline + CriteriaPanel
+        const fmtFromLLM = (metadata as any).format;
+        const fmtSubtype = fmtFromLLM || (isTV ? 'tv-series' : 'film');
+        const quals: Record<string, any> = {
+          format_subtype: fmtSubtype,
+          genre: metadata.genre || null,
+          subgenre: (inferred.subgenre || metadata.subgenre) || null,
+          tone: (inferred.toneAnchor || metadata.tone) || null,
+          target_audience: metadata.target_audience || null,
+          audience_age_range: inferred.rating || null,
+          comparable_titles: marketSheet2.comparable_titles?.length ? marketSheet2.comparable_titles : null,
+          market_positioning: marketSheet2.market_positioning || null,
+          platformTarget: inferred.platformTarget || null,
+          assigned_lane: inferred.lane || null,
+          budget_range: inferred.budgetBand || null,
+          runtimeMin: inferred.runtimeMin || null,
+          runtimeMax: inferred.runtimeMax || null,
+          settingType: inferred.settingType || null,
+          locationVibe: inferred.locationVibe || null,
+          _inference_confidence: inferred.confidence || null,
+          _inference_evidence: inferred.evidence || null,
+        };
+
+        // Read current guardrails_config
+        const { data: projRow } = await sb.from("projects")
+          .select("guardrails_config, criteria_json")
+          .eq("id", project_id).single();
+
+        const gc = (projRow?.guardrails_config as any) || {};
+        gc.overrides = gc.overrides || {};
+        if (Object.keys(quals).length > 0) {
+          gc.overrides.qualifications = { ...(gc.overrides.qualifications || {}), ...quals };
+        }
+        gc.derived_from_reverse_engineer = {
+          populated_at: new Date().toISOString(),
+          script_document_id: script_document_id,
+        };
+
+        await sb.from("projects").update({
+          criteria_json: criteriaFields,
+          guardrails_config: gc,
+        }).eq("id", project_id);
+
+        console.log("[reverse-engineer] criteria populated:", Object.keys(criteriaFields).join(", "));
+      } catch (criteriaErr) {
+        console.warn("[reverse-engineer] criteria population failed (non-fatal):", criteriaErr);
+      }
+
+      await sb.from("projects").update({ lifecycle_stage: outlineType }).eq("id", project_id);
+
+      // Mark all stages done
+      for (const s of JOB_STAGES) updateStage(payload, s.key, "done");
+      payload.status = "done";
+      payload.current_stage = "done";
+      payload.updated_at = new Date().toISOString();
+      payload.result = { title: projectTitle, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
     }
-
-    await sb.from("projects").update({ title: metadata.title, lifecycle_stage: outlineType }).eq("id", project_id);
-
-    // Mark all stages done
-    for (const s of JOB_STAGES) updateStage(payload, s.key, "done");
-    payload.status = "done";
-    payload.current_stage = "done";
-    payload.updated_at = new Date().toISOString();
-    payload.result = { title: metadata.title, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
 
   } catch (err: any) {
     console.error("[reverse-engineer] background error:", err?.message);
     payload.status = "error";
     payload.error = err?.message;
     payload.updated_at = new Date().toISOString();
-  }
+  } finally {
+    // ── Save payload (always — persists errors, releases lock) ────────────────
+    const shouldChain = payload.status !== "error" && payload.status !== "done" && currentGroup < 3;
 
-  await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+    if (shouldChain) {
+      // Update current_group before save so next invocation picks up where we left
+      payload.current_group = currentGroup + 1;
+    }
+
+    payload.is_processing = false;
+    payload.updated_at = new Date().toISOString();
+    await sb.from("narrative_units").update({ payload_json: payload }).eq("id", jobId);
+
+    // ── Self-chain to next group (tracked via waitUntil + retry) ──────────────
+    // Fire AFTER is_processing is cleared so the next invocation can acquire the lock.
+    // waitUntilSafe keeps the runtime alive until the fetch completes.
+    if (shouldChain) {
+      const chainUrl = SUPABASE_URL + "/functions/v1/reverse-engineer-script";
+      const chainBody = JSON.stringify({ _bg: true, _job_id: jobId, project_id, script_document_id, user_id, script_text, format });
+      const chainHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}` };
+
+      const selfChain = (async (): Promise<void> => {
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            const res = await fetch(chainUrl, {
+              method: "POST",
+              headers: chainHeaders,
+              body: chainBody,
+              signal: AbortSignal.timeout(60000),
+            });
+            if (res.ok) return;
+            console.error(`[reverse-engineer] self-chain attempt ${attempt} HTTP ${res.status}`);
+          } catch (err: any) {
+            console.error(`[reverse-engineer] self-chain attempt ${attempt} error:`, err.message);
+          }
+          if (attempt < 3) await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+        }
+        // All retries exhausted — mark error in DB, preserving accumulated stage data
+        console.error("[reverse-engineer] self-chain failed after 3 retries");
+        try {
+          const { data: current } = await sb.from("narrative_units").select("payload_json").eq("id", jobId).single();
+          if (current?.payload_json && typeof current.payload_json === "object") {
+            current.payload_json.status = "error";
+            current.payload_json.error = "self-chain retries exhausted";
+            current.payload_json.is_processing = false;
+            current.payload_json.updated_at = new Date().toISOString();
+            await sb.from("narrative_units").update({ payload_json: current.payload_json }).eq("id", jobId);
+          } else {
+            // Fallback if payload is missing or unexpected type
+            await sb.from("narrative_units").update({
+              payload_json: { status: "error", error: "self-chain retries exhausted", is_processing: false, updated_at: new Date().toISOString() },
+            }).eq("id", jobId);
+          }
+        } catch {
+          // Last-resort fallback
+          await sb.from("narrative_units").update({
+            payload_json: { status: "error", error: "self-chain retries exhausted", is_processing: false, updated_at: new Date().toISOString() },
+          }).eq("id", jobId);
+        }
+      })();
+
+      waitUntilSafe(selfChain);
+    }
+  }
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────

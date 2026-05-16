@@ -386,7 +386,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     onSuccess: (data) => {
       toast.success('Rewrite complete — new version created');
       if (data.newVersion) setSelectedVersionId(data.newVersion.id);
-      invalidateAll();
+      invalidateAll(selectedDocId, data.newVersion?.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -402,7 +402,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         selectDocument(data.newDoc.id);
         if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll();
+      invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -429,7 +429,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         selectDocument(data.newDoc.id);
         if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll();
+      invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
     onError: (e: Error) => toast.error(e.message),
   });

@@ -392,7 +392,7 @@ Output as a JSON object with keys: bible_starter, nuance_contract, market_ration
     let response: Response | null = null;
     const MAX_RETRIES = 2;
     const aiPayload = JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "deepseek/deepseek-chat",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Generate a DevSeed for this pitch idea:\n\n${JSON.stringify(ideaContext, null, 2)}` },
@@ -632,7 +632,7 @@ ${isEpisodic ? "- EPISODIC: Must have a renewable conflict engine beyond a singl
 Return the same JSON schema as before with the structural elements strengthened.`;
 
       const repairPayload = JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "deepseek/deepseek-chat",
         messages: [
           { role: "system", content: systemPrompt + "\n\n" + repairInstruction },
           { role: "user", content: `Repair this DevSeed to fix structural propulsion failures:\n\n${JSON.stringify(devSeed, null, 2)}` },

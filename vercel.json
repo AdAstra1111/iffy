@@ -24,6 +24,9 @@
     "api/supabase-proxy/functions/v1/devseed-autopilot.ts": {
       "maxDuration": 300
     },
+    "api/supabase-proxy/functions/v1/project-folder-engine.ts": {
+      "maxDuration": 300
+    },
     "api/nit-sync-proxy.ts": {
       "maxDuration": 300
     },

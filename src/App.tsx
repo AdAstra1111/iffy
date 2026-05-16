@@ -109,6 +109,7 @@ const PosterEngine = lazy(() => import("./components/poster/PosterEnginePanel"))
 const LookBookPage = lazy(() => import("./pages/LookBookPage"));
 const ProjectImageLibrary = lazy(() => import("./pages/ProjectImageLibrary"));
 const ActorLibrary = lazy(() => import("./pages/ActorLibrary"));
+const CharacterEntityMergePage = lazy(() => import("./pages/CharacterEntityMergePage"));
 
 
 // ProjectShell — new unified workspace frame (Week 1 refactor)
@@ -247,6 +248,7 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/poster" element={<ProtectedRoute><ProjectShell><PosterEngine /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/lookbook" element={<ProtectedRoute><ProjectShell><LookBookPage /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/images" element={<ProtectedRoute><ProjectShell><ProjectImageLibrary /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/character-merge" element={<ProtectedRoute><ProjectShell><CharacterEntityMergePage /></ProjectShell></ProtectedRoute>} />
           <Route path="/showcase" element={<ProtectedRoute><Showcase /></ProtectedRoute>} />
           <Route path="/narrative-dna" element={<ProtectedRoute><NarrativeDna /></ProtectedRoute>} />
           <Route path="/narrative-engines" element={<ProtectedRoute><NarrativeEngines /></ProtectedRoute>} />

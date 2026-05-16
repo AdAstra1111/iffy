@@ -4,6 +4,7 @@ import { spineToReviewerAlignmentBlock, getSpineState, CLASS_A_SPINE_CHECK_DOC_T
 import { parseSections, findVerbatimInSections } from "../_shared/sectionRepairEngine.ts";
 import { validateStageIdentity } from "../_shared/stageIdentityContracts.ts";
 import { isSectionRepairSupported, getSectionConfig, findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
+import { deduplicateConceptBriefSections } from "../_shared/deduplicateConceptBriefSections.ts";
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { isCharBibleDepthEnabled, CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
@@ -1007,10 +1008,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const PRO_MODEL = "google/gemini-2.5-pro";
-const FAST_MODEL = "google/gemini-2.5-flash";
+const PRO_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
+const FAST_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 const ANALYZE_MODEL = "openai/gpt-4.1-mini"; // deterministic at temp=0+seed — reasoning models (o4-mini) ignore both
-const BALANCED_MODEL = "google/gemini-2.5-flash";
+const BALANCED_MODEL = "deepseek/deepseek-chat"; // cheap on OpenRouter
 
 const SCHEMA_VERSION = "v3";
 const MAX_DEVELOPMENT_RUN_LOOPS = 10; // Force-converge after N ANALYZE iterations
@@ -1027,6 +1028,97 @@ function extractJSON(raw: string): string {
   return c.trim();
 }
 
+interface StoryOutlineRewriteInput {
+  runId: string;
+  projectId: string;
+  sourceDocId: string;
+  sourceVersionId: string;
+  approvedNotes?: any[];
+  targetSceneNumbers?: number[] | null;
+  user?: { id: string | null; email?: string } | null;
+  proj?: { title?: string; format?: string; assigned_lane?: string; user_id?: string } | null;
+}
+
+/**
+ * Process a story outline rewrite:
+ * 1. Fetch the story outline JSON
+ * 2. Create a new version and chunks
+ * 3. Rewrite each moment via AI
+ * 4. Assemble the output
+ * 5. Update rewrite_runs status
+ *
+ * This is called from either EdgeRuntime.waitUntil or a self-chain HTTP request.
+ */
+async function processStoryOutlineRewrite(
+  bgSupabase: ReturnType<typeof createClient>,
+  _apiKey: string,
+  input: StoryOutlineRewriteInput,
+): Promise<void> {
+  const { runId, projectId, sourceDocId, sourceVersionId, approvedNotes, user, proj } = input;
+
+  const { data: doc } = await bgSupabase.from("project_documents").select("doc_type").eq("id", sourceDocId).single();
+  if (doc?.doc_type !== "story_outline") throw new Error("Not a story outline");
+  const { data: version } = await bgSupabase.from("project_document_versions").select("plaintext, version_number").eq("id", sourceVersionId).single();
+  if (!version) throw new Error("Source version not found (id: " + sourceVersionId + ")");
+  const trimmed = (version.plaintext || "").trim();
+  if (!trimmed.startsWith("{")) throw new Error("Source version plaintext is not JSON object");
+  const storyOutlineJSON = JSON.parse(trimmed);
+  if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("Story outline has no entries to rewrite");
+  const totalEntries = storyOutlineJSON.entries.length;
+  const newVersionNumber = (version.version_number || 1) + 1;
+  const { data: projData } = await bgSupabase.from("projects").select("title, format, assigned_lane, user_id").eq("id", projectId).maybeSingle();
+  const effUid = user?.id || projData?.user_id || null;
+  const { data: newVer } = await bgSupabase.from("project_document_versions").upsert({
+    document_id: sourceDocId, version_number: newVersionNumber, plaintext: "",
+    is_current: false, created_by: effUid,
+    meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
+  }, { onConflict: "document_id,version_number" }).select().single();
+  if (!newVer?.id) return;
+  await bgSupabase.from("project_document_versions").update({ is_current: false }).eq("document_id", sourceDocId).neq("id", newVer.id);
+  await bgSupabase.from("project_document_chunks").insert(storyOutlineJSON.entries.map((e: any, idx: number) => ({
+    document_id: sourceDocId, version_id: newVer.id, chunk_index: idx,
+    chunk_key: "moment_" + (e.number || (idx + 1)),
+    status: "pending",
+    char_count: (e.description || "").length,
+    meta_json: { label: e.title || "Moment " + (e.number || (idx + 1)), moment_number: e.number || (idx + 1) },
+  })));
+  const rewrittenEntries: any[] = [];
+  for (let i = 0; i < storyOutlineJSON.entries.length; i++) {
+    await bgSupabase.from("project_document_chunks").update({ status: "running" }).eq("version_id", newVer.id).eq("chunk_index", i);
+    const entry = storyOutlineJSON.entries[i];
+    const prevEntry = i > 0 ? storyOutlineJSON.entries[i - 1] : null;
+    const nextEntry = i < storyOutlineJSON.entries.length - 1 ? storyOutlineJSON.entries[i + 1] : null;
+    const entryNum = entry.number || (i + 1);
+    let ctx = "";
+    if (prevEntry) ctx += "\nPREVIOUS MOMENT (" + (prevEntry.number || i) + "):\nTitle: " + (prevEntry.title || "") + "\nDescription: " + (prevEntry.description || "");
+    ctx += "\n\nCURRENT MOMENT (" + entryNum + "):\nTitle: " + (entry.title || "") + "\nDescription: " + (entry.description || "");
+    if (nextEntry) ctx += "\n\nNEXT MOMENT (" + (nextEntry.number || (i + 2)) + "):\nTitle: " + (nextEntry.title || "") + "\nDescription: " + (nextEntry.description || "");
+    const notesCtx = (approvedNotes || []).length > 0 ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map((n: any) => "- " + (n.description || n.note || "")).join("\n") : "";
+    const projectTitle = projData?.title || proj?.title || "this project";
+    const systemMsg = "You are rewriting ONE moment of a story outline for \"" + projectTitle + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are — do NOT change them.\n- The previous and next moments are provided for continuity context.\n- Maintain consistent voice, pacing, and narrative tone with adjacent moments.\n- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.\n- Do NOT merge, split, or reorder moments. Rewrite only this one moment.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"" + notesCtx + "}";
+    let rewrittenEntry = entry;
+    try {
+      // Use Google Gemini direct (free tier) instead of OpenRouter
+      const raw = await callGoogleGemini(systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
+      const m = (raw || "").match(/\{[\s\S]*?\}/);
+      if (m) {
+        const p = JSON.parse(m[0]);
+        if (p.description) rewrittenEntry = { number: entryNum, title: entry.title || p.title || "", description: p.description };
+      }
+    } catch { /* keep original */ }
+    rewrittenEntries.push(rewrittenEntry);
+    await bgSupabase.from("project_document_chunks").update({ status: "done", content: rewrittenEntry.description, char_count: rewrittenEntry.description.length }).eq("version_id", newVer.id).eq("chunk_index", i);
+  }
+  const outputJSON = {
+    title: storyOutlineJSON.title || projData?.title || proj?.title || "Story Outline",
+    format: storyOutlineJSON.format || projData?.format || "film",
+    entries: rewrittenEntries.map((e: any) => ({ number: e.number, title: e.title, description: e.description })),
+  };
+  await bgSupabase.from("project_document_versions").update({ plaintext: JSON.stringify(outputJSON, null, 2), meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries } }).eq("id", newVer.id);
+  await bgSupabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", sourceDocId);
+  await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
+}
+
 async function callAI(apiKey: string, model: string, system: string, user: string, temperature = 0.3, maxTokens = 32000, seed?: number): Promise<string> {
   const MAX_RETRIES = 3;
   // Resolve gateway dynamically
@@ -1034,6 +1126,9 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
   const effectiveUrl = gw.url;
   const effectiveKey = gw.apiKey || apiKey;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    // AbortController with 120s timeout to prevent indefinite hang (AI gen can be slower)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
     let response: Response;
     try {
       response = await fetch(effectiveUrl, {
@@ -1046,18 +1141,21 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
           max_tokens: maxTokens,
           ...(seed !== undefined ? { seed } : {}),
         }),
+        signal: controller.signal,
       });
     } catch (fetchErr: any) {
-      // Connection-level error (e.g. "error reading a body from connection")
-      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, fetchErr?.message || fetchErr);
+      clearTimeout(timeoutId);
+      const isTimeout = fetchErr?.name === "AbortError";
+      console.error(`AI fetch error (attempt ${attempt + 1}/${MAX_RETRIES}):`, isTimeout ? "TIMEOUT after 120s" : (fetchErr?.message || fetchErr));
       if (attempt < MAX_RETRIES - 1) {
         const delay = Math.pow(2, attempt) * 3000;
-        console.log(`Retrying after connection error in ${delay}ms...`);
+        console.log(`Retrying after ${isTimeout ? "timeout" : "connection error"} in ${delay}ms...`);
         await new Promise(r => setTimeout(r, delay));
         continue;
       }
-      throw new Error(`AI connection failed after ${MAX_RETRIES} attempts: ${fetchErr?.message || "unknown"}`);
+      throw new Error(`${isTimeout ? "FETCH_TIMEOUT" : `AI connection failed after ${MAX_RETRIES} attempts`}: ${fetchErr?.message || "unknown"}`);
     }
+    clearTimeout(timeoutId);
 
     // Read body safely — connection can drop during body read
     let text: string;
@@ -1117,6 +1215,81 @@ async function callAI(apiKey: string, model: string, system: string, user: strin
     throw new Error(`AI call failed: ${response.status}`);
   }
   throw new Error("AI call failed after retries");
+}
+
+/**
+ * Call Google Gemini directly (free tier — 1,500 req/day).
+ * Uses GOOGLE_AI_API_KEY from env if available, otherwise falls back to OpenRouter.
+ * Gemini API has OpenAI-incompatible format, so this is a separate function.
+ */
+async function callGoogleGemini(system: string, user: string, temperature = 0.0, maxTokens = 2000): Promise<string> {
+  const apiKey = Deno.env.get("GOOGLE_AI_API_KEY");
+  if (!apiKey) {
+    // Fallback: use OpenRouter gateway
+    const gw = resolveGateway();
+    return callAI(gw.apiKey, FAST_MODEL, system, user, temperature, maxTokens);
+  }
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const body = {
+    system_instruction: { parts: [{ text: system }] },
+    contents: [{ role: "user", parts: [{ text: user }] }],
+    generationConfig: { temperature, maxOutputTokens: maxTokens, responseMimeType: "text/plain" },
+  };
+
+  const MAX_RETRIES = 3;
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      const text = await res.text();
+      if (!res.ok) {
+        console.error(`Google Gemini error (attempt ${attempt + 1}):`, res.status, text);
+        if (res.status === 429) { // rate limited on free tier
+          const delay = Math.pow(2, attempt) * 5000;
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        if (res.status >= 500 && attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+          continue;
+        }
+        throw new Error(`Google Gemini call failed: ${res.status} ${text}`);
+      }
+      const data = JSON.parse(text);
+      const content = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      if (!content.trim()) {
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+      }
+      return content;
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      if (err?.name === "AbortError") {
+        console.error(`Google Gemini timeout (attempt ${attempt + 1})`);
+        if (attempt < MAX_RETRIES - 1) {
+          await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 3000));
+          continue;
+        }
+        throw new Error("Google Gemini timeout after retries");
+      }
+      if (attempt < MAX_RETRIES - 1) {
+        await new Promise(r => setTimeout(r, Math.pow(2, attempt) * 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Google Gemini call failed after retries");
 }
 
 const STRICT_JSON_RULES = `CRITICAL: Return ONLY valid JSON. No markdown fences. No trailing commas. All keys in double quotes. No comments. No extra text before or after the JSON object.`;
@@ -1679,7 +1852,7 @@ CONVERGENCE RULE: An idea that has a clear protagonist, an opposition force, and
   character_bible: `Evaluate as a CHARACTER BIBLE. This is a DEVELOPMENT ARCHITECTURE document — its job is to deepen character specificity and unblock the next development stage, not to pitch or package.
 
 Score on:
-(1) CHARACTER DEPTH — Does each major character have: clear wants vs needs (in conflict), a core contradiction, a specific formative wound, a public mask vs private self, and a distinct voice? Shallow or generic characters are blockers.
+(1) CHARACTER DEPTH — Does each major character have: clear wants vs needs (in conflict), a core contradiction, a specific formative wound, and a public mask vs private self? Shallow or generic characters are blockers.
 (2) ARC DESIGN — Does each principal have a clear transformation arc from opening to resolution? Are internal and external arc trajectories distinct?
 (3) RELATIONSHIP DYNAMICS — Are the key relationship axes between characters mapped? Are power dynamics, tensions, dependencies, and emotional stakes specified?
 (4) THEMATIC INTEGRATION — Does each character embody a thematic question or tension? Is the ensemble's thematic function coherent?
@@ -1790,6 +1963,52 @@ const FORMAT_ALIASES: Record<string, string> = {
 function resolveFormatAlias(format: string): string {
   const lower = format.toLowerCase();
   return FORMAT_ALIASES[lower] || FORMAT_ALIASES[format] || format;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FALSE POSITIVE BLOCKER FILTER — hard code-level post-filter
+// ═══════════════════════════════════════════════════════════════
+// The prompt-level ACT BISECTION AWARENESS guidance reduces but does not
+// eliminate LLM-generated false positives about Act 2a/Act 2b. This code-level
+// filter catches any that slip through and prevents them from persisting
+// in development_notes or being returned in the analysis/notes response.
+function filterFalsePositiveBlockers(parsed: any, deliverableType: string, format: string): any {
+  // Only apply to film treatments — the only context where Act 2 bisection
+  // (Act 2a / Act 2b) is a valid standard convention.
+  if (deliverableType !== "treatment" || format !== "film") return parsed;
+
+  const falsePositivePatterns = [
+    "act 2a",
+    "act 2b",
+    "2a/2b",
+    "act structure confusion",
+    "too many acts",
+  ];
+
+  // Handle both key names: blocking_issues (analyze output) and blockers (notes output)
+  const issues = parsed.blocking_issues || parsed.blockers || [];
+  if (!Array.isArray(issues) || issues.length === 0) return parsed;
+
+  const beforeCount = issues.length;
+
+  const filtered = issues.filter((issue: any) => {
+    if (!issue) return false;
+    const desc = (issue.description || "").toLowerCase();
+    const why = (issue.why_it_matters || "").toLowerCase();
+    return !falsePositivePatterns.some(
+      (pattern) => desc.includes(pattern) || why.includes(pattern)
+    );
+  });
+
+  const removedCount = beforeCount - filtered.length;
+  if (removedCount > 0) {
+    console.log(`[dev-engine-v2][false-positive-filter] Removed ${removedCount} false positive blocker(s) for ${deliverableType}/${format}`);
+  }
+
+  if (parsed.blocking_issues) parsed.blocking_issues = filtered;
+  if (parsed.blockers) parsed.blockers = filtered;
+
+  return parsed;
 }
 
 const FORMAT_EXPECTATIONS: Record<string, string> = {
@@ -2136,6 +2355,39 @@ function parseCharacterBibleSections(fullText: string): CharBibleSection[] {
   return sections;
 }
 
+/**
+ * Check voice component indicator presence in rewritten character bible sections.
+ * Uses heuristic pattern matching to detect voice-related content without
+ * requiring a full Schema v2 JSON parser. Returns coverage stats for the
+ * post-rewrite voice quality verification gate.
+ * Escalate to JSON parser if pattern-based detection proves unreliable.
+ */
+function checkVoiceComponentPresence(
+  assembledSections: string[],
+  updatedNames: string[]
+): { coveragePercent: number; charactersWithVoice: number; characterCount: number } {
+  const voicePatterns = [
+    /\b(register|colloquial|formal|archaic)\b/i,
+    /\b(vocabulary|lexicon|word choice|phrasing)\b/i,
+    /\b(verbal tic|repeated phrase|catchphrase|verbal habit)\b/i,
+    /\b(avoidance|never says|avoids topic)\b/i,
+    /\b(speech pattern|dialogue pattern|speaks in|way of speaking)\b/i,
+  ];
+
+  const sectionsWithVoice = assembledSections.filter(body => {
+    const matchCount = voicePatterns.filter(p => p.test(body)).length;
+    return matchCount >= 2; // At least 2 different voice indicator categories
+  }).length;
+
+  const characterCount = updatedNames.length;
+  const charactersWithVoice = Math.min(sectionsWithVoice, characterCount);
+  const coveragePercent = characterCount > 0
+    ? Math.round((charactersWithVoice / characterCount) * 100)
+    : 0;
+
+  return { coveragePercent, charactersWithVoice, characterCount };
+}
+
 function buildRewriteSystem(deliverable: string, format: string, behavior: string): string {
   const isDocSafe = ["deck", "documentary_outline"].includes(deliverable) ||
     ["documentary", "documentary-series", "hybrid-documentary"].includes(format);
@@ -2448,6 +2700,7 @@ GOALS:
 CRITICAL:
 - Output ONLY the rewritten section content. No JSON, no commentary.
 - Preserve each section's ## header exactly as it appears in the source.
+- Do NOT create duplicate ## sections. Replace the content of the relevant section — do NOT append new sections to the document.
 - Maintain continuity with the previous chunk context provided.`;
 
 const REWRITE_CHUNK_SYSTEM_GRID = `You are rewriting an EPISODE GRID for a vertical drama series.
@@ -5563,6 +5816,255 @@ serve(async (req) => {
     }
 
     // ══════════════════════════════════════════════
+    // PROCESS_STORY_OUTLINE_REWRITE — background task handler
+    // Invoked via self-chain HTTP when EdgeRuntime.waitUntil is unavailable.
+    // ══════════════════════════════════════════════
+    if (action === "process_story_outline_rewrite") {
+      const { runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers, userId } = body;
+      if (!runId || !projectId || !sourceDocId || !sourceVersionId) {
+        return new Response(JSON.stringify({ error: "Missing required fields" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // Run as background — don't wait for completion, just acknowledge receipt.
+      // The function will process all moments and update rewrite_runs when done.
+      (async () => {
+        try {
+          const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+          const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+          const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+          const bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
+            auth: { persistSession: false, autoRefreshToken: false },
+            global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
+          });
+          const _gw = resolveGateway();
+          const _apiKey = _gw.apiKey;
+          await processStoryOutlineRewrite(bgSupabase, _apiKey, {
+            runId, projectId, sourceDocId, sourceVersionId,
+            approvedNotes, targetSceneNumbers,
+            user: userId ? { id: userId, email: "service_role@internal" } : null,
+          });
+          await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
+          console.log("[process_story_outline_rewrite] completed successfully", { runId, projectId });
+        } catch (err: any) {
+          console.error("[process_story_outline_rewrite] failed:", err?.message);
+          try {
+            const svcClient = createClient(
+              Deno.env.get("SUPABASE_URL") ?? "",
+              Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+            );
+            await svcClient.from("rewrite_runs").update({ status: "failed", summary: err?.message || "Unknown error" }).eq("id", runId);
+          } catch { /* ignore */ }
+        }
+      })();
+      // Return immediately — the background task continues processing
+      return new Response(JSON.stringify({ ok: true, runId }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ══════════════════════════════════════════════
+    // CONVERT_STORY_OUTLINE — convert JSON story outline to plaintext markdown
+    // ══════════════════════════════════════════════
+    if (action === "convert_story_outline_to_plaintext") {
+      const { projectId } = body;
+      if (!projectId) throw new Error("projectId required");
+
+      // Find the story outline document
+      const { data: docs } = await supabase.from("project_documents")
+        .select("id, latest_version_id").eq("project_id", projectId).eq("doc_type", "story_outline").limit(1);
+      if (!docs || docs.length === 0) throw new Error("No story outline document found");
+      const docId = docs[0].id;
+      const verId = docs[0].latest_version_id;
+      if (!verId) throw new Error("Story outline has no version");
+
+      const { data: ver } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", verId).single();
+      if (!ver) throw new Error("Version not found");
+      const trimmed = (ver.plaintext || "").trim();
+      if (!trimmed.startsWith("{")) throw new Error("Story outline is not JSON format — already plaintext?");
+
+      const outline = JSON.parse(trimmed);
+      if (!Array.isArray(outline.entries)) throw new Error("No entries array in story outline");
+
+      // Convert entries to markdown
+      const lines: string[] = [];
+      for (const entry of outline.entries) {
+        const actTitle = entry.title || `Act ${entry.number || 1}`;
+        lines.push(`## ${actTitle}`);
+        lines.push("");
+        if (entry.description) {
+          lines.push(entry.description);
+          lines.push("");
+        }
+        // Check for nested moments/scenes
+        const moments = entry.moments || entry.scenes || [];
+        if (moments.length > 0) {
+          for (const moment of moments) {
+            const sceneTitle = moment.title || `Scene ${moment.number || 1}`;
+            lines.push(`### ${sceneTitle}`);
+            lines.push("");
+            if (moment.description) {
+              lines.push(moment.description);
+              lines.push("");
+            }
+          }
+        }
+      }
+
+      const plaintext = lines.join("\n").trim();
+      const newVersionNumber = (ver.version_number || 1) + 1;
+
+      // If no nested moments found, expand by making each entry a scene
+      const hasNestedMoments = outline.entries.some((e: any) => (e.moments?.length || e.scenes?.length || 0) > 0);
+      const finalText = hasNestedMoments ? plaintext : (() => {
+        // Each entry becomes a scene within its act
+        const flatLines: string[] = [];
+        for (const entry of outline.entries) {
+          const sceneTitle = entry.title || `Scene ${entry.number || 1}`;
+          flatLines.push(`## ${sceneTitle}`);
+          flatLines.push("");
+          if (entry.description) {
+            flatLines.push(entry.description);
+            flatLines.push("");
+          }
+        }
+        return flatLines.join("\n").trim();
+      })();
+
+      const { data: newVer } = await supabase.from("project_document_versions").insert({
+        document_id: docId, version_number: newVersionNumber,
+        plaintext: finalText, is_current: true, created_by: user?.id || null,
+        meta_json: { run_type: "CONVERTED_TO_PLAINTEXT", entries_count: outline.entries.length },
+      }).select("id").single();
+
+      // Update document's latest version
+      await supabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", docId);
+
+      return new Response(JSON.stringify({
+        success: true, newVersionId: newVer.id, versionNumber: newVersionNumber,
+        entriesConverted: outline.entries.length, hasNestedMoments,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ══════════════════════════════════════════════
+    // _DB_DIAG — check rewrite_runs state for a project
+    // ══════════════════════════════════════════════
+    if (action === "_db_diag") {
+      const { projectId, runId } = body;
+      const results: any = {};
+      
+      // Query with same columns as get_story_outline_rewrite_status
+      if (runId) {
+        const { data: runStatusStyle } = await supabase.from("rewrite_runs")
+          .select("source_doc_id, source_version_id, status, meta_json, user_id")
+          .eq("id", runId).maybeSingle();
+        results.statusEndpointQuery = runStatusStyle || null;
+        results.statusEndpointQueryError = runStatusStyle === null ? "returned null" : "found";
+      }
+      
+      // Also check with meta_json in select to isolate the issue
+      if (runId) {
+        const { data: withMeta } = await supabase.from("rewrite_runs")
+          .select("id, status, meta_json, user_id")
+          .eq("id", runId).maybeSingle();
+        results.withMeta = withMeta || null;
+      }
+      if (runId) {
+        const { data: withoutMeta } = await supabase.from("rewrite_runs")
+          .select("id, status")
+          .eq("id", runId).maybeSingle();
+        results.withoutMeta = withoutMeta || null;
+      }
+      
+      // Check latest runs
+      const { data: runs } = await supabase.from("rewrite_runs")
+        .select("id, project_id, source_doc_id, source_version_id, status, summary, created_at")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      results.runs = runs || [];
+      
+      return new Response(JSON.stringify(results), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    // ══════════════════════════════════════════════
+    // TEST_REWRITE_ONE_MOMENT — diagnostic: rewrite a single story outline moment synchronously.
+    // Looks up latest story outline doc/version automatically — only needs projectId.
+    // Returns the AI output so we can verify the pipeline works end-to-end.
+    // ══════════════════════════════════════════════
+    if (action === "test_rewrite_one_moment") {
+      const { projectId, sourceVersionId, approvedNotes, momentIndex } = body;
+      if (!projectId) throw new Error("projectId required");
+
+      // Find the story outline document
+      let docId = body.sourceDocId;
+      let verId = sourceVersionId;
+      if (!docId || !verId) {
+        const { data: docs } = await supabase.from("project_documents")
+          .select("id, latest_version_id").eq("project_id", projectId).eq("doc_type", "story_outline").limit(1).maybeSingle();
+        if (docs) {
+          docId = docs.id;
+          verId = docs.latest_version_id;
+        }
+      }
+      if (!docId || !verId) throw new Error("Could not find story outline doc/version for project " + projectId + " — pass sourceDocId and sourceVersionId explicitly");
+
+      // Fetch the source version
+      const { data: version } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", verId).single();
+      if (!version) throw new Error("Source version not found: " + verId);
+      const trimmed = (version.plaintext || "").trim();
+      if (!trimmed.startsWith("{")) throw new Error("Story outline plaintext is not JSON (starts with: " + trimmed.slice(0, 50) + ")");
+      const storyOutlineJSON = JSON.parse(trimmed);
+      if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("No entries in story outline JSON");
+
+      const idx = typeof momentIndex === "number" ? momentIndex : 0;
+      const entry = storyOutlineJSON.entries[idx];
+      if (!entry) throw new Error("Moment index " + idx + " out of range (0-" + (storyOutlineJSON.entries.length - 1) + ")");
+
+      const { data: projData } = await supabase.from("projects").select("title, format").eq("id", projectId).maybeSingle();
+      const projectTitle = projData?.title || "this project";
+
+      const prevEntry = idx > 0 ? storyOutlineJSON.entries[idx - 1] : null;
+      const nextEntry = idx < storyOutlineJSON.entries.length - 1 ? storyOutlineJSON.entries[idx + 1] : null;
+      const entryNum = entry.number || (idx + 1);
+
+      let ctx = "";
+      if (prevEntry) ctx += "\nPREVIOUS MOMENT (" + (prevEntry.number || idx) + "):\nTitle: " + (prevEntry.title || "") + "\nDescription: " + (prevEntry.description || "");
+      ctx += "\n\nCURRENT MOMENT (" + entryNum + "):\nTitle: " + (entry.title || "") + "\nDescription: " + (entry.description || "");
+      if (nextEntry) ctx += "\n\nNEXT MOMENT (" + (nextEntry.number || (idx + 2)) + "):\nTitle: " + (nextEntry.title || "") + "\nDescription: " + (nextEntry.description || "");
+
+      const notesCtx = (approvedNotes || []).length > 0
+        ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map((n: any) => "- " + (n.description || n.note || "")).join("\n")
+        : "";
+
+      const systemMsg = "You are rewriting ONE moment of a story outline for \"" + projectTitle + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are.\n- Write vivid present-tense prose. 2-5 sentences.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"}";
+
+      const raw = await callAI(OPENROUTER_API_KEY, FAST_MODEL, systemMsg, "MOMENT TO REWRITE:" + ctx, 0.0, 2000);
+      const m = (raw || "").match(/\{[\s\S]*?\}/);
+      let rewritten = entry;
+      if (m) {
+        try {
+          const p = JSON.parse(m[0]);
+          if (p.description) rewritten = { number: entryNum, title: entry.title || p.title || "", description: p.description };
+        } catch {}
+      }
+
+      return new Response(JSON.stringify({
+        docId, versionId: verId, versionNumber: version.version_number,
+        moment_index: idx, total_moments: storyOutlineJSON.entries.length,
+        original: { number: entry.number || (idx+1), title: entry.title, description: (entry.description || "").slice(0, 200) },
+        rewritten: { number: rewritten.number, title: rewritten.title, description: (rewritten.description || "").slice(0, 500) },
+        raw_ai_output: (raw || "").slice(0, 1000),
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ══════════════════════════════════════════════
     // ANALYZE — strict routing: deliverable → format → behavior
     // ══════════════════════════════════════════════
     if (action === "analyze") {
@@ -6236,13 +6738,47 @@ A fully complete grid with specific, unique entries should score CI 75–85. Res
         }
       }
 
+      // ── Convergence history context injection (medium-term fix) ──
+      // Instead of relying on the current ANALYZE output's convergence status (which
+      // gets reset to in_progress when blockers are found), check historical records
+      // to determine if this document was EVER scored as converged. If a prior version
+      // was converged, the AI should strongly bias against inventing new blockers.
+      let convergenceHistoryContext = "";
+      try {
+        const { data: convHistory } = await supabase
+          .from("dev_engine_convergence_history")
+          .select("convergence_status, creative_score, greenlight_score, created_at")
+          .eq("document_id", documentId)
+          .order("created_at", { ascending: false })
+          .limit(5);
+        if (convHistory && convHistory.length > 0) {
+          const priorConverged = convHistory.find(h => h.convergence_status === "converged");
+          if (priorConverged) {
+            const totalConverged = convHistory.filter(h => h.convergence_status === "converged").length;
+            const recentStatus = convHistory[0]?.convergence_status || "Unknown";
+            convergenceHistoryContext = `\n\nCONVERGENCE HISTORY: This document has been scored as CONVERGED ${totalConverged} time(s) in historical runs (last: CI=${priorConverged.creative_score}, GP=${priorConverged.greenlight_score}). Current convergence status: ${recentStatus}.\nCRITICAL RULE: If the document was previously converged, do NOT invent new blockers. The convergence status may appear as "in_progress" due to generated blockers, but the document's underlying quality has already validated as converged. Focus on:\n- Resolving any genuine structural issues (missing characters, corrupted sections)\n- Polish notes for refinement only\n- Do NOT re-raise the same issues under different note_keys\n- If all prior blockers were resolved, raise ONLY polish_notes or high_impact_notes`;
+            console.log(`[dev-engine-v2][convergence-history] Injected convergence history: ${totalConverged} prior converged run(s), last CI=${priorConverged.creative_score}, GP=${priorConverged.greenlight_score}`);
+          } else {
+            // Document has convergence history but never converged — still useful context
+            const highestCI = Math.max(...convHistory.map(h => Number(h.creative_score)).filter(s => !isNaN(s)));
+            const highestGP = Math.max(...convHistory.map(h => Number(h.greenlight_score)).filter(s => !isNaN(s)));
+            if (highestCI >= 60 || highestGP >= 60) {
+              convergenceHistoryContext = `\n\nCONVERGENCE NOTE: This document has never reached full convergence but has achieved scores of CI=${highestCI}, GP=${highestGP} in prior runs. If the document is close to convergence (few blockers, high scores), prefer refinement over inventing new blockers.`;
+              console.log(`[dev-engine-v2][convergence-history] Near-convergence context injected: best CI=${highestCI}, GP=${highestGP}`);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[dev-engine-v2] Convergence history fetch failed (non-fatal):", e);
+      }
+
       const userPrompt = `${analyzeNecBlock}
 PRODUCTION TYPE: ${effectiveProductionType}
 STRATEGIC PRIORITY: ${strategicPriority || "BALANCED"}
 DEVELOPMENT STAGE: ${developmentStage || "IDEA"}
 PROJECT: ${project?.title || "Unknown"}
 LANE: ${analyzeLane} | BUDGET: ${project?.budget_range || "Unknown"}
-${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${canonConformanceContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}
+${prevContext}${seasonContext}${qualBinding}${canonOSContext}${effectiveProfileContext}${signalContext}${lockedDecisionsContext}${teamVoiceBlock}${supportingContext}${crossRungCanonBlock}${canonConformanceContext}${spineAlignmentBlock}${analyzeCompBlock}${episodeGridStructuralBlock}${seasonScriptStructuralBlock}${convergenceHistoryContext}
 
 MATERIAL (${version.plaintext.length} chars total${episodeGridStructuralBlock || seasonScriptStructuralBlock ? " — sampled for scoring stability" : ""}):
 ${docTextForScoring}`;
@@ -6395,6 +6931,68 @@ ${docTextForScoring}`;
         console.log(`[dev-engine-v2][convergence] Churn demoted ${demotedKeys.length} blockers to polish: [${demotedKeys.join(", ")}]`);
       }
 
+      // ── LONG-TERM FIX: Semantic note_key deduplication ──
+      // When generating a new note, compare its semantic content against existing
+      // unresolved development_notes for the same document. If a match is found,
+      // reuse the existing key instead of creating a new one (fixes note_key mutation).
+      if (effectiveDeliverable === "character_bible") {
+        try {
+          // Fetch all existing unresolved notes for this document
+          const { data: existingNotes } = await supabase
+            .from("development_notes")
+            .select("note_key, description, severity")
+            .eq("document_id", documentId)
+            .eq("resolved", false)
+            .limit(50);
+          if (existingNotes && existingNotes.length > 0) {
+            // Simple word-overlap similarity function
+            const wordOverlap = (a: string, b: string): number => {
+              const wordsA = new Set((a || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+              const wordsB = new Set((b || "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+              if (wordsA.size === 0 || wordsB.size === 0) return 0;
+              let intersection = 0;
+              for (const w of wordsA) { if (wordsB.has(w)) intersection++; }
+              const union = Math.max(wordsA.size, wordsB.size);
+              return union > 0 ? intersection / union : 0;
+            };
+            // Also check for common thematic synonyms in descriptions
+            const noteTiers = [
+              { arr: parsed.blocking_issues || [], name: "blocking_issues" },
+              { arr: parsed.high_impact_notes || [], name: "high_impact_notes" },
+              { arr: parsed.polish_notes || [], name: "polish_notes" },
+            ];
+            for (const tier of noteTiers) {
+              for (let i = 0; i < tier.arr.length; i++) {
+                const note = tier.arr[i];
+                const noteDesc = note.description || "";
+                const noteKey = note.note_key || note.id || "";
+                if (!noteDesc) continue;
+                // Find best match among existing unresolved notes
+                let bestMatch: { key: string; score: number } | null = null;
+                for (const existing of existingNotes) {
+                  const score = wordOverlap(noteDesc, existing.description || "");
+                  if (score >= 0.4 && (!bestMatch || score > bestMatch.score)) {
+                    bestMatch = { key: existing.note_key, score };
+                  }
+                }
+                if (bestMatch) {
+                  // Reuse the existing note_key — this prevents creating a new
+                  // development_notes row with a different key for the same issue
+                  const oldKey = noteKey;
+                  tier.arr[i].note_key = bestMatch.key;
+                  tier.arr[i].id = bestMatch.key;
+                  tier.arr[i].note_key_deduped = true;
+                  tier.arr[i].original_note_key = oldKey;
+                  console.log(`[dev-engine-v2][note-key-dedup] Re-mapped note_key "${oldKey}" → "${bestMatch.key}" (word overlap: ${(bestMatch.score * 100).toFixed(0)}%)`);
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[dev-engine-v2] Semantic note_key dedup failed (non-fatal):", e);
+        }
+      }
+
       // Collect all deferred notes
       const allDeferred = [...blockersResult.deferred, ...highResult.deferred, ...polishResult.deferred];
       parsed.deferred_notes = allDeferred;
@@ -6512,6 +7110,10 @@ ${docTextForScoring}`;
 
       // ── Convergence failsafe: iteration cap (character bible) ──
       const capReached = await checkDevRunIterationCap(supabase, documentId, versionId, parsed);
+
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Run BEFORE stability computations so blocker counts are accurate.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, effectiveFormat);
 
       // Blocker-based convergence override: only NOW blockers gate convergence
       const blockerCount = (parsed.blocking_issues || []).length;
@@ -7117,7 +7719,6 @@ ${(() => {
     character_bible: `DOCUMENT TYPE: CHARACTER BIBLE
 |- Evaluate character completeness, arc design, voice distinctiveness, relationship dynamics, thematic integration, and backstory depth.
 |- Valid note categories: "character_depth|arc_clarity|voice_distinctiveness|relationship_dynamics|backstory_consistency|thematic_integration|missing_character|cast_balance"
-|- NOTE: voice_distinctiveness is a polish-only category — voice distinctiveness is inherently subjective and cannot be objectively resolved. Do NOT flag it as a blocker.
 |- Do NOT raise notes about scene structure, pacing, dialogue craft, act breaks, hooks, or cliffhangers — those are script concerns.
 |- Flag missing characters or underdeveloped arcs as blockers.`,
     season_arc: `DOCUMENT TYPE: SEASON ARC
@@ -7202,7 +7803,7 @@ ${(() => {
 
       const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
       const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
-      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+      let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       if (!parsed) {
         console.error("[dev-engine-v2] notes: parseAIJson returned null", raw.slice(0, 300));
         return new Response(JSON.stringify({ success: false, error: "MODEL_JSON_PARSE_FAILED", where: "notes", snippet: raw.slice(0, 300) }), {
@@ -7497,6 +8098,10 @@ ${(() => {
       } catch (e) {
         console.warn("[dev-engine-v2] Constraint solver failed (non-fatal):", e);
       }
+
+      // ── FALSE POSITIVE BLOCKER FILTER ──
+      // Run BEFORE stability computations so blocker counts are accurate.
+      parsed = filterFalsePositiveBlockers(parsed, deliverableType, notesEffectiveFormat);
 
       // Compute resolution summary
       const resolvedCount = existingUnresolved.filter(n => !currentNoteKeys.has(n.note_key)).length;
@@ -7860,14 +8465,14 @@ ${(() => {
       if (!analysis) {
         const { data: latestRun } = await supabase.from("development_runs")
           .select("output_json").eq("version_id", versionId).eq("run_type", "ANALYZE")
-          .order("created_at", { ascending: false }).limit(1).single();
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         analysis = latestRun?.output_json;
       }
       let notes = notesJson;
       if (!notes) {
         const { data: latestNotes } = await supabase.from("development_runs")
           .select("output_json").eq("version_id", versionId).eq("run_type", "NOTES")
-          .order("created_at", { ascending: false }).limit(1).single();
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
         notes = latestNotes?.output_json;
       }
 
@@ -7931,8 +8536,18 @@ NOTES REQUIRING DECISIONS:\n${JSON.stringify(notesForPrompt)}
 
 MATERIAL:\n${version.plaintext}`;
 
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000);
-      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000).catch((err: any) => {
+        console.error("[dev-engine-v2] options: callAI failed:", err?.message);
+        throw new Error(`AI call failed: ${err?.message || "Unknown AI error"}`);
+      });
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw).catch((err: any) => {
+        console.error("[dev-engine-v2] options: parseAIJson failed:", err?.message, "raw:", raw?.slice(0, 300));
+        throw new Error(`Failed to parse AI response: ${err?.message || "Parse error"}`);
+      });
+      if (!parsed) {
+        console.error("[dev-engine-v2] options: parseAIJson returned null", raw?.slice(0, 300));
+        throw new Error("MODEL_JSON_PARSE_FAILED");
+      }
 
       // Store as OPTIONS run
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({
@@ -8400,11 +9015,12 @@ MATERIAL TO REWRITE:\n${fullText}`;
       let nonCharacterCount = 0;
       const updatedNames: string[] = [];
 
-      if (
+if (
         (effectiveDeliverable === "character_bible" || effectiveDeliverable === "long_character_bible") &&
         fullText.trim().length > 100
       ) {
-        const perCharNotes = [userNotes, additionalContext, (rewriteNotes || []).join("\n")].filter(Boolean).join("\n\n");
+        try {
+        const perCharNotes = [userNotes, additionalContext, (rewriteNotes || []).join("\\n")].filter(Boolean).join("\\n\\n");
         // Only trigger per-character mode if we have actual notes to apply
         if (perCharNotes.trim() || (approvedNotes && approvedNotes.length > 0)) {
           console.log(`[dev-engine-v2] rewrite: per-character mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
@@ -8435,15 +9051,24 @@ MATERIAL TO REWRITE:\n${fullText}`;
                 return enKeywords.test(allNoteText);
               }
 
-              // Character sections: exact name match (existing logic)
+              // Character sections: exact name match with word boundaries
+              // e.g. "Ann" should not match "Annie" or "Manny"
               const nameLower = section.name.toLowerCase();
-              // Check exact word boundary match to avoid false positives
-              // e.g. "Ann" matching "Annie" or "Manny"
               const namePattern = new RegExp(
-                nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                "\\b" + nameLower.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b",
                 "i"
               );
-              return namePattern.test(allNoteText);
+              if (namePattern.test(allNoteText)) return true;
+
+              // Voice-specific matching only triggers when BOTH the character name
+              // AND a voice keyword appear in the same note — prevents a single
+              // generic note about "voice" from flagging every character.
+              const nameAndVoice = /\b(voice|speech|dialogue pattern|verbal|register|vocabulary)\b/i;
+              if (nameAndVoice.test(allNoteText) && namePattern.test(allNoteText) && section.body.length > 100) {
+                return true;
+              }
+
+              return false;
             };
 
             const affectedSections = sections.filter(isAffected);
@@ -8452,6 +9077,18 @@ MATERIAL TO REWRITE:\n${fullText}`;
             console.log(
               `[dev-engine-v2] rewrite: per-character — ${totalAffected}/${sections.length} characters affected by notes`
             );
+
+            // If no characters match the notes but notes exist, treat ALL sections as affected
+            // so that every character gets a focused per-character rewrite instead of silently
+            // doing nothing or falling to a generic single-pass call.
+            let rewriteAll = false;
+            if (totalAffected === 0 && approvedNotes && approvedNotes.length > 0) {
+              console.log(
+                `[dev-engine-v2] rewrite: per-character — no specific characters named in notes, rewriting ALL sections`
+              );
+              rewriteAll = true;
+            }
+            const effectiveTotalAffected = rewriteAll ? sections.length : totalAffected;
 
             // Step 2.5: Initialize progress state — clear stale "Complete" flags from source version
             // This ensures the frontend sees bg_generating: true immediately on first poll,
@@ -8462,7 +9099,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
                   meta_json: {
                     bg_generating: true,
                     characters_total: sections.filter(s => s.sectionType === 'character').length,
-                    characters_to_rewrite: totalAffected,
+                    characters_to_rewrite: effectiveTotalAffected,
                     characters_list: sections.map(s => s.name),
                     characters_completed: 0,
                     sections_total: sections.length,
@@ -8501,7 +9138,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
             for (const section of sections) {
               if (section.sectionType !== 'character') {
                 // ── Non-character section (Relationship Dynamics / Ensemble Notes) ──
-                if (isAffected(section)) {
+                if (rewriteAll || isAffected(section)) {
                   nonCharacterCount++;
                   sectionsCompleted++;
                   console.log(
@@ -8533,10 +9170,15 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this section: "${section.name}".
 - Apply ONLY the approved notes that reference ${section.sectionType === 'relationship_dynamics' ? 'relationship dynamics' : 'ensemble dynamics'}.
 - Preserve the section header exactly as provided.
-- Output the FULL rewritten section in natural prose.
-- If no notes apply to this section, return the original text verbatim unchanged.
+- Output STRUCTURED FIELD FORMAT, not natural prose. Each field on its own line with the field name in CAPS followed by colon.
+${section.sectionType === 'relationship_dynamics'
+  ? '- Fields: DEFAULT MODE, A NEEDS FROM B, B NEEDS FROM A, POWER LEVERAGE (format: A leverage ↔ B leverage), FRICTION AXIS, BREAK CONDITION, RECOVERY PATTERN, SCENE TYPES GENERATED [free text] (category), ARC TURNING POINT [place, Act]'
+  : '- Fields: GROUP DEFAULT, FACTION MAP, FRACTURE POINT, RECOVERY PATTERN, GLUE CHARACTER, FRICTION PAIR, TONAL BALANCE (character role), ENSEMBLE SCENE STRUCTURE'}
+- Each RELATIONSHIP block covers ONE named pair. Use "Character A ↔ Character B" as the block heading inside the section.
+- Base your analysis on the script evidence in the ORIGINAL CONTENT above.
+- If no notes apply to this section, return the ORIGINAL CONTENT unchanged.
 - Do NOT output any other sections. Do NOT output the full bible.
-- Return valid JSON with "rewritten_text" containing ONLY this section's content.`;
+- Return valid JSON with "rewritten_text" containing ONLY this section's structured content.`;
 
                   try {
                     let rawSection = await perCharLLM(perCharSystemBase, nonCharUserPrompt);
@@ -8603,7 +9245,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                   sectionsCompleted++;
                   assembledSections.push(section.body);
                 }
-              } else if (isAffected(section)) {
+              } else if (rewriteAll || isAffected(section)) {
                 charLoopIndex++;
                 sectionsCompleted++;
                 console.log(
@@ -8633,6 +9275,9 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this single character profile: "${section.name}".
 - Apply ONLY the approved notes that reference this character.
 - Preserve the section header exactly as provided.
+- INCLUDE the character's distinct VOICE: define speech register (formal/colloquial/archaic), vocabulary level, verbal tics (repeated phrases/patterns), and avoidances (words or topics the character would never say).
+- Voice must be consistent with the character's social_position, functional_role, and world_embedding as defined in the Schema v2 requirements.
+- If previously evaluated voice components exist (from meta_json), preserve or improve them — do NOT regress.
 - Output the FULL rewritten character profile in natural prose — 300–800 words.
 - If no notes apply to this character, return the original text verbatim unchanged.
 - Do NOT output any other character profiles. Do NOT output the full bible.
@@ -8690,7 +9335,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
                         ...((version as any)?.meta_json || {}),
                         bg_generating: true,
                         characters_total: sections.filter(s => s.sectionType === 'character').length,
-                        characters_to_rewrite: totalAffected,
+                        characters_to_rewrite: effectiveTotalAffected,
                         characters_list: sections.map(s => s.name),
                         // NEW: unified section tracking for surgical rewrite
                         sections_total: sections.length,
@@ -8716,6 +9361,32 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
               }
             }
 
+            // ── VOICE QUALITY GATE — post-rewrite verification ──
+            // Check voice component presence in rewritten character sections
+            // and flag if coverage is insufficient across Tier 1 characters.
+            // Non-fatal — warnings only, no blockers or rewrite rejection.
+            try {
+              const voiceCoverageCheck = checkVoiceComponentPresence(assembledSections, updatedNames);
+              if (voiceCoverageCheck.coveragePercent < 50 && voiceCoverageCheck.characterCount > 0) {
+                const metaUpdate: any = (version as any)?.meta_json || {};
+                metaUpdate.voiceCoverageWarning = {
+                  coveragePercent: voiceCoverageCheck.coveragePercent,
+                  charactersWithVoice: voiceCoverageCheck.charactersWithVoice,
+                  totalTier1Characters: voiceCoverageCheck.characterCount,
+                  message: `Voice components below 50% coverage (${voiceCoverageCheck.coveragePercent}% of ${voiceCoverageCheck.characterCount} characters)`,
+                };
+                await supabase.from("project_document_versions")
+                  .update({ meta_json: metaUpdate })
+                  .eq("id", versionId)
+                  .maybeSingle();
+                console.log(
+                  `[dev-engine-v2][voice-gate] Warning: voice coverage ${voiceCoverageCheck.coveragePercent}% (${voiceCoverageCheck.charactersWithVoice}/${voiceCoverageCheck.characterCount} characters)`
+                );
+              }
+            } catch (vcErr: any) {
+              console.warn("[dev-engine-v2][voice-gate] voice quality gate failed (non-fatal):", vcErr?.message);
+            }
+
             // Step 5: Assemble final document
             // Extract any header material before the first ## section
             const firstSectionMatch = fullText.match(/^##\s+/m);
@@ -8733,9 +9404,14 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             };
 
             console.log(
-              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${totalAffected} affected sections rewritten, ${sections.length - totalAffected} unaffected sections preserved`
+              `[dev-engine-v2] rewrite: per-character COMPLETE — ${updatedCount}/${effectiveTotalAffected} affected sections rewritten, ${sections.length - effectiveTotalAffected} unaffected sections preserved`
             );
           }
+        }
+        } catch (perCharErr: any) {
+            console.error("[dev-engine-v2] rewrite: per-character processing failed (falling through to single-pass):", perCharErr?.message);
+            isPerCharRewrite = false;
+            rewrittenText = "";
         }
       }
 
@@ -8922,19 +9598,24 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         }
       }
 
-      // ── Style eval on rewrite output ──
-      const rwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";
-      const { target: rwStyleTarget } = await loadVoiceTargets(supabase, projectId, rwLane);
-      const rwStyleEval = await runStyleEval(supabase, rewrittenText, projectId, documentId, newVersion.id, rwLane, rwStyleTarget);
-      if (rwStyleEval) {
-        // Merge style eval meta into version meta_json
-        const mergedMeta = { ...(newVersion.meta_json || {}), ...rwStyleEval.metaFields };
-        await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
-        newVersion.meta_json = mergedMeta;
+      // ── Style eval on rewrite output (non-fatal — failure must not block success response) ──
+      try {
+        const rwLane = (await supabase.from("projects").select("assigned_lane").eq("id", projectId).single())?.data?.assigned_lane || "independent-film";
+        const { target: rwStyleTarget } = await loadVoiceTargets(supabase, projectId, rwLane);
+        const rwStyleEval = await runStyleEval(supabase, rewrittenText, projectId, documentId, newVersion.id, rwLane, rwStyleTarget);
+        if (rwStyleEval) {
+          const mergedMeta = { ...(newVersion.meta_json || {}), ...rwStyleEval.metaFields };
+          await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = mergedMeta;
+        }
+      } catch (styleErr: any) {
+        console.warn("[dev-engine-v2] rewrite: style eval failed (non-fatal):", styleErr?.message);
       }
 
-      // Store rewrite run with schema_version and deliverable metadata
-      const { data: run } = await supabase.from("development_runs").insert({
+      // Store rewrite run with schema_version and deliverable metadata (non-fatal)
+      let run: any = null;
+      try {
+        const runResult = await supabase.from("development_runs").insert({
         project_id: projectId,
         document_id: documentId,
         version_id: newVersion.id,
@@ -8952,6 +9633,10 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         format: effectiveFormat,
         schema_version: SCHEMA_VERSION,
       }).select().single();
+            run = runResult;
+          } catch (runErr: any) {
+            console.warn("[dev-engine-v2] rewrite: development_runs insert failed (non-fatal):", runErr?.message);
+          }
 
       // ── Mark approved notes as resolved immediately after rewrite ──
       // Without this, approved notes are never marked resolved in development_notes,
@@ -9024,6 +9709,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       if (!version) throw new Error("Version not found");
 
       const fullText = version.plaintext || "";
+      console.log(`[dev-engine-v2] rewrite-plan: versionId=${versionId} fullText.length=${fullText.length} trimLen=${fullText.trim().length}`);
       const { data: sourceDoc } = await supabase.from("project_documents")
         .select("doc_type")
         .eq("id", documentId)
@@ -9248,6 +9934,32 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         console.warn(`[dev-engine-v2] rewrite-plan: context pack resolution failed (proceeding without):`, ctxErr?.message || ctxErr);
       }
 
+      // ── STALE NOTE FILTER: auto-resolve notes whose content no longer exists in the doc ──
+      let freshNotes = approvedNotes || [];
+      if (Array.isArray(approvedNotes) && approvedNotes.length > 0 && fullText.trim().length > 100) {
+        const STALE_STOP = new Set(["the","and","for","with","not","but","are","was","had","has","its","all","can","you","out","did","get","got","say","see","way","new","now","how","why","use","own","our","two","may","set","put","end","let","try","ask","too","any","old","off","per","big","far","yet","add","run","won","buy","cut","hit","fix","via","ago","lot","bad","top","low","due","per","non","nor","key","per","via","red","hot","ago","lot","bad","top","low","due","non","nor","key"]);
+        const staleIds: string[] = [];
+        const kept: any[] = [];
+        const fullTextLower = fullText.toLowerCase();
+        for (const note of approvedNotes) {
+          if (note.category === "user_direction" || note.category === "direction") { kept.push(note); continue; }
+          const rawText = [note.note, note.title, note.summary, note.note_key, note.resolution_directive, note.description, ...(Array.isArray(note.selectedOptions) ? note.selectedOptions : [])].filter(Boolean).join(" ").toLowerCase();
+          const terms = [...new Set(rawText.replace(/[^a-z0-9\s]/g," ").split(/\s+/).filter((w: string) => w.length > 2 && !STALE_STOP.has(w)))];
+          if (terms.length === 0) { kept.push(note); continue; }
+          terms.some((t: string) => fullTextLower.includes(t)) ? kept.push(note) : note.id && typeof note.id === "string" && note.id.length > 10 && staleIds.push(note.id);
+        }
+        if (staleIds.length > 0) {
+          try {
+            await supabase.from("project_notes").update({ status: "resolved", resolved_by: "auto_stale_detection", resolved_at: new Date().toISOString() }).in("id", staleIds);
+            console.log(`[dev-engine-v2] stale_note: auto-resolved ${staleIds.length} notes: ${staleIds.join(",")}`);
+          } catch (e: any) { console.warn(`[dev-engine-v2] stale_note: resolve failed (non-fatal):`, e.message); }
+        }
+        freshNotes = kept;
+        if (staleIds.length > 0 || kept.length !== approvedNotes.length) {
+          console.log(`[dev-engine-v2] stale_note: ${approvedNotes.length} in → ${kept.length} kept, ${staleIds.length} stale`);
+        }
+      }
+
       const { data: planRun } = await supabase.from("development_runs").insert({
         project_id: projectId,
         document_id: documentId,
@@ -9258,7 +9970,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           total_chunks: chunkTexts.length,
           chunk_char_counts: chunkTexts.map(c => c.length),
           original_char_count: fullText.length,
-          approved_notes: approvedNotes || [],
+          approved_notes: freshNotes,
           protect_items: protectItems || [],
           chunk_texts: chunkTexts,
           doc_type: sourceDocType,
@@ -9506,7 +10218,11 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             // Extract section label from the first ## header in the chunk
             const headerMatch = chunkText.match(/^##\s+(.+)/m);
             const sectionLabel = headerMatch ? headerMatch[1].trim() : "";
-            const labelWords = (sectionLabel || "")
+            // Strip parenthetical role — e.g. "1. Sarah (Protagonist)" → "1. Sarah"
+            // This prevents generic role words like "protagonist", "antagonist" from
+            // matching note text and triggering unnecessary full rewrites.
+            const nameOnly = sectionLabel.replace(/\s*\([^)]*\)\s*/g, "").trim();
+            const labelWords = (nameOnly || sectionLabel || "")
               .toLowerCase()
               .replace(/[^a-z0-9\s]/g, " ")
               .split(/\s+/)
@@ -9530,6 +10246,11 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         }
       }
 
+      // ── SAFETY NET: if rewrite produced no content, fall back to original text ──
+      if (!rewrittenChunk || rewrittenChunk.trim().length < 20) {
+        rewrittenChunk = chunkText;
+      }
+
       return new Response(JSON.stringify({
         chunkIndex,
         rewrittenText: rewrittenChunk.trim(),
@@ -9541,8 +10262,15 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 
     // ── REWRITE-ASSEMBLE (chunked rewrite step 3) ──
     if (action === "rewrite-assemble") {
-      const { projectId, documentId, versionId, planRunId, assembledText, rewriteModeSelected, rewriteModeEffective, rewriteModeReason, rewriteModeDebug, rewriteProbe, deliverableType: assembleDeliverableType } = body;
-      if (!projectId || !documentId || !versionId || !assembledText) throw new Error("projectId, documentId, versionId, assembledText required");
+      let { projectId, documentId, versionId, planRunId, assembledText, rewriteModeSelected, rewriteModeEffective, rewriteModeReason, rewriteModeDebug, rewriteProbe, deliverableType: assembleDeliverableType } = body;
+      if (!projectId || !documentId || !versionId || !assembledText) {
+        const missing: string[] = [];
+        if (!projectId) missing.push('projectId');
+        if (!documentId) missing.push('documentId');
+        if (!versionId) missing.push('versionId');
+        if (!assembledText || !assembledText.trim()) missing.push('assembledText');
+        throw new Error('Missing required params: ' + missing.join(', '));
+      }
 
       // ── FAIL-CLOSED: reject assembled text containing failed-chunk placeholders ──
       if (containsFailedPlaceholders(assembledText)) {
@@ -9713,6 +10441,12 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         const generatorId = isEpisodicStrategy
           ? "dev-engine-v2-rewrite-episodic"
           : "dev-engine-v2-rewrite-chunked";
+
+        // ── DEDUP: for concept_brief chunked rewrites, deduplicate duplicate ## section headers ──
+        if (effectiveDeliverable === "concept_brief") {
+          assembledText = deduplicateConceptBriefSections(assembledText);
+        }
+
         const { data: nv, error: vErr } = await writeVersionSafe(supabase, {
           documentId,
           versionNumber: nextVersion,
@@ -9801,13 +10535,17 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // Store canonConstraintBlock for use in development_runs output_json
       const violationConstraintBlock = canonConstraintBlock;
 
-      // ── Style eval on chunked rewrite output ──
-      const chunkStyleTarget = (await loadVoiceTargets(supabase, projectId, chunkLane)).target;
-      const chunkStyleEval = await runStyleEval(supabase, assembledText, projectId, documentId, newVersion.id, chunkLane, chunkStyleTarget);
-      if (chunkStyleEval) {
-        const mergedMeta = { ...(newVersion.meta_json || {}), ...chunkStyleEval.metaFields };
-        await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
-        newVersion.meta_json = mergedMeta;
+      // ── Style eval on chunked rewrite output (non-fatal — wrapped in try/catch) ──
+      try {
+        const chunkStyleTarget = (await loadVoiceTargets(supabase, projectId, chunkLane)).target;
+        const chunkStyleEval = await runStyleEval(supabase, assembledText, projectId, documentId, newVersion.id, chunkLane, chunkStyleTarget);
+        if (chunkStyleEval) {
+          const mergedMeta = { ...(newVersion.meta_json || {}), ...chunkStyleEval.metaFields };
+          await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
+          newVersion.meta_json = mergedMeta;
+        }
+      } catch (styleErr: any) {
+        console.warn("[dev-engine-v2] rewrite-assemble: style eval failed (non-fatal):", styleErr?.message);
       }
 
       const isEpisodicRun = planOutput?.strategy === "episodic_indexed";
@@ -9819,30 +10557,58 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           : `Episode-scoped rewrite across ${runEpisodeCount} episodes. Applied ${notesCount} notes.`)
         : `Full chunked rewrite. Applied ${notesCount} notes.`;
 
-      const { data: run } = await supabase.from("development_runs").insert({
-        project_id: projectId,
-        document_id: documentId,
-        version_id: newVersion.id,
-        user_id: user.id,
-        run_type: "REWRITE",
-        output_json: {
-          rewrite_mode_used: isEpisodicRun ? "episodic" : "chunk",
-          rewrite_mode_selected: rewriteModeSelected || "auto",
-          rewrite_mode_effective: rewriteModeEffective || (isEpisodicRun ? "episodic" : "chunk"),
-          rewrite_mode_reason: rewriteModeReason || (isEpisodicRun ? "episodic_indexed" : "auto_probe_chunk"),
-          rewrite_mode_debug: rewriteModeDebug || null,
-          rewrite_probe: rewriteProbe || null,
-          rewritten_text: `[${assembledText.length} chars]`,
-          changes_summary: changesSummaryText,
-          source_version_id: versionId,
-          source_doc_id: documentId,
-          ...(isEpisodicRun ? { episode_count: runEpisodeCount, affected_episodes: runAffectedCount } : {}),
-          canon_violations: violationConstraintBlock ? (cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || 0) : 0,
-          canon_violation_constraint_block: violationConstraintBlock || null,
-          human_review_flag: humanReviewFlag || false,
-        },
-        schema_version: SCHEMA_VERSION,
-      }).select().single();
+      let run: any = null;
+      try {
+        const { data: runData } = await supabase.from("development_runs").insert({
+          project_id: projectId,
+          document_id: documentId,
+          version_id: newVersion.id,
+          user_id: user.id,
+          run_type: "REWRITE",
+          output_json: {
+            rewrite_mode_used: isEpisodicRun ? "episodic" : "chunk",
+            rewrite_mode_selected: rewriteModeSelected || "auto",
+            rewrite_mode_effective: rewriteModeEffective || (isEpisodicRun ? "episodic" : "chunk"),
+            rewrite_mode_reason: rewriteModeReason || (isEpisodicRun ? "episodic_indexed" : "auto_probe_chunk"),
+            rewrite_mode_debug: rewriteModeDebug || null,
+            rewrite_probe: rewriteProbe || null,
+            rewritten_text: `[${assembledText.length} chars]`,
+            changes_summary: changesSummaryText,
+            source_version_id: versionId,
+            source_doc_id: documentId,
+            ...(isEpisodicRun ? { episode_count: runEpisodeCount, affected_episodes: runAffectedCount } : {}),
+            canon_violations: violationConstraintBlock ? (cceResult?.driftResult?.findings?.filter((f: any) => f.severity === "violation").length || 0) : 0,
+            canon_violation_constraint_block: violationConstraintBlock || null,
+            human_review_flag: humanReviewFlag || false,
+          },
+          schema_version: SCHEMA_VERSION,
+        }).select().single();
+        run = runData;
+      } catch (runErr: any) {
+        console.warn("[dev-engine-v2] rewrite-assemble: development_runs insert failed (non-fatal):", runErr?.message);
+      }
+
+      // ── Mark approved notes as resolved after chunked rewrite ──
+      // Without this, approved notes from the plan run are never marked resolved,
+      // so the next notes run sees them as still-open and re-raises them indefinitely.
+      const assembleApprovedNotes = planOutput?.approved_notes || [];
+      if (Array.isArray(assembleApprovedNotes) && assembleApprovedNotes.length > 0) {
+        const assembleNoteIds = assembleApprovedNotes
+          .map((n: any) => n.id || n.note_key)
+          .filter(Boolean);
+        if (assembleNoteIds.length > 0) {
+          try {
+            await supabase.from("development_notes")
+              .update({ resolved: true, resolved_in_version: newVersion.id })
+              .eq("document_id", documentId)
+              .eq("resolved", false)
+              .in("note_key", assembleNoteIds);
+            console.log(`[dev-engine-v2] rewrite-assemble: marked ${assembleNoteIds.length} approved notes resolved`, assembleNoteIds);
+          } catch (resolveErr: any) {
+            console.warn("[dev-engine-v2] rewrite-assemble: mark-resolved failed (non-fatal):", resolveErr?.message);
+          }
+        }
+      }
 
       // Trigger async convergence scoring in background
       if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
@@ -10402,6 +11168,7 @@ INSTRUCTIONS:
         "Generate the " + (doc.doc_type || "treatment").replace(/_/g, " ") + " for: " + (project.title || "this project") + ".",
         "Production type: " + format + ".",
         "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Preserve the section header exactly as given.",
+        "Do NOT create duplicate ## sections. Replace the content of the relevant section — do NOT append new sections to the document.",
         narrativeBlock,
         constraintPackBlock,
         characterFactsBlock,
@@ -10879,6 +11646,9 @@ INSTRUCTIONS:
         const strippedContent = s.content.replace(/^#{1,6}\s+[^\n]+\n*/," ").trim();
         return `## ${actLabel}\n\n${strippedContent}`;
       }).join("\n\n").replace(/\n{3,}/g, "\n\n");
+
+      // Safety dedup: if this is a concept_brief, clean up any duplicated sections the LLM may have created
+      if (doc.doc_type === "concept_brief") assembledText = deduplicateConceptBriefSections(assembledText);
 
       const updateResult = await supabase.from("project_document_versions").update({
         plaintext: assembledText,
@@ -13249,6 +14019,8 @@ Previous attempt problems: ${validation.reasons.join("; ")}`;
             .from("project_document_versions")
             .select("plaintext, version_number")
             .eq("document_id", d.id)
+            .eq("is_current", true)
+            .eq("approval_status", "approved")
             .order("version_number", { ascending: false })
             .limit(1)
             .single();
@@ -29656,7 +30428,7 @@ CRITICAL:
             characters: ver?.characters || [],
           };
         });
-      } else {
+} else {
         // Fallback: split from plaintext — but strategy depends on doc_type
         // For sectioned dev types (treatment, story_outline, etc.), use ## headers.
         // For script-like types, use INT./EXT. sluglines.
@@ -29698,7 +30470,7 @@ CRITICAL:
           }
         }
 
-        scenes = boundaries.map((b, i) => {
+scenes = boundaries.map((b, i) => {
           const start = b.index;
           const end = boundaries[i + 1]?.index ?? text.length;
           const sceneText = text.substring(start, end).trim();
@@ -29931,95 +30703,123 @@ CRITICAL:
         // We create a run record, fire the rewrite async via waitUntil,
         // and return immediately so the frontend can poll status.
         const runId = crypto.randomUUID();
+        console.log("[story-outline-enqueue] generating runId:", runId);
         const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
         const effUserId = user?.id || proj?.user_id || null;
-        await supabase.from("rewrite_runs").insert({
-          project_id: projectId, user_id: effUserId,
+        console.log("[story-outline-enqueue] auth context:", {
+          userId: user?.id, projUserId: proj?.user_id, effUserId,
+          sourceDocId, sourceVersionId, projectId,
+        });
+        const { data: insertResult, error: insertErr } = await supabase.from("rewrite_runs").insert({
+          id: runId, project_id: projectId, user_id: effUserId,
           source_doc_id: sourceDocId, source_version_id: sourceVersionId,
           status: "running",
           target_scene_numbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
         }).select("id").single();
-        if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
-          (globalThis as any).EdgeRuntime.waitUntil(
-            (async () => {
-              try {
-                const _gw = resolveGateway();
-                const _apiKey = _gw.apiKey;
-                const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-                const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
-                const supabaseServiceKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-                const bgSupabase = createClient(supabaseUrl, supabaseAnonKey, {
-                  auth: { persistSession: false, autoRefreshToken: false },
-                  global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
-                });
-                const { data: doc } = await bgSupabase.from("project_documents").select("doc_type").eq("id", sourceDocId).single();
-                if (doc?.doc_type !== "story_outline") throw new Error("Not a story outline");
-                const { data: version } = await bgSupabase.from("project_document_versions").select("plaintext, version_number").eq("id", sourceVersionId).single();
-                if (!version) return;
-                const trimmed = (version.plaintext || "").trim();
-                if (!trimmed.startsWith("{")) return;
-                const storyOutlineJSON = JSON.parse(trimmed);
-                if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) return;
-                const totalEntries = storyOutlineJSON.entries.length;
-                const newVersionNumber = (version.version_number || 1) + 1;
-                const { data: proj } = await bgSupabase.from("projects").select("title, format, assigned_lane, user_id").eq("id", projectId).maybeSingle();
-                const effUid = user?.id || proj?.user_id || null;
-                const { data: newVer } = await bgSupabase.from("project_document_versions").upsert({
-                  document_id: sourceDocId, version_number: newVersionNumber, plaintext: "",
-                  is_current: false, created_by: effUid,
-                  meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
-                }, { onConflict: "document_id,version_number" }).select().single();
-                if (!newVer?.id) return;
-                await bgSupabase.from("project_document_versions").update({ is_current: false }).eq("document_id", sourceDocId).neq("id", newVer.id);
-                await bgSupabase.from("project_document_chunks").insert(storyOutlineJSON.entries.map((e: any, idx: number) => ({
-                  version_id: newVer.id, chunk_index: idx,
-                  chunk_key: "moment_" + (e.number || (idx + 1)),
-                  status: "pending",
-                  char_count: (e.description || "").length,
-                  meta_json: { label: e.title || "Moment " + (e.number || (idx + 1)), moment_number: e.number || (idx + 1) },
-                })));
-                for (let i = 0; i < storyOutlineJSON.entries.length; i++) {
-                  await bgSupabase.from("project_document_chunks").update({ status: "running" }).eq("version_id", newVer.id).eq("chunk_index", i);
-                  const entry = storyOutlineJSON.entries[i];
-                  const prevEntry = i > 0 ? storyOutlineJSON.entries[i - 1] : null;
-                  const nextEntry = i < storyOutlineJSON.entries.length - 1 ? storyOutlineJSON.entries[i + 1] : null;
-                  const entryNum = entry.number || (i + 1);
-                  let ctx = "";
-                  if (prevEntry) ctx += "\nPREVIOUS MOMENT (" + (prevEntry.number || i) + "):\nTitle: " + (prevEntry.title || "") + "\nDescription: " + (prevEntry.description || "");
-                  ctx += "\n\nCURRENT MOMENT (" + entryNum + "):\nTitle: " + (entry.title || "") + "\nDescription: " + (entry.description || "");
-                  if (nextEntry) ctx += "\n\nNEXT MOMENT (" + (nextEntry.number || (i + 2)) + "):\nTitle: " + (nextEntry.title || "") + "\nDescription: " + (nextEntry.description || "");
-                  const notesCtx = (approvedNotes || []).length > 0 ? "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map((n: any) => "- " + (n.description || n.note || "")).join("\n") : "";
-                  const systemMsg = "You are rewriting ONE moment of a story outline for \"" + (proj?.title || "this project") + "\".\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are — do NOT change them.\n- The previous and next moments are provided for continuity context.\n- Maintain consistent voice, pacing, and narrative tone with adjacent moments.\n- Write vivid present-tense prose. 2-5 sentences describing what happens in this moment, the dramatic purpose, and any emotional shift.\n- Do NOT merge, split, or reorder moments. Rewrite only this one moment.\n- Output ONLY valid JSON: {\"number\": " + entryNum + ", \"title\": \"...\", \"description\": \"...\"" + notesCtx + "}";
-                  let rewrittenEntry = entry;
-                  try {
-                    const raw = await callAI(_apiKey, "openrouter/deepseek/deepseek-v4-flash", systemMsg, "MOMENT TO REWRITE (with context):" + ctx, 0.0, 2000);
-                    const m = (raw || "").match(/\{[\s\S]*?\}/);
-                    if (m) {
-                      const p = JSON.parse(m[0]);
-                      if (p.description) rewrittenEntry = { number: entryNum, title: entry.title || p.title || "", description: p.description };
-                    }
-                  } catch { /* keep original */ }
-                  await bgSupabase.from("project_document_chunks").update({ status: "done", content: rewrittenEntry.description, char_count: rewrittenEntry.description.length }).eq("version_id", newVer.id).eq("chunk_index", i);
-                }
-                const outputJSON = {
-                  title: storyOutlineJSON.title || proj?.title || "Story Outline",
-                  format: storyOutlineJSON.format || proj?.format || "film",
-                  entries: storyOutlineJSON.entries.map((e: any, idx: number) => ({ number: e.number || (idx + 1), title: e.title, description: e.description })),
-                };
-                await bgSupabase.from("project_document_versions").update({ plaintext: JSON.stringify(outputJSON, null, 2), meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries } }).eq("id", newVer.id);
-                await bgSupabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", sourceDocId);
-                await bgSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
-              } catch (err: any) {
-                console.error("[story-outline-bg] rewrite failed:", err?.message);
-                await bgSupabase.from("rewrite_runs").update({ status: "failed", summary: err?.message }).eq("id", runId);
+        if (insertErr || !insertResult) {
+          console.error("[story-outline-enqueue] insert failed:", insertErr?.message, "(runId:", runId, ")", {
+            error: insertErr, insertResult,
+          });
+          throw new Error(insertErr?.message || "Failed to create rewrite run record");
+        }
+        console.log("[story-outline-enqueue] insert succeeded", {
+          runId, insertResultId: insertResult.id,
+          idsMatch: runId === insertResult.id,
+          projectId, sourceDocId, sourceVersionId,
+          effUserId, insertErr,
+        });
+        console.log("[story-outline-enqueue] inserted rewrite_runs row", {
+          runId, projectId, sourceDocId, sourceVersionId,
+          effUserId, insertResultId: insertResult.id,
+          targetSceneNumbers: Array.isArray(targetSceneNumbers) && targetSceneNumbers.length > 0 ? targetSceneNumbers : null,
+        });
+        // Capture outer supabase (service_role) for error reporting — always available.
+        const _outerSupabase = supabase;
+        // Use _apiKey from outer scope (already resolved at line 5654)
+        const _outerApiKey = OPENROUTER_API_KEY;
+
+        // Helper: use waitUntil if available, with safe fallback
+        const _bgGuard = (p: Promise<any>): boolean => {
+          try {
+            const rt = (globalThis as any).EdgeRuntime;
+            if (typeof rt !== "undefined" && rt?.waitUntil) {
+              rt.waitUntil(p);
+              return true;
+            }
+          } catch {}
+          return false;
+        };
+
+        const BGE_TASK = (async () => {
+          let _innerSupabase: ReturnType<typeof createClient> | null = null;
+          try {
+            const bUrl   = Deno.env.get("SUPABASE_URL")!;
+            const bAnon  = Deno.env.get("SUPABASE_ANON_KEY")!;
+            const bSvc   = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE")
+                       ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+            _innerSupabase = createClient(bUrl, bAnon, {
+              auth: { persistSession: false, autoRefreshToken: false },
+              global: { headers: { Authorization: `Bearer ${bSvc}` } },
+            });
+            await processStoryOutlineRewrite(_innerSupabase, _outerApiKey, {
+              runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers,
+              user, proj,
+            });
+            await _innerSupabase.from("rewrite_runs").update({ status: "done" }).eq("id", runId);
+          } catch (err: any) {
+            console.error("[story-outline-bg] rewrite failed:", err?.message);
+            // Use outer supabase (always works) for error status — never trust _innerSupabase in catch
+            await _outerSupabase.from("rewrite_runs")
+              .update({ status: "failed", summary: err?.message?.slice(0, 500) ?? "Unknown error" })
+              .eq("id", runId)
+              .catch((e2: any) => console.error("[story-outline-bg] outer status-update failed:", e2?.message));
+          }
+        })();
+
+        if (!_bgGuard(BGE_TASK)) {
+          // EdgeRuntime.waitUntil unavailable — self-chain via HTTP.
+          console.log("[story-outline-enqueue] waitUntil unavailable — self-chain fallback");
+          const SELF_PROMISE = (async () => {
+            try {
+              const sUrl = Deno.env.get("SUPABASE_URL")!;
+              const sKey = Deno.env.get("SERVICE_ROLE_KEY_FOR_SUPABASE")
+                        ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+              const resp = await fetch(`${sUrl}/functions/v1/dev-engine-v2`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${sKey}` },
+                body: JSON.stringify({
+                  action: "process_story_outline_rewrite",
+                  runId, projectId, sourceDocId, sourceVersionId, approvedNotes, targetSceneNumbers,
+                  userId: user?.id || null,
+                }),
+              });
+              if (!resp.ok) {
+                const errText = await resp.text().catch(() => "unknown");
+                console.error("[story-outline-enqueue] self-chain HTTP failed:", resp.status, errText.slice(0, 200));
+                // Self-chain failed — mark run as failed via outer supabase
+                await _outerSupabase.from("rewrite_runs")
+                  .update({ status: "failed", summary: `Self-chain HTTP ${resp.status}` })
+                  .eq("id", runId)
+                  .catch((e2: any) => console.error("[story-outline-enqueue] status-update after self-chain failure:", e2?.message));
               }
-            })()
-          );
+            } catch (selfErr: any) {
+              console.error("[story-outline-enqueue] self-chain error:", selfErr?.message);
+              await _outerSupabase.from("rewrite_runs")
+                .update({ status: "failed", summary: selfErr?.message?.slice(0, 200) ?? "Self-chain error" })
+                .eq("id", runId)
+                .catch((e2: any) => console.error("[story-outline-enqueue] status-update after self-chain exception:", e2?.message));
+            }
+          })();
+          // Try waitUntil one more time for the self-chain fetch; if it fails, fire-and-forget (error handler already set up)
+          _bgGuard(SELF_PROMISE);
         }
         // Parse entries count BEFORE waitUntil (it's available right after JSON.parse)
+        // Need our own query — `version` inside waitUntil isn't in scope here
+        const { data: _previewVer } = await supabase.from("project_document_versions")
+          .select("plaintext").eq("id", sourceVersionId).maybeSingle();
         const _entriesPreview = (() => {
           try {
-            const trimmed = (version?.plaintext || "").trim();
+            const trimmed = (_previewVer?.plaintext || "").trim();
             if (trimmed.startsWith("{")) {
               const preview = JSON.parse(trimmed);
               return Array.isArray(preview.entries) ? preview.entries.length : 0;
@@ -30431,21 +31231,118 @@ CRITICAL:
       if (!projectId) throw new Error("projectId required");
 
       // Get run record to find the output version
-      const { data: run } = await supabase.from("rewrite_runs")
-        .select("source_doc_id, source_version_id, status, meta_json")
+      let { data: run } = await supabase.from("rewrite_runs")
+        .select("source_doc_id, source_version_id, status, id, user_id")
         .eq("id", runId).maybeSingle();
 
-      if (!run) {
-        return new Response(JSON.stringify({ error: "Run not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // Retry the runId lookup up to 3 times with 500ms delay.
+      // This handles transient read-after-write consistency issues
+      // across the Supabase connection pool.
+      let retries = 0;
+      while (!run && retries < 3) {
+        await new Promise(r => setTimeout(r, 500));
+        retries++;
+        console.warn("[story-outline-status] retrying runId lookup", {
+          runId, projectId, attempt: retries,
+        });
+        const { data: retryRun } = await supabase.from("rewrite_runs")
+          .select("source_doc_id, source_version_id, status, id, user_id")
+          .eq("id", runId).maybeSingle();
+        if (retryRun) {
+          run = retryRun;
+          console.log("[story-outline-status] retry succeeded", { runId, attempt: retries });
+        }
       }
 
-      // Get the latest version created by this run (output version)
-      const { data: version } = await supabase.from("project_document_versions")
+      // Fallback: try to find run by sourceVersionId when runId lookup fails.
+      // This handles frontend stale-runId scenarios where the ref/sessionStorage
+      // carries a runId from a previous session that no longer matches reality.
+      if (!run && body.sourceVersionId) {
+        console.warn("[story-outline-status] Run not found by runId — falling back to sourceVersionId", {
+          runId, projectId, sourceVersionId: body.sourceVersionId,
+        });
+        const { data: fallbackRun } = await supabase.from("rewrite_runs")
+          .select("id, source_doc_id, source_version_id, status, user_id")
+          .eq("project_id", projectId)
+          .eq("source_version_id", body.sourceVersionId)
+          .in("status", ["running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackRun) {
+          console.log("[story-outline-status] fallback succeeded — found run by sourceVersionId", {
+            foundRunId: fallbackRun.id, originalRunId: runId,
+          });
+          run = fallbackRun;
+        }
+      }
+
+      if (!run) {
+        // Ultimate fallback: query the latest active run for this project
+        // regardless of runId or sourceVersionId. This bypasses any
+        // runId mismatch or timing issue entirely.
+        const { data: latestRun } = await supabase.from("rewrite_runs")
+          .select("id, source_doc_id, source_version_id, status, user_id")
+          .eq("project_id", projectId)
+          .in("status", ["running", "queued"])
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestRun) {
+          console.log("[story-outline-status] ultimate fallback succeeded — found latest project run", {
+            foundRunId: latestRun.id, originalRunId: runId,
+            sourceVersionId: latestRun.source_version_id,
+            status: latestRun.status,
+          });
+          run = latestRun;
+        } else {
+          // If we STILL can't find any run, return retry signal.
+          // The polling loop will keep trying.
+          console.warn("[story-outline-status] no run found via any lookup path", {
+            runId, projectId,
+            expectedSourceVersionId: body.sourceVersionId || "(not sent)",
+          });
+          return new Response(JSON.stringify({ 
+            total: 0, done: 0, queued: 0, running: 0, failed: 0, 
+            status: "retry", 
+          }), { 
+            status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+
+      console.log("[story-outline-status] run found", {
+        runId: run.id || runId, projectId,
+        sourceDocId: run.source_doc_id,
+        sourceVersionId: run.source_version_id,
+        status: run.status,
+        userId: run.user_id,
+      });
+
+      // Get the latest version created by this run (output version).
+      // Use run.user_id (the actual column) instead of run.meta_json?.user_id
+      // (always null — meta_json is never set on the enqueue insert).
+      const userIdFilter = run.user_id || null;
+      let { data: version } = await supabase.from("project_document_versions")
         .select("id, plaintext, version_number, meta_json")
         .eq("document_id", run.source_doc_id)
-        .eq("created_by", run.meta_json?.user_id || null)
+        .eq("created_by", userIdFilter)
         .order("version_number", { ascending: false })
         .limit(1).single();
+
+      // Fallback: if created_by filter didn't match, try without it.
+      // This handles cases where run.user_id doesn't match the version's created_by
+      // (e.g. background task sets a different user_id, or run was inserted without user_id).
+      if (!version) {
+        console.warn("[story-outline-status] created_by filter missed — falling back to unfiltered latest version");
+        const { data: fallbackVersion } = await supabase.from("project_document_versions")
+          .select("id, plaintext, version_number, meta_json")
+          .eq("document_id", run.source_doc_id)
+          .order("version_number", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (fallbackVersion) version = fallbackVersion;
+      }
 
       if (!version) {
         return new Response(JSON.stringify({ total: 0, done: 0, queued: 0, running: 0, failed: 0, status: "no_output_version" }), {
@@ -30455,7 +31352,7 @@ CRITICAL:
 
       // Check chunks for this version
       const { data: chunks } = await supabase.from("project_document_chunks")
-        .select("chunk_index, status, chunk_key")
+        .select("chunk_index, status, chunk_key, meta_json")
         .eq("version_id", version.id)
         .order("chunk_index", { ascending: true });
 
@@ -30468,6 +31365,13 @@ CRITICAL:
       const runStatus = run.status || "running";
       const isComplete = runStatus === "done" || runStatus === "failed" || (total > 0 && done === total);
 
+      const moments = (chunks || []).map(c => ({
+        chunk_index: c.chunk_index,
+        scene_number: c.chunk_index + 1,
+        scene_heading: (c.meta_json?.label as string) || c.chunk_key || `Moment ${c.chunk_index + 1}`,
+        status: c.status,
+      }));
+
       return new Response(JSON.stringify({
         total, done, queued, running, failed,
         status: isComplete ? (runStatus === "failed" ? "failed" : "done") : "processing",
@@ -30475,6 +31379,7 @@ CRITICAL:
         newVersionId: version.id,
         newVersionNumber: version.version_number,
         isComplete,
+        moments,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -38548,8 +39453,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
 
       const fullText = version.plaintext || "";
 
-      // 2. Dual-format beat parser: handles both ## Beat N: headers (classic) and
-      //    numbered markdown format (1. **Beat Name** \n prose) from RE pipeline.
+      // 2. Multi-format beat parser: handles all formats the frontend BeatRewritePanel supports
       function parseBeatsFromText(text: string): Array<{ beat: string; start: number; end: number }> {
         // Try ## Beat header format first
         const headerPattern = /^##\s+Beat\s+\d+/gm;
@@ -38565,17 +39469,77 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
           }));
         }
 
+        // Try ### Beat header (h3) format
+        const headerPatternH3 = /^###\s+Beat\s+\d+/gm;
+        const headerStartsH3: number[] = [];
+        let hm3: RegExpExecArray | null;
+        while ((hm3 = headerPatternH3.exec(text)) !== null) headerStartsH3.push(hm3.index);
+
+        if (headerStartsH3.length > 0) {
+          return headerStartsH3.map((start, i) => ({
+            beat: text.slice(start, i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length),
+            start,
+            end: i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length,
+          }));
+        }
+
+        // Fallback: ### N. Title format (h1/h2/h3 followed by number and period)
+        const h3NumberedPattern = /^#{1,3}\s+\d+\.?\s+/gm;
+        const h3NumberedStarts: number[] = [];
+        let hn3: RegExpExecArray | null;
+        while ((hn3 = h3NumberedPattern.exec(text)) !== null) h3NumberedStarts.push(hn3.index);
+
+        if (h3NumberedStarts.length > 0) {
+          return h3NumberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length,
+          }));
+        }
+
         // Fallback: numbered markdown format "N. **Beat Name**"
         const numberedPattern = /^\d+\.\s+\*\*/gm;
         const numberedStarts: number[] = [];
         let nm: RegExpExecArray | null;
         while ((nm = numberedPattern.exec(text)) !== null) numberedStarts.push(nm.index);
 
-        return numberedStarts.map((start, i) => ({
-          beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
-          start,
-          end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
-        }));
+        if (numberedStarts.length > 0) {
+          return numberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
+          }));
+        }
+
+        // Fallback: plain numbered "N. Name" (no bold markers)
+        const plainNumberedPattern = /^\d+\.\s+(?!\*\*)/gm;
+        const plainNumberedStarts: number[] = [];
+        let pnm: RegExpExecArray | null;
+        while ((pnm = plainNumberedPattern.exec(text)) !== null) plainNumberedStarts.push(pnm.index);
+
+        if (plainNumberedStarts.length > 0) {
+          return plainNumberedStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length,
+          }));
+        }
+
+        // Fallback: plain text "BEAT N: Name" format
+        const beatTextPattern = /^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/gim;
+        const beatTextStarts: number[] = [];
+        let btm: RegExpExecArray | null;
+        while ((btm = beatTextPattern.exec(text)) !== null) beatTextStarts.push(btm.index);
+
+        if (beatTextStarts.length > 0) {
+          return beatTextStarts.map((start, i) => ({
+            beat: text.slice(start, i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length),
+            start,
+            end: i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length,
+          }));
+        }
+
+        return [];
       }
 
       const parsedBeats = parseBeatsFromText(fullText);
@@ -38616,10 +39580,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       ].join("\n\n");
 
       // 6. Call LLM to rewrite only that beat
-      const _gw = resolveGateway();
-      const _apiKey = _gw.apiKey;
-      if (!_apiKey) throw new Error("No AI gateway key configured");
-      const rewrittenBeat = await callAI(_apiKey, "sonnet", systemPrompt, beatPrompt, 0.3, 4000);
+      const rewrittenBeat = await callGoogleGemini(systemPrompt, beatPrompt, 0.3, 4000);
 
       // 7. Simple string replacement — splice rewritten beat into original document
       const updatedDocument = fullText.slice(0, targetBeatEntry.start)

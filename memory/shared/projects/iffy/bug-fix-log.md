@@ -143,4 +143,36 @@ const momentPipeline = useSceneRewritePipeline(projectId, 'story_outline');
 
 **GitHub Diff:** https://github.com/AdAstra1111/iffy/commit/042d20d  
 **Deployed By:** Trinity  
+
 **Lessons Learned:** Thin wrapper hooks that re-export another hook cause Rollup deduplication issues. Call the underlying hook directly with the specific arguments instead. Also: always verify named exports exist for components imported with `{}` syntax.
+
+
+---
+
+## 2026-05-16 — Two fixes: Notes crash + Options crash (Red)
+
+**Error 1: "Assignment to constant variable" crash after ANALYZE, before NOTES**
+
+- **Timestamp:** 2026-05-16
+- **Type:** BUG_FIX
+- **Severity:** CRITICAL
+- **Affected:** `supabase/functions/dev-engine-v2/index.ts` — notes action handler
+- **Symptom:** "Assignment to constant variable" thrown by Deno runtime between ANALYZE completion and NOTES generation — blocking notes from being created
+- **Root Cause:** `const parsed` declared at line 7722, then reassigned at line 8020 (`parsed = filterFalsePositiveBlockers(...)`) in the same `if (action === "notes")` block. TypeScript allows this, Deno throws at runtime.
+- **Fix:** `const parsed` → `let parsed` (line 7722)
+- **Git Diff:** commit `21fdabc`
+
+**Error 2: `.single()` crash in Options handler**
+
+- **Timestamp:** 2026-05-16
+- **Type:** BUG_FIX
+- **Severity:** HIGH
+- **Affected:** `supabase/functions/dev-engine-v2/index.ts` — options action handler
+- **Symptom:** "Options failed" toast with no visible cause when clicking Generate Options in Decision Mode
+- **Root Cause:** `.single()` on ANALYSIS and NOTES DB queries throws "The result contains 0 rows" when no run exists for the current versionId
+- **Fix:** `.single()` → `.maybeSingle()` (lines 8384, 8391)
+- **Git Diff:** commit `21fdabc`
+
+- **Deployed By:** Red
+- **Edge Function:** `dev-engine-v2` deployed via GitHub Actions (commit `21fdabc`)
+- **Lessons Learned:** The 39,579-line edge function has dozens of `const`→reassignment patterns that compiled in TS but throw at Deno runtime. A systematic scan found 3204 potential const-reassignment cross-references across the file — many are false positives (different block scopes) but several are real runtime bugs.

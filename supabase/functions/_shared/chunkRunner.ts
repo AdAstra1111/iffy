@@ -987,6 +987,17 @@ ${c.trim()}`);
     })
     .eq("id", versionId);
 
+  // ── BEAT SHEET EXPLOSION: After assembly, parse act-level output into individual beat chunks ──
+  // Each beat becomes its own chunk in project_document_chunks, enabling per-beat rewrite.
+  if (docType === "beat_sheet" && assembledContent && assembledContent.trim().length > 50) {
+    try {
+      await explodeBeatSheetChunks(supabase, documentId, versionId, assembledContent, plan.totalChunks);
+    } catch (explodeErr: any) {
+      // Non-fatal — the beat sheet is still usable, just without per-beat chunks.
+      console.error(`[chunkRunner] Beat explosion failed (non-fatal):`, explodeErr?.message);
+    }
+  }
+
   // ── SEASON_SCRIPT COMPLETION GATE ──
   // For episodic docs (especially season_script), verify that completedChunks == totalChunks.
   // A partial run must NEVER report success — even if validation.pass is true on partial assembly.
@@ -1076,4 +1087,188 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
 
   // Run the main generation (which now respects existing done chunks)
   return runChunkedGeneration(opts);
+}
+
+// ── BEAT SHEET EXPLOSION ──────────────────────────────────────────────────────
+// After act-level assembly, parse the assembled text into individual beat chunks.
+// Each beat gets its own project_document_chunks row so it can be rewritten independently.
+
+interface ParsedBeat {
+  beatNumber: number;
+  title: string;
+  page: number | null;
+  description: string;
+  emotionalFunction: string | null;
+}
+
+/**
+ * Parse the assembled beat sheet plaintext into individual beats.
+ * Handles formats like:
+ *   ### 1. Opening Image\nPage 1\nDescription...\n*Emotional/Dramatic Function:*
+ *   **2. Theme Stated**\nPage 3\nDescription...
+ */
+function parseBeatSheetIntoBeats(plaintext: string): ParsedBeat[] {
+  const beats: ParsedBeat[] = [];
+
+  // Split on beat headers — matches ### N. Name or **N. Name** or ### Name
+  const beatBlocks: string[] = [];
+  const parts = plaintext.split(/(?=^#{3}\s+\d*\.?\s*|^\*{2}\d+\.?\s*)/m);
+
+  for (const block of parts) {
+    const trimmed = block.trim();
+    if (!trimmed) continue;
+
+    // Extract beat number and title from header
+    const headerMatch = trimmed.match(/^#{3}\s+(\d*\.?)\s*([^\n]+)|^\*{2}(\d*\.?)\s*([^*\n]+)\*{2}/m);
+    if (!headerMatch) continue;
+
+    const rawNum = headerMatch[1] || headerMatch[3] || "";
+    const title = (headerMatch[2] || headerMatch[4] || "").trim();
+    const beatNumber = parseInt(rawNum.replace(/\.$/, "")) || (beats.length + 1);
+
+    // Extract page number
+    const pageMatch = trimmed.match(/(?:^|\n)\s*Page\s+(\d+)/i);
+    const page = pageMatch ? parseInt(pageMatch[1]) : null;
+
+    // Extract emotional function
+    const funcMatch = trimmed.match(/\*{0,2}Emotional(?:\s*\/\s*Dramatic)?\s*Function:\*{0,2}\s*([^*]+)/i);
+    const emotionalFunction = funcMatch ? funcMatch[1].trim() : null;
+
+    // Description is everything between the header and the emotional function
+    let description = trimmed;
+    // Remove the header line
+    description = description.replace(/^#{1,3}\s+\d*\.?\s*[^\n]+\n?|^\*{2}\d*\.?\s*[^*\n]+\*{2}\n?/, "");
+    // Remove Page line
+    description = description.replace(/\n?\s*Page\s+\d+\s*\n?/i, "\n");
+    // Remove emotional function line
+    description = description.replace(/\n?\s*\*{0,2}Emotional(?:\s*\/\s*Dramatic)?\s*Function:\*{0,2}\s*[^*]*\*?/, "");
+    description = description.trim();
+
+    beats.push({ beatNumber, title, page, description, emotionalFunction });
+  }
+
+  // If no beats found via headers, fall back to numbering heuristic
+  if (beats.length === 0) {
+    const lines = plaintext.split("\n");
+    let currentBeat: Partial<ParsedBeat> | null = null;
+    for (const line of lines) {
+      const numMatch = line.match(/^\s*(\d+)\.\s+(.+)/);
+      if (numMatch) {
+        if (currentBeat?.title) {
+          beats.push({
+            beatNumber: currentBeat.beatNumber || beats.length + 1,
+            title: currentBeat.title || "",
+            page: currentBeat.page || null,
+            description: (currentBeat.description || "").trim(),
+            emotionalFunction: currentBeat.emotionalFunction || null,
+          });
+        }
+        currentBeat = { beatNumber: parseInt(numMatch[1]), title: numMatch[2].trim(), description: "", page: null, emotionalFunction: null };
+      } else if (currentBeat) {
+        const pageMatch = line.match(/Page\s+(\d+)/i);
+        if (pageMatch) currentBeat.page = parseInt(pageMatch[1]);
+        else if (line.includes("Emotional") || line.includes("Function")) {
+          const fMatch = line.match(/\*{0,2}Emotional(?:\s*\/\s*Dramatic)?\s*Function:\*{0,2}\s*([^*]+)/i);
+          if (fMatch) currentBeat.emotionalFunction = fMatch[1].trim();
+        } else if (line.trim()) {
+          currentBeat.description = (currentBeat.description || "") + " " + line.trim();
+        }
+      }
+    }
+    if (currentBeat?.title) {
+      beats.push({
+        beatNumber: currentBeat.beatNumber || beats.length + 1,
+        title: currentBeat.title || "",
+        page: currentBeat.page || null,
+        description: (currentBeat.description || "").trim(),
+        emotionalFunction: currentBeat.emotionalFunction || null,
+      });
+    }
+  }
+
+  return beats;
+}
+
+/**
+ * Replace act-level chunks with beat-level chunks for a beat sheet.
+ * Deletes old chunks and inserts one chunk per parsed beat.
+ */
+export async function explodeBeatSheetChunks(
+  supabase: any,
+  documentId: string,
+  versionId: string,
+  assembledContent: string,
+  oldChunkCount: number,
+): Promise<void> {
+  // Guard: skip if already exploded (check if beat chunks exist)
+  const { data: existingChunks } = await supabase
+    .from("project_document_chunks")
+    .select("chunk_key")
+    .eq("document_id", documentId)
+    .eq("version_id", versionId)
+    .limit(1);
+  if ((existingChunks || []).length > 0 && (existingChunks[0]?.chunk_key || "").startsWith("beat_")) {
+    console.log(`[chunkRunner][explode] Already exploded — skipping`);
+    return;
+  }
+
+  const beats = parseBeatSheetIntoBeats(assembledContent);
+  if (beats.length === 0) {
+    console.log(`[chunkRunner][explode] No beats found in assembled content — skipping`);
+    return;
+  }
+
+  console.log(`[chunkRunner][explode] Parsed ${beats.length} beats from beat sheet (was ${oldChunkCount} act-level chunks)`);
+
+  // Delete old act-level chunks for this version
+  await supabase
+    .from("project_document_chunks")
+    .delete()
+    .eq("document_id", documentId)
+    .eq("version_id", versionId);
+
+  // Insert one chunk per beat
+  const chunkRows = beats.map((beat, idx) => ({
+    document_id: documentId,
+    version_id: versionId,
+    chunk_index: idx,
+    chunk_key: `beat_${beat.beatNumber}`,
+    status: "done",
+    content: [
+      `### ${beat.beatNumber}. ${beat.title}`,
+      beat.page ? `Page ${beat.page}` : "",
+      beat.description,
+      beat.emotionalFunction ? `*Emotional/Dramatic Function:* ${beat.emotionalFunction}` : "",
+    ].filter(Boolean).join("\n\n"),
+    char_count: beat.description.length,
+    meta_json: {
+      label: beat.title,
+      beat_number: beat.beatNumber,
+      page: beat.page || null,
+      emotional_function: beat.emotionalFunction || null,
+      is_beat: true,
+      exploded_from_acts: true,
+    },
+  }));
+
+  // Batch insert in chunks of 25 to avoid request size limits
+  for (let i = 0; i < chunkRows.length; i += 25) {
+    const batch = chunkRows.slice(i, i + 25);
+    await supabase.from("project_document_chunks").insert(batch);
+  }
+
+  // Update version meta to record the explosion
+  await supabase
+    .from("project_document_versions")
+    .update({
+      assembled_chunk_count: beats.length,
+      meta_json: {
+        beat_exploded: true,
+        beat_count: beats.length,
+        act_chunk_count: oldChunkCount,
+      },
+    })
+    .eq("id", versionId);
+
+  console.log(`[chunkRunner][explode] Inserted ${beats.length} beat-level chunks for version ${versionId}`);
 }

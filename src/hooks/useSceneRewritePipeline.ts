@@ -110,12 +110,12 @@ const initialState: SceneRewriteState = {
   runId: null,
 };
 
-async function callEngine(action: string, extra: Record<string, any> = {}) {
+async function callEngine(action: string, extra: Record<string, any> = {}, timeoutMs = 120_000) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
     method: 'POST',
@@ -353,6 +353,11 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
       if (newRunId && projectId) {
         saveRunId(projectId, sourceVersionId, newRunId);
       }
+      console.debug('[sceneRewrite] enqueue received runId', {
+        runId: newRunId, projectId, sourceVersionId, isMomentMode,
+        savedToSession: !!newRunId && !!projectId,
+        expectedLength: newRunId?.length,
+      });
       setState(s => ({
         ...s,
         mode: 'processing',
@@ -365,6 +370,15 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         smoothedPercent: 0,
         lastProgressAt: Date.now(),
         runId: newRunId,
+        // Pre-populate moment list so the UI shows all moments immediately
+        scenes: isMomentMode && result.totalScenes > 0
+          ? Array.from({ length: result.totalScenes }, (_, i) => ({
+              scene_number: i + 1,
+              scene_heading: `Moment ${i + 1}`,
+              status: 'pending' as const,
+              attempts: 0,
+            }))
+          : s.scenes,
       }));
       pushActivity('success', isSelective
         ? `Enqueued ${targetSceneNumbers!.length} target scene jobs (run ${(result.runId || '?').slice(0, 8)})`
@@ -395,6 +409,10 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
       if (currentRunId) {
         runIdRef.current = currentRunId;
         setState(s => ({ ...s, runId: currentRunId }));
+        console.debug('[sceneRewrite] recovered runId from sessionStorage', {
+          runId: currentRunId, projectId, sourceVersionId,
+          isMomentMode, runIdRefVal: !!runIdRef.current,
+        });
       }
     }
     if (!currentRunId) {
@@ -405,13 +423,23 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         saveRunId(projectId, sourceVersionId, currentRunId);
         setState(s => ({ ...s, runId: currentRunId }));
         pushActivity('info', `Recovered runId from database: ${currentRunId.slice(0, 8)}`);
+        console.debug('[sceneRewrite] recovered runId from DB', {
+          runId: currentRunId, projectId, sourceVersionId, isMomentMode,
+        });
       }
     }
     if (!currentRunId) {
+      console.warn('[sceneRewrite] no runId found via any recovery path', {
+        projectId, sourceVersionId, isMomentMode,
+        runIdRef: runIdRef.current,
+      });
       toast.error('Missing runId — please enqueue again.');
       pushActivity('error', 'Missing runId — please enqueue again.');
       return;
     }
+    console.debug('[sceneRewrite] using runId for poll', {
+      runId: currentRunId, projectId, sourceVersionId, isMomentMode,
+    });
     processingRef.current = true;
     stopRef.current = false;
     durationsRef.current = [];
@@ -428,12 +456,37 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
         setState(s => ({ ...s, mode: 'processing', smoothedPercent: 0 }));
         pushActivity('info', 'Moment rewrite running in background…');
         
+        // Initial delay: give the waitUntil background task time to create
+        // the rewrite_runs row and first chunks before the first poll.
+        await new Promise(r => setTimeout(r, 2000));
+        pushActivity('info', 'Polling for background rewrite status…');
+        
         let pollCount = 0;
         while (!stopRef.current && pollCount < 300) { // max 5 min
           await new Promise(r => setTimeout(r, 1000));
           pollCount++;
           
-          const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId });
+          const status = await callEngine('get_story_outline_rewrite_status', { projectId, sourceVersionId, runId: currentRunId }, 30_000).catch((err: any) => {
+            // Handle transient errors gracefully — don't crash the polling loop.
+            // - AbortError / "signal is aborted" = request timed out or was cancelled
+            // - TypeError / "failed to fetch" = network error (Vercel proxy cold start, DNS, etc.)
+            const transient = (
+              err?.name === 'AbortError' ||
+              err?.message?.includes('aborted') ||
+              err?.name === 'TypeError' ||
+              err?.message?.includes('Failed to fetch') ||
+              err?.message?.includes('NetworkError')
+            );
+            if (transient) {
+              console.warn('[sceneRewrite] status poll transient error, retrying…', {
+                pollCount, isMomentMode,
+                errorName: err?.name,
+                errorMessage: err?.message?.slice(0, 80),
+              });
+              return null;
+            }
+            throw err; // re-throw non-transient errors
+          });
           
           if (status && status.total !== undefined) {
             const pct = status.total > 0 ? Math.floor((status.done / status.total) * 100) : 0;
@@ -444,6 +497,12 @@ export function useSceneRewritePipeline(projectId: string | undefined, targetDoc
               queued: status.queued, 
               running: status.running, 
               failed: status.failed,
+              scenes: status.moments?.map((m: any) => ({
+                scene_number: m.scene_number,
+                scene_heading: m.scene_heading,
+                status: m.status,
+                attempts: 0,
+              })) || s.scenes,
               smoothedPercent: pct, 
               lastProgressAt: Date.now() 
             }));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ interface BeatRewritePanelProps {
   onComplete?: (newVersionId: string) => void;
   onApplyAllStart?: () => void;
   onApplyAllDone?: () => void;
+  /** External ref to trigger Apply All from parent */
+  applyAllTriggerRef?: React.MutableRefObject<(() => void) | null>;
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -224,8 +226,9 @@ function parseBeatSheet(plaintext: string): Act[] {
       const line = numberedLines[i];
       const trimmed = line.trim();
 
-      // Act header: ## Act 1 Beats / ## Act 2 Beats (with 'Beats' plural)
-      const actMatch = trimmed.match(/^##\s+Act\s+(\d+)\s+Beats/i);
+      // Act header: ## Act 1 Beats / ## Act 1: Setup — Beats / ## Act 2A: Rising Action — Beats
+      const actMatch = trimmed.match(/^##\s+Act\s+([\w]+)\s*(?::[^]*?)?Beats/i) || 
+                       trimmed.match(/^##\s+Act\s+(\w+[\w\s]*?)\s*[—–-]\s*Beats/i);
       if (actMatch) {
         // flush any pending beat
         if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
@@ -276,6 +279,71 @@ function parseBeatSheet(plaintext: string): Act[] {
 
 
 
+  // ── PLAIN TEXT MODE: "ACT ONE — Setup" / "BEAT 1: NAME" (all-caps, no ## headers) ──
+  {
+    const ptLines = plaintext.split('\n');
+    const ptActs: Act[] = [];
+    let ptCurrentAct: Act | null = null;
+    let ptBeatLines: string[] = [];
+    let ptBeatMeta: { id: string; name: string } | null = null;
+
+    function ptFlushBeat() {
+      if (!ptCurrentAct || !ptBeatMeta) return;
+      const raw = ptBeatLines.join('\n').trim();
+      ptCurrentAct.beats.push({
+        id: ptBeatMeta.id,
+        name: ptBeatMeta.name,
+        act: ptCurrentAct.name,
+        turningPoint: false,
+        turningPointLabel: 'No',
+        scene: '',
+        description: raw || ptBeatMeta.name,
+        structuralPurpose: '',
+        protagonistState: '',
+        emotionalShift: '',
+        raw,
+      });
+      ptBeatMeta = null;
+      ptBeatLines = [];
+    }
+
+    // Always start with a default act — beats may exist without act headers
+    ptCurrentAct = { name: 'ACT 1', beats: [] };
+
+    for (const line of ptLines) {
+      const trimmed = line.trim();
+      // Act header: "ACT ONE — Setup", "ACT 1 — Setup", "ACT ONE", "ACT 2A — Rising Action"
+      const ptActMatch = trimmed.match(/^ACT\s+(\w+[\w\s]*?)(?:\s*[—–-]\s*.*)?$/i);
+      if (ptActMatch && !trimmed.match(/^BEAT\s/i)) {
+        ptFlushBeat();
+        if (ptCurrentAct) ptActs.push(ptCurrentAct);
+        const actLabel = ptActMatch[1].trim();
+        ptCurrentAct = { name: 'ACT ' + actLabel, beats: [] };
+        continue;
+      }
+      // Beat header: "BEAT 1: NAME", "BEAT 1 — NAME", "BEAT 1 NAME"
+      const ptBeatMatch = trimmed.match(/^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/i);
+      if (ptBeatMatch) {
+        ptFlushBeat();
+        ptBeatMeta = { id: ptBeatMatch[1], name: ptBeatMatch[2].trim() };
+        ptBeatLines = [line];
+        continue;
+      }
+      if (ptBeatMeta) {
+        ptBeatLines.push(line);
+      }
+    }
+    ptFlushBeat();
+    ptActs.push(ptCurrentAct);
+
+    if (ptActs.length > 0) {
+      const totalBeats = ptActs.reduce((s, a) => s + a.beats.length, 0);
+      console.log('[BeatRewritePanel] plain text parse: ' + ptActs.length + ' acts, ' + totalBeats + ' beats');
+      return ptActs;
+    }
+  }
+
+
   // ── MARKDOWN MODE: existing parser for markdown-formatted beat sheets ──
   const lines = plaintext.split('\n');
   const acts: Act[] = [];
@@ -316,6 +384,9 @@ function parseBeatSheet(plaintext: string): Act[] {
     currentBeatMeta = {};
   }
 
+  // Always start with a default act — beats may exist without act headers
+  currentAct = { name: 'ACT 1', beats: [] };
+
   for (const line of lines) {
     const trimmed = line.trim();
 
@@ -344,7 +415,7 @@ function parseBeatSheet(plaintext: string): Act[] {
   }
 
   flushBeat();
-  if (currentAct) acts.push(currentAct);
+  acts.push(currentAct);
   return acts;
 }
 
@@ -596,6 +667,7 @@ function RewriteModal({
 
 export default function BeatRewritePanel({
   projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAllStart, onApplyAllDone,
+  applyAllTriggerRef,
 }: BeatRewritePanelProps) {
   const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
   const [rewriteTarget, setRewriteTarget] = useState<Beat | null>(null);
@@ -669,6 +741,20 @@ export default function BeatRewritePanel({
     onApplyAllDone?.();
     if (latestVid !== versionId) onComplete?.(latestVid);
   };
+
+  // Expose handleApplyAll to parent via applyAllTriggerRef
+  // Use a ref to avoid stale closure — always calls the latest handleApplyAll
+  const handleApplyAllLatestRef = useRef<() => void>(() => {});  
+  handleApplyAllLatestRef.current = handleApplyAll;
+
+  useEffect(() => {
+    if (applyAllTriggerRef) {
+      applyAllTriggerRef.current = () => handleApplyAllLatestRef.current();
+    }
+    return () => {
+      if (applyAllTriggerRef) applyAllTriggerRef.current = null;
+    };
+  }, [applyAllTriggerRef]);
 
   if (!plaintext) {
     return (

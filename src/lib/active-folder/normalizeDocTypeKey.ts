@@ -33,7 +33,7 @@ export const DOC_TYPE_KEY_LABELS: Record<DocTypeKey, string> = {
   concept_brief: 'Concept Brief',
   character_bible: 'Character Bible',
   market_sheet: 'Market Sheet',
-  treatment: 'Treatment / Series Bible',
+  treatment: 'Treatment',
   beat_sheet: 'Beat Sheet',
   deck: 'Deck',
   documentary_outline: 'Documentary Outline',
