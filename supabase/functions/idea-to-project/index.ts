@@ -56,7 +56,7 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${_gw.apiKey}`,
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+        model: "deepseek/deepseek-chat",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: ideaText.slice(0, 4000) },
