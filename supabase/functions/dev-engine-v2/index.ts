@@ -8452,8 +8452,18 @@ NOTES REQUIRING DECISIONS:\n${JSON.stringify(notesForPrompt)}
 
 MATERIAL:\n${version.plaintext}`;
 
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000);
-      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000).catch((err: any) => {
+        console.error("[dev-engine-v2] options: callAI failed:", err?.message);
+        throw new Error(`AI call failed: ${err?.message || "Unknown AI error"}`);
+      });
+      const parsed = await parseAIJson(OPENROUTER_API_KEY, raw).catch((err: any) => {
+        console.error("[dev-engine-v2] options: parseAIJson failed:", err?.message, "raw:", raw?.slice(0, 300));
+        throw new Error(`Failed to parse AI response: ${err?.message || "Parse error"}`);
+      });
+      if (!parsed) {
+        console.error("[dev-engine-v2] options: parseAIJson returned null", raw?.slice(0, 300));
+        throw new Error("MODEL_JSON_PARSE_FAILED");
+      }
 
       // Store as OPTIONS run
       const { data: run, error: runErr } = await supabase.from("development_runs").insert({

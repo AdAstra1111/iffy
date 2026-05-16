@@ -215,6 +215,7 @@ export default function ProjectDevelopmentEngine() {
     onSuccess: () => {
       invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
     },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual', 'cascade']);
