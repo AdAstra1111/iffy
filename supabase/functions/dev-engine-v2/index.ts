@@ -5864,6 +5864,90 @@ serve(async (req) => {
     }
 
     // ══════════════════════════════════════════════
+    // CONVERT_STORY_OUTLINE — convert JSON story outline to plaintext markdown
+    // ══════════════════════════════════════════════
+    if (action === "convert_story_outline_to_plaintext") {
+      const { projectId } = body;
+      if (!projectId) throw new Error("projectId required");
+
+      // Find the story outline document
+      const { data: docs } = await supabase.from("project_documents")
+        .select("id, latest_version_id").eq("project_id", projectId).eq("doc_type", "story_outline").limit(1);
+      if (!docs || docs.length === 0) throw new Error("No story outline document found");
+      const docId = docs[0].id;
+      const verId = docs[0].latest_version_id;
+      if (!verId) throw new Error("Story outline has no version");
+
+      const { data: ver } = await supabase.from("project_document_versions")
+        .select("plaintext, version_number").eq("id", verId).single();
+      if (!ver) throw new Error("Version not found");
+      const trimmed = (ver.plaintext || "").trim();
+      if (!trimmed.startsWith("{")) throw new Error("Story outline is not JSON format — already plaintext?");
+
+      const outline = JSON.parse(trimmed);
+      if (!Array.isArray(outline.entries)) throw new Error("No entries array in story outline");
+
+      // Convert entries to markdown
+      const lines: string[] = [];
+      for (const entry of outline.entries) {
+        const actTitle = entry.title || `Act ${entry.number || 1}`;
+        lines.push(`## ${actTitle}`);
+        lines.push("");
+        if (entry.description) {
+          lines.push(entry.description);
+          lines.push("");
+        }
+        // Check for nested moments/scenes
+        const moments = entry.moments || entry.scenes || [];
+        if (moments.length > 0) {
+          for (const moment of moments) {
+            const sceneTitle = moment.title || `Scene ${moment.number || 1}`;
+            lines.push(`### ${sceneTitle}`);
+            lines.push("");
+            if (moment.description) {
+              lines.push(moment.description);
+              lines.push("");
+            }
+          }
+        }
+      }
+
+      const plaintext = lines.join("\n").trim();
+      const newVersionNumber = (ver.version_number || 1) + 1;
+
+      // If no nested moments found, expand by making each entry a scene
+      const hasNestedMoments = outline.entries.some((e: any) => (e.moments?.length || e.scenes?.length || 0) > 0);
+      const finalText = hasNestedMoments ? plaintext : (() => {
+        // Each entry becomes a scene within its act
+        const flatLines: string[] = [];
+        for (const entry of outline.entries) {
+          const sceneTitle = entry.title || `Scene ${entry.number || 1}`;
+          flatLines.push(`## ${sceneTitle}`);
+          flatLines.push("");
+          if (entry.description) {
+            flatLines.push(entry.description);
+            flatLines.push("");
+          }
+        }
+        return flatLines.join("\n").trim();
+      })();
+
+      const { data: newVer } = await supabase.from("project_document_versions").insert({
+        document_id: docId, version_number: newVersionNumber,
+        plaintext: finalText, is_current: true, created_by: user?.id || null,
+        meta_json: { run_type: "CONVERTED_TO_PLAINTEXT", entries_count: outline.entries.length },
+      }).select("id").single();
+
+      // Update document's latest version
+      await supabase.from("project_documents").update({ latest_version_id: newVer.id }).eq("id", docId);
+
+      return new Response(JSON.stringify({
+        success: true, newVersionId: newVer.id, versionNumber: newVersionNumber,
+        entriesConverted: outline.entries.length, hasNestedMoments,
+      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // ══════════════════════════════════════════════
     // _DB_DIAG — check rewrite_runs state for a project
     // ══════════════════════════════════════════════
     if (action === "_db_diag") {
