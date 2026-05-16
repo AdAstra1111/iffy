@@ -381,7 +381,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief', 'character_bible']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'concept_brief', 'character_bible']); // story_outline uses per-moment JSON handler via MomentRewritePanel
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'story_outline', 'concept_brief', 'character_bible']); // story_outline JSON → moment pipeline; plaintext → sectioned prose rewrite
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
@@ -1471,21 +1471,25 @@ export default function ProjectDevelopmentEngine() {
         return;
       }
 
-      // story_outline: always route to moment pipeline — skip scene/chunk fallback
+      // story_outline: JSON format → moment pipeline; plaintext → sectioned fallback
       if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
-        if (allPrioritizedMoves.length > 0) {
-          // Apply approved notes through moment pipeline
-          const result = await momentPipeline.enqueue(
-            selectedDocId, selectedVersionId, enrichedNotes, protectItems, undefined
-          );
-          if (result) {
-            momentPipeline.processAll(selectedVersionId, selectedDocId);
-            afterRewrite();
+        const isJSONOutline = (selectedVersion?.plaintext || '').trim().startsWith('{');
+        if (isJSONOutline) {
+          if (allPrioritizedMoves.length > 0) {
+            // Apply approved notes through moment pipeline
+            const result = await momentPipeline.enqueue(
+              selectedDocId, selectedVersionId, enrichedNotes, protectItems, undefined
+            );
+            if (result) {
+              momentPipeline.processAll(selectedVersionId, selectedDocId);
+              afterRewrite();
+            }
+          } else {
+            toast.info('Add notes to apply before rewriting.');
           }
-        } else {
-          toast.info('Add notes to apply before rewriting.');
+          return;
         }
-        return;
+        // Plaintext outline — fall through to sectioned rewrite below
       }
 
       if (textLength > 30000 && selectedDocId && selectedVersionId) {
