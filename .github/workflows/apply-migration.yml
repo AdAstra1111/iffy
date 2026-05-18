@@ -18,11 +18,11 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{"query": "DROP FUNCTION IF EXISTS public.exec_sql(text);"}'
           echo ""
-          # Then create with correct return type
+          # Then create with correct return type (SETOF json, RETURN QUERY EXECUTE)
           curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN (SELECT json_agg(row_to_json(t)) FROM (EXECUTE query) t); END; $$;"}'
+            -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS SETOF json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN QUERY EXECUTE query; END; $$;"}'
       
       - name: Apply migration (idempotent)
         env:
