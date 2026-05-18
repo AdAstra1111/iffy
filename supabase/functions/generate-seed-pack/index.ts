@@ -407,6 +407,7 @@ Generate the full Pitch Architecture analysis and seed pack now. Return ONLY val
         user: userPrompt,
         temperature: 0.2,
         maxTokens: 8000,
+        timeoutMs: 120000,
         retries: 1,
       });
     } catch (llmErr: unknown) {

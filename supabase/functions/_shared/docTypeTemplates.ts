@@ -1,5 +1,3 @@
-shell-init: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
-chdir: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
 /**
  * docTypeTemplates.ts — Canonical scaffold templates for each document type.
  *

@@ -319,8 +319,11 @@ Deno.serve(async (req) => {
       // Spawn generation in background — return immediately so HTTP doesn't time out
       // The atoms will be processed asynchronously and their status updated in DB
       result = { spawned: true, message: "Generation started in background" };
-      // @ts-ignore EdgeRuntime available in Deno Deploy
-      EdgeRuntime.waitUntil(handleGenerate(sb, openrouterKey, projectId, atomIds));
+      // Guard EdgeRuntime — not available in CI/local without Deno Deploy
+      if (typeof EdgeRuntime !== "undefined") {
+        // @ts-ignore EdgeRuntime available in Deno Deploy
+        EdgeRuntime.waitUntil(handleGenerate(sb, openrouterKey, projectId, atomIds));
+      }
     } else if (action === "debug") {
       const openrouterKey = Deno.env.get("OPENROUTER_API_KEY") || "";
       if (!openrouterKey) {

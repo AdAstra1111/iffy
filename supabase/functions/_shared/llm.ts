@@ -55,6 +55,7 @@ export interface CallLLMOptions {
   temperature?: number;
   maxTokens?: number;
   retries?: number;
+  timeoutMs?: number;
   tools?: any[];
   toolChoice?: any;
 }
@@ -385,7 +386,7 @@ export async function callLLMChunked<TItem, TResult>(
  * Surfaces 429/402 as typed errors for upstream handling.
  */
 export async function callLLM(opts: CallLLMOptions): Promise<CallLLMResult> {
-  const { apiKey, model, system, user, temperature = 0.3, maxTokens = 6000, retries = 3, tools, toolChoice } = opts;
+  const { apiKey, model, system, user, temperature = 0.3, maxTokens = 6000, retries = 3, timeoutMs, tools, toolChoice } = opts;
 
   for (let attempt = 0; attempt < retries; attempt++) {
     const body: any = {
@@ -407,7 +408,7 @@ export async function callLLM(opts: CallLLMOptions): Promise<CallLLMResult> {
 
     // AbortController with 45s timeout to prevent indefinite hang
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? 45000);
     let response: Response;
     try {
       response = await fetch(effectiveUrl, {
@@ -423,7 +424,7 @@ export async function callLLM(opts: CallLLMOptions): Promise<CallLLMResult> {
     } catch (fetchErr: any) {
       clearTimeout(timeoutId);
       const isTimeout = fetchErr?.name === "AbortError";
-      console.error(`AI fetch error (attempt ${attempt + 1}/${retries}):`, isTimeout ? "TIMEOUT after 45s" : (fetchErr?.message || fetchErr));
+      console.error(`AI fetch error (attempt ${attempt + 1}/${retries}):`, isTimeout ? `TIMEOUT after ${timeoutMs ?? 45000}ms` : (fetchErr?.message || fetchErr));
       if (attempt < retries - 1) {
         const delay = Math.pow(2, attempt) * 3000;
         console.log(`Retrying after ${isTimeout ? "timeout" : "connection error"} in ${delay}ms...`);

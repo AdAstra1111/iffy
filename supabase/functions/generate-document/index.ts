@@ -1,5 +1,3 @@
-shell-init: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
-chdir: error retrieving current directory: getcwd: cannot access parent directories: Interrupted system call
 // generate-document v2026-03-27T09 — canonical version creation convergence
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 import {

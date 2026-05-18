@@ -21,6 +21,7 @@ import { AutopilotProgress, type AutopilotState } from '@/components/pitch/Autop
 import { buildSeedIntelPack } from '@/lib/trends/seed-intel-pack';
 import { useActiveSignals, useActiveCastTrends } from '@/hooks/useTrends';
 import { extractRecoverableAutoRunConflict } from '@/lib/autoRunConflict';
+import { createDocumentVersion } from '@/lib/docVersions/createDocumentVersion';
 
 interface Props {
   idea: PitchIdea | null;
@@ -283,29 +284,27 @@ async function createDocWithVersion(
     throw new Error(`Failed to create ${docType} document: ${docErr.message}`);
   }
 
-  const versionPayload: Record<string, unknown> = {
-    document_id: doc.id,
-    version_number: 1,
-    plaintext: content,
-    status: 'draft',
-    is_current: true,
-    created_by: userId,
-  };
-  // Always include created_source provenance
+  // Route through createDocumentVersion instead of direct upsert (avoids RLS)
   const metaWithProvenance = {
     ...(styleMeta || {}),
     created_source: 'devseed',
   };
-  versionPayload.meta_json = metaWithProvenance;
 
-  // The ensure_project_document_initial_version trigger may have already created v1.
-  // Use upsert on (document_id, version_number) to avoid duplicate key errors.
-  const { error: verErr } = await supabase
-    .from('project_document_versions')
-    .upsert(versionPayload as any, { onConflict: 'document_id,version_number' });
-
-  if (verErr) {
-    console.error(`Version upsert failed [${docType}]:`, verErr.message);
+  try {
+    await createDocumentVersion({
+      documentId: doc.id,
+      parentVersionId: null,
+      plaintext: content,
+      label: 'DevSeed initial version',
+      changeSummary: 'Initial version from DevSeed',
+      generatorId: 'devseed',
+      createdBy: userId,
+      sourceMode: 'seed_override',
+      status: 'draft',
+      metaJson: metaWithProvenance,
+    });
+  } catch (verErr: any) {
+    console.error(`Version create failed [${docType}]:`, verErr.message);
   }
 
   return doc;

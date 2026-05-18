@@ -12,15 +12,24 @@ serve(async (req) => {
       { auth: { persistSession: false } }
     );
 
-    const sql = await Deno.readTextFile(
-      "/Users/laralane/code/iffy/supabase/migrations/20260512000000_merge_duplicate_yeti_characters.sql"
-    );
+    // Accept SQL from request body, or fall back to hardcoded migration
+    let sql: string;
+    try {
+      const body = await req.json();
+      sql = body.sql;
+    } catch {
+      sql = "";
+    }
+
+    if (!sql) {
+      sql = await Deno.readTextFile(
+        "/Users/laralane/code/iffy/supabase/migrations/20260512000000_merge_duplicate_yeti_characters.sql"
+      );
+    }
 
     const { data, error } = await supabase.rpc("exec_sql", { query: sql });
     if (error) {
-      // Try raw query as fallback
-      const { error: runError } = await supabase.from("narrative_entities").select("count").limit(0);
-      return new Response(JSON.stringify({ error: error.message, runError }), { status: 500 });
+      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
     }
 
     return new Response(JSON.stringify({ success: true, data }), {

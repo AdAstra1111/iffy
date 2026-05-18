@@ -41,5 +41,6 @@ jobs:
             generate-seed-pack \
             generate-lookbook-image \
             project-folder-engine \
+            character-atomiser \
             --project-ref hdfderbphdobomkdjypc \
             --no-verify-jwt

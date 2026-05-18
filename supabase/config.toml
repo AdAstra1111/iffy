@@ -284,3 +284,6 @@ verify_jwt = false
 
 [functions.extract-scene-index]
 verify_jwt = false
+
+[functions.generate-seed-pack]
+verify_jwt = false
