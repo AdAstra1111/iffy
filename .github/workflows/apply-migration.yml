@@ -8,15 +8,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Create exec_sql function (corrected return type)
+      - name: Drop and recreate exec_sql with correct return type
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
+          # First drop the old function (return type changed, so CREATE OR REPLACE won't work)
+          curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "DROP FUNCTION IF EXISTS public.exec_sql(text);"}'
+          echo ""
+          # Then create with correct return type
           curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN (SELECT json_agg(row_to_json(t)) FROM (EXECUTE query) t); END; $$;"}'
-          echo ""
       
       - name: Apply migration (idempotent)
         env:
