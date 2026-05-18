@@ -775,7 +775,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
             body: {
               action: 'start',
               projectId: project.id,
-              userId,
+              userId: user.id,
               pitchIdeaId: idea.id,
               options: {
                 apply_seed_intel_pack: true,
@@ -798,7 +798,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
           while (!tickDone && tickIterations < MAX_TICK_ITERATIONS && !autopilotAbortRef.current) {
             tickIterations++;
             const { data: tickData, error: tickErr } = await supabase.functions.invoke('devseed-autopilot', {
-              body: { action: 'tick', projectId: project.id, userId },
+              body: { action: 'tick', projectId: project.id, userId: user.id },
             });
             if (tickErr) {
               console.error('[DevSeed] autopilot tick error:', tickErr.message);
@@ -864,7 +864,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
                 });
                 if (statusData?.job && ['running', 'queued', 'paused'].includes(statusData.job.status)) {
                   console.log(`[DevSeed] Auto-Run already active (${statusData.job.id}), skipping start — will reattach on navigation.`);
-                  parts.push('auto-run reattached');
+                    parts.push('auto-run reattached');
                   alreadyRunning = true;
                 }
               } catch {
@@ -884,6 +884,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
                     parts.push('auto-run reattached');
                   } else {
                     console.error('[DevSeed] auto-run start failed (non-fatal):', arInvokeErr);
+                    parts.push('auto-run failed to start');
                   }
                 } else {
                   parts.push('auto-run started');
@@ -891,6 +892,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
               }
             } catch (arErr: any) {
               console.error('[DevSeed] auto-run start failed (non-fatal):', arErr?.message);
+              parts.push('auto-run failed to start');
             }
           } else {
             // Explicit block — do NOT start Auto-Run from invalid state
