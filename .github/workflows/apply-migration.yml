@@ -8,21 +8,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Drop and recreate exec_sql with correct return type
+      - name: Bootstrap exec_sql
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
-          # First drop the old function (return type changed, so CREATE OR REPLACE won't work)
+          SQL=$(cat supabase/migrations/bootstrap_exec_sql.sql | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
           curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query": "DROP FUNCTION IF EXISTS public.exec_sql(text);"}'
+            -d "{\"query\": $SQL}"
           echo ""
-          # Then create with correct return type (SETOF json, RETURN QUERY EXECUTE)
-          curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
-            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS SETOF json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN QUERY EXECUTE query; END; $$;"}'
       
       - name: Apply migration (idempotent)
         env:
@@ -42,4 +37,4 @@ jobs:
           curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query": "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '\''public'\'' AND table_name = '\''devseed_plateau_diagnoses'\'')"}'
+            -d '{"query": "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '"'"'public'"'"' AND table_name = '"'"'devseed_plateau_diagnoses'"'"')"}'
