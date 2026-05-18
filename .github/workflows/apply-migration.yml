@@ -8,17 +8,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: Create exec_sql function
+      - name: Create exec_sql function (corrected return type)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
           curl -s -X POST "https://api.supabase.com/v1/projects/hdfderbphdobomkdjypc/database/query" \
             -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS SETOF jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN QUERY EXECUTE query; END; $$;"}'
+            -d '{"query": "CREATE OR REPLACE FUNCTION public.exec_sql(query text) RETURNS json LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$ BEGIN RETURN (SELECT json_agg(row_to_json(t)) FROM (EXECUTE query) t); END; $$;"}'
           echo ""
       
-      - name: Apply migration
+      - name: Apply migration (idempotent)
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
@@ -29,7 +29,7 @@ jobs:
             -d "{\"query\": $SQL}"
           echo ""
       
-      - name: Verify
+      - name: Verify table exists
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: |
