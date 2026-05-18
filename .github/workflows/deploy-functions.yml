@@ -38,6 +38,7 @@ jobs:
             reverse-engineer-script \
             create-document-version \
             devseed-autopilot \
+            generate-seed-pack \
             generate-lookbook-image \
             project-folder-engine \
             --project-ref hdfderbphdobomkdjypc \
