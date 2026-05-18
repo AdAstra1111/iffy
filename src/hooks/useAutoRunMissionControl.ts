@@ -155,7 +155,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     queryKey: ['auto-run-mission-status', projectId],
     queryFn: async () => {
       if (!projectId || !isValidUUID(projectId)) return null;
-      return await callAutoRun('ping', { projectId });
+      const { data: { user } } = await supabase.auth.getUser();
+      return await callAutoRun('status', { projectId, userId: user?.id });
     },
     enabled: isValidUUID(projectId) && activated,
     refetchOnWindowFocus: false,
@@ -183,7 +184,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     const discover = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
-        const result = await callAutoRun('ping', { projectId, userId: user?.id });
+        const result = await callAutoRun('status', { projectId, userId: user?.id });
         if (cancelled || !result?.job) return;
         setJob(result.job);
         setSteps(result.latest_steps || []);
