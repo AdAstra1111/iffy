@@ -3,28 +3,16 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 serve(async (req) => {
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) return new Response("Unauthorized", { status: 401 });
-
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
       { auth: { persistSession: false } }
     );
 
-    // Accept SQL from request body, or fall back to hardcoded migration
-    let sql: string;
-    try {
-      const body = await req.json();
-      sql = body.sql;
-    } catch {
-      sql = "";
-    }
-
+    const body = await req.json();
+    const sql = body.sql;
     if (!sql) {
-      sql = await Deno.readTextFile(
-        "/Users/laralane/code/iffy/supabase/migrations/20260512000000_merge_duplicate_yeti_characters.sql"
-      );
+      return new Response(JSON.stringify({ error: "Missing 'sql' in request body" }), { status: 400 });
     }
 
     const { data, error } = await supabase.rpc("exec_sql", { query: sql });

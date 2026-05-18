@@ -42,5 +42,6 @@ jobs:
             generate-lookbook-image \
             project-folder-engine \
             character-atomiser \
+            run-migration \
             --project-ref hdfderbphdobomkdjypc \
             --no-verify-jwt
