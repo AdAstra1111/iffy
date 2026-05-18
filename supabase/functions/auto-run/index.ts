@@ -1669,7 +1669,6 @@ async function ensureSeedPack(
         .select("document_id, plaintext")
         .in("document_id", postDocIds)
         .eq("is_current", true)
-        .eq("approval_status", "approved")
     : { data: [] };
 
   const postMinChars = 20;
@@ -5222,6 +5221,29 @@ Deno.serve(async (req) => {
       }
 
       await logStep(supabase, job.id, 0, effectiveStartDoc, "start", `Auto-run started: ${effectiveStartDoc} → ${effectiveTargetDoc} (${mode || "balanced"} mode)`);
+
+      if (seedResult.failed) {
+        const stopReason = seedResult.fail_type || "SEED_PACK_INCOMPLETE";
+        const sd = seedResult.seed_debug || {};
+        const compactError = `${stopReason} | http=${sd.http_status ?? 'n/a'} | inserted=${sd.insertedCount ?? '?'} updated=${sd.updatedCount ?? '?'} | ${(seedResult.error || seedResult.missing.join(", ")).slice(0, 200)}`;
+        console.error(`[auto-run] ${stopReason} — failing job ${job.id}. Missing: ${seedResult.missing.join(", ")}. Error: ${compactError}`);
+        await supabase.from("auto_run_jobs").update({
+          status: "failed",
+          stop_reason: stopReason,
+          error: compactError.slice(0, 500),
+          last_ui_message: `Seed pack issue: ${compactError.slice(0, 300)}`,
+        }).eq("id", job.id);
+        await logStep(supabase, job.id, 0, effectiveStartDoc, "seed_pack_failed",
+          `${stopReason} — cannot proceed. ${compactError.slice(0, 200)}`);
+        return respond({
+          job: { ...job, status: "failed", stop_reason: stopReason, error: compactError.slice(0, 500) },
+          missing_seed_docs: seedResult.missing,
+          seed_debug: { ...sd, fail_type: stopReason, error: seedResult.error },
+          seed_warnings: seedResult.warnings || [],
+          error: compactError,
+          created: false,
+        });
+      }
 
       if (seedResult.ensured) {
         await logStep(supabase, job.id, 0, effectiveStartDoc, "seed_pack_ensured",
