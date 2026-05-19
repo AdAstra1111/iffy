@@ -1,10 +1,12 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 export const maxDuration = 300;
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const path = 'functions/v1/dev-engine-v2';
   const targetUrl = `https://hdfderbphdobomkdjypc.supabase.co/${path}`;
-  const apikey = req.headers['x-supabase-key'] as string || '';
-  const authorization = req.headers['authorization'] as string || `Bearer ${apikey}`;
+  const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+  const apikey = req.headers['x-supabase-key'] as string || SUPABASE_ANON_KEY;
+  const authorization = req.headers['authorization'] as string || `Bearer ${SUPABASE_ANON_KEY}`;
   try {
     const response = await fetch(targetUrl, {
       method: req.method || 'POST',
