@@ -304,7 +304,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const action: string = body.action || "status";
-    const projectId: string = body.projectId;
+    const projectId: string = body.project_id;
     const atomIds: string[] = body.atomIds || [];
 
     if (!projectId) throw new Error("projectId required");
