@@ -55,7 +55,7 @@ export function useDocAssistantPersistent(projectId: string | undefined) {
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       return data as { id: string } | null;
     },
     enabled: !!projectId,

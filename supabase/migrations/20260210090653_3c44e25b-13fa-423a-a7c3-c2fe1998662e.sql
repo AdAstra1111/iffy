@@ -54,21 +54,33 @@ ALTER TABLE public.shoot_days ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.scene_schedule ENABLE ROW LEVEL SECURITY;
 
 -- RLS policies for project_scenes
+DROP POLICY IF EXISTS "Users can view their own scenes" ON public.project_scenes;
 CREATE POLICY "Users can view their own scenes" ON public.project_scenes FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own scenes" ON public.project_scenes;
 CREATE POLICY "Users can insert their own scenes" ON public.project_scenes FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update their own scenes" ON public.project_scenes;
 CREATE POLICY "Users can update their own scenes" ON public.project_scenes FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete their own scenes" ON public.project_scenes;
 CREATE POLICY "Users can delete their own scenes" ON public.project_scenes FOR DELETE USING (auth.uid() = user_id);
 
 -- RLS policies for shoot_days
+DROP POLICY IF EXISTS "Users can view their own shoot days" ON public.shoot_days;
 CREATE POLICY "Users can view their own shoot days" ON public.shoot_days FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own shoot days" ON public.shoot_days;
 CREATE POLICY "Users can insert their own shoot days" ON public.shoot_days FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update their own shoot days" ON public.shoot_days;
 CREATE POLICY "Users can update their own shoot days" ON public.shoot_days FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete their own shoot days" ON public.shoot_days;
 CREATE POLICY "Users can delete their own shoot days" ON public.shoot_days FOR DELETE USING (auth.uid() = user_id);
 
 -- RLS policies for scene_schedule
+DROP POLICY IF EXISTS "Users can view their own schedule" ON public.scene_schedule;
 CREATE POLICY "Users can view their own schedule" ON public.scene_schedule FOR SELECT USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can insert their own schedule" ON public.scene_schedule;
 CREATE POLICY "Users can insert their own schedule" ON public.scene_schedule FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can update their own schedule" ON public.scene_schedule;
 CREATE POLICY "Users can update their own schedule" ON public.scene_schedule FOR UPDATE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Users can delete their own schedule" ON public.scene_schedule;
 CREATE POLICY "Users can delete their own schedule" ON public.scene_schedule FOR DELETE USING (auth.uid() = user_id);
 
 -- Updated_at triggers

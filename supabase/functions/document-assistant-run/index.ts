@@ -107,7 +107,7 @@ serve(async (req) => {
     let threadId = inputThreadId;
     if (!threadId) {
       const { data: existing } = await sb.from("document_assistant_threads")
-        .select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).single();
+        .select("id").eq("project_id", projectId).order("created_at", { ascending: false }).limit(1).maybeSingle();
       if (existing) {
         threadId = existing.id;
       } else {

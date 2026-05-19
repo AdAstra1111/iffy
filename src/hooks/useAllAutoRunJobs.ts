@@ -99,17 +99,23 @@ async function fetchAllAutoRunJobs(): Promise<AutoRunJob[]> {
 
   if (error) throw error;
 
-  // Fetch project names separately (join-safe approach)
+  // Fetch project names separately (join-safe, chunked to avoid URL length limits)
   const projectIds = [...new Set((data ?? []).map(j => j.project_id).filter(Boolean))];
   let projectNames: Record<string, string> = {};
 
   if (projectIds.length > 0) {
-    const { data: projects } = await supabase
-      .from('projects')
-      .select('id, name')
-      .in('id', projectIds);
-    if (projects) {
-      projectNames = Object.fromEntries(projects.map(p => [p.id, p.name]));
+    const CHUNK_SIZE = 25;
+    for (let i = 0; i < projectIds.length; i += CHUNK_SIZE) {
+      const chunk = projectIds.slice(i, i + CHUNK_SIZE);
+      const { data: projects } = await supabase
+        .from('projects')
+        .select('id, title')
+        .in('id', chunk);
+      if (projects) {
+        for (const p of projects) {
+          projectNames[p.id] = p.title;
+        }
+      }
     }
   }
 

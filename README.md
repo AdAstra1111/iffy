@@ -1,73 +1,53 @@
-# Welcome to your Lovable project
+# IFFY
 
-## Project info
+**Intelligent Framework for Film & Yonder** — a full-stack narrative production operating system for the entertainment industry.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+IFFY atomises stories into structured documents, evaluates them via convergence analysis (GP + CI scores), reverse-ingests existing projects, and extends into real production intelligence.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+## Tech Stack
 
-**Use Lovable**
+- **Frontend**: React + TypeScript (Vite + shadcn-ui + Tailwind)
+- **Backend**: Supabase (Postgres + Edge Functions / Deno)
+- **Deployment**: Vercel (frontend) + Supabase (edge functions)
+- **AI**: Multi-LLM gateway via `ai.gateway.lovable.dev`
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Project Structure
 
-Changes made via Lovable will be committed automatically to this repo.
+```
+src/                          # Frontend application
+  pages/                      # Route pages
+  components/                 # UI components
+  lib/                        # Pure logic (no React)
+  hooks/                      # React hooks
+  integrations/supabase/      # Typed Supabase client
+  config/                     # Document type registries
 
-**Use your preferred IDE**
+supabase/functions/           # Edge Functions (Deno)
+  auto-run/                   # Pipeline orchestrator
+  dev-engine-v2/              # AI document generation
+  _shared/                    # Shared utilities
+    ladder-invariant.ts       # Stage progression guard
+    decisionPolicyRegistry.ts # Promotion routing
+    chunkRunner.ts            # Section-by-section assembly
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+api/                          # Vercel serverless functions
+  supabase-proxy/             # Edge function proxy (CORS + auth)
+  llm.ts                      # LLM gateway
 ```
 
-**Edit a file directly in GitHub**
+See `DEPLOYMENT.md` for deployment procedures, rollback, and troubleshooting.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+---
 
-**Use GitHub Codespaces**
+## Development
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+```bash
+npm run dev          # Dev server on port 8080
+npm run build        # Production build
+npm run lint         # ESLint
+npm run test         # Vitest (single run)
+```
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+See `CLAUDE.md` for architecture guidance and protected files.
