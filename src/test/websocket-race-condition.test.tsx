@@ -195,7 +195,7 @@ describe('useNotifications — structural analysis (race condition proof)', () =
     // Alternative: find the effect near "removeChannel"
     // Look for the specific cleanup pattern
     const cleanupMatch = source.match(
-      /return\s*\(\)\s*=>\s*\{[^}]*removeChannel[^}]*\};\s*\},\s*\[([^\]]+)\]\s*\);/
+      /return\s*\(\s*\)\s*=>\s*\{[^}]*removeChannel[^}]*\};\s*(?:\/\/[^\n]*\n\s*)*\},\s*\[([^\]]+)\]\s*\);/
     );
 
     expect(cleanupMatch).not.toBeNull();
@@ -211,8 +211,8 @@ describe('useNotifications — structural analysis (race condition proof)', () =
 
     // Only stable refs should be in deps
     expect(deps).toContain('user');
-    expect(deps).toContain('queryClient');
-    expect(deps.length).toBe(2);
+    expect(deps).not.toContain('queryClient');
+    expect(deps.length).toBe(1);
   });
 
   it('queryKey is stable — defined outside effect but not in deps', async () => {
@@ -307,7 +307,7 @@ describe('useProjectComments — structural analysis (race condition proof)', ()
 
     // Find the effect cleanup pattern for the realtime subscription
     const cleanupMatch = source.match(
-      /return\s*\(\)\s*=>\s*\{[^}]*removeChannel[^}]*\};\s*\},\s*\[([^\]]+)\]\s*\);/
+      /return\s*\(\s*\)\s*=>\s*\{[^}]*removeChannel[^}]*\};\s*(?:\/\/[^\n]*\n\s*)*\},\s*\[([^\]]+)\]\s*\);/
     );
 
     expect(cleanupMatch).not.toBeNull();
@@ -320,7 +320,7 @@ describe('useProjectComments — structural analysis (race condition proof)', ()
 
     // Only stable refs
     expect(deps).toContain('projectId');
-    expect(deps).toContain('queryClient');
+    expect(deps).not.toContain('queryClient');
   });
 
   it('queryKey is used for invalidation but NOT in effect deps', async () => {
