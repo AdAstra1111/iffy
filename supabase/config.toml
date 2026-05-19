@@ -119,6 +119,7 @@ verify_jwt = false
 
 [functions.auto-run]
 verify_jwt = false
+timeout_seconds = 300  # Pro max. Bump to 360 if Team tier.
 
 [functions.resolve-qualifications]
 verify_jwt = false
@@ -287,3 +288,4 @@ verify_jwt = false
 
 [functions.generate-seed-pack]
 verify_jwt = false
+timeout_seconds = 300  # Pro max. Bump to 360 if Team tier.

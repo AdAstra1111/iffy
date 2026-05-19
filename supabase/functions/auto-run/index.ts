@@ -1,4 +1,5 @@
 const BUILD = "AUTORUN_BUILD_MARKER_2026_03_07_TRANSITION_LEDGER_V1";
+// FORCE-DEPLOY: Bump timeout_seconds=300 for auto-run and generate-seed-pack — reverted in f9bf58a, now restored
 type DocStage = string;
 // CI is the primary quality signal — always weighted 2x over GP
 const CI_WEIGHT = 2;
