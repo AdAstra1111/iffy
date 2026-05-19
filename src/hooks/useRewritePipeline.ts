@@ -65,7 +65,7 @@ interface RewritePipelineState {
   currentEpisodeEnd: number | null;
 }
 
-async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2) {
+async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2, timeoutMs = 120_000) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
 
@@ -73,7 +73,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}, retri
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 120_000);
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
       const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
         method: 'POST',
@@ -327,8 +327,6 @@ export function useRewritePipeline(projectId: string | undefined) {
         const epStart = meta?.episode_start ?? null;
         const epEnd = meta?.episode_end ?? null;
 
-        setState(s => ({ ...s, currentChunk: i + 1, currentEpisodeStart: epStart, currentEpisodeEnd: epEnd }));
-
         // Mark episode(s) as rewriting
         if (resolvedStrategy === 'episodic_indexed' && epStart != null) {
           setEpisodeUnits(prev => prev.map(u =>
@@ -342,13 +340,16 @@ export function useRewritePipeline(projectId: string | undefined) {
           planRunId,
           chunkIndex: i,
           previousChunkEnding: previousChunkEnding.slice(-2000),
-        });
+        }, 2, 300_000);
 
         const chunkMs = Date.now() - chunkStart;
         durationsRef.current.push(chunkMs);
 
         rewrittenChunks.push(result.rewrittenText);
         previousChunkEnding = result.rewrittenText;
+
+        // Update chunk progress only after successful completion
+        setState(s => ({ ...s, currentChunk: i + 1, currentEpisodeStart: epStart, currentEpisodeEnd: epEnd }));
 
         const actualPct = ((i + 1) / totalChunks) * 100;
         const avg = rollingAvg(durationsRef.current);
