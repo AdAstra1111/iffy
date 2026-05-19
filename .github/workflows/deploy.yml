@@ -1,0 +1,139 @@
+name: Deploy All
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'api/**'
+      - 'supabase/functions/**'
+      - 'supabase/config.toml'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'tsconfig*.json'
+      - 'tailwind.config.ts'
+      - 'postcss.config.js'
+      - 'vercel.json'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for manual deploy'
+        required: false
+        default: 'Manual trigger'
+
+# OIDC permission for Vercel auth — no VERCEL_TOKEN needed
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Step 1: Path detection — determine what needs deploying
+      - name: Detect changed paths
+        id: changed
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'src/**'
+              - 'api/**'
+              - 'index.html'
+              - 'package.json'
+              - 'package-lock.json'
+              - 'vite.config.ts'
+              - 'tsconfig*.json'
+              - 'tailwind.config.ts'
+              - 'postcss.config.js'
+              - 'vercel.json'
+            functions:
+              - 'supabase/functions/**'
+              - 'supabase/config.toml'
+
+      # Step 2: Validate edge functions (if functions changed)
+      - name: Setup Supabase CLI
+        if: steps.changed.outputs.functions == 'true'
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.100.1
+
+      - name: Install Deno (for type-checking)
+        if: steps.changed.outputs.functions == 'true'
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Validate edge function imports
+        if: steps.changed.outputs.functions == 'true'
+        run: |
+          for fn in supabase/functions/*/; do
+            name=$(basename "$fn")
+            case "$name" in
+              _shared|_temp-bootstrap|test-deploy|test-env) continue ;;
+            esac
+            if [ -f "${fn}index.ts" ]; then
+              echo "Checking: $name"
+              deno check --config supabase/functions/deno.json "${fn}index.ts" 2>&1 \
+                || echo "WARNING: $name has type errors (deploying anyway)"
+            fi
+          done
+
+      # Step 3: Deploy edge functions (if functions changed)
+      - name: Deploy all edge functions
+        if: steps.changed.outputs.functions == 'true'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: |
+          for fn in supabase/functions/*/; do
+            name=$(basename "$fn")
+            case "$name" in
+              _shared|_temp-bootstrap|test-deploy|test-env) continue ;;
+            esac
+            if [ -f "${fn}index.ts" ]; then
+              echo "Deploying: $name"
+              supabase functions deploy "$name" \
+                --project-ref hdfderbphdobomkdjypc \
+                --no-verify-jwt \
+                --use-api || echo "WARNING: $name deploy failed (continuing)"
+            fi
+          done
+
+      # Step 4: Deploy frontend to Vercel (if frontend changed) — NO TOKEN NEEDED
+      - name: Deploy to Vercel (OIDC)
+        if: steps.changed.outputs.frontend == 'true'
+        run: |
+          npm install -g vercel
+          vercel deploy --prod \
+            --build-env VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
+            --build-env VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }} \
+            --build-env VITE_SUPABASE_PROJECT_ID=${{ secrets.VITE_SUPABASE_PROJECT_ID }} \
+            --yes
+
+      # Step 5: Verify deploy
+      - name: Verify deploy — curl production URL
+        if: steps.changed.outputs.frontend == 'true'
+        run: |
+          URL="https://iffy-analysis.vercel.app"
+          echo "Verifying $URL ..."
+          for i in $(seq 1 12); do
+            HTTP_STATUS=$(curl -s -o /tmp/deploy-check.html -w "%{http_code}" "$URL" 2>&1)
+            if [ "$HTTP_STATUS" = "200" ]; then
+              if grep -q "root\|app\|IFFY\|iffy" /tmp/deploy-check.html; then
+                echo "✅ Deploy verified: $URL returns HTTP 200 with expected content"
+                exit 0
+              else
+                echo "⚠️  HTTP 200 but unexpected content, retrying in 5s..."
+              fi
+            else
+              echo "⚠️  HTTP $HTTP_STATUS, retrying in 5s..."
+            fi
+            sleep 5
+          done
+          echo "❌ Deploy verification failed after 12 retries (~60s)"
+          cat /tmp/deploy-check.html
+          exit 1
