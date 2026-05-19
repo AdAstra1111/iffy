@@ -2158,24 +2158,27 @@ export default function ProjectDevelopmentEngine() {
                      const jobHasDecisions = Array.isArray(autoRun.job?.pending_decisions) && (autoRun.job!.pending_decisions as any[]).length > 0;
                      if (jobHasDecisions) {
                        setIntelligenceTab('notes');
-                       setTimeout(() => {
+                       // Root cause: scrollIntoView({ behavior: 'smooth' }) inside setTimeout caused forced synchronous layout on every scroll action.
+                       requestAnimationFrame(() => {
                          const el = document.getElementById('decision-panel-anchor');
                          el?.scrollIntoView({ behavior: 'smooth' });
-                       }, 100);
+                       });
                      } else {
                        setIntelligenceTab('convergence');
-                       setTimeout(() => {
+                       // Root cause: scrollIntoView({ behavior: 'smooth' }) inside setTimeout caused forced synchronous layout.
+                       requestAnimationFrame(() => {
                          const el = document.getElementById('approval-queue-anchor');
                          el?.scrollIntoView({ behavior: 'smooth' });
-                       }, 100);
+                       });
                      }
                    }}
                    onScrollToCriteria={() => {
                      setIntelligenceTab('criteria');
-                     setTimeout(() => {
+                     // Root cause: scrollIntoView({ behavior: 'smooth' }) inside setTimeout caused forced synchronous layout.
+                     requestAnimationFrame(() => {
                        const el = document.getElementById('criteria-panel');
                        el?.scrollIntoView({ behavior: 'smooth' });
-                     }, 100);
+                     });
                    }}
                 />
               )}

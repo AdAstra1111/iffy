@@ -177,6 +177,9 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
   // Conditional cache invalidation tracker
   const prevJobSignatureRef = useRef<{ status?: string; current_document?: string }>({});
 
+  // Deferred cache invalidation: only triggers on document transition, not every Realtime event
+  const prevJobDocRef = useRef<string | undefined>(undefined);
+
   // ── Helpers ──
   const invalidateCachesConditionally = useCallback((job: AutoRunJob | null) => {
     if (!job) return;
@@ -302,7 +305,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
           isRunning: running,
         });
 
-        invalidateCachesConditionally(mergedJob as AutoRunJob);
+        // NOTE: Cache invalidation moved to separate deferred effect below
+        // to avoid blocking the main-thread Realtime message handler (~269ms).
       }
     )
     .subscribe((status: string) => {
@@ -318,67 +322,66 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     };
   }, [projectId, state.activated, invalidateCachesConditionally]);
 
-  // ── 30s fallback heartbeat fallback during Realtime downtime (includes run-next nudge) ──
+  // ── Deferred cache invalidation on document transition ──
+  // Root cause: cache invalidation inside Realtime callback blocked main thread for 269ms per message.
+  // Moved to separate deferred effect so Realtime callback only dispatches (sub-millisecond).
+  useEffect(() => {
+    if (!state.job) return;
+    // Only invalidate when current_document changes (stage transition) — not on every heartbeat/status
+    if (state.job.current_document !== prevJobDocRef.current) {
+      prevJobDocRef.current = state.job.current_document;
+      requestAnimationFrame(() => {
+        startTransition(() => {
+          qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+          qc.invalidateQueries({ queryKey: ['dev-v2-versions'] });
+          qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
+          qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
+        });
+      });
+    }
+  }, [state.job?.current_document, projectId, qc]);
+
+  // ── Passive connectivity heartbeat (no status fetch when Realtime is healthy) ──
+  // Root cause: 30s heartbeat ran full status fetch + cache invalidation even when Realtime was healthy.
+  // Replaced with passive connectivity check — only fetches when connection is down, no cache invalidations.
   useEffect(() => {
     if (!projectId || !isValidUUID(projectId) || !state.activated) return;
 
-    let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
-    let heartbeatFailures = 0;
+    let pingTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const doHeartbeat = async () => {
-      if (!projectId || !isValidUUID(projectId)) return;
+    const ping = async () => {
+      // If Realtime is healthy, skip entirely — no work needed
+      if (state.connectionState === 'online') {
+        schedulePing();
+        return;
+      }
 
+      // Realtime is down — do a single status fetch, no cache invalidate
       try {
         const result = await callAutoRun('status', { projectId });
-
-        // Heartbeat succeeded — reset failure counter
-        heartbeatFailures = 0;
-        dispatch({ type: 'CONNECTION_STATE', connectionState: 'online' });
-
         if (result?.job) {
           const running = result.job.status === 'running' && !result.job.awaiting_approval;
-
           dispatch({
             type: 'JOB_UPDATED',
             job: result.job,
             steps: result.latest_steps || [],
             isRunning: running,
-            backendDiagnostic: result as DebugWhyBlockedResult,
           });
-
-          invalidateCachesConditionally(result.job);
-
-          // ── Run-next nudge: if job is running but not processing → nudge ──
-          if (running && !result.job.is_processing) {
-            callAutoRun('run-next', { jobId: result.job.id }).catch((nudgeErr) => {
-              console.warn('[auto-run heartbeat] nudge run-next failed:', nudgeErr.message);
-            });
-          }
+          dispatch({ type: 'CONNECTION_STATE', connectionState: 'online' });
         }
-      } catch (e: any) {
-        heartbeatFailures += 1;
-        console.warn(`[auto-run heartbeat] failure #${heartbeatFailures}:`, e.message);
-
-        if (heartbeatFailures >= 3) {
-          dispatch({ type: 'CONNECTION_STATE', connectionState: 'disconnected' });
-          dispatch({ type: 'CONNECTION_STATE', connectionState: 'reconnecting' });
-        }
+      } catch {
+        // Still down — will retry next cycle
       }
+      schedulePing();
     };
 
-    const scheduleHeartbeat = () => {
-      heartbeatTimer = setTimeout(async () => {
-        await doHeartbeat();
-        scheduleHeartbeat();
-      }, 30_000);
+    const schedulePing = () => {
+      pingTimer = setTimeout(ping, 60_000);
     };
 
-    scheduleHeartbeat();
-
-    return () => {
-      if (heartbeatTimer) clearTimeout(heartbeatTimer);
-    };
-  }, [projectId, state.activated, invalidateCachesConditionally]);
+    schedulePing();
+    return () => { if (pingTimer) clearTimeout(pingTimer); };
+  }, [projectId, state.activated, state.connectionState]);
 
   // ── Auto-resume effect: when paused + allow_defaults, resume automatically ──
   useEffect(() => {

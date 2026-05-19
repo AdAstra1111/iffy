@@ -238,9 +238,15 @@ export function DocAssistantDrawer({
   const [open, setOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Root cause: synchronous scrollHeight read + scrollTop write in useEffect caused forced reflow on every message update.
+  // Deferred to requestAnimationFrame to avoid forced synchronous layout.
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     }
   }, [assistant.messages]);
 
