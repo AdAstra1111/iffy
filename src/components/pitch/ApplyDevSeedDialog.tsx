@@ -300,7 +300,7 @@ async function createDocWithVersion(
       generatorId: 'devseed',
       createdBy: userId,
       sourceMode: 'seed_override',
-      status: 'approved',
+      approvalStatus: 'approved',
       metaJson: metaWithProvenance,
     });
   } catch (verErr: any) {

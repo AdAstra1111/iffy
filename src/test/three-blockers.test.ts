@@ -56,7 +56,7 @@ describe("Blocker 1: PitchIdeas RLS — createDocumentVersion() in ApplyDevSeedD
     expect(callBlock).toContain("changeSummary:");
     expect(callBlock).toContain("generatorId:");
     expect(callBlock).toContain("sourceMode:");
-    expect(callBlock).toContain("status:");
+    expect(callBlock).toContain("approvalStatus:");
   });
 
   it("catches createDocumentVersion errors without crashing (graceful degradation)", () => {

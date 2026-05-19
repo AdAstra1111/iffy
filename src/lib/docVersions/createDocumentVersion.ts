@@ -30,6 +30,7 @@ export interface CreateDocumentVersionParams {
   createdBy: string;
   sourceMode: ClientSourceMode;
   status?: string;
+  approvalStatus?: string;
   metaJson?: Record<string, unknown>;
 }
 
@@ -67,6 +68,7 @@ export async function createDocumentVersion(
       generatorId: params.generatorId,
       sourceMode: params.sourceMode,
       status: params.status || 'draft',
+      approvalStatus: params.approvalStatus,
       metaJson: params.metaJson || {},
     },
   });

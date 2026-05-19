@@ -67,6 +67,7 @@ Deno.serve(async (req) => {
       generatorId,
       sourceMode,
       status,
+      approvalStatus,
       metaJson,
     } = body;
 
@@ -105,6 +106,7 @@ Deno.serve(async (req) => {
       generatorId,
       parentVersionId: parentVersionId || undefined,
       status: status || "draft",
+      approvalStatus: approvalStatus || undefined,
       metaJson: metaJson || {},
       // Structured provenance — typed source_mode, no generic "client" writes
       inputsUsed: {
