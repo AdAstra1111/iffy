@@ -169,12 +169,10 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
   // Preserve all existing refs used by auto-resume and other logic
   const abortRef = useRef(false);
-  const consecutiveFailuresRef = useRef(0);
   const autoResumeFailCountRef = useRef(0);
   const autoResumeInFlightRef = useRef(false);
   const autoResumeLastAttemptSignatureRef = useRef<string | null>(null);
   const lastSuccessRef = useRef(Date.now());
-  const pollInFlightRef = useRef(false);
 
   // Conditional cache invalidation tracker
   const prevJobSignatureRef = useRef<{ status?: string; current_document?: string }>({});
@@ -206,12 +204,10 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
   // Reset local mission state when project changes (prevents cross-project bleed)
   useEffect(() => {
     abortRef.current = false;
-    consecutiveFailuresRef.current = 0;
     autoResumeFailCountRef.current = 0;
     autoResumeInFlightRef.current = false;
     autoResumeLastAttemptSignatureRef.current = null;
     lastSuccessRef.current = Date.now();
-    pollInFlightRef.current = false;
     prevJobSignatureRef.current = {};
     dispatch({ type: 'RESET' });
     dispatch({ type: 'CONNECTION_STATE', connectionState: 'online' });
@@ -295,17 +291,14 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
         // Realtime received an update — connection is online
         dispatch({ type: 'CONNECTION_STATE', connectionState: 'online' });
 
-        // Merge incoming data with existing job state (Realtime only gives partial data)
-        const currentJob = state.job;
-        const mergedJob = currentJob
-          ? { ...currentJob, ...updatedData }
-          : (updatedData as unknown as AutoRunJob);
-        const running = (mergedJob as any).status === 'running' && !(mergedJob as any).awaiting_approval;
+        // Realtime delivers complete row data — no merge needed
+        const mergedJob = updatedData as unknown as AutoRunJob;
+        const running = mergedJob.status === 'running' && !mergedJob.awaiting_approval;
 
         dispatch({
           type: 'JOB_UPDATED',
-          job: mergedJob as AutoRunJob,
-          steps: currentJob?._steps || state.steps || [],
+          job: mergedJob,
+          steps: state.steps || [],
           isRunning: running,
         });
 

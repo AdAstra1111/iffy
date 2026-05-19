@@ -138,8 +138,7 @@ describe('TEST 3 — Realtime subscription on auto_run_jobs', () => {
     const fs = await import('fs');
     const source = fs.readFileSync(SOURCE_PATH, 'utf-8');
 
-    expect(source).toContain('const mergedJob = currentJob');
-    expect(source).toContain('{ ...currentJob, ...updatedData }');
+    expect(source).toContain('const mergedJob = updatedData as unknown as AutoRunJob');
     expect(source).toContain("type: 'JOB_UPDATED'");
   });
 
