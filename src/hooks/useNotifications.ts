@@ -51,7 +51,7 @@ export function useNotifications() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, queryClient, queryKey]);
+  }, [user, queryClient]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
