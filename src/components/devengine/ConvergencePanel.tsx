@@ -87,9 +87,9 @@ export function ConvergencePanel({ latestAnalysis, latestConvergence, convergenc
   // after every analyze, so metaCi/metaGp should match analysisCi/analysisGp.
   // If they diverge, prefer the live analysis value (development_runs is authoritative)
   // and flag the inconsistency for logging.
-  const ciDiverged = metaCi !== null && metaCi !== analysisCi;
-  const gpDiverged = metaGp !== null && metaGp !== analysisGp;
-  if (ciDiverged || gpDiverged) {
+  const ciDiverged = !isLoading && metaCi !== null && metaCi !== analysisCi;
+  const gpDiverged = !isLoading && metaGp !== null && metaGp !== analysisGp;
+  if (!isLoading && (ciDiverged || gpDiverged)) {
     console.warn(`[ConvergencePanel] CI/GP divergence detected on version: ci meta=${metaCi} vs analysis=${analysisCi}, gp meta=${metaGp} vs analysis=${analysisGp}`);
   }
   // Prefer live analysis values when diverged (development_runs is authoritative)

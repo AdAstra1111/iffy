@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { isOutputDocType } from '@/config/documentLadders';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -536,9 +536,11 @@ export function useDevEngineV2(projectId: string | undefined) {
   const selectedVersion = versions.find(v => v.id === selectedVersionId) || (versions.length > 0 ? versions[versions.length - 1] : null);
 
   // Auto-select version when versions load
-  if (selectedDocId && !selectedVersionId && versions.length > 0) {
-    setSelectedVersionId(versions[versions.length - 1].id);
-  }
+  useEffect(() => {
+    if (selectedDocId && !selectedVersionId && versions.length > 0) {
+      setSelectedVersionId(versions[versions.length - 1].id);
+    }
+  }, [selectedDocId, selectedVersionId, versions]);
 
   // Latest analysis for selected version
   const latestAnalysis = (runs ?? []).filter(r => r.run_type === 'ANALYZE').pop()?.output_json || null;

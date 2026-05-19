@@ -938,7 +938,7 @@ export default function ProjectDevelopmentEngine() {
   // No sync effect needed — effective values derive from project data directly
 
   // Auto-select all notes
-  useMemo(() => {
+  useEffect(() => {
     if (allPrioritizedMoves.length > 0) {
       setSelectedNotes(new Set(allPrioritizedMoves.map((_, i) => i)));
     }
