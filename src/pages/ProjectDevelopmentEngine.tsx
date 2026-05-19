@@ -2675,7 +2675,6 @@ export default function ProjectDevelopmentEngine() {
                           });
                           return null;
                         }
-                        console.log('[Promote-to-Script] Showing: eligible for', selectedDoc?.doc_type);
                         return (
                            <ConfirmDialog
                              title="Publish as Script?"

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, startTransition } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { AutoRunJob, AutoRunStep, DebugWhyBlockedResult } from '@/hooks/useAutoRun';
@@ -124,6 +124,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
   const autoResumeLastAttemptSignatureRef = useRef<string | null>(null);
   const lastSuccessRef = useRef(Date.now());
   const pollInFlightRef = useRef(false);
+  const idlePollCountRef = useRef(0);
   const doPollRef = useRef<() => Promise<void>>();
 
   // Auto-activate Mission Control on entry so controls/status are always available
@@ -143,6 +144,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     autoResumeInFlightRef.current = false;
     autoResumeLastAttemptSignatureRef.current = null;
     lastSuccessRef.current = Date.now();
+    idlePollCountRef.current = 0;
     setJob(null);
     setSteps([]);
     setIsRunning(false);
@@ -177,6 +179,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
   }, [existingJob]);
 
   // Discover jobs started from other panels (keeps Clean/Advanced in sync)
+  // One-shot: the main polling loop handles interval-based polling
   useEffect(() => {
     if (!projectId || !activated || job?.id) return;
 
@@ -196,11 +199,7 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
     };
 
     discover();
-    const interval = setInterval(discover, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    return () => { cancelled = true; };
   }, [projectId, activated, job?.id]);
 
   // ── Resilient Polling with backoff ──
@@ -240,10 +239,13 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
       setBackendDiagnostic(result as DebugWhyBlockedResult);
 
       // Refresh document tray + version lists on every poll so auto-run-created docs/versions appear immediately
-      qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-      qc.invalidateQueries({ queryKey: ['dev-v2-versions'] });
-      qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
-      qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
+      // Wrap in startTransition — cache refetches are non-urgent and shouldn't delay state updates
+      startTransition(() => {
+        qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions'] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
+        qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
+      });
 
       const running = !!result.job && result.job.status === 'running' && !result.job.awaiting_approval;
       const isPausedAutoResumable = !!result.job && result.job.status === 'paused' && result.job.allow_defaults === true && !isHumanRequiredPause(result.job) && autoResumeFailCountRef.current < 3;
@@ -261,6 +263,19 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
         callAutoRun('run-next', { jobId: result.job.id }).catch((nudgeErr) => {
           console.warn('[auto-run poll] nudge run-next failed:', nudgeErr.message);
         });
+      }
+
+      // ── Idle detection guard — if job is idle (running but not processing) for 5+
+      //     consecutive polls, switch to slow heartbeat to reduce setTimeout jank ──
+      if (running && !isPausedAutoResumable && !result.job.is_processing) {
+        idlePollCountRef.current += 1;
+        if (idlePollCountRef.current >= 5) {
+          // Slow heartbeat — check back in 60s instead of 3s
+          schedulePoll(60_000);
+          return;
+        }
+      } else {
+        idlePollCountRef.current = 0;
       }
 
       // Schedule next poll — shorter interval when idle to catch dropped chains
@@ -282,8 +297,8 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
         setConnectionState('reconnecting');
       }
 
-      // Exponential backoff: 2s → max 20s + jitter
-      const backoff = Math.min(20_000, 2000 * Math.pow(1.5, Math.min(failures, 10))) + Math.random() * 1000;
+      // Exponential backoff: 5s → max 30s + jitter (softer start reduces setTimeout instances)
+      const backoff = Math.min(30_000, 5000 * Math.pow(1.5, Math.min(failures, 10))) + Math.random() * 1000;
       schedulePoll(backoff);
     } finally {
       pollInFlightRef.current = false;
