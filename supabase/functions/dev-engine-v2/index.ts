@@ -8536,7 +8536,7 @@ NOTES REQUIRING DECISIONS:\n${JSON.stringify(notesForPrompt)}
 
 MATERIAL:\n${version.plaintext}`;
 
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000).catch((err: any) => {
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 12000).catch((err: any) => {
         console.error("[dev-engine-v2] options: callAI failed:", err?.message);
         throw new Error(`AI call failed: ${err?.message || "Unknown AI error"}`);
       });
@@ -8545,8 +8545,56 @@ MATERIAL:\n${version.plaintext}`;
         throw new Error(`Failed to parse AI response: ${err?.message || "Parse error"}`);
       });
       if (!parsed) {
-        console.error("[dev-engine-v2] options: parseAIJson returned null", raw?.slice(0, 300));
-        throw new Error("MODEL_JSON_PARSE_FAILED");
+        console.warn("[dev-engine-v2] options: parseAIJson returned null — falling back to inline note decisions", raw?.slice(0, 300));
+        // Graceful fallback: build decisions from inline note decisions
+        const inlineDecisions: any[] = [];
+        for (const n of [...blockers, ...highImpact]) {
+          if (n.decisions?.length > 0) {
+            inlineDecisions.push({
+              note_id: n.stable_key || n.id || n.note_key,
+              severity: n.severity || (blockers.includes(n) ? "blocker" : "high"),
+              note: n.description || n.note,
+              options: n.decisions.map((d: any, i: number) => ({
+                option_id: d.option_id || `${n.stable_key || n.id}-${String.fromCharCode(65 + i)}`,
+                title: d.title || d.description || `Option ${i + 1}`,
+                what_changes: Array.isArray(d.what_changes) ? d.what_changes : (d.text ? [d.text] : []),
+                tradeoffs: d.tradeoffs || "",
+                creative_risk: d.creative_risk || "med",
+                commercial_lift: typeof d.commercial_lift === "number" ? d.commercial_lift : 0,
+              })),
+              recommended_option_id: n.recommended_option_id || n.recommended,
+            });
+          }
+        }
+        if (inlineDecisions.length > 0) {
+          const fallbackResponse = {
+            decisions: inlineDecisions,
+            global_directions: notes?.global_directions || [],
+          };
+          // Store as OPTIONS run
+          const { data: fallbackRun, error: fallbackErr } = await supabase.from("development_runs").insert({
+            project_id: projectId,
+            document_id: documentId,
+            version_id: versionId,
+            user_id: user.id,
+            run_type: "OPTIONS",
+            output_json: fallbackResponse,
+          }).select().single();
+          if (fallbackErr) {
+            console.error("[dev-engine-v2] options: fallback insert failed:", fallbackErr);
+            return new Response(JSON.stringify({ error: "Fallback insert failed", details: fallbackErr.message }), {
+              status: 500,
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          return new Response(JSON.stringify({ run: fallbackRun, options: fallbackResponse }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ error: "MODEL_JSON_PARSE_FAILED — no inline decisions available" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
 
       // Store as OPTIONS run
@@ -8559,7 +8607,10 @@ MATERIAL:\n${version.plaintext}`;
         output_json: parsed,
       }).select().single();
       if (runErr) {
-        if (runErr.code === "23503") throw new Error("Version no longer exists — please re-select the document and try again");
+        if (runErr.code === "23503") return new Response(JSON.stringify({ error: "Version no longer exists — please re-select the document and try again" }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
         throw runErr;
       }
 

@@ -155,6 +155,49 @@ export function DecisionModePanel({
       setSelectedOptions(autoSelections);
     } catch (e: any) {
       toast.error(`Options failed: ${e.message}`);
+      // Fallback: try loading inline decisions from the latest NOTES run
+      try {
+        if (documentId && versionId) {
+          const { data: latestNotesRun } = await supabase
+            .from("development_runs")
+            .select("output_json")
+            .eq("version_id", versionId)
+            .eq("run_type", "NOTES")
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (latestNotesRun?.output_json) {
+            const notesData = latestNotesRun.output_json;
+            const blockers = notesData.blocking_issues || [];
+            const highImpact = notesData.high_impact_notes || [];
+            const inlineDecisions: any[] = [];
+            for (const n of [...blockers, ...highImpact]) {
+              if (n.decisions?.length > 0) {
+                inlineDecisions.push({
+                  note_id: n.stable_key || n.id || n.note_key,
+                  severity: "blocker",
+                  note: n.description || n.note,
+                  options: n.decisions,
+                  recommended_option_id: n.recommended_option_id || n.recommended,
+                });
+              }
+            }
+            if (inlineDecisions.length > 0) {
+              setDecisions(normalizeDecisionsForUI(inlineDecisions, 'decision-mode-panel:inline-fallback') as Decision[]);
+              setGlobalDirections(notesData.global_directions || []);
+              const autoSelections: Record<string, string> = {};
+              for (const d of inlineDecisions) {
+                const rec = d.recommended_option_id || d.recommended;
+                if (rec) autoSelections[d.note_id] = rec;
+              }
+              setSelectedOptions(autoSelections);
+              toast.success("Loaded inline decisions from notes as fallback");
+            }
+          }
+        }
+      } catch (fallbackErr) {
+        console.warn("[DecisionModePanel] inline decision fallback also failed:", fallbackErr);
+      }
     } finally {
       setIsLoadingOptions(false);
     }

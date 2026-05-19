@@ -52,12 +52,24 @@ function logMalformed(source: string, decisionKey: string, missingFields: string
   });
 }
 
+function extractString(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value && typeof value === 'object') {
+    return (value as any)?.description
+      || (value as any)?.element
+      || (value as any)?.change
+      || (value as any)?.text
+      || JSON.stringify(value);
+  }
+  return String(value);
+}
+
 function normalizeDecisionOption(raw: any): UIDecisionOption {
   const optionId = asString(raw?.option_id) || asString(raw?.value) || asString(raw?.id) || 'unknown_option';
   const title = asString(raw?.title) || asString(raw?.label) || asString(raw?.value) || optionId;
   const whatChanges = Array.isArray(raw?.what_changes)
-    ? raw.what_changes.map((x: any) => String(x)).filter(Boolean)
-    : (raw?.why ? [String(raw.why)] : []);
+    ? raw.what_changes.map((x: any) => extractString(x)).filter(Boolean)
+    : (raw?.why ? [extractString(raw.why)] : []);
 
   return {
     option_id: optionId,
