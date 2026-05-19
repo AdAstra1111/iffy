@@ -44,7 +44,7 @@ jobs:
           # Deploy all edge functions dynamically — prevents missing-function drift.
           # If a function isn't ready for production, remove its directory from supabase/functions/.
           # This replaces the manual-list approach that repeatedly missed new functions.
-          supabase functions deploy --no-lock --all \
+          supabase functions deploy --all \
             --project-ref hdfderbphdobomkdjypc \
             --no-verify-jwt \
             --use-api
