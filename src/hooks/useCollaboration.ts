@@ -237,7 +237,8 @@ export function useProjectComments(projectId: string | undefined, section?: stri
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [projectId, queryClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
 
   const addComment = useMutation({
     mutationFn: async ({ content, parentId, commentSection }: { content: string; parentId?: string; commentSection?: string }) => {

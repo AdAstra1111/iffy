@@ -72,7 +72,11 @@ export function useProjectPosters(projectId: string | undefined) {
         .select("*")
         .eq("project_id", projectId)
         .order("version_number", { ascending: false });
-      if (error) throw error;
+      // Graceful 404: table may not exist — return empty instead of throwing
+      if (error) {
+        console.warn("[useProjectPosters] query error (returning empty):", error.message || error.code);
+        return [];
+      }
       const raw = (data || []) as ProjectPoster[];
       // Hydrate with signed URLs since bucket is private
       return hydrateSignedUrls(raw);

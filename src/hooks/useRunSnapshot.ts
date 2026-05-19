@@ -246,6 +246,17 @@ export function useRunSnapshot(
       return null;
     }
 
+    // Inactive job guard: stopped/failed jobs with no current_document have nothing to snapshot.
+    // This prevents the snapshot_fail_closed → rehydrate loop for zombie jobs.
+    if ((job.status === 'stopped' || job.status === 'failed') && !job.current_document) {
+      console.log('[mission-control][IEL] snapshot_skipped', {
+        reason: 'inactive_no_current_document',
+        job_id: job.id,
+        status: job.status,
+      });
+      return null;
+    }
+
     if (!job.current_document) {
       console.log('[mission-control][IEL] snapshot_fail_closed', {
         reason: 'current_document_empty',

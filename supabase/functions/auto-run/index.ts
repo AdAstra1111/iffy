@@ -5015,6 +5015,10 @@ Deno.serve(async (req) => {
           // Pick highest-priority status; within same status pick most recent
           for (const status of STATUS_PRIORITY) {
             const match = candidates.find((j: any) => {
+              // Skip zombie stopped jobs with no steps — never return these to the frontend
+              if (j.status === "stopped" && (j.step_count ?? 0) === 0) {
+                return false;
+              }
               if (status === "paused") return j.status === "paused" || j.awaiting_approval;
               return j.status === status;
             });

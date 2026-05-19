@@ -33,16 +33,28 @@ export function useActiveProjectPoster(projectId: string | undefined): {
       if (!projectId) return EMPTY;
 
       // Fetch only the active poster (single row)
-      const { data: poster, error } = await (supabase as any)
-        .from('project_posters')
-        .select('id, key_art_storage_path, rendered_storage_path, render_status')
-        .eq('project_id', projectId)
-        .eq('is_active', true)
-        .eq('status', 'ready')
-        .limit(1)
-        .maybeSingle();
+      let poster: any = null;
+      try {
+        const result = await (supabase as any)
+          .from('project_posters')
+          .select('id, key_art_storage_path, rendered_storage_path, render_status')
+          .eq('project_id', projectId)
+          .eq('is_active', true)
+          .eq('status', 'ready')
+          .limit(1)
+          .maybeSingle();
+        poster = result.data;
+        if (result.error) {
+          // Graceful 404: table may not exist — return EMPTY instead of throwing
+          console.warn('[useActiveProjectPoster] query error (returning EMPTY):', result.error.message || result.error.code);
+          return EMPTY;
+        }
+      } catch (err: any) {
+        console.warn('[useActiveProjectPoster] query exception (returning EMPTY):', err.message);
+        return EMPTY;
+      }
 
-      if (error || !poster) return EMPTY;
+      if (!poster) return EMPTY;
 
       // Prefer rendered poster, fall back to key art
       const storagePath = poster.rendered_storage_path || poster.key_art_storage_path;
@@ -86,7 +98,12 @@ export function useActivePostersForProjects(projectIds: string[]): {
         .eq('is_active', true)
         .eq('status', 'ready');
 
-      if (error || !posters?.length) return new Map();
+      // Graceful 404: table may not exist — return empty instead of throwing
+      if (error) {
+        console.warn('[useActivePostersForProjects] query error (returning empty):', error.message || error.code);
+        return new Map();
+      }
+      if (!posters?.length) return new Map();
 
       // Sign all URLs in parallel
       const entries = await Promise.all(

@@ -230,6 +230,12 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
 
   useEffect(() => {
     if (existingJob?.job) {
+      // Zombie job guard: skip stopped jobs with no steps — these are dead jobs
+      // that would trigger the job_rehydrate → snapshot_fail_closed → rehydrate loop
+      if (existingJob.job.status === 'stopped' && (existingJob.job.step_count ?? 0) === 0) {
+        console.log(`[mission-control][IEL] job_rehydrate_skipped { reason: "zombie_job", job_id: "${existingJob.job.id}" }`);
+        return;
+      }
       const running = existingJob.job.status === 'running' && !existingJob.job.awaiting_approval;
       dispatch({
         type: 'JOB_UPDATED',

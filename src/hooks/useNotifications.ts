@@ -51,7 +51,8 @@ export function useNotifications() {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [user, queryClient]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
