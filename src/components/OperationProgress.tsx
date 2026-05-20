@@ -64,14 +64,8 @@ export function OperationProgress({ isActive, stages = DEFAULT_STAGES, className
         if (current > 96) {
           current = 96;
           if (!atCapSince) atCapSince = Date.now();
-          if (Date.now() - atCapSince > stallTimeoutMs) {
-            setProgress(100);
-            setLabel('Done!');
-            setTimeout(stop, 400);
-            return;
-          }
           if (Date.now() - atCapSince > stallTimeoutMs / 2) {
-            setLabel('Still working — large documents take a few minutes…');
+            setLabel('Still working — this may take a minute or two…');
           }
         }
         setProgress(current);
