@@ -33029,6 +33029,7 @@ No stubs, no placeholders, no TODO markers.`;
 
           const targetOutput = stage.toUpperCase();
           const necBlock = await loadNECGuardrailBlock(supabase, projectId);
+          const constraintPack = await loadConstraintPack(supabase, projectId);
           const isEpisodeCountDoc = EPISODE_COUNT_DOCS.has(stage);
 
           if (isEpisodeCountDoc && canonicalEpisodeCount == null) {
@@ -33176,10 +33177,25 @@ Do NOT produce: scene breakdowns, JSON, outlines, beat lists, or planning artifa
 This must read as a professional screenplay, not a structural summary.\n`;
           }
 
+          // ── TEMPLATE INJECTION for regen tick ──
+          let templateBlock = "";
+          try {
+            const { buildTemplatePrompt } = await import("../_shared/docTypeTemplates.ts");
+            const resolvedDocTypeForTemplate = stage.toLowerCase().replace(/[\s\-]+/g, "_");
+            const tb = buildTemplatePrompt(resolvedDocTypeForTemplate, {
+              title: proj?.title || "Untitled",
+              format: fmt,
+              episodeCount: canonicalEpisodeCount ?? undefined,
+              episodeDurationMin: undefined,
+              episodeDurationMax: undefined,
+            });
+            if (tb) templateBlock = tb;
+          } catch { /* non-fatal */ }
+
           const userPrompt = `SOURCE FORMAT: ${upstream.upstreamType}
 TARGET FORMAT: ${targetOutput}
 PROTECT (non-negotiable creative DNA): []
-${canonBlock}${necBlock}${formatGuidance}
+${canonBlock}${necBlock}${constraintPack}${formatGuidance}
 ${episodeCountBlock}
 
 CRITICAL: Produce a FULL, COMPLETE ${stage.replace(/_/g, " ")} document.
@@ -33187,7 +33203,7 @@ Do NOT produce stubs, placeholders, or TODO markers.
 Include all required sections with substantive content.
 
 MATERIAL:
-${upstreamText}`;
+${upstreamText}${templateBlock}`;
 
           const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, CONVERT_SYSTEM_JSON, userPrompt, 0.35, 10000);
           let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
