@@ -23,9 +23,8 @@ on:
         required: false
         default: 'Manual trigger'
 
-# OIDC permission for Vercel auth — no VERCEL_TOKEN needed
+# VERCEL_TOKEN auth — fallback to token-based deploy (OIDC removed due to repeated failures)
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -103,12 +102,12 @@ jobs:
             fi
           done
 
-      # Step 4: Deploy frontend to Vercel (if frontend changed) — NO TOKEN NEEDED
-      - name: Deploy to Vercel (OIDC)
+      # Step 4: Deploy frontend to Vercel (if frontend changed)
+      - name: Deploy to Vercel (token)
         if: steps.changed.outputs.frontend == 'true'
         run: |
           npm install -g vercel
-          vercel deploy --prod \
+          vercel deploy --prod --token=${{ secrets.VERCEL_TOKEN }} \
             --build-env VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
             --build-env VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }} \
             --build-env VITE_SUPABASE_PROJECT_ID=${{ secrets.VITE_SUPABASE_PROJECT_ID }} \
