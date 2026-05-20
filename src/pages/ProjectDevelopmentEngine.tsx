@@ -203,7 +203,7 @@ export default function ProjectDevelopmentEngine() {
       const { data: { session } } = await import('@/integrations/supabase/client').then(m => m.supabase.auth.getSession());
       if (!session) throw new Error('Not authenticated');
       if (!selectedDocId || !selectedVersionId) throw new Error('No document or version selected');
-      const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+      const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ action: 'options', projectId, documentId: selectedDocId, versionId: selectedVersionId }),

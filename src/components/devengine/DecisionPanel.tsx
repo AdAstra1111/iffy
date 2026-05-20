@@ -82,7 +82,7 @@ async function callAutoRun(action: string, extra: Record<string, any> = {}) {
 async function callDevEngine(action: string, extra: Record<string, any> = {}) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
-  const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+  const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
     body: JSON.stringify({ action, ...extra }),

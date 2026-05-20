@@ -117,7 +117,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}, timeo
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+  const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

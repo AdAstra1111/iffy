@@ -39,7 +39,7 @@ export interface NarrativeDiagnostic {
   blocked_reason?: string | null;
 }
 
-const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
+const FUNC_URL = `https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`;
 
 async function fetchDiagnostics(projectId: string): Promise<NarrativeDiagnostic[]> {
   const { data: { session } } = await supabase.auth.getSession();

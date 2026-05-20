@@ -534,7 +534,7 @@ function RewriteModal({
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+      const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({
@@ -712,7 +712,7 @@ export default function BeatRewritePanel({
       setBeatStatuses(prev => ({ ...prev, [beat.id]: 'running' }));
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+        const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
           body: JSON.stringify({

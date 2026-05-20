@@ -7,7 +7,7 @@ import { useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-const FUNC_URL = `/api/supabase-proxy/functions/v1/dev-engine-v2`;
+const FUNC_URL = `https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`;
 
 export interface SequentialAdjustments {
   effective_gain: number;

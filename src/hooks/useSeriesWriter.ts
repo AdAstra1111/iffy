@@ -340,7 +340,7 @@ export function useSeriesWriter(projectId: string) {
   async function callDevEngineV2(action: string, body: Record<string, any>) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) throw new Error('Not authenticated');
-    const resp = await fetch(`/api/supabase-proxy/functions/v1/dev-engine-v2`, {
+    const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
