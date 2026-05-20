@@ -45,14 +45,80 @@ function buildTreatmentContent(title: string, bible: any): string {
 }
 
 function buildCharacterBibleContent(title: string, characters: any[]): string {
+  if (!characters || characters.length === 0) {
+    return `# ${title} — Character Bible\n\nNo character data available from DevSeed. Characters can be added from the Project Development Engine.`;
+  }
+
   const lines: string[] = [`# ${title} — Character Bible`, ''];
-  for (const c of characters) {
-    lines.push(`## ${c.name || 'Unnamed'}`, '');
-    if (c.role) lines.push(`**Role:** ${c.role}`);
-    if (c.arc) lines.push(`**Arc:** ${c.arc}`);
-    if (c.flaw) lines.push(`**Flaw:** ${c.flaw}`);
+
+  for (let i = 0; i < characters.length; i++) {
+    const c = characters[i];
+    const index = i + 1;
+    const name = c.name || 'Unnamed';
+    const role = c.role || `Character ${index}`;
+
+    // ── Character header with canonical N. Name (role) format ──
+    lines.push(`## ${index}. ${name} (${role})`, '');
+
+    // ── Prose profile ──
+    const profileParts: string[] = [];
+
+    // Arc-driven description
+    if (c.arc && c.flaw) {
+      profileParts.push(`${name} is a character defined by their arc: ${c.arc}. This journey is shaped by a core flaw: ${c.flaw}. Every decision, every stumble, every hard-won insight traces back to the tension between who they are and who they need to become.`);
+    } else if (c.arc) {
+      profileParts.push(`${name} follows an arc defined by: ${c.arc}. Their evolution across the story is the emotional through-line that anchors the audience's investment.`);
+    } else if (c.flaw) {
+      profileParts.push(`${name} is driven by a defining flaw: ${c.flaw}. This trait colors every interaction and creates the friction that makes their scenes compelling.`);
+    } else {
+      profileParts.push(`${name} serves as ${role}, bringing their own energy to every scene.`);
+    }
+
+    // Role-specific elaboration
+    if (c.role && c.role.toLowerCase().includes('protagonist')) {
+      profileParts.push(`As the central figure, ${name}'s perspective is the audience's entry point into the world. Their decisions carry narrative weight, and their growth — or collapse — defines the story's emotional trajectory.`);
+    } else if (c.role && c.role.toLowerCase().includes('antagonist')) {
+      profileParts.push(`As the opposing force, ${name} creates the friction that tests every other character. Their presence raises the stakes, their actions force growth, and their motivations — however dark — must feel real to the audience.`);
+    } else if (c.role && (c.role.toLowerCase().includes('supporting') || c.role.toLowerCase().includes('sidekick') || c.role.toLowerCase().includes('confidante'))) {
+      profileParts.push(`As a supporting presence, ${name} reflects and challenges the central characters. Their loyalty, wisdom, or friction provides texture to the ensemble dynamic.`);
+    }
+
+    lines.push(profileParts.join(' '), '');
+
+    // ── Character separator (except after last) ──
+    if (i < characters.length - 1) {
+      lines.push('---', '');
+    }
+  }
+
+  // ── RELATIONSHIP DYNAMICS section ──
+  if (characters.length >= 2) {
+    lines.push('## RELATIONSHIP DYNAMICS', '');
+    for (let i = 0; i < characters.length; i++) {
+      for (let j = i + 1; j < characters.length; j++) {
+        const a = characters[i];
+        const b = characters[j];
+        const nameA = a.name || `Character ${i + 1}`;
+        const nameB = b.name || `Character ${j + 1}`;
+        lines.push(`**${nameA} ↔ ${nameB}:** The dynamic between these characters is defined by their contrasting arcs and roles. Each interaction reveals different facets of their personalities — ${nameA}'s ${a.arc || 'journey'} collides with ${nameB}'s ${b.arc || 'path'}, creating tension, growth, and dramatic momentum.`, '');
+      }
+    }
+  } else if (characters.length === 1) {
+    lines.push('## RELATIONSHIP DYNAMICS', '');
+    lines.push('With a single character identified, the primary dramatic tension comes from internal conflict and the character\'s relationship with the world itself. Ensemble dynamics will be developed as the cast expands.', '');
     lines.push('');
   }
+
+  // ── ENSEMBLE NOTES section ──
+  lines.push('## ENSEMBLE NOTES', '');
+  if (characters.length >= 2) {
+    const roles = characters.map((c, i) => `${c.name || `Character ${i + 1}`} (${c.role || `Character ${i + 1}`})`).join(', ');
+    lines.push(`The ensemble comprises ${characters.length} characters: ${roles}. Each brings a distinct dramatic function to the narrative, their arcs intertwining to create the story's emotional architecture.`, '');
+  } else if (characters.length === 1) {
+    lines.push(`A single character (${characters[0].name || 'Character 1'}) anchors this narrative. The cast can be expanded through the Project Development Engine as the story develops.`, '');
+  }
+  lines.push('');
+
   return lines.join('\n');
 }
 
@@ -248,30 +314,58 @@ interface DocStyleMeta {
   applied_at?: string;
 }
 
-function buildFormatRulesContent(title: string, idea: PitchIdea, devSeed: any, format: string): string {
-  const canonDurMin = devSeed?.canon_duration?.min_seconds || 120;
-  const canonDurMax = devSeed?.canon_duration?.max_seconds || 180;
-  const episodeCount = devSeed?.canon_episode_count || null;
+interface FormatRulesOpts {
+  canonDurMin: number | null;
+  canonDurMax: number | null;
+  episodeCount: number | null;
+  productionType: string;
+}
+
+function buildFormatRulesContent(title: string, idea: PitchIdea, opts: FormatRulesOpts): string {
+  const { canonDurMin, canonDurMax, episodeCount, productionType } = opts;
+  const isVerticalDrama = productionType && (
+    productionType.toLowerCase() === 'vertical-drama' ||
+    productionType.toLowerCase() === 'vertical_drama'
+  );
+  const durationStr = (canonDurMin != null && canonDurMax != null)
+    ? `${canonDurMin}-${canonDurMax}s`
+    : 'TBC — set via canon';
+  const episodeCountStr = episodeCount != null ? String(episodeCount) : 'TBC';
+
   const lines: string[] = [
     `# ${title} — Format Rules`, '',
     '## Format Overview', '',
-    `**Lane:** ${idea.recommended_lane || format}`,
-    `**Format:** Vertical Drama`,
+    `**Lane:** ${idea.recommended_lane || 'independent-film'}`,
+    `**Format:** ${isVerticalDrama ? 'Vertical Drama' : productionType || 'TBC'}`,
     `**Budget Band:** ${idea.budget_band || 'TBC'}`,
     '', '## Episode Specifications', '',
+    `**Episode Count:** ${episodeCountStr}`,
+    `**Target Duration:** ${durationStr}`,
+    '',
   ];
-  if (episodeCount) lines.push(`**Episode Count:** ${episodeCount}`);
+
+  if (isVerticalDrama) {
+    lines.push(
+      '## Vertical Drama Specifics', '',
+      '**Episode Structure:** Each episode is a self-contained scene or sequence. Requires a strong hook in the first 3 seconds and a micro-cliffhanger or emotional beat at the end to retain viewers across episodes.',
+      '**Pacing:** Fast cuts, minimal setup, maximum drama density. Every second must serve character emotion, plot pivot, or visceral reaction.',
+      '**Viewer Retention Strategy:** Open with a cold open or mid-action moment. Close with a compelling reason to watch the next episode. Use title cards sparingly.',
+      '**Commercial Break Placement:** Structure for mid-episode break points if distributed on ad-supported platforms.',
+      '',
+    );
+  }
+
   lines.push(
-    `**Target Duration:** ${canonDurMin}-${canonDurMax}s`,
-    '**Format Requirements:** draft stub — generate from dev engine',
-    '', '## Production Constraints', '',
-    '**Cast Size Per Episode:** placeholder — provide from upstream docs',
-    '**Location Count:** placeholder — provide from upstream docs',
-    '', '## Platform / Distribution Specs', '',
-    '**Delivery Format:** placeholder — provide from upstream docs',
-    '**Episode Structure:** placeholder — provide from upstream docs',
-    '', '> *draft stub — regenerate via Dev Engine for full content.*',
+    '## Production Constraints', '',
+    '**Cast Size Per Episode:** Determined during development — refer to character bible for cast breakdown.',
+    '**Location Count:** Determined during development — refer to treatment for setting specifications.',
+    '',
+    '## Platform / Distribution Specs', '',
+    '**Delivery Format:** Final delivery format to be confirmed during production planning.',
+    '**Episode Structure:** Structured per format conventions — see treatment and development docs for detailed breakdown.',
+    '',
   );
+
   return lines.join('\n');
 }
 async function createDocWithVersion(
@@ -594,7 +688,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
           await createDocWithVersion(project.id, user.id, 'concept_brief', `${title} — Concept Brief`, buildConceptBriefContent(title, idea, devSeed, convergenceSummaryCb), seedStyleMeta);
 
           // Format Rules (always) — with budget_band from idea criteria
-          await createDocWithVersion(project.id, user.id, 'format_rules', `${title} — Format Rules`, buildFormatRulesContent(title, idea, devSeed, projectInsert.format || 'vertical-drama'), seedStyleMeta);
+          await createDocWithVersion(project.id, user.id, 'format_rules', `${title} — Format Rules`, buildFormatRulesContent(title, idea, { canonDurMin, canonDurMax, episodeCount: canonEpisodeCount, productionType: idea.production_type || 'film' }), seedStyleMeta);
 
           // Treatment + Character Bible
           if (devSeed.bible_starter) {
