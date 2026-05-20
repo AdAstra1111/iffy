@@ -465,7 +465,7 @@ ${contextBlock}${sysCtx}`;
  * Generate episode beats/grid in batches with deterministic merge + validation + repair.
  */
 export async function generateEpisodeBeatsChunked(opts: EpisodeBeatsOpts): Promise<string> {
-  const { apiKey, episodeCount, systemPrompt, upstreamContent, projectTitle } = opts;
+  const { apiKey, episodeCount, systemPrompt, upstreamContent, projectTitle, supabase: sb, versionId, documentId } = opts;
   const outputMode = opts.outputMode ?? 'beats';
   const requestId = opts.requestId || crypto.randomUUID();
 
@@ -517,6 +517,42 @@ export async function generateEpisodeBeatsChunked(opts: EpisodeBeatsOpts): Promi
       replaced: mergeResult.replacedEpisodes,
       preserved: mergeResult.preservedEpisodes,
     }));
+
+    // Write per-episode chunk rows for progress tracking (grid mode)
+    // Same pattern as generateSeasonScriptSequential (lines 430-448)
+    if (sb && versionId && documentId && outputMode === 'grid') {
+      const chunkRows = batch.map((epNum) => {
+        const epRe = new RegExp(`## EPISODE ${epNum}:?[\\s\\S]*?(?=## EPISODE ${epNum + 1}:|$)`);
+        const match = masterText.match(epRe);
+        const epText = match ? match[0].trim() : '';
+        return {
+          document_id: documentId,
+          version_id: versionId,
+          chunk_index: epNum - 1,
+          chunk_key: `episode_${epNum}`,
+          status: epText.length > 50 ? 'done' : 'failed',
+          attempts: 1,
+          char_count: epText.length,
+          meta_json: { label: `Episode ${epNum}` },
+        };
+      });
+      await sb.from('project_document_chunks').upsert(chunkRows, { onConflict: 'version_id,chunk_index' });
+
+      // Update progress in meta_json
+      const maxEpNum = Math.max(...batch);
+      await sb.from('project_document_versions')
+        .update({
+          meta_json: {
+            bg_generating: true,
+            bg_started_at: new Date().toISOString(),
+            episode_count: episodeCount,
+            episodes_total: episodeCount,
+            episodes_completed: maxEpNum,
+            current_episode: maxEpNum,
+          },
+        })
+        .eq('id', versionId);
+    }
   }
 
   // Phase 2: Validation + Repair
@@ -621,6 +657,27 @@ export async function generateEpisodeBeatsChunked(opts: EpisodeBeatsOpts): Promi
       const mergeResult = mergeEpisodeBlocks(masterText, replacements);
       masterText = mergeResult.mergedText;
     }
+  }
+
+  // Final chunk write after Phase 2 repairs — overwrite stale Phase 1 chunks with repaired content
+  if (sb && versionId && documentId && outputMode === 'grid') {
+    const finalChunks = Array.from({ length: episodeCount }, (_, i) => {
+      const epNum = i + 1;
+      const epRe = new RegExp(`## EPISODE ${epNum}:?[\\s\\S]*?(?=## EPISODE ${epNum + 1}:|$)`);
+      const match = masterText.match(epRe);
+      const epText = match ? match[0].trim() : '';
+      return {
+        document_id: documentId,
+        version_id: versionId,
+        chunk_index: i,
+        chunk_key: `episode_${epNum}`,
+        status: epText.length > 50 ? 'done' : 'failed',
+        attempts: 1,
+        char_count: epText.length,
+        meta_json: { label: `Episode ${epNum}` },
+      };
+    });
+    await sb.from('project_document_chunks').upsert(finalChunks, { onConflict: 'version_id,chunk_index' });
   }
 
   // Strip output contract headers

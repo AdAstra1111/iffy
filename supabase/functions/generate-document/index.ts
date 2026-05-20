@@ -1322,15 +1322,15 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // episode_grid = structural overview — fast (single-pass JSON, ~10–30s). Keep synchronous.
+      // episode_grid = structural overview — can run 60+ episodes hitting the 60s timeout.
       // episode_beats / vertical_episode_beats = full micro-beat breakdown — slow (BATCH_SIZE=6,
       // 30-ep vertical-drama = 5 batches × ~40s = ~200s >> 150s edge function limit).
-      // For beats mode, use background generation: create placeholder version first, fire in background,
-      // return immediately. This pattern extends naturally to any doc that grows beyond timeout budget.
+      // All episode modes use background generation: create placeholder version first, fire in background,
+      // return immediately. Grid mode uses the same EdgeRuntime.waitUntil pattern as beats/script.
       const epOutputMode = docType === 'episode_grid' ? 'grid' : docType === 'season_script' ? 'script' : 'beats';
 
-      // ── BEATS MODE: background generation ──────────────────────────────────────────────────────
-      if (epOutputMode === 'beats' || epOutputMode === 'script') {
+      // ── BACKGROUND GENERATION (beats / script / grid) ─────────────────────────────────────────
+      if (epOutputMode === 'beats' || epOutputMode === 'script' || epOutputMode === 'grid') {
         // 1. Ensure doc row exists
         let { data: epDocRecord } = await supabase.from("project_documents")
           .select("id").eq("project_id", projectId).eq("doc_type", docType).maybeSingle();
@@ -1491,57 +1491,11 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
-      // ── GRID MODE: upstream validation (vertical_episode_beats requires episode_grid) ──
-      if (docType === "vertical_episode_beats" && inputsUsed["character_bible"]) {
-        return new Response(JSON.stringify({
-          error: "wrong_upstream",
-          message: "vertical_episode_beats requires episode_grid as upstream, but character_bible was resolved. Wait for episode_grid to be generated first.",
-        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
+      // ── SYNC GENERATION SECTION (dead code — all episode modes use background gen) ──
+      // All episode modes (beats/script/grid) now route through the background generation
+      // path at line 1333 and return at line 1492. This block is unreachable.
+      // The synchronous grid mode was replaced because 60-episode grids hit the 60s timeout.
 
-      // ── GRID MODE: synchronous (fast enough for episode_grid, <30s) ──
-      content = await generateEpisodeBeatsChunked({
-        apiKey,
-        episodeCount: finalEpisodeCount,
-        systemPrompt: system,
-        upstreamContent,
-        projectTitle: project.title || "Untitled",
-        requestId,
-        outputMode: epOutputMode,
-      });
-
-      // F) DIAG_OUTPUT_VALIDATION
-      const extractedEpNums = extractEpisodeNumbersFromOutput(content);
-      const expectedRange = Array.from({ length: finalEpisodeCount }, (_, i) => i + 1);
-      const missingEps = expectedRange.filter(n => !extractedEpNums.includes(n));
-      const collapseDetected = detectCollapsedRangeSummaries(content);
-
-      console.error(JSON.stringify({
-        diag: "DIAG_OUTPUT_VALIDATION",
-        requestId,
-        extracted_episode_numbers: extractedEpNums,
-        expected_range: `1-${finalEpisodeCount}`,
-        total_extracted: extractedEpNums.length,
-        total_expected: finalEpisodeCount,
-        missing_episodes: missingEps,
-        collapse_detected: collapseDetected,
-        output_length_chars: content.length,
-      }));
-
-      if (missingEps.length > 0) {
-        console.error(JSON.stringify({
-          diag: "⚠️ TRUNCATION_DETECTED",
-          requestId,
-          missing_episodes: missingEps,
-        }));
-      }
-      if (collapseDetected) {
-        console.error(JSON.stringify({
-          diag: "⚠️ COLLAPSE_SUMMARY_DETECTED",
-          requestId,
-          message: "Output contains collapsed range summaries — episodes may be abbreviated",
-        }));
-      }
     } else if (docType === "character_bible" || docType === "long_character_bible") {
       // ── Per-character bible generation ──
       // Extract characters from concept brief via LLM, create narrative_entities,
