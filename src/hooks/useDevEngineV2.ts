@@ -385,7 +385,15 @@ export function useDevEngineV2(projectId: string | undefined) {
     },
     onSuccess: (data) => {
       toast.success('Rewrite complete — new version created');
-      if (data.newVersion) setSelectedVersionId(data.newVersion.id);
+      if (data.newVersion) {
+        qc.setQueryData(['dev-v2-versions', selectedDocId], (old: any) => {
+          if (!Array.isArray(old)) return old;
+          const exists = old.some((v: any) => v.id === data.newVersion.id);
+          if (exists) return old;
+          return [...old, data.newVersion];
+        });
+        setSelectedVersionId(data.newVersion.id);
+      }
       invalidateAll(selectedDocId, data.newVersion?.id);
     },
     onError: (e: Error) => toast.error(e.message),
