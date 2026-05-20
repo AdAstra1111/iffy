@@ -662,7 +662,7 @@ async function executeRegenFoundation(
   sb: any, supabaseUrl: string, authHeader: string,
   projectId: string, autopilot: AutopilotState, userId: string,
 ) {
-  const FOUNDATION_TYPES = ["idea", "concept_brief", "treatment", "character_bible", "market_sheet"];
+  const FOUNDATION_TYPES = ["idea", "concept_brief", "format_rules", "treatment", "character_bible", "market_sheet"];
 
   // Start regen queue
   const startResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
