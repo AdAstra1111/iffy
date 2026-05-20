@@ -540,9 +540,9 @@ export async function generateEpisodeBeatsChunked(opts: EpisodeBeatsOpts): Promi
 
       // Update progress in meta_json (preserve original bg_started_at — don't overwrite on intermediate writes)
       const maxEpNum = Math.max(...batch);
-      const existingMeta = await sb.from('project_document_versions')
+      const { data: existingVersion } = await sb.from('project_document_versions')
         .select('meta_json').eq('id', versionId).single();
-      const origStartedAt = existingMeta?.meta_json?.bg_started_at;
+      const origStartedAt = existingVersion?.meta_json?.bg_started_at;
       await sb.from('project_document_versions')
         .update({
           meta_json: {
