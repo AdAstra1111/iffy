@@ -538,17 +538,20 @@ export async function generateEpisodeBeatsChunked(opts: EpisodeBeatsOpts): Promi
       });
       await sb.from('project_document_chunks').upsert(chunkRows, { onConflict: 'version_id,chunk_index' });
 
-      // Update progress in meta_json
+      // Update progress in meta_json (preserve original bg_started_at — don't overwrite on intermediate writes)
       const maxEpNum = Math.max(...batch);
+      const existingMeta = await sb.from('project_document_versions')
+        .select('meta_json').eq('id', versionId).single();
+      const origStartedAt = existingMeta?.meta_json?.bg_started_at;
       await sb.from('project_document_versions')
         .update({
           meta_json: {
             bg_generating: true,
-            bg_started_at: new Date().toISOString(),
             episode_count: episodeCount,
             episodes_total: episodeCount,
             episodes_completed: maxEpNum,
             current_episode: maxEpNum,
+            ...(origStartedAt ? { bg_started_at: origStartedAt } : {}),
           },
         })
         .eq('id', versionId);

@@ -1322,6 +1322,16 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
 
+      // Defense-in-depth: vertical_episode_beats requires episode_grid as upstream.
+      // If episode_grid wasn't resolved but character_bible was, the upstream resolution
+      // fell through to character_bible — reject this as a wrong-configuration error.
+      if (docType === "vertical_episode_beats" && !inputsUsed["episode_grid"] && inputsUsed["character_bible"]) {
+        return new Response(JSON.stringify({
+          error: "wrong_upstream",
+          message: "vertical_episode_beats requires episode_grid as upstream, but character_bible was resolved.",
+        }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       // episode_grid = structural overview — can run 60+ episodes hitting the 60s timeout.
       // episode_beats / vertical_episode_beats = full micro-beat breakdown — slow (BATCH_SIZE=6,
       // 30-ep vertical-drama = 5 batches × ~40s = ~200s >> 150s edge function limit).
