@@ -5738,6 +5738,16 @@ serve(async (req) => {
       global: { headers: { Authorization: `Bearer ${supabaseServiceKey}` } },
     });
 
+
+    // ── User ID fallback for anon-key requests ──
+    // If user.id is null (anon key path), resolve from project creator
+    if (!user.id && body?.projectId) {
+      const { data: proj } = await supabase.from("projects").select("user_id").eq("id", body.projectId).maybeSingle();
+      if (proj?.user_id) {
+        user.id = proj.user_id;
+        userId = proj.user_id;
+      }
+    }
     // ── Centralized document existence check ──
     // Any action that sends a documentId must reference a valid project_documents row
     const centralDocId = body.documentId || body.scriptDocId;
