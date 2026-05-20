@@ -381,7 +381,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief', 'character_bible']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'story_outline', 'concept_brief', 'character_bible']); // story_outline JSON → moment pipeline; plaintext → sectioned prose rewrite
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'story_outline', 'character_bible']); // story_outline JSON → moment pipeline; plaintext → sectioned prose rewrite
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
