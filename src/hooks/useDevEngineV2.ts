@@ -114,12 +114,14 @@ async function callEngineV2(action: string, extra: Record<string, any> = {}) {
   if (!resp.ok) {
     // Surface needsPipeline so callers can detect and redirect to chunked pipeline
     if (result.needsPipeline) {
-      const err = new Error(result.error || 'Document too long for single-pass rewrite');
+      const errMsg = typeof result?.error === 'string' ? result.error : 'Document too long for single-pass rewrite';
+      const err = new Error(errMsg);
       (err as any).needsPipeline = true;
       (err as any).charCount = result.charCount;
       throw err;
     }
-    throw new Error(result.error || 'Engine error');
+    const errMsg = typeof result?.error === 'string' ? result.error : 'Engine error';
+    throw new Error(errMsg);
   }
   // Stale version — surface as a user-friendly error rather than a blank screen
   if (result.stale_version) throw new Error('The selected version no longer exists. Please re-select your document and try again.');
@@ -366,7 +368,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return callEngineV2('analyze', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
     onSuccess: () => { toast.success('Analysis complete'); invalidateAll(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const generateNotes = useMutation({
@@ -375,7 +377,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return callEngineV2('notes', { projectId, documentId: selectedDocId, versionId: vid, analysisJson });
     },
     onSuccess: () => { toast.success('Notes generated'); invalidateAll(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const rewrite = useMutation({
@@ -396,7 +398,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       }
       invalidateAll(selectedDocId, data.newVersion?.id);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const convert = useMutation({
@@ -412,7 +414,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       }
       invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const beatSheetToScript = useMutation({
@@ -439,7 +441,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       }
       invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const createPaste = useMutation({
@@ -453,7 +455,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       }
       invalidateAll();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const deleteVersion = useMutation({
@@ -473,7 +475,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       }
       invalidateAll();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const deleteDocument = useMutation({
@@ -521,7 +523,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       toast.success('Document deleted');
       invalidateAll();
     },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   // Drift resolution mutations
@@ -529,14 +531,14 @@ export function useDevEngineV2(projectId: string | undefined) {
     mutationFn: async (driftEventId: string) =>
       callEngineV2('drift-acknowledge', { driftEventId }),
     onSuccess: () => { toast.success('Drift acknowledged'); invalidateAll(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const resolveDrift = useMutation({
     mutationFn: async (params: { driftEventId: string; resolutionType: 'accept_drift' | 'intentional_pivot' | 'reseed'; versionId?: string }) =>
       callEngineV2('drift-resolve', params),
     onSuccess: () => { toast.success('Drift resolved'); invalidateAll(); refetchDrift(); },
-    onError: (e: Error) => toast.error(e.message),
+    onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   // Derived
