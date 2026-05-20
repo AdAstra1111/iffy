@@ -263,14 +263,14 @@ function buildFormatRulesContent(title: string, idea: PitchIdea, devSeed: any, f
   if (episodeCount) lines.push(`**Episode Count:** ${episodeCount}`);
   lines.push(
     `**Target Duration:** ${canonDurMin}-${canonDurMax}s`,
-    '**Format Requirements:** [Generate from upstream docs]',
+    '**Format Requirements:** draft stub — generate from dev engine',
     '', '## Production Constraints', '',
-    '**Cast Size Per Episode:** [TBC — generate from upstream]',
-    '**Location Count:** [TBC — generate from upstream]',
+    '**Cast Size Per Episode:** placeholder — provide from upstream docs',
+    '**Location Count:** placeholder — provide from upstream docs',
     '', '## Platform / Distribution Specs', '',
-    '**Delivery Format:** [TBC — generate from upstream]',
-    '**Episode Structure:** [TBC — generate from upstream]',
-    '', '> *Format Rules stub — regenerate via Dev Engine for full content.*',
+    '**Delivery Format:** placeholder — provide from upstream docs',
+    '**Episode Structure:** placeholder — provide from upstream docs',
+    '', '> *draft stub — regenerate via Dev Engine for full content.*',
   );
   return lines.join('\n');
 }

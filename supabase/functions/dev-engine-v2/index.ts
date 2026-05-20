@@ -32062,6 +32062,8 @@ scenes = boundaries.map((b, i) => {
         "[1–2 sentences]",
         "[1-2 sentences]",
         "placeholder",
+        "stub",
+        "[tbc",
       ];
 
       const MIN_CHARS: Record<string, number> = {
