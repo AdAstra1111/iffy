@@ -92,6 +92,14 @@ function buildMarketSheetContent(title: string, market: any, nuance: any, conver
     lines.push('> *This is guidance only (not canon). Used to align voice/tone/pacing/world density while staying original.*', '');
   }
 
+  // ── Alignment Principle (placed here for downstream readers) ──
+  if (convergenceSummary) {
+    lines.push('## Alignment Principle', '');
+    lines.push('- Align 70–80% to the convergence targets above (what audiences demonstrably want).');
+    lines.push('- Reserve 20–30% for a novelty slot — a fresh angle, subversion, or world twist.');
+    lines.push('');
+  }
+
   // ── Standard market content ──
   if (nuance) {
     lines.push('## Nuance Contract', '');
@@ -184,13 +192,6 @@ function buildConceptBriefContent(title: string, idea: PitchIdea, devSeed: any, 
   const lines: string[] = [`# ${title} — Concept Brief`, ''];
   if (idea.logline) lines.push('## Logline', '', idea.logline, '');
   if (idea.one_page_pitch) lines.push('## Premise', '', idea.one_page_pitch, '');
-
-  // ── Creative DNA Targets near top (truncation-safe placement) ──
-  const dnaSection = buildCreativeDnaTargetsSection(
-    convergenceSummary,
-    (idea as any).differentiation_move || (idea.raw_response as any)?.idea?.differentiation_move,
-  );
-  if (dnaSection) lines.push(dnaSection);
 
   // ── Remaining concept brief fields ──
   if (idea.genre) lines.push(`**Genre:** ${idea.genre}`);
