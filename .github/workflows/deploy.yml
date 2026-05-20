@@ -112,6 +112,7 @@ jobs:
             --build-env VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }} \
             --build-env VITE_SUPABASE_PUBLISHABLE_KEY=${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }} \
             --build-env VITE_SUPABASE_PROJECT_ID=${{ secrets.VITE_SUPABASE_PROJECT_ID }} \
+            --build-env VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }} \
             --yes
 
       # Step 5: Verify deploy
