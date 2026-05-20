@@ -5707,6 +5707,11 @@ serve(async (req) => {
             userId = payload.sub;
             user = { id: payload.sub, email: payload.email };
             console.log("[dev-engine-v2] auth ok", { role: "user", hasUserId: true });
+          } else if (payload.role === "anon") {
+            userId = null;
+            actor = "service_role";
+            user = { id: null, email: "anon@supabase" };
+            console.log("[dev-engine-v2] auth ok", { role: "anon" });
           } else {
             throw new Error("Invalid token claims");
           }
@@ -39721,4 +39726,4 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
     });
   }
 });
-// deployed-1777623131
+// deployed-1777623140
