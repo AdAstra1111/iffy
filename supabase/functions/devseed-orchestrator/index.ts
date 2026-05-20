@@ -16,7 +16,7 @@ const corsHeaders = {
 };
 
 // DevSeed 5 doc types — the foundation set
-const FOUNDATION_DOC_TYPES = ["idea", "concept_brief", "treatment", "character_bible", "market_sheet"];
+const FOUNDATION_DOC_TYPES = ["idea", "concept_brief", "format_rules", "treatment", "character_bible", "market_sheet"];
 
 // Development doc types per lane
 const DEV_DOCS_SERIES = ["season_arc", "episode_grid"];

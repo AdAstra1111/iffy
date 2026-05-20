@@ -497,7 +497,7 @@ async function executeApplySeedIntelPack(
   // Fetch pitch idea for context
   const { data: idea } = await sb
     .from("pitch_ideas")
-    .select("id, recommended_lane, production_type, budget_band")
+    .select("id, recommended_lane, production_type")
     .eq("id", pitchIdeaId)
     .single();
 
@@ -541,7 +541,7 @@ async function executeApplySeedIntelPack(
     })),
     comparable_candidates: [],
     tone_style_signals: {},
-    constraints_suggestions: { budget_band: idea.budget_band || null },
+    constraints_suggestions: {},
   };
 
   // Route through canon-decisions
@@ -662,7 +662,7 @@ async function executeRegenFoundation(
   sb: any, supabaseUrl: string, authHeader: string,
   projectId: string, autopilot: AutopilotState, userId: string,
 ) {
-  const FOUNDATION_TYPES = ["idea", "concept_brief", "format_rules", "treatment", "character_bible", "market_sheet"];
+  const FOUNDATION_TYPES = ["idea", "concept_brief", "treatment", "character_bible", "market_sheet"];
 
   // Start regen queue
   const startResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {

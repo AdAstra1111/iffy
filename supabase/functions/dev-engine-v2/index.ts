@@ -132,7 +132,7 @@ async function loadConstraintPack(
     // 3. Writing Voice
     const { data: proj } = await supabaseClient
       .from("projects")
-      .select("assigned_lane")
+      .select("assigned_lane, budget_range")
       .eq("id", projectId)
       .maybeSingle();
     const lane = proj?.assigned_lane || "independent-film";

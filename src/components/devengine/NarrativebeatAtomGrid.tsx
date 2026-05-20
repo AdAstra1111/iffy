@@ -6,6 +6,7 @@ import { Progress } from '@/components/ui/progress';
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerClose } from '@/components/ui/drawer';
 import { Loader2, RefreshCw, Sparkles, Clock, AlertTriangle, CheckCircle2, X, Zap } from 'lucide-react';
 import type { NarrativebeatAtom } from '@/hooks/useNarrativebeatAtoms';
+import { NarrativeArc } from './NarrativeArc';
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { icon: React.ReactNode; label: string; cls: string }> = {
@@ -73,6 +74,18 @@ export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, lastUpda
         </div>
       </div>
       {error && <div className="flex items-center gap-2 text-xs text-red-400 bg-red-500/10 rounded px-3 py-2"><AlertTriangle className="h-3 w-3 shrink-0" />{error}</div>}
+
+      {/* Narrative Arc Visualization */}
+      {!isLoading && completedCount >= 2 && (
+        <div className="border border-border/40 rounded-lg p-4 bg-gradient-to-b from-primary/5 to-transparent">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-2 h-2 rounded-full bg-primary/40" />
+            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">Story Arc</span>
+          </div>
+          <NarrativeArc atoms={atoms} />
+        </div>
+      )}
+
       {isLoading && totalCount === 0 ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">{[1,2,3].map(i => <Card key={i} className="p-3"><Skeleton className="h-4 w-3/4 mb-2" /><Skeleton className="h-3 w-1/2" /></Card>)}</div>
       ) : totalCount === 0 ? (

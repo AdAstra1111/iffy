@@ -30,7 +30,7 @@ interface Props {
 }
 
 // ── DevSeed whitelist (ONLY these doc_types may be created during DevSeed) ──
-const DEVSEED_DOC_TYPES = ['idea', 'concept_brief', 'treatment', 'character_bible', 'market_sheet'] as const;
+const DEVSEED_DOC_TYPES = ['idea', 'concept_brief', 'format_rules', 'treatment', 'character_bible', 'market_sheet'] as const;
 type DevSeedDocType = typeof DEVSEED_DOC_TYPES[number];
 
 // ── Content builders ──────────────────────────────────────────────────
@@ -247,6 +247,32 @@ interface DocStyleMeta {
   applied_at?: string;
 }
 
+function buildFormatRulesContent(title: string, idea: PitchIdea, devSeed: any, format: string): string {
+  const canonDurMin = devSeed?.canon_duration?.min_seconds || 120;
+  const canonDurMax = devSeed?.canon_duration?.max_seconds || 180;
+  const episodeCount = devSeed?.canon_episode_count || null;
+  const lines: string[] = [
+    `# ${title} — Format Rules`, '',
+    '## Format Overview', '',
+    `**Lane:** ${idea.recommended_lane || format}`,
+    `**Format:** Vertical Drama`,
+    `**Budget Band:** ${idea.budget_band || 'TBC'}`,
+    '', '## Episode Specifications', '',
+  ];
+  if (episodeCount) lines.push(`**Episode Count:** ${episodeCount}`);
+  lines.push(
+    `**Target Duration:** ${canonDurMin}-${canonDurMax}s`,
+    '**Format Requirements:** [Generate from upstream docs]',
+    '', '## Production Constraints', '',
+    '**Cast Size Per Episode:** [TBC — generate from upstream]',
+    '**Location Count:** [TBC — generate from upstream]',
+    '', '## Platform / Distribution Specs', '',
+    '**Delivery Format:** [TBC — generate from upstream]',
+    '**Episode Structure:** [TBC — generate from upstream]',
+    '', '> *Format Rules stub — regenerate via Dev Engine for full content.*',
+  );
+  return lines.join('\n');
+}
 async function createDocWithVersion(
   projectId: string,
   userId: string,
@@ -565,6 +591,9 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
             ? rawRespCb.signals_metadata.convergence_summary
             : undefined;
           await createDocWithVersion(project.id, user.id, 'concept_brief', `${title} — Concept Brief`, buildConceptBriefContent(title, idea, devSeed, convergenceSummaryCb), seedStyleMeta);
+
+          // Format Rules (always) — with budget_band from idea criteria
+          await createDocWithVersion(project.id, user.id, 'format_rules', `${title} — Format Rules`, buildFormatRulesContent(title, idea, devSeed, projectInsert.format || 'vertical-drama'), seedStyleMeta);
 
           // Treatment + Character Bible
           if (devSeed.bible_starter) {
@@ -990,7 +1019,7 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
               <Checkbox checked={applyDocs} onCheckedChange={(v) => setApplyDocs(!!v)} className="mt-0.5" disabled={showAutopilotPanel} />
               <div>
                 <span className="text-sm font-medium">Create starter doc pack</span>
-                <p className="text-xs text-muted-foreground">Concept Brief, Treatment, Character Bible, Market Sheet (5 seed docs only)</p>
+                <p className="text-xs text-muted-foreground">Concept Brief, Format Rules, Treatment, Character Bible, Market Sheet (6 seed docs)</p>
               </div>
             </label>
 
