@@ -286,3 +286,6 @@ verify_jwt = false
 
 [functions.generate-seed-pack]
 verify_jwt = false
+
+[functions.promote-to-devseed]
+verify_jwt = false
