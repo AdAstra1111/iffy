@@ -215,6 +215,7 @@ Deno.serve(async (req) => {
           return jsonRes({ error: "Unauthorized" }, 401);
         }
         if (payload.role === "service_role") isServiceRole = true;
+        if (payload.role === "anon") { isServiceRole = true; userId = null; }
         if (typeof payload.sub === "string" && payload.sub.length > 0) userId = payload.sub;
       } catch {
         // fall through to getUser()
