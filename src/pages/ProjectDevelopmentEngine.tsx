@@ -376,6 +376,27 @@ export default function ProjectDevelopmentEngine() {
     });
   }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
 
+  // Auto-trigger Generate Options after rewrite/convert — fires via selectedVersionId change
+  // matched against postOperationVersionId, not via pendingAutoTrigger (which fires too early
+  // before React confirms the new versionId in state).
+  useEffect(() => {
+    if (!postOperationVersionId.current) return;
+    if (selectedVersionId !== postOperationVersionId.current) return;
+    if (!selectedDocId || typeof generateOptionsMutation?.mutate !== 'function') {
+      postOperationVersionId.current = null;
+      return;
+    }
+    
+    // Check not still generating
+    const meta = (selectedVersion as any)?.meta_json;
+    if (meta?.bg_generating === true) return; // wait for generation to finish
+    
+    const prevOpId = postOperationVersionId.current;
+    postOperationVersionId.current = null; // clear to prevent re-fire
+    
+    generateOptionsMutation.mutate(undefined);
+  }, [selectedVersionId, selectedDocId, generateOptionsMutation, selectedVersion]);
+
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
 
@@ -1345,9 +1366,6 @@ export default function ProjectDevelopmentEngine() {
           globalDirections: globalDirections,
           currentDocTypeKey: selectedDeliverableType,
         }).catch(e => console.warn('[decisions] record failed:', e));
-        // Direct auto-trigger: ensures options regenerate after every rewrite/decision,
-        // bypassing the auto-review chain (which only fires when autoReviewEnabled is true — default false).
-        setPendingAutoTrigger(true);
       };
 
       // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types

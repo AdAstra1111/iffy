@@ -5,7 +5,7 @@
  * per-character background generation. Shows each character with status
  * (pending/generating/complete/failed) as individual cards.
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Progress } from '@/components/ui/progress';
@@ -103,10 +103,14 @@ export function CharacterBibleProgress({ versionId, docType, mode = 'generate' }
       const m = query.state.data;
       if (!m) return 5000;
       // Stop polling when generation is done or failed
+      // Also stop when single-pass rewrite is detected: has character data but no bg_generating flag
       if (m.bg_failed || m.bg_completed_at) return false;
+      if (!m.bg_generating && !m.bg_completed_at && !m.bg_failed && ((m.characters_total ?? 0) > 0 || (m.sections_total ?? 0) > 0)) return false;
       return 4000;
     },
   });
+
+  const mountTimeRef = useRef(Date.now());
 
   const total = meta?.characters_total ?? 0;
   const completed = meta?.characters_completed ?? 0;
@@ -117,8 +121,10 @@ export function CharacterBibleProgress({ versionId, docType, mode = 'generate' }
   const progressTotal = sectionsTotal > 0 ? sectionsTotal : total;
   const progressCompleted = sectionsCompleted > 0 ? sectionsCompleted : completed;
   const pct = progressTotal > 0 ? Math.round((progressCompleted / progressTotal) * 100) : 0;
-  const isGenerating = !meta?.bg_completed_at && !meta?.bg_failed && (total > 0 || sectionsTotal > 0);
-  const isComplete = !!meta?.bg_completed_at;
+  const hasBeenMounted = Date.now() - mountTimeRef.current > 2000;
+  const isSinglePassComplete = !meta?.bg_generating && !meta?.bg_completed_at && !meta?.bg_failed && hasBeenMounted && (total > 0 || sectionsTotal > 0);
+  const isGenerating = !isSinglePassComplete && !meta?.bg_completed_at && !meta?.bg_failed && (total > 0 || sectionsTotal > 0);
+  const isComplete = !!meta?.bg_completed_at || isSinglePassComplete;
   const isFailed = !!meta?.bg_failed;
 
   // Generate character cards — use characters_list if available, otherwise show numbered slots
