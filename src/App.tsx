@@ -262,7 +262,7 @@ const AnimatedRoutes = () => {
           <Route path="/share/pack/:token" element={<SharePackView />} />
           
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
-          <Route path="/dev/neural" element={<ProtectedRoute><NeuralDiagnostics /></ProtectedRoute>} />
+          <Route path="/dev/neural" element={<NeuralDiagnostics />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
