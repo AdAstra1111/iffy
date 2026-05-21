@@ -65,9 +65,10 @@ interface RewritePipelineState {
   currentEpisodeEnd: number | null;
 }
 
-async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2, timeoutMs = 120_000, token: string) {
+async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2, timeoutMs = 120_000, token: string, onTokenExpired?: () => Promise<string>) {
 
   let lastError: Error | null = null;
+  let tokenRefreshCount = 0;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
@@ -83,6 +84,19 @@ async function callEngine(action: string, extra: Record<string, any> = {}, retri
         signal: controller.signal,
       });
       clearTimeout(timeout);
+
+      // ── Token refresh on 401 ──
+      if (resp.status === 401 && onTokenExpired && tokenRefreshCount < 3) {
+        try {
+          const freshToken = await onTokenExpired();
+          token = freshToken;
+          tokenRefreshCount++;
+          attempt--;
+          continue;
+        } catch {
+          // Refresh failed — fall through to normal error handling
+        }
+      }
 
       const text = await resp.text();
       if (!text || text.trim().length === 0) throw new Error('Empty response from engine');
@@ -262,6 +276,12 @@ export function useRewritePipeline(projectId: string | undefined) {
     if (!session) throw new Error('Not authenticated');
     const accessToken = session.access_token;
 
+    const refreshToken = async (): Promise<string> => {
+      const { data: { session: freshSession } } = await supabase.auth.refreshSession();
+      if (!freshSession) throw new Error('Session expired — please log in again');
+      return freshSession.access_token;
+    };
+
     pushActivity('info', 'Rewrite started');
 
     try {
@@ -272,7 +292,7 @@ export function useRewritePipeline(projectId: string | undefined) {
 
       const plan = await callEngine('rewrite-plan', {
         projectId, documentId, versionId, approvedNotes, protectItems,
-      }, 2, 120_000, accessToken);
+      }, 2, 120_000, accessToken, refreshToken);
 
       const { planRunId, totalChunks, strategy: planStrategy, chunkMeta: planChunkMeta, episodeCount: planEpisodeCount } = plan;
       const resolvedStrategy = planStrategy || 'legacy_slugline';
@@ -342,7 +362,7 @@ export function useRewritePipeline(projectId: string | undefined) {
           planRunId,
           chunkIndex: i,
           previousChunkEnding: previousChunkEnding.slice(-2000),
-        }, 2, 300_000, accessToken);
+        }, 2, 300_000, accessToken, refreshToken);
 
         const chunkMs = Date.now() - chunkStart;
         durationsRef.current.push(chunkMs);
@@ -437,7 +457,7 @@ export function useRewritePipeline(projectId: string | undefined) {
         rewriteModeReason: provenance?.rewriteModeReason || (resolvedStrategy === 'episodic_indexed' ? 'episodic_indexed' : 'auto_probe_chunk'),
         rewriteModeDebug: provenance?.rewriteModeDebug || null,
         rewriteProbe: provenance?.rewriteProbe || null,
-      }, 2, 120_000, accessToken);
+      }, 2, 120_000, accessToken, refreshToken);
 
       // Show runtime warning from server if present
       if (assembleResult.runtimeWarning) {
