@@ -396,6 +396,49 @@ UPSTREAM CONTEXT:
 ${upstreamContent}
 
 Generate the screenplay content for ${beatLabel} now. Full screenplay format. Complete scenes.`;
+  } else if (plan.strategy === "scene_indexed") {
+    // ── scene_indexed: Generate screenplay from feature_script scene-by-scene ──
+    // production_draft uses scene_indexed — expand feature_script scenes into
+    // full feature screenplay format.
+
+    // ── Format reinforcement for production_draft ──
+    let formatReinforcement = "";
+    if (docType === "production_draft") {
+      const fmt = (opts as any).projectFormat || "";
+      const fmtLower = fmt.toLowerCase();
+      const isSeriesFmt = ["tv-series","limited-series","digital-series","anim-series","reality"].includes(fmtLower);
+      const isVDFmt = fmtLower.includes("vertical");
+      if (!isSeriesFmt && !isVDFmt) {
+        formatReinforcement = `
+FORMAT LOCK — FEATURE FILM:
+- This is a SINGLE CONTINUOUS FEATURE SCREENPLAY — NOT episodic, NOT a season script.
+- Do NOT use Episode headings, episode numbers, or any episodic structure.
+- Write standard feature film screenplay format: continuous narrative, Act 1/2/3 structure.`;
+      }
+    }
+
+    const sceneRangeKey = chunk.chunkKey;
+    const sceneRangeLabel = chunk.label;
+    chunkPrompt = `You are generating screenplay content for ${sceneRangeLabel} of "$${projectTitle}".
+Document type: ${docType.replace(/_/g, " ")}
+Strategy: Scene-by-scene expansion — writing full screenplay format for a contiguous batch of scenes.
+
+${formatReinforcement ? formatReinforcement.trim() + "\n" : ""}CRITICAL RULES:
+- Output ONLY screenplay content for ${sceneRangeLabel}.
+- Write COMPLETE scenes: INT./EXT. slugline, action paragraphs, character names, dialogue.
+- Each scene from the upstream feature_script must be expanded into full screenplay format.
+- Do NOT compress, summarise, or skip any scene in this batch.
+- Maintain consistent character voice, tone, and story continuity.
+- Each scene must have its own slugline — do NOT merge adjacent scenes.
+- Action lines should be descriptive and visual. Dialogue should reveal character and advance plot.
+- Do NOT use placeholder text, "(CONTINUED)" markers, or transitional phrases like "we see".
+
+${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
+${previousChunkEnding ? `PREVIOUS SCENE BATCH ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}
+UPSTREAM CONTEXT (from feature_script):
+${upstreamContent}
+
+Generate the screenplay content for ${sceneRangeLabel} now. Full screenplay format. Complete scenes. Complete dialogue.`;
   } else {
     chunkPrompt = `Generate chunk ${chunk.chunkIndex + 1} (${chunk.label}) for "${projectTitle}".
 ${upstreamContent}`;
@@ -579,6 +622,11 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       }
     } else if (plan.strategy === "beat_sequential") {
       // Beat sequential: pass last 800 chars of previous beat for genuine continuity
+      previousEnding = chunk.chunkIndex > 0
+        ? chunkContents[chunk.chunkIndex - 1].slice(-800)
+        : undefined;
+    } else if (plan.strategy === "scene_indexed") {
+      // Scene indexed: scene batches are sequential — pass last 800 chars of previous batch for genuine screenplay continuity
       previousEnding = chunk.chunkIndex > 0
         ? chunkContents[chunk.chunkIndex - 1].slice(-800)
         : undefined;

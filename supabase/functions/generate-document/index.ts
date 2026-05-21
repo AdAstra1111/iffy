@@ -88,6 +88,7 @@ const UPSTREAM_DEPS: Record<string, string[]> = {
   budget_topline: ["treatment"],
   finance_plan: ["budget_topline"],
   packaging_targets: ["treatment", "character_bible", "concept_brief", "market_sheet"],
+  production_draft: ["feature_script"],
   production_plan: ["budget_topline"],
   delivery_requirements: [],
   story_arc_plan: ["doc_premise_brief", "research_dossier"],
