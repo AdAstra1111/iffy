@@ -65,9 +65,7 @@ interface RewritePipelineState {
   currentEpisodeEnd: number | null;
 }
 
-async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2, timeoutMs = 120_000) {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Not authenticated');
+async function callEngine(action: string, extra: Record<string, any> = {}, retries = 2, timeoutMs = 120_000, token: string) {
 
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -79,7 +77,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}, retri
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ action, ...extra }),
         signal: controller.signal,
@@ -260,6 +258,10 @@ export function useRewritePipeline(projectId: string | undefined) {
     runningRef.current = true;
     durationsRef.current = [];
 
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Not authenticated');
+    const accessToken = session.access_token;
+
     pushActivity('info', 'Rewrite started');
 
     try {
@@ -270,7 +272,7 @@ export function useRewritePipeline(projectId: string | undefined) {
 
       const plan = await callEngine('rewrite-plan', {
         projectId, documentId, versionId, approvedNotes, protectItems,
-      });
+      }, 2, 120_000, accessToken);
 
       const { planRunId, totalChunks, strategy: planStrategy, chunkMeta: planChunkMeta, episodeCount: planEpisodeCount } = plan;
       const resolvedStrategy = planStrategy || 'legacy_slugline';
@@ -340,7 +342,7 @@ export function useRewritePipeline(projectId: string | undefined) {
           planRunId,
           chunkIndex: i,
           previousChunkEnding: previousChunkEnding.slice(-2000),
-        }, 2, 300_000);
+        }, 2, 300_000, accessToken);
 
         const chunkMs = Date.now() - chunkStart;
         durationsRef.current.push(chunkMs);
@@ -435,7 +437,7 @@ export function useRewritePipeline(projectId: string | undefined) {
         rewriteModeReason: provenance?.rewriteModeReason || (resolvedStrategy === 'episodic_indexed' ? 'episodic_indexed' : 'auto_probe_chunk'),
         rewriteModeDebug: provenance?.rewriteModeDebug || null,
         rewriteProbe: provenance?.rewriteProbe || null,
-      });
+      }, 2, 120_000, accessToken);
 
       // Show runtime warning from server if present
       if (assembleResult.runtimeWarning) {
