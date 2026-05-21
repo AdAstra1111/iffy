@@ -10,7 +10,7 @@
 
 // ── Strategy Types ──
 
-export type ChunkStrategy = "episodic_indexed" | "sectioned" | "scene_indexed";
+export type ChunkStrategy = "episodic_indexed" | "sectioned" | "scene_indexed" | "beat_sequential";
 
 export interface ChunkPlanEntry {
   chunkIndex: number;
@@ -47,7 +47,6 @@ const EPISODIC_DOC_TYPES = new Set([
 ]);
 
 const SECTIONED_DOC_TYPES = new Set([
-  "feature_script",
   "screenplay_draft",
   "long_treatment",
   "treatment",
@@ -60,10 +59,15 @@ const SCENE_INDEXED_DOC_TYPES = new Set([
   "production_draft",
 ]);
 
+const BEAT_SEQUENTIAL_DOC_TYPES = new Set([
+  "feature_script",
+]);
+
 const ALL_LARGE_RISK = new Set([
   ...EPISODIC_DOC_TYPES,
   ...SECTIONED_DOC_TYPES,
   ...SCENE_INDEXED_DOC_TYPES,
+  ...BEAT_SEQUENTIAL_DOC_TYPES,
 ]);
 
 // ── Public API ──
@@ -82,6 +86,7 @@ export function isLargeRiskDocType(docType: string): boolean {
  */
 export function strategyFor(docType: string): ChunkStrategy {
   if (EPISODIC_DOC_TYPES.has(docType)) return "episodic_indexed";
+  if (BEAT_SEQUENTIAL_DOC_TYPES.has(docType)) return "beat_sequential";
   if (SECTIONED_DOC_TYPES.has(docType)) return "sectioned";
   if (SCENE_INDEXED_DOC_TYPES.has(docType)) return "scene_indexed";
   throw new Error(`[largeRiskRouter] ${docType} is not a large-risk doc type`);
@@ -144,6 +149,7 @@ export function chunkPlanFor(
     episodeCount?: number | null;
     sceneCount?: number | null;
     batchSize?: number;
+    beats?: Array<{number: number; title: string}> | null;
   } = {}
 ): ChunkPlan {
   const strategy = strategyFor(docType);
@@ -201,6 +207,24 @@ export function chunkPlanFor(
     return { strategy, chunks, totalChunks: chunks.length, docType };
   }
 
+  if (strategy === "beat_sequential") {
+    // feature_script: one chunk per beat from the beat sheet
+    const beats = context.beats;
+    if (!beats || beats.length < 1) {
+      throw new Error(
+        `[largeRiskRouter] beat_sequential doc type "${docType}" requires beats > 0, got ${beats?.length ?? 0}`
+      );
+    }
+
+    const chunks: ChunkPlanEntry[] = beats.map((beat, i) => ({
+      chunkIndex: i,
+      chunkKey: `beat_${String(beat.number).padStart(2, "0")}`,
+      label: `Beat ${beat.number}: ${beat.title}`,
+    }));
+
+    return { strategy, chunks, totalChunks: chunks.length, docType };
+  }
+
   if (strategy === "scene_indexed") {
     if (!context.sceneCount || context.sceneCount < 1) {
       // Fall back to sectioned strategy if no real scene count from DB
@@ -241,4 +265,11 @@ export function chunkPlanFor(
  */
 export function isEpisodicDocType(docType: string): boolean {
   return EPISODIC_DOC_TYPES.has(docType);
+}
+
+/**
+ * Check if a doc_type uses beat_sequential strategy.
+ */
+export function isBeatSequentialDocType(docType: string): boolean {
+  return BEAT_SEQUENTIAL_DOC_TYPES.has(docType);
 }

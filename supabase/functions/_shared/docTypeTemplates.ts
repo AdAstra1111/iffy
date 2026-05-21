@@ -463,6 +463,41 @@ Include the LOGLINE (import from concept_brief.logline — copy exactly) in the 
 
 Cover all acts from the treatment — Act 1 through Act 4. Each act should have 5-8 moments. Total ~25-32 entries.`;
     // ─────────────────────────────────────────────────────────────────────────────
+    case "feature_script":
+      return `# SCREENPLAY: ${title}
+
+## LOGLINE
+[IMPORT from concept_brief.logline — copy exactly. One sentence — active protagonist + specific conflict + stakes.]
+
+## TONE
+[IMPORT from treatment.tone — copy exactly. 1 paragraph. Emotional register, pacing, visual style.]
+
+## BEAT SEQUENCE
+[GENERATE — Follow beat_sheet beat sequence EXACTLY. Each beat below corresponds to one beat from the beat_sheet. Do NOT reorder, skip, or add beats outside the beat_sheet structure.]
+
+## Beat [N]: [Beat Name from beat_sheet]
+**Source:** Beat [N] from beat_sheet
+**Scenes:** [2-4 scenes per beat]
+
+### SCENE [N]: [Scene Heading — INT./EXT. LOCATION — TIME]
+**Purpose:** [What this scene accomplishes dramatically]
+**Characters:** [Characters present]
+[Action description — 3-5 lines of vivid present-tense action.]
+**DIALOGUE:**
+[CHARACTER NAME]
+(character direction)
+Dialogue line.
+
+[CHARACTER NAME]
+Dialogue line.
+
+[Continue for all scenes in this beat.]
+
+[Continue for all beats from beat_sheet.]
+
+## CANONICAL CONSTRAINT
+All characters, locations, and story events must come from upstream documents (beat_sheet, character_bible, treatment, story_outline). Do NOT invent new story facts, characters, or locations not present in the source material.`;
+    // ─────────────────────────────────────────────────────────────────────────────
     case "beat_sheet":
       return `# BEAT SHEET: ${title}
 

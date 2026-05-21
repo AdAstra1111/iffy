@@ -13,7 +13,7 @@
 
 import { resolveGateway } from "./llm.ts";
 import { type ChunkPlan, type ChunkPlanEntry, chunkPlanFor, isEpisodicDocType } from "./largeRiskRouter.ts";
-import { validateEpisodicChunk, validateEpisodicContent, validateSectionedContent, hasBannedSummarizationLanguage, hasScreenplayFormat } from "./chunkValidator.ts";
+import { validateEpisodicChunk, validateEpisodicContent, validateSectionedContent, validateBeatSequentialChunk, hasBannedSummarizationLanguage, hasScreenplayFormat } from "./chunkValidator.ts";
 
 // ── Types ──
 
@@ -73,6 +73,7 @@ export function containsFailedPlaceholders(text: string): boolean {
 
 function maxTokensForChunk(strategy: string, docType: string): number {
   if (strategy === "episodic_indexed") return 16000;
+  if (strategy === "beat_sequential") return 8000;
   if (docType.includes("script") || docType === "screenplay_draft" || docType === "production_draft") return 32000;
   if (docType.includes("treatment")) return 24000;
   return 16000;
@@ -373,6 +374,28 @@ UPSTREAM CONTEXT:
 ${upstreamContent}
 
 Generate the "${sectionLabel}" section now. Write to the full page target specified above.`;
+  } else if (plan.strategy === "beat_sequential") {
+    const beatNumber = chunk.chunkKey.replace("beat_", "");
+    const beatLabel = chunk.label;
+    chunkPrompt = `You are generating the beat screenplay segment for "${projectTitle}".
+Document type: feature_script
+Beat: ${beatLabel}
+
+CRITICAL RULES:
+- Generate ONLY the screenplay content for ${beatLabel}.
+- Output MUST start with "## BEAT ${beatNumber}: " followed by the beat name from the beat sheet.
+- Write full screenplay format: INT./EXT. sluglines, action paragraphs, character names, dialogue.
+- Each beat typically has 2-4 scenes.
+- Write COMPLETE scenes — do NOT summarize or abbreviate.
+- Do NOT skip ahead to later beats. Output ONLY this beat's content.
+- Maintain consistent character voice, tone, and story continuity.
+
+${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
+${previousChunkEnding ? `PREVIOUS BEAT ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}
+UPSTREAM CONTEXT:
+${upstreamContent}
+
+Generate the screenplay content for ${beatLabel} now. Full screenplay format. Complete scenes.`;
   } else {
     chunkPrompt = `Generate chunk ${chunk.chunkIndex + 1} (${chunk.label}) for "${projectTitle}".
 ${upstreamContent}`;
@@ -554,6 +577,11 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
           ?? `Previous section was ${prevChunk.label}.`;
       }
+    } else if (plan.strategy === "beat_sequential") {
+      // Beat sequential: pass last 800 chars of previous beat for genuine continuity
+      previousEnding = chunk.chunkIndex > 0
+        ? chunkContents[chunk.chunkIndex - 1].slice(-800)
+        : undefined;
     }
 
     // Mark as running with heartbeat timestamp
@@ -593,6 +621,13 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
 
           if (!validation.pass && attempt < maxChunkRepairs) {
             console.warn(`[chunkRunner] Chunk ${chunk.chunkKey} failed validation (attempt ${attempt}): ${validation.failures.map(f => f.detail).join("; ")}`);
+            continue;
+          }
+          chunkPassed = validation.pass;
+        } else if (plan.strategy === "beat_sequential") {
+          const validation = validateBeatSequentialChunk(content, docType);
+          if (!validation.pass && attempt < maxChunkRepairs) {
+            console.warn(`[chunkRunner] Beat chunk ${chunk.chunkKey} failed validation (attempt ${attempt}): ${validation.failures.map(f => f.detail).join("; ")}`);
             continue;
           }
           chunkPassed = validation.pass;
@@ -708,6 +743,8 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           return ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
             ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
             ?? `Previous section was ${prevChunk.label}.`;
+        } else if (plan.strategy === "beat_sequential" && idx > 0) {
+          return (chunkContents[idx - 1] || "").slice(-800);
         }
         return undefined;
       })();
@@ -807,6 +844,43 @@ ${c.trim()}`);
     // Validate assembled content
     if (plan.strategy === "episodic_indexed" && episodeCount) {
       validationResult = validateEpisodicContent(assembledContent, episodeCount, docType);
+    } else if (plan.strategy === "beat_sequential") {
+      // For beat_sequential: verify all beat headers present + no banned language
+      const foundHeaders = new Set<number>();
+      const headerRe = /^##\s+BEAT\s+(\d+):/gm;
+      let m: RegExpExecArray | null;
+      while ((m = headerRe.exec(assembledContent)) !== null) {
+        foundHeaders.add(parseInt(m[1], 10));
+      }
+      const missingBeatIndices: number[] = [];
+      for (const chunkDef of plan.chunks) {
+        const beatNum = parseInt(chunkDef.chunkKey.replace("beat_", ""), 10);
+        if (!foundHeaders.has(beatNum)) {
+          missingBeatIndices.push(chunkDef.chunkIndex);
+        }
+      }
+      const bannedHit = hasBannedSummarizationLanguage(assembledContent);
+      const failures: any[] = [];
+      if (missingBeatIndices.length > 0) {
+        failures.push({
+          type: "missing_section",
+          detail: `Assembly missing ${missingBeatIndices.length} beat header(s) — re-generating affected chunks`,
+          sections: plan.chunks
+            .filter(c => missingBeatIndices.includes(c.chunkIndex))
+            .map(c => c.chunkKey),
+        });
+      }
+      if (bannedHit) {
+        failures.push({ type: "banned_phrase", detail: "Assembly contains banned summarization language" });
+      }
+      validationResult = {
+        pass: failures.length === 0,
+        failures,
+        missingIndices: [],
+        missingSections: missingBeatIndices.map(i => plan.chunks[i]?.chunkKey || "").filter(Boolean),
+        bannedPhraseHits: bannedHit ? ["banned_language_in_assembly"] : [],
+        repairAction: missingBeatIndices.length > 0 ? "regen_missing" : bannedHit ? "regen_all" : "none",
+      };
     } else {
       validationResult = validateSectionedContent(
         assembledContent,
@@ -880,6 +954,8 @@ ${c.trim()}`);
           return ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
             ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
             ?? `Previous section was ${prevChunk.label}.`;
+        } else if (plan.strategy === "beat_sequential" && idx > 0) {
+          return (chunkContents[idx - 1] || "").slice(-800);
         }
         return undefined;
       })();

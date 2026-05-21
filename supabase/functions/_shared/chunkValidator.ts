@@ -556,3 +556,63 @@ export function validateEpisodicProgress(
     summary,
   };
 }
+
+/**
+ * Validate a single beat_sequential chunk.
+ * Checks: slugline presence (script), banned language, minimum content length.
+ */
+export function validateBeatSequentialChunk(
+  chunkContent: string,
+  docType: string = "feature_script"
+): ValidationResult {
+  const failures: ValidationFailure[] = [];
+  const bannedHits: string[] = [];
+
+  // 1. Minimum content check
+  if (chunkContent.trim().length < 200) {
+    failures.push({
+      type: "density_low",
+      detail: `Beat chunk too short: ${chunkContent.trim().length} chars (minimum 200)`,
+    });
+  }
+
+  // 2. Screenplay slugline check
+  if (docType === "feature_script") {
+    const sluglineCount = (chunkContent.match(/^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/gm) || []).length;
+    if (sluglineCount < 1) {
+      failures.push({
+        type: "incomplete_schema",
+        detail: `Beat has no scene headings (INT./EXT.) — expected at least 1`,
+      });
+    }
+  }
+
+  // 3. Banned phrase scan
+  const lowerContent = chunkContent.toLowerCase();
+  for (const phrase of BANNED_PHRASES) {
+    if (lowerContent.includes(phrase.toLowerCase())) {
+      bannedHits.push(phrase);
+    }
+  }
+  for (const pattern of BANNED_PATTERNS) {
+    const match = chunkContent.match(pattern);
+    if (match) {
+      bannedHits.push(match[0]);
+    }
+  }
+  if (bannedHits.length > 0) {
+    failures.push({
+      type: "banned_phrase",
+      detail: `Beat contains banned summarization phrases: ${bannedHits.slice(0, 3).join("; ")}`,
+    });
+  }
+
+  return {
+    pass: failures.length === 0,
+    failures,
+    missingIndices: [],
+    missingSections: [],
+    bannedPhraseHits: bannedHits,
+    repairAction: failures.length > 0 ? "regen_all" : "none",
+  };
+}

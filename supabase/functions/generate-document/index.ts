@@ -67,6 +67,7 @@ const UPSTREAM_DEPS: Record<string, string[]> = {
   treatment: ["concept_brief", "character_bible"],
   character_bible: ["concept_brief"],
   feature_outline: ["treatment", "character_bible"],
+  feature_script: ["beat_sheet", "character_bible", "treatment", "story_outline"],
   screenplay_draft: ["beat_sheet", "character_bible", "treatment"],
   story_outline: ["concept_brief", "character_bible", "treatment"],
   series_overview: ["idea_brief", "logline", "concept_brief", "market_sheet"],
@@ -156,6 +157,47 @@ function extractConvergenceGuidance(upstreamBlocks: Map<string, string>): string
     combined = combined.slice(0, MAX_GUIDANCE_EXTRACT_CHARS) + "\n[truncated]";
   }
   return `=== CONVERGENCE GUIDANCE EXTRACT (FROM DOCS) ===\n${combined}\n=== END CONVERGENCE GUIDANCE EXTRACT ===`;
+}
+
+// ── Beat sheet data resolver for feature_script beat_sequential strategy ──
+// Reads the latest approved beat_sheet version and parses beat numbers + titles.
+interface ResolvedBeat {
+  number: number;
+  title: string;
+}
+async function resolveBeatsFromBeatSheet(
+  supabase: any,
+  projectId: string,
+): Promise<ResolvedBeat[] | null> {
+  try {
+    const { data: beatDoc } = await supabase
+      .from("project_documents")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "beat_sheet")
+      .maybeSingle();
+    if (!beatDoc) return null;
+
+    const { data: beatVersion } = await supabase
+      .from("project_document_versions")
+      .select("plaintext")
+      .eq("document_id", beatDoc.id)
+      .eq("is_current", true)
+      .eq("approval_status", "approved")
+      .maybeSingle();
+    if (!beatVersion?.plaintext) return null;
+
+    const beats: ResolvedBeat[] = [];
+    const beatRe = /^##\s+Beat\s+(\d+):\s*(.+)$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = beatRe.exec(beatVersion.plaintext)) !== null) {
+      beats.push({ number: parseInt(match[1], 10), title: match[2].trim() });
+    }
+    return beats.length > 0 ? beats : null;
+  } catch (err) {
+    console.error(`[generate-document] resolveBeatsFromBeatSheet failed:`, err?.message || err);
+    return null;
+  }
 }
 
 // ── Per-doc context cap ──
@@ -1816,7 +1858,8 @@ ${conceptBriefContent.slice(0, 30000)}`;
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     } else if (isLargeRiskDocType(docType) && !isTopline) {
       // ── Non-episodic large-risk doc: background chunked generation ──
-      // runChunkedGeneration can take 2–10 min (4 acts × 30–60s each).
+      // runChunkedGeneration can take 2–10 min (sectioned: 4 acts × 30–60s each;
+      // beat_sequential: one LLM call per beat from the beat sheet).
       // Use the same placeholder-version + EdgeRuntime.waitUntil pattern
       // as episodic beats — return immediately, write content in background.
       console.log(`[generate-document] Large-risk doc type "${docType}" — starting background chunked generation`);
@@ -1909,10 +1952,12 @@ ${conceptBriefContent.slice(0, 30000)}`;
           .update({ meta_json: rearmedMeta })
           .eq("id", resumeVersionId);
 
+        const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
         const resumePlan = chunkPlanFor(docType, {
           episodeCount: resolvedQuals?.season_episode_count,
           sceneCount: resolvedSceneCount,
           batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
+          beats,
         });
 
         const resumeDocId = resumeVer.document_id || chunkDocRecord!.id;
@@ -2018,10 +2063,12 @@ ${conceptBriefContent.slice(0, 30000)}`;
       // NOTE: Do NOT set latest_version_id here — version is empty placeholder (bg_generating).
       // latest_version_id will be set on successful completion in the bg task below.
 
+      const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
       const plan = chunkPlanFor(docType, {
         episodeCount: resolvedQuals?.season_episode_count,
         sceneCount: resolvedSceneCount,
         batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
+        beats,
       });
 
       // ── PREFLIGHT CONTRACT GUARD (all episode-indexed docs) ──
