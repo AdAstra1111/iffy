@@ -376,26 +376,23 @@ export default function ProjectDevelopmentEngine() {
     });
   }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
 
-  // Auto-trigger Generate Options after rewrite/convert — fires via selectedVersionId change
-  // matched against postOperationVersionId, not via pendingAutoTrigger (which fires too early
-  // before React confirms the new versionId in state).
+  // Direct options trigger for post-operation versions (bypasses analysis chain)
+  // Set via pendingOptionsTriggerRef alongside postOperationVersionId at every
+  // rewrite/convert completion point. Waits for selectedVersion to be current
+  // (not bg_generating) before firing. Unlike postOperationVersionId, this ref
+  // is NOT cleared by the auto-review path — if bg_generating blocks it, the
+  // ref stays set and fires on the next render cycle when version data arrives.
   useEffect(() => {
-    if (!postOperationVersionId.current) return;
-    if (selectedVersionId !== postOperationVersionId.current) return;
-    if (!selectedDocId || typeof generateOptionsMutation?.mutate !== 'function') {
-      postOperationVersionId.current = null;
-      return;
-    }
-    
-    // Check not still generating
-    const meta = (selectedVersion as any)?.meta_json;
-    if (meta?.bg_generating === true) return; // wait for generation to finish
-    
-    const prevOpId = postOperationVersionId.current;
-    postOperationVersionId.current = null; // clear to prevent re-fire
-    
-    generateOptionsMutation.mutate(undefined);
-  }, [selectedVersionId, selectedDocId, generateOptionsMutation, selectedVersion]);
+    if (!pendingOptionsTriggerRef.current) return;
+    if (!selectedDocId || !selectedVersionId || typeof generateOptionsMutation?.mutate !== 'function') return;
+    // Wait until version data resolves and bg_generating is done
+    if (isBgGenerating) return; // Don't clear ref — retry on next render
+    pendingOptionsTriggerRef.current = null;
+    generateOptionsMutation.mutate(undefined, {
+      onSettled: () => {},
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVersion, selectedVersionId, selectedDocId, generateOptionsMutation]);
 
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
@@ -597,6 +594,7 @@ export default function ProjectDevelopmentEngine() {
   //   "a new version landed from an operation" vs "user just navigated"
   const [autoReviewEnabled, setAutoReviewEnabled] = useState(false);
   const postOperationVersionId = useRef<string | null>(null);
+  const pendingOptionsTriggerRef = useRef<string | null>(null);
   const prevVersionId = useRef(selectedVersionId);
   const pendingPostOpAutoReview = useRef(false);
   const beatSheetTriggerRef = useRef<(() => void) | null>(null);
@@ -633,7 +631,9 @@ export default function ProjectDevelopmentEngine() {
   useEffect(() => {
     if (rewritePipeline.status === 'complete' && rewritePipeline.newVersionId) {
       postOperationVersionId.current = rewritePipeline.newVersionId;
+      pendingOptionsTriggerRef.current = rewritePipeline.newVersionId;
       setSelectedVersionId(rewritePipeline.newVersionId);
+      qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       rewritePipeline.reset();
     }
   }, [rewritePipeline.status, rewritePipeline.newVersionId]);
@@ -643,12 +643,14 @@ export default function ProjectDevelopmentEngine() {
     if (rewrite.isSuccess) {
       // The new version will arrive via query invalidation; mark it when it appears
       postOperationVersionId.current = '__next__';
+      pendingOptionsTriggerRef.current = '__next__';
     }
   }, [rewrite.isSuccess]);
 
   useEffect(() => {
     if (convert.isSuccess) {
       postOperationVersionId.current = '__next__';
+      pendingOptionsTriggerRef.current = '__next__';
     }
   }, [convert.isSuccess]);
 
@@ -657,6 +659,7 @@ export default function ProjectDevelopmentEngine() {
   useEffect(() => {
     if (postOperationVersionId.current === '__next__' && selectedVersionId) {
       postOperationVersionId.current = selectedVersionId;
+      pendingOptionsTriggerRef.current = selectedVersionId;
 
       // Trigger derivation for rewrite/convert results on script docs
       if (selectedDoc && isScriptDocType(selectedDoc.doc_type) && projectId && selectedDocId) {
@@ -1456,6 +1459,7 @@ export default function ProjectDevelopmentEngine() {
         }, {
           onSuccess: (data: any) => {
             postOperationVersionId.current = data?.newVersion?.id || null;
+            pendingOptionsTriggerRef.current = data?.newVersion?.id || null;
             afterRewrite();
           },
           onError: (err: any) => {
@@ -1633,6 +1637,7 @@ export default function ProjectDevelopmentEngine() {
         }, {
           onSuccess: (data: any) => {
             postOperationVersionId.current = data?.newVersion?.id || null;
+            pendingOptionsTriggerRef.current = data?.newVersion?.id || null;
             afterRewrite();
           },
           onError: (err: any) => {
@@ -2487,6 +2492,7 @@ export default function ProjectDevelopmentEngine() {
                       pipelineInstance={momentPipeline}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
+                        pendingOptionsTriggerRef.current = newVersionId;
                         setSelectedVersionId(newVersionId);
                         momentPipeline.reset();
                       }}
@@ -2505,6 +2511,7 @@ export default function ProjectDevelopmentEngine() {
                       onApplyAllDone={() => setTreatmentRewritePending(false)}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
+                        pendingOptionsTriggerRef.current = newVersionId;
                         setSelectedVersionId(newVersionId);
                       }}
                     />
@@ -2520,6 +2527,7 @@ export default function ProjectDevelopmentEngine() {
                       pipelineInstance={sceneRewrite}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
+                        pendingOptionsTriggerRef.current = newVersionId;
                         setSelectedVersionId(newVersionId);
                         sceneRewrite.reset();
                       }}
@@ -2535,6 +2543,7 @@ export default function ProjectDevelopmentEngine() {
                       protectItems={protectItems}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
+                        pendingOptionsTriggerRef.current = newVersionId;
                         setSelectedVersionId(newVersionId);
                       }}
                     />
