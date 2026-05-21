@@ -17,7 +17,13 @@ CREATE TABLE IF NOT EXISTS neural_validation_runs (
     -- Input
     input_text_hash TEXT NOT NULL,
     input_text_preview TEXT,
+    
+    -- Model provenance — REQUIRED for every run (check 6)
     model_version TEXT NOT NULL,
+    model_name TEXT NOT NULL DEFAULT 'tribev2',
+    inference_mode TEXT NOT NULL DEFAULT 'surrogate' CHECK (inference_mode IN ('tribe_real', 'surrogate', 'failed')),
+    model_confidence NUMERIC(4,3) NOT NULL DEFAULT 0.0,
+    stability_status TEXT NOT NULL DEFAULT 'single_run' CHECK (stability_status IN ('single_run', 'replicated', 'variance_warning', 'stable_mean')),
     
     -- Intent Target (Layer 0) — what the creator intended
     target_json JSONB NOT NULL DEFAULT '{}',

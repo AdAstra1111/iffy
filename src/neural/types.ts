@@ -12,6 +12,23 @@ export type NeuralIntensity = 'very-low' | 'low' | 'moderate-low' | 'moderate' |
 /** Direction of change relative to baseline */
 export type NeuralDirection = 'rising' | 'falling' | 'stable' | 'suppressed' | 'elevated';
 
+/** Stability status for a validation run */
+export type StabilityStatus = 'single_run' | 'replicated' | 'variance_warning' | 'stable_mean';
+
+/** Inference mode — provenance marker for every prediction */
+export type InferenceMode = 'tribe_real' | 'surrogate' | 'failed';
+
+/** Model provenance — mandatory for every validation run */
+export interface ModelProvenance {
+  model_name: string;
+  model_version: string;
+  inference_mode: InferenceMode;
+  input_hash: string;
+  confidence: number;  // 0-1
+  timestamp: string;   // ISO 8601
+  stability_status: StabilityStatus;
+};
+
 /** Per-ROI target specification */
 export interface ROITarget {
   intensity: NeuralIntensity;
@@ -97,6 +114,8 @@ export interface NeuralValidationRun {
   input_text_hash: string;
   input_text_preview: string;   // first 200 chars for reference
   model_version: string;
+  /** Required provenance — every run must document how the prediction was made */
+  provenance: ModelProvenance;
   target_json: IntentTarget;
   output_json: {
     predictions: NeuralPrediction[];
@@ -106,6 +125,8 @@ export interface NeuralValidationRun {
     flags: DivergenceFlag[];
     summary: string;
     contrast_efficiency_score?: number;
+    /** If surrogate: prefix every summary with SURROGATE_DIAGNOSTIC_ONLY */
+    surrogate_warning?: string;
   };
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   created_at: string;
