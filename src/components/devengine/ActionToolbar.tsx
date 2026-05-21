@@ -194,7 +194,7 @@ export function ActionToolbar({
         )}
 
         {/* Converged — promote or enter mode (de-prioritized when VPB activation is primary) */}
-        {isConverged && !visualActivationEligible && !visualProductionLocked && !isEpisodeBeatsPage && (
+{isConverged && !visualActivationEligible && !visualProductionLocked && (!isEpisodeBeatsPage || isVerticalDrama) && (
           <Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700"
             onClick={() => {
               if (nextAction?.kind === 'enter_mode' && nextAction.route && !isVerticalDrama) {
@@ -212,7 +212,7 @@ export function ActionToolbar({
           </Button>
         )}
         {/* Ladder promote — shown secondary when VPB activation is active */}
-        {isConverged && (visualActivationEligible || visualProductionLocked) && !isEpisodeBeatsPage && (
+{isConverged && (visualActivationEligible || visualProductionLocked) && (!isEpisodeBeatsPage || isVerticalDrama) && (
           <Button size="sm" variant="outline" className="h-8 text-xs gap-1 text-muted-foreground"
             onClick={onPromote}
             disabled={actionsDisabled}>
