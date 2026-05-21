@@ -1,0 +1,598 @@
+{
+  "comparison_label": "YETI Beat 7 \u2014 Three-Way Comparison",
+  "comparison_date": "2026-05-21T18:43:09.794254+00:00",
+  "intent_target": {
+    "theme": "impossible choice",
+    "tone": "quiet menace",
+    "symbolism": [
+      "photograph",
+      "silence",
+      "the chair"
+    ],
+    "emotional_destination": "morally-conflicted",
+    "audience_contract": "slow-burn-tension",
+    "beat_function": "crisis",
+    "roi_targets": {
+      "PFC": {
+        "intensity": "moderate-low",
+        "direction": "falling",
+        "notes": "Audience should feel the trap, not analyse it"
+      },
+      "TPJ": {
+        "intensity": "moderate-high",
+        "direction": "rising",
+        "notes": "Deep character connection"
+      },
+      "Amygdala": {
+        "intensity": "moderate",
+        "direction": "elevated",
+        "notes": "Emotional weight of the threat"
+      },
+      "Insula": {
+        "intensity": "high",
+        "direction": "elevated",
+        "notes": "Visceral response"
+      },
+      "DMN": {
+        "intensity": "moderate",
+        "direction": "stable",
+        "notes": "Thematic absorption"
+      }
+    },
+    "recovery_cadence": "minimal"
+  },
+  "runs": [
+    {
+      "id": "a808cbbd-af42-43ae-af08-3f9d36d366dd",
+      "project_id": "proj-yeti",
+      "document_id": "beat-7-comparison",
+      "document_version_id": "A_BeatDescription",
+      "layer_type": "beat",
+      "input_text_hash": "260bb119ff4b2b49e5bd9d4bcbe0aa945623fe0651e6159e09f5057a1f96dc00",
+      "input_text_preview": "Sophia threatens Bill, leveraging his son. He has no choice. The photograph on the desk becomes the weight of everything he might lose.",
+      "model_version": "tribev2-llama3.2-3b-cpu-20260521",
+      "model_name": "tribev2",
+      "inference_mode": "tribe_real",
+      "model_confidence": 0.85,
+      "stability_status": "single_run",
+      "target_json": {
+        "theme": "impossible choice",
+        "tone": "quiet menace",
+        "symbolism": [
+          "photograph",
+          "silence",
+          "the chair"
+        ],
+        "emotional_destination": "morally-conflicted",
+        "audience_contract": "slow-burn-tension",
+        "beat_function": "crisis",
+        "roi_targets": {
+          "PFC": {
+            "intensity": "moderate-low",
+            "direction": "falling",
+            "notes": "Audience should feel the trap, not analyse it"
+          },
+          "TPJ": {
+            "intensity": "moderate-high",
+            "direction": "rising",
+            "notes": "Deep character connection"
+          },
+          "Amygdala": {
+            "intensity": "moderate",
+            "direction": "elevated",
+            "notes": "Emotional weight of the threat"
+          },
+          "Insula": {
+            "intensity": "high",
+            "direction": "elevated",
+            "notes": "Visceral response"
+          },
+          "DMN": {
+            "intensity": "moderate",
+            "direction": "stable",
+            "notes": "Thematic absorption"
+          }
+        },
+        "recovery_cadence": "minimal"
+      },
+      "output_json": {
+        "predictions": [
+          {
+            "roi": "Amygdala",
+            "value": 0.0164,
+            "confidence": 0.85
+          },
+          {
+            "roi": "TPJ",
+            "value": 0.0765,
+            "confidence": 0.85
+          },
+          {
+            "roi": "DMN",
+            "value": 0.1255,
+            "confidence": 0.85
+          },
+          {
+            "roi": "PFC",
+            "value": 0.1555,
+            "confidence": 0.85
+          },
+          {
+            "roi": "VisualCortex",
+            "value": 0.0467,
+            "confidence": 0.85
+          },
+          {
+            "roi": "Insula",
+            "value": 0.0661,
+            "confidence": 0.85
+          }
+        ],
+        "segment_timings": [
+          0.0,
+          0.15,
+          0.3,
+          0.44999999999999996,
+          0.6,
+          0.75,
+          0.8999999999999999,
+          1.05,
+          1.2
+        ]
+      },
+      "divergence_json": {
+        "flags": [
+          {
+            "roi": "TPJ",
+            "severity": "critical",
+            "message": "TPJ at +0.0765 (target: [+0.0300, +0.0600]). OVERACTIVE.",
+            "predicted_value": 0.0765,
+            "target_range": {
+              "min": 0.03,
+              "max": 0.06
+            }
+          },
+          {
+            "roi": "DMN",
+            "severity": "critical",
+            "message": "DMN at +0.1255 (target: [+0.0100, +0.0300]). OVERACTIVE.",
+            "predicted_value": 0.1255,
+            "target_range": {
+              "min": 0.01,
+              "max": 0.03
+            }
+          },
+          {
+            "roi": "PFC",
+            "severity": "critical",
+            "message": "PFC at +0.1555 (target: [-0.0100, +0.0100]). OVERACTIVE.",
+            "predicted_value": 0.1555,
+            "target_range": {
+              "min": -0.01,
+              "max": 0.01
+            }
+          }
+        ],
+        "summary": "Version: Beat Description (producer note). 3 divergence flags. Avg activation: +0.0736.",
+        "surrogate_warning": null
+      },
+      "status": "completed",
+      "created_at": "2026-05-21T18:43:09.794066+00:00",
+      "label": "Beat Description (producer note)",
+      "avg_activation": 0.0736,
+      "word_count": 40
+    },
+    {
+      "id": "b883b1e9-611a-4c0d-8dea-d55ac667d66a",
+      "project_id": "proj-yeti",
+      "document_id": "beat-7-comparison",
+      "document_version_id": "B_Rewrite_Red",
+      "layer_type": "beat",
+      "input_text_hash": "a692ec3b5b73a5f311d9bd5ca40c89a52a15e6f63bfd5e58aafc01f5480d3ff8",
+      "input_text_preview": "Sophia stands in the doorway. She doesn't raise her voice. She doesn't need to. 'Your son,' she says. Not a question. A fact she now owns. Bill's hand is on the photograph of his boy. He doesn't pick ",
+      "model_version": "tribev2-llama3.2-3b-cpu-20260521",
+      "model_name": "tribev2",
+      "inference_mode": "tribe_real",
+      "model_confidence": 0.85,
+      "stability_status": "single_run",
+      "target_json": {
+        "theme": "impossible choice",
+        "tone": "quiet menace",
+        "symbolism": [
+          "photograph",
+          "silence",
+          "the chair"
+        ],
+        "emotional_destination": "morally-conflicted",
+        "audience_contract": "slow-burn-tension",
+        "beat_function": "crisis",
+        "roi_targets": {
+          "PFC": {
+            "intensity": "moderate-low",
+            "direction": "falling",
+            "notes": "Audience should feel the trap, not analyse it"
+          },
+          "TPJ": {
+            "intensity": "moderate-high",
+            "direction": "rising",
+            "notes": "Deep character connection"
+          },
+          "Amygdala": {
+            "intensity": "moderate",
+            "direction": "elevated",
+            "notes": "Emotional weight of the threat"
+          },
+          "Insula": {
+            "intensity": "high",
+            "direction": "elevated",
+            "notes": "Visceral response"
+          },
+          "DMN": {
+            "intensity": "moderate",
+            "direction": "stable",
+            "notes": "Thematic absorption"
+          }
+        },
+        "recovery_cadence": "minimal"
+      },
+      "output_json": {
+        "predictions": [
+          {
+            "roi": "Amygdala",
+            "value": -0.0684,
+            "confidence": 0.85
+          },
+          {
+            "roi": "TPJ",
+            "value": 0.0352,
+            "confidence": 0.85
+          },
+          {
+            "roi": "DMN",
+            "value": 0.0472,
+            "confidence": 0.85
+          },
+          {
+            "roi": "PFC",
+            "value": 0.0789,
+            "confidence": 0.85
+          },
+          {
+            "roi": "VisualCortex",
+            "value": -0.0242,
+            "confidence": 0.85
+          },
+          {
+            "roi": "Insula",
+            "value": -0.0155,
+            "confidence": 0.85
+          }
+        ],
+        "segment_timings": [
+          0.0,
+          0.15,
+          0.3,
+          0.44999999999999996,
+          0.6,
+          0.75,
+          0.8999999999999999,
+          1.05,
+          1.2,
+          1.3499999999999999,
+          1.5,
+          1.65,
+          1.7999999999999998,
+          1.95,
+          2.1,
+          2.25,
+          2.4,
+          2.55,
+          2.6999999999999997
+        ]
+      },
+      "divergence_json": {
+        "flags": [
+          {
+            "roi": "Amygdala",
+            "severity": "critical",
+            "message": "Amygdala at -0.0684 (target: [+0.0100, +0.0300]). UNDERACTIVE.",
+            "predicted_value": -0.0684,
+            "target_range": {
+              "min": 0.01,
+              "max": 0.03
+            }
+          },
+          {
+            "roi": "DMN",
+            "severity": "warning",
+            "message": "DMN at +0.0472 (target: [+0.0100, +0.0300]). OVERACTIVE.",
+            "predicted_value": 0.0472,
+            "target_range": {
+              "min": 0.01,
+              "max": 0.03
+            }
+          },
+          {
+            "roi": "PFC",
+            "severity": "critical",
+            "message": "PFC at +0.0789 (target: [-0.0100, +0.0100]). OVERACTIVE.",
+            "predicted_value": 0.0789,
+            "target_range": {
+              "min": -0.01,
+              "max": 0.01
+            }
+          },
+          {
+            "roi": "Insula",
+            "severity": "critical",
+            "message": "Insula at -0.0155 (target: [+0.0600, +0.1000]). UNDERACTIVE.",
+            "predicted_value": -0.0155,
+            "target_range": {
+              "min": 0.06,
+              "max": 0.1
+            }
+          }
+        ],
+        "summary": "Version: Red's Analytical Rewrite. 4 divergence flags. Avg activation: +0.0345.",
+        "surrogate_warning": null
+      },
+      "status": "completed",
+      "created_at": "2026-05-21T18:43:09.794220+00:00",
+      "label": "Red's Analytical Rewrite",
+      "avg_activation": 0.0345,
+      "word_count": 91
+    },
+    {
+      "id": "a81317f5-e550-4065-bb17-84f497590d00",
+      "project_id": "proj-yeti",
+      "document_id": "beat-7-comparison",
+      "document_version_id": "C_ActualScript",
+      "layer_type": "beat",
+      "input_text_hash": "99d1415adcd86ba0a2f9e749c36acd6b87f2684c07ce5075d2ba494721bfac7f",
+      "input_text_preview": "INT. CASINO OFFICE - NIGHT\n\nSophia doesn't sit. She stands between Bill and the door.\n\nSOPHIA\nYour son. He's at school, isn't he? Boarding. Expensive.\n\nBill doesn't answer. He looks at the photograph ",
+      "model_version": "tribev2-llama3.2-3b-cpu-20260521",
+      "model_name": "tribev2",
+      "inference_mode": "tribe_real",
+      "model_confidence": 0.85,
+      "stability_status": "single_run",
+      "target_json": {
+        "theme": "impossible choice",
+        "tone": "quiet menace",
+        "symbolism": [
+          "photograph",
+          "silence",
+          "the chair"
+        ],
+        "emotional_destination": "morally-conflicted",
+        "audience_contract": "slow-burn-tension",
+        "beat_function": "crisis",
+        "roi_targets": {
+          "PFC": {
+            "intensity": "moderate-low",
+            "direction": "falling",
+            "notes": "Audience should feel the trap, not analyse it"
+          },
+          "TPJ": {
+            "intensity": "moderate-high",
+            "direction": "rising",
+            "notes": "Deep character connection"
+          },
+          "Amygdala": {
+            "intensity": "moderate",
+            "direction": "elevated",
+            "notes": "Emotional weight of the threat"
+          },
+          "Insula": {
+            "intensity": "high",
+            "direction": "elevated",
+            "notes": "Visceral response"
+          },
+          "DMN": {
+            "intensity": "moderate",
+            "direction": "stable",
+            "notes": "Thematic absorption"
+          }
+        },
+        "recovery_cadence": "minimal"
+      },
+      "output_json": {
+        "predictions": [
+          {
+            "roi": "Amygdala",
+            "value": -0.0253,
+            "confidence": 0.85
+          },
+          {
+            "roi": "TPJ",
+            "value": 0.0414,
+            "confidence": 0.85
+          },
+          {
+            "roi": "DMN",
+            "value": 0.0999,
+            "confidence": 0.85
+          },
+          {
+            "roi": "PFC",
+            "value": 0.1223,
+            "confidence": 0.85
+          },
+          {
+            "roi": "VisualCortex",
+            "value": -0.0192,
+            "confidence": 0.85
+          },
+          {
+            "roi": "Insula",
+            "value": 0.0161,
+            "confidence": 0.85
+          }
+        ],
+        "segment_timings": [
+          0.0,
+          0.15,
+          0.3,
+          0.44999999999999996,
+          0.6,
+          0.75,
+          0.8999999999999999,
+          1.05,
+          1.2,
+          1.3499999999999999,
+          1.5,
+          1.65,
+          1.7999999999999998,
+          1.95,
+          2.1,
+          2.25,
+          2.4,
+          2.55,
+          2.6999999999999997,
+          2.85,
+          3.0,
+          3.15,
+          3.3,
+          3.4499999999999997,
+          3.5999999999999996,
+          3.75,
+          3.9,
+          4.05,
+          4.2,
+          4.35,
+          4.5,
+          4.6499999999999995,
+          4.8,
+          4.95,
+          5.1,
+          5.25,
+          5.3999999999999995,
+          5.55,
+          5.7,
+          5.85,
+          6.0,
+          6.1499999999999995,
+          6.3,
+          6.45,
+          6.6,
+          6.75,
+          6.8999999999999995,
+          7.05,
+          7.199999999999999,
+          7.35,
+          7.5,
+          7.6499999999999995,
+          7.8,
+          7.949999999999999,
+          8.1,
+          8.25,
+          8.4,
+          8.549999999999999,
+          8.7,
+          8.85,
+          9.0,
+          9.15,
+          9.299999999999999,
+          9.45,
+          9.6,
+          9.75,
+          9.9,
+          10.049999999999999,
+          10.2,
+          10.35
+        ]
+      },
+      "divergence_json": {
+        "flags": [
+          {
+            "roi": "Amygdala",
+            "severity": "warning",
+            "message": "Amygdala at -0.0253 (target: [+0.0100, +0.0300]). UNDERACTIVE.",
+            "predicted_value": -0.0253,
+            "target_range": {
+              "min": 0.01,
+              "max": 0.03
+            }
+          },
+          {
+            "roi": "DMN",
+            "severity": "critical",
+            "message": "DMN at +0.0999 (target: [+0.0100, +0.0300]). OVERACTIVE.",
+            "predicted_value": 0.0999,
+            "target_range": {
+              "min": 0.01,
+              "max": 0.03
+            }
+          },
+          {
+            "roi": "PFC",
+            "severity": "critical",
+            "message": "PFC at +0.1223 (target: [-0.0100, +0.0100]). OVERACTIVE.",
+            "predicted_value": 0.1223,
+            "target_range": {
+              "min": -0.01,
+              "max": 0.01
+            }
+          },
+          {
+            "roi": "Insula",
+            "severity": "critical",
+            "message": "Insula at +0.0161 (target: [+0.0600, +0.1000]). UNDERACTIVE.",
+            "predicted_value": 0.0161,
+            "target_range": {
+              "min": 0.06,
+              "max": 0.1
+            }
+          }
+        ],
+        "summary": "Version: Sebastian's Script. 4 divergence flags. Avg activation: +0.0542.",
+        "surrogate_warning": null
+      },
+      "status": "completed",
+      "created_at": "2026-05-21T18:43:09.794251+00:00",
+      "label": "Sebastian's Script",
+      "avg_activation": 0.0542,
+      "word_count": 322
+    }
+  ],
+  "summary_table": [
+    {
+      "version": "Beat Description (producer note)",
+      "avg": 0.0736,
+      "words": 40,
+      "rois": {
+        "Amygdala": 0.0164,
+        "TPJ": 0.0765,
+        "DMN": 0.1255,
+        "PFC": 0.1555,
+        "VisualCortex": 0.0467,
+        "Insula": 0.0661
+      }
+    },
+    {
+      "version": "Red's Analytical Rewrite",
+      "avg": 0.0345,
+      "words": 91,
+      "rois": {
+        "Amygdala": -0.0684,
+        "TPJ": 0.0352,
+        "DMN": 0.0472,
+        "PFC": 0.0789,
+        "VisualCortex": -0.0242,
+        "Insula": -0.0155
+      }
+    },
+    {
+      "version": "Sebastian's Script",
+      "avg": 0.0542,
+      "words": 322,
+      "rois": {
+        "Amygdala": -0.0253,
+        "TPJ": 0.0414,
+        "DMN": 0.0999,
+        "PFC": 0.1223,
+        "VisualCortex": -0.0192,
+        "Insula": 0.0161
+      }
+    }
+  ]
+}
