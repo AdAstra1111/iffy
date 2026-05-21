@@ -26,5 +26,6 @@ export function isDocStale(
   if (!currentResolverHash) return false; // no current hash = can't compare
   // concept_brief is a child of the originating idea — qualification changes do not affect it
   if (docType === 'concept_brief') return false;
+  if (docType === 'nec') return false;
   return docVersion.depends_on_resolver_hash !== currentResolverHash;
 }

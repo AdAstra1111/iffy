@@ -1192,6 +1192,9 @@ export default function ProjectDevelopmentEngine() {
         setIsGeneratingDocument(false); // handleGenerateDocument sets it itself
         await handleGenerateDocument();
         return;
+      } else if (selectedDoc.doc_type === 'nec') {
+        toast.error('NEC is a seed-pack document and cannot be regenerated here. Regenerate through seed pack if needed.');
+        return;
       } else {
         // Refresh session before invocation — long-running edge functions can expire the token mid-call
         await supabase.auth.refreshSession();
