@@ -9965,6 +9965,29 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         }
       }
 
+      // ── beat_sheet section enrichment: map chunks to canonical section IDs / keys / labels ──
+      if ((sourceDocType === "beat_sheet") && chunkTexts.length > 0) {
+        try {
+          const plan = chunkPlanFor("beat_sheet", {});
+          if (plan.chunks && plan.chunks.length > 0 && plan.chunks.length === chunkTexts.length) {
+            chunkMeta = chunkMeta.map((meta, i) => {
+              const ch = plan.chunks[i];
+              return {
+                ...meta,
+                section_id: ch.sectionId ?? null,
+                chunk_key: ch.chunkKey,
+                label: ch.label,
+              };
+            });
+            console.log(`[dev-engine-v2] rewrite-plan beat_sheet enrichment: ${chunkTexts.length} chunks mapped with section_ids`);
+          } else {
+            console.warn(`[dev-engine-v2] rewrite-plan beat_sheet enrichment: chunkPlanFor returned ${plan.chunks?.length ?? 0} chunks but source split into ${chunkTexts.length} — skipping enrichment`);
+          }
+        } catch (enrichErr: any) {
+          console.warn(`[dev-engine-v2] rewrite-plan beat_sheet enrichment failed (non-fatal):`, enrichErr?.message || enrichErr);
+        }
+      }
+
       if (chunkTexts.length === 0) {
         chunkTexts = [fullText];
         chunkMeta = [{ chunk_index: 0, chunk_key: "chunk_01", label: "Chunk 1" }];

@@ -18,6 +18,24 @@ interface ChunkMetaItem {
 export type EpisodeUnitStatus = 'preserved' | 'queued' | 'rewriting' | 'done' | 'failed';
 export type SceneUnitStatus = 'preserved' | 'queued' | 'rewriting' | 'rewritten' | 'failed';
 
+export type ActUnitStatus = 'preserved' | 'queued' | 'rewriting' | 'done' | 'failed';
+
+export interface ActUnit {
+  /** The section_id from chunk meta (e.g. "act_1_beats") */
+  sectionId: string;
+  /** Display label (e.g. "Act 1 — Beats", "Act 2a — Beats") */
+  label: string;
+  /** 1-based ordinal within the rewrite */
+  ordinal: number;
+  status: ActUnitStatus;
+  /** Content once rewritten (null while queued/rewriting) */
+  content: string | null;
+  charCount: number;
+  durationMs: number | null;
+  /** True if this act was not in the affected set */
+  isPreserved: boolean;
+}
+
 export interface SceneUnit {
   /** 1-based ordinal within the episode */
   sceneNumber: number;
@@ -231,6 +249,9 @@ export function useRewritePipeline(projectId: string | undefined) {
   // Per-episode unit state for episode-workspace UI
   const [episodeUnits, setEpisodeUnits] = useState<EpisodeUnit[]>([]);
 
+  // Per-act unit state for act-workspace UI (sectioned rewrite with section_id)
+  const [actUnits, setActUnits] = useState<ActUnit[]>([]);
+
   const invalidate = useCallback((versionId?: string) => {
     if (!projectId) return;
     invalidateDevEngine(qc, { projectId, versionId });
@@ -336,6 +357,22 @@ export function useRewritePipeline(projectId: string | undefined) {
       } else {
         pushActivity('info', `Plan ready: ${totalChunks} chunks`);
         setEpisodeUnits([]);
+
+        // Build act unit map for sectioned rewrite with section_id enrichment
+        const hasSectionIds = resolvedChunkMeta.some(m => m.section_id);
+        if (resolvedStrategy === 'sectioned' && resolvedChunkMeta.length > 0 && hasSectionIds) {
+          const units: ActUnit[] = resolvedChunkMeta.map((m, i) => ({
+            sectionId: m.section_id || `chunk_${String(i + 1).padStart(2, '0')}`,
+            label: m.label || `Section ${i + 1}`,
+            ordinal: i + 1,
+            status: 'queued' as ActUnitStatus,
+            content: null,
+            charCount: 0,
+            durationMs: null,
+            isPreserved: false,
+          }));
+          setActUnits(units);
+        }
       }
       startSmoothing();
 
@@ -416,6 +453,15 @@ export function useRewritePipeline(projectId: string | undefined) {
           }));
         }
 
+        // Mark act unit as done for sectioned rewrite with section_id enrichment
+        if (resolvedStrategy === 'sectioned' && meta?.section_id) {
+          setActUnits(prev => prev.map(u =>
+            u.sectionId === meta.section_id
+              ? { ...u, status: 'done' as ActUnitStatus, content: result.rewrittenText ?? '', charCount: (result.rewrittenText ?? '').length, durationMs: chunkMs }
+              : u
+          ));
+        }
+
         pushActivity('success', buildChunkDoneMessage(
           resolvedStrategy, i, totalChunks, resultEpStart, resultEpEnd,
           (chunkMs / 1000).toFixed(1),
@@ -494,6 +540,7 @@ export function useRewritePipeline(projectId: string | undefined) {
       currentEpisodeStart: null, currentEpisodeEnd: null,
     });
     setEpisodeUnits([]);
+    setActUnits([]);
     stopSmoothing();
     durationsRef.current = [];
   }, [stopSmoothing]);
@@ -547,5 +594,6 @@ export function useRewritePipeline(projectId: string | undefined) {
     clearActivity,
     pushActivity,
     episodeUnits,
+    actUnits,
   };
 }

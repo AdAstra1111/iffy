@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,10 +37,8 @@ interface BeatRewritePanelProps {
   approvedNotes: any[];
   protectItems: string[];
   onComplete?: (newVersionId: string) => void;
-  onApplyAllStart?: () => void;
-  onApplyAllDone?: () => void;
-  /** External ref to trigger Apply All from parent */
-  applyAllTriggerRef?: React.MutableRefObject<(() => void) | null>;
+  /** Simple callback for parent to trigger Apply All (replaces ref + start/done callbacks) */
+  onApplyAll?: () => void;
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -112,6 +110,96 @@ function parseBeatSheet(plaintext: string): Act[] {
       }
     }
   } catch (e) { /* Fall through to markdown parser */ }
+
+  // ── SLASH-SEPARATED FORMAT: "BEAT N: Name / Description / Purpose / Scene" ──
+  {
+    const slashPattern = /^BEAT\s+(\d+):\s*([^/]+)\s*\/\s*([^/]+)\s*\/\s*([^/]+)\s*\/\s*(.+)$/i;
+    const actSlashPattern = /^(?:##\s+)?ACT\s+(\w[\w\s]*?)\s*[—–-]\s*Beats|-\s*Beats/i;
+    const lines = plaintext.split('\n');
+    const slashActs: Act[] = [];
+    let slashCurrentAct: Act | null = null;
+    
+    // Check if any line matches the slash pattern
+    const hasSlashFormat = lines.some(l => slashPattern.test(l.trim()));
+    if (!hasSlashFormat) {
+      // Fall through to next parser — don't log, this isn't slash format
+    } else {
+      // Also check for a secondary 4-pattern: SKIP / KEEP / REWRITE / NOTE
+      const secondaryPattern = /^(?:SKIP|KEEP|REWRITE|NOTE)\s*\/\s*(.+)$/i;
+      const hasSecondaryFormat = lines.some(l => secondaryPattern.test(l.trim()));
+      
+      let beatIndex = 0;
+      // Default act
+      slashCurrentAct = { name: 'ACT 1', beats: [] };
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        // Act header: "## ACT 1 — Beats" or similar
+        const actMatch = trimmed.match(actSlashPattern);
+        if (actMatch) {
+          if (slashCurrentAct) slashActs.push(slashCurrentAct);
+          slashCurrentAct = { name: 'ACT ' + actMatch[1].trim(), beats: [] };
+          continue;
+        }
+        
+        // Primary slash format: "BEAT N: Name / Description / Purpose / Scene"
+        const beatMatch = trimmed.match(slashPattern);
+        if (beatMatch) {
+          beatIndex++;
+          const raw = trimmed;
+          const beat: Beat = {
+            id: beatMatch[1],
+            name: beatMatch[2].trim(),
+            act: slashCurrentAct?.name || 'ACT 1',
+            turningPoint: false,
+            turningPointLabel: 'No',
+            scene: beatMatch[5].trim(),
+            description: beatMatch[3].trim(),
+            structuralPurpose: beatMatch[4].trim(),
+            protagonistState: '',
+            emotionalShift: '',
+            raw,
+          };
+          slashCurrentAct?.beats.push(beat);
+          continue;
+        }
+        
+        // Secondary slash format: "SKIP / keep this one" etc.
+        if (hasSecondaryFormat) {
+          const secMatch = trimmed.match(secondaryPattern);
+          if (secMatch) {
+            beatIndex++;
+            const action = trimmed.split('/')[0].trim();
+            const content = secMatch[1].trim();
+            const beat: Beat = {
+              id: String(beatIndex),
+              name: `${action}: ${content.slice(0, 50)}`,
+              act: slashCurrentAct?.name || 'ACT 1',
+              turningPoint: false,
+              turningPointLabel: 'No',
+              scene: '',
+              description: content,
+              structuralPurpose: action,
+              protagonistState: '',
+              emotionalShift: '',
+              raw: trimmed,
+            };
+            slashCurrentAct?.beats.push(beat);
+          }
+        }
+      }
+      
+      if (slashCurrentAct) slashActs.push(slashCurrentAct);
+      
+      if (slashActs.reduce((s, a) => s + a.beats.length, 0) > 0) {
+        const totalBeats = slashActs.reduce((s, a) => s + a.beats.length, 0);
+        console.log('[BeatRewritePanel] slash-separated parse: ' + slashActs.length + ' acts, ' + totalBeats + ' beats');
+        return slashActs;
+      }
+    }
+  }
 
   // ── ITEM NUMBER FORMAT: "ITEM N: Name\n  Field: Value" (output by reverse-engineer-script) ──
   {
@@ -666,8 +754,7 @@ function RewriteModal({
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function BeatRewritePanel({
-  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAllStart, onApplyAllDone,
-  applyAllTriggerRef,
+  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAll,
 }: BeatRewritePanelProps) {
   const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
   const [rewriteTarget, setRewriteTarget] = useState<Beat | null>(null);
@@ -703,7 +790,6 @@ export default function BeatRewritePanel({
   const handleApplyAll = async () => {
     const allBeats = acts.flatMap(a => a.beats);
     if (allBeats.length === 0) return;
-    onApplyAllStart?.();
     setBatchRewriteActive(true);
     setBeatStatuses(Object.fromEntries(allBeats.map(b => [b.id, 'queued'])));
 
@@ -738,23 +824,9 @@ export default function BeatRewritePanel({
     }
 
     setBatchRewriteActive(false);
-    onApplyAllDone?.();
+    onApplyAll?.();
     if (latestVid !== versionId) onComplete?.(latestVid);
   };
-
-  // Expose handleApplyAll to parent via applyAllTriggerRef
-  // Use a ref to avoid stale closure — always calls the latest handleApplyAll
-  const handleApplyAllLatestRef = useRef<() => void>(() => {});  
-  handleApplyAllLatestRef.current = handleApplyAll;
-
-  useEffect(() => {
-    if (applyAllTriggerRef) {
-      applyAllTriggerRef.current = () => handleApplyAllLatestRef.current();
-    }
-    return () => {
-      if (applyAllTriggerRef) applyAllTriggerRef.current = null;
-    };
-  }, [applyAllTriggerRef]);
 
   if (!plaintext) {
     return (

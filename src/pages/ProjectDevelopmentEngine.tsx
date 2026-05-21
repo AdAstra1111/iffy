@@ -18,6 +18,7 @@ import QualityRunHistory from '@/components/cinematic/QualityRunHistory';
 import { DocSetManager } from '@/components/notes/DocSetManager';
 import { ProcessProgressBar } from '@/components/devengine/ProcessProgressBar';
 import { EpisodeRewriteWorkspace } from '@/components/devengine/EpisodeRewriteWorkspace';
+import { ActRewriteWorkspace } from '@/components/devengine/ActRewriteWorkspace';
 import { ActivityTimeline } from '@/components/devengine/ActivityTimeline';
 import { isTreatmentDocType, SectionedDocProgress } from '@/components/devengine/SectionedDocProgress';
 import { SceneIndexedProgress } from '@/components/devengine/SceneIndexedProgress';
@@ -597,7 +598,6 @@ export default function ProjectDevelopmentEngine() {
   const pendingOptionsTriggerRef = useRef<string | null>(null);
   const prevVersionId = useRef(selectedVersionId);
   const pendingPostOpAutoReview = useRef(false);
-  const beatSheetTriggerRef = useRef<(() => void) | null>(null);
 
   // Re-resolve when version changes (always safe — never triggers review)
   useEffect(() => {
@@ -1371,12 +1371,6 @@ export default function ProjectDevelopmentEngine() {
         }).catch(e => console.warn('[decisions] record failed:', e));
       };
 
-      // Sectioned rewrite — dedicated section-by-section regeneration for sectioned doc types
-      // NOTE: beat_sheet Apply All is handled by BeatRewritePanel via applyAllTriggerRef
-      if (selectedDoc?.doc_type === 'beat_sheet') {
-        beatSheetTriggerRef.current?.();
-        return;
-      }
       // Treatment docs: route to per-act pipeline via direct supabase invoke instead of chunked pipeline
       // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
       // Notes/decisions enrichment is already done above — enrichedNotes contains all context
@@ -2480,6 +2474,29 @@ export default function ProjectDevelopmentEngine() {
                       </div>
                     )
                   )}
+                  {/* Act-level rewrite workspace — rendered when sectioned pipeline is active (e.g. beat_sheet) */}
+                  {rewritePipeline.status === 'writing' && rewritePipeline.strategy === 'sectioned' && rewritePipeline.actUnits?.length > 0 && (
+                    <ActRewriteWorkspace
+                      actUnits={rewritePipeline.actUnits}
+                      progress={{
+                        percent: rewritePipeline.smoothedPercent,
+                        label: rewritePipeline.progress?.label || '',
+                        phase: rewritePipeline.status,
+                        isAct: true,
+                        totalActs: rewritePipeline.actUnits.length,
+                        affectedActs: rewritePipeline.actUnits.filter(u => !u.isPreserved).length,
+                        preservedActs: rewritePipeline.actUnits.filter(u => u.isPreserved).length,
+                      }}
+                      smoothedPercent={rewritePipeline.smoothedPercent}
+                      etaMs={rewritePipeline.etaMs}
+                      pipelineStatus={rewritePipeline.status}
+                      activityItems={rewritePipeline.activityItems}
+                      onClearActivity={rewritePipeline.clearActivity}
+                      onStop={() => rewritePipeline.reset()}
+                      onRestart={() => {}}
+                      error={rewritePipeline.error}
+                    />
+                  )}
                   {/* Beat-level rewrite panel — beats are individual rewriteable units */}
                   {/* Moment-by-moment rewrite panel — fires for story_outline docs */}
                   {selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId && (
@@ -2506,9 +2523,7 @@ export default function ProjectDevelopmentEngine() {
                       version={selectedVersion as any}
                       approvedNotes={beatSheetApprovedNotes}
                       protectItems={protectItems}
-                      applyAllTriggerRef={beatSheetTriggerRef}
-                      onApplyAllStart={() => setTreatmentRewritePending(true)}
-                      onApplyAllDone={() => setTreatmentRewritePending(false)}
+                      onApplyAll={() => handleRewrite()}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
                         pendingOptionsTriggerRef.current = newVersionId;
