@@ -10073,6 +10073,28 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         },
       }).select().single();
 
+      // ── CRASH-RESUMABLE: Find existing chunk results from recent plans ──
+      let existingChunkResults: any[] = [];
+      try {
+        const { data: recentPlans } = await supabase.from("development_runs")
+          .select("output_json")
+          .eq("version_id", versionId)
+          .eq("run_type", "REWRITE_PLAN")
+          .neq("id", planRun!.id)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        if (recentPlans?.[0]?.output_json?.chunk_results) {
+          const cr = recentPlans[0].output_json.chunk_results;
+          const doneCount = Object.values(cr).filter((r: any) => r?.status === "done").length;
+          if (doneCount > 0) {
+            existingChunkResults = cr;
+            console.log(`[dev-engine-v2] rewrite-plan: found ${doneCount} existing chunk results from plan ${recentPlans[0].id}`);
+          }
+        }
+      } catch (existingErr: any) {
+        console.warn(`[dev-engine-v2] rewrite-plan: existing_chunk_check_failed (non-fatal): ${existingErr?.message}`);
+      }
+
       return new Response(JSON.stringify({
         planRunId: planRun!.id,
         totalChunks: chunkTexts.length,
@@ -10080,6 +10102,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         strategy: strategy || "legacy_slugline",
         chunkMeta: chunkMeta || [],
         episodeCount: resolvedEpisodeCount || null,
+        existingChunkResults,
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -10093,6 +10116,22 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       if (!planRun) throw new Error("Plan run not found");
 
       const plan = planRun.output_json as any;
+
+      // ── CRASH-RESUMABLE: Check for persisted chunk result ──
+      const persistedChunkResults = plan?.chunk_results || [];
+      if (persistedChunkResults[chunkIndex]?.status === "done") {
+        const cached = persistedChunkResults[chunkIndex];
+        const planChunkMeta = Array.isArray(plan?.chunk_meta) ? plan.chunk_meta[chunkIndex] : null;
+        console.log(`[dev-engine-v2] rewrite-chunk: resume_cache_hit chunk=${chunkIndex} char_count=${cached.char_count}`);
+        return new Response(JSON.stringify({
+          chunkIndex,
+          rewrittenText: cached.content,
+          charCount: cached.char_count,
+          episodeStart: planChunkMeta?.episode_start ?? null,
+          episodeEnd: planChunkMeta?.episode_end ?? null,
+        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
       const chunkText = plan?.chunk_texts?.[chunkIndex];
       if (chunkText === undefined) throw new Error(`Chunk ${chunkIndex} not found`);
 
@@ -10338,6 +10377,29 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // ── SAFETY NET: if rewrite produced no content, fall back to original text ──
       if (!rewrittenChunk || rewrittenChunk.trim().length < 20) {
         rewrittenChunk = chunkText;
+      }
+
+      // ── CRASH-RESUMABLE: Persist chunk result to development_runs ──
+      try {
+        const { data: planData } = await supabase.from("development_runs")
+          .select("output_json").eq("id", planRunId).single();
+        if (planData?.output_json) {
+          const output = planData.output_json;
+          if (!output.chunk_results) output.chunk_results = [];
+          output.chunk_results[chunkIndex] = {
+            chunk_index: chunkIndex,
+            content: rewrittenChunk.trim(),
+            char_count: rewrittenChunk.trim().length,
+            status: "done",
+            episode_start: chunkMeta?.episode_start ?? null,
+            episode_end: chunkMeta?.episode_end ?? null,
+            completed_at: new Date().toISOString(),
+          };
+          await supabase.from("development_runs").update({ output_json: output }).eq("id", planRunId);
+          console.log(`[dev-engine-v2] rewrite-chunk: persisted chunk=${chunkIndex} char_count=${rewrittenChunk.trim().length}`);
+        }
+      } catch (persistErr: any) {
+        console.warn(`[dev-engine-v2] rewrite-chunk: persist_failed chunk=${chunkIndex} error=${persistErr?.message} (non-fatal)`);
       }
 
       return new Response(JSON.stringify({
@@ -10788,6 +10850,37 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         const entries = storyOutlineJSON.entries;
         const totalEntries = entries.length;
 
+        // ── STORY OUTLINE CRASH-RESUME: check for existing version with partial chunk work ──
+        let isResumingSto: any = null;
+        const resumeVersionId: string | null = null;
+
+        const { data: recentCandidates } = await supabase
+          .from("project_document_versions")
+          .select("id, meta_json, created_at")
+          .eq("document_id", documentId)
+          .neq("id", versionId)
+          .order("created_at", { ascending: false })
+          .limit(3);
+
+        for (const cand of recentCandidates || []) {
+          const rt = cand.meta_json?.run_type || '';
+          if (!rt.includes('REWRITE')) continue;
+          const age = Date.now() - new Date(cand.created_at).getTime();
+          if (age > 30 * 60 * 1000) continue;
+          const { data: existingChunks } = await supabase
+            .from("project_document_chunks")
+            .select("chunk_index, status, content, char_count, chunk_key, meta_json")
+            .eq("version_id", cand.id)
+            .order("chunk_index", { ascending: true });
+          if (existingChunks && existingChunks.length > 0 && existingChunks.some((c: any) => c.status === 'done')) {
+            isResumingSto = { version: cand, chunks: existingChunks };
+            console.log(`[dev-engine-v2][resume] Found resumable version ${cand.id} — ${existingChunks.filter((c: any) => c.status === 'done').length}/${existingChunks.length} chunks completed`);
+            break;
+          }
+        }
+
+        let newVersion: any = null;
+        if (!isResumingSto) {
         // Create new version
         const newVersionNumber = (version.version_number || 1) + 1;
         const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
@@ -10802,7 +10895,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
         }, { onConflict: "document_id,version_number" }).select();
         if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
-        const newVersion = insertRes.data[0];
+        newVersion = insertRes.data[0];
         if (!newVersion?.id) throw new Error("No version returned from insert");
 
         await supabase.from("project_document_versions").update({ is_current: false })
@@ -10820,6 +10913,9 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           };
         });
         await supabase.from("project_document_chunks").insert(chunkInserts);
+        } else {
+          newVersion = isResumingSto.version;
+        }
 
         // Build system prompt
         const lane = project.assigned_lane || "independent-film";
@@ -10845,6 +10941,20 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           const prevEntry = i > 0 ? entries[i - 1] : null;
           const nextEntry = i < entries.length - 1 ? entries[i + 1] : null;
           const entryNum = entry.number || (i + 1);
+
+          // ── RESUME CHECK: skip if this chunk was already completed in a previous run ──
+          if (isResumingSto !== null && isResumingSto.chunks[i]?.status === 'done') {
+            const rc = isResumingSto.chunks[i];
+            rewrittenEntries.push({
+              number: entryNum,
+              title: entry.title,
+              description: rc.content,
+              emotional_shift: entry.emotional_shift,
+              turning_point: entry.turning_point,
+            });
+            console.log(`[dev-engine-v2][resume] moment ${entryNum}/${totalEntries} — resumed from existing chunk`);
+            continue;
+          }
 
           console.log(`[story-outline] rewriting moment ${entryNum}/${totalEntries}: "${(entry.title || "").slice(0, 60)}"`);
 
@@ -11173,6 +11283,37 @@ INSTRUCTIONS:
 
       console.log("[dev-engine-v2][treatment-rewrite] sections_found=" + flatSections.length);
 
+      // ── STANDARD PROSE CRASH-RESUME: check for existing version with partial chunk work ──
+      let isResumingProse: any = null;
+      const resumeVersionIdProse: string | null = null;
+
+      const { data: recentCandidates } = await supabase
+        .from("project_document_versions")
+        .select("id, meta_json, created_at")
+        .eq("document_id", documentId)
+        .neq("id", versionId)
+        .order("created_at", { ascending: false })
+        .limit(3);
+
+      for (const cand of recentCandidates || []) {
+        const rt = cand.meta_json?.run_type || '';
+        if (!rt.includes('REWRITE')) continue;
+        const age = Date.now() - new Date(cand.created_at).getTime();
+        if (age > 30 * 60 * 1000) continue;
+        const { data: existingChunks } = await supabase
+          .from("project_document_chunks")
+          .select("chunk_index, status, content, char_count, chunk_key, meta_json")
+          .eq("version_id", cand.id)
+          .order("chunk_index", { ascending: true });
+        if (existingChunks && existingChunks.length > 0 && existingChunks.some((c: any) => c.status === 'done')) {
+          isResumingProse = { version: cand, chunks: existingChunks };
+          console.log(`[dev-engine-v2][resume] Found resumable version ${cand.id} — ${existingChunks.filter((c: any) => c.status === 'done').length}/${existingChunks.length} chunks completed`);
+          break;
+        }
+      }
+
+      let newVersion: any = null;
+      if (!isResumingProse) {
       const newVersionNumber = (version.version_number || 1) + 1;
       const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
       const effUserId = user?.id || proj?.user_id || null;
@@ -11186,7 +11327,7 @@ INSTRUCTIONS:
       }, { onConflict: "document_id,version_number" }).select();
       console.log("[treatment-rewrite] insert err=" + JSON.stringify(insertRes.error));
       if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
-      const newVersion = insertRes.data[0];
+      newVersion = insertRes.data[0];
       if (!newVersion?.id) throw new Error("No version returned from insert");
 
       await supabase.from("project_document_versions").update({ is_current: false })
@@ -11203,6 +11344,9 @@ INSTRUCTIONS:
         };
       });
       await supabase.from("project_document_chunks").insert(chunkInserts);
+      } else {
+        newVersion = isResumingProse.version;
+      }
 
       const lane = project.assigned_lane || "independent-film";
       const format = project.format || "film";
@@ -11275,6 +11419,20 @@ INSTRUCTIONS:
         for (let i = 0; i < flatSections.length; i++) {
           const section = flatSections[i];
           const beats = (section as any).beats || [];
+
+          // ── RESUME CHECK: skip sections already completed in a previous run ──
+          if (isResumingProse && isResumingProse.chunks[i]?.status === 'done') {
+            console.log(`[beat-sheet-rewrite][resume] section ${i+1} (${section.label}) — resumed from existing chunk`);
+            const existingContent = isResumingProse.chunks[i].content || "";
+            const parsedBeats = (() => { try { return JSON.parse(existingContent); } catch { return null; } })();
+            if (Array.isArray(parsedBeats) && parsedBeats.length > 0) {
+              rewrittenSections.push({ header: section.header, content: existingContent, label: section.label, sk: section.sk, beats: parsedBeats });
+            } else {
+              rewrittenSections.push({ header: section.header, content: existingContent, label: section.label, sk: section.sk });
+            }
+            continue;
+          }
+
           if (beats.length > 0) {
             const beatsJSON = JSON.stringify(beats, null, 2);
             try {
@@ -11288,23 +11446,47 @@ INSTRUCTIONS:
               if (parsedArray.length === beats.length && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
                 rewrittenSections.push({ header: section.header, content: JSON.stringify(parsedArray, null, 2), label: section.label, sk: section.sk, beats: parsedArray });
                 console.log("[beat-sheet-rewrite] section " + (i+1) + " (" + section.label + "): " + beats.length + " beats rewritten OK");
+            await supabase.from("project_document_chunks").update({
+              status: "done",
+              content: JSON.stringify(parsedArray, null, 2),
+              char_count: JSON.stringify(parsedArray, null, 2).length,
+            }).eq("version_id", newVersion.id).eq("chunk_index", i);
               } else if (parsedArray.length > 0 && parsedArray.every((b: any) => typeof b === "object" && b !== null && "number" in b)) {
                 const numMap: Record<number, any> = {};
                 for (const b of parsedArray) numMap[b.number] = b;
                 const patched = beats.map((orig: any) => numMap[orig.number] || orig);
                 rewrittenSections.push({ header: section.header, content: JSON.stringify(patched, null, 2), label: section.label, sk: section.sk, beats: patched });
                 console.warn("[beat-sheet-rewrite] section " + (i+1) + ": patched " + parsedArray.length + " beats to expected " + beats.length);
+            await supabase.from("project_document_chunks").update({
+              status: "done",
+              content: JSON.stringify(patched, null, 2),
+              char_count: JSON.stringify(patched, null, 2).length,
+            }).eq("version_id", newVersion.id).eq("chunk_index", i);
               } else {
                 console.warn("[beat-sheet-rewrite] section " + (i+1) + ": invalid LLM output, keeping original " + beats.length + " beats");
                 rewrittenSections.push({ header: section.header, content: beatsJSON, label: section.label, sk: section.sk, beats });
+            await supabase.from("project_document_chunks").update({
+              status: "done",
+              content: beatsJSON,
+              char_count: beatsJSON.length,
+            }).eq("version_id", newVersion.id).eq("chunk_index", i);
               }
             } catch (err: any) {
               console.warn("[beat-sheet-rewrite] section " + (i+1) + " failed: " + String(err?.message || err) + ", keeping original beats");
               const beatsJSON2 = JSON.stringify(beats, null, 2);
               rewrittenSections.push({ header: section.header, content: beatsJSON2, label: section.label, sk: section.sk, beats });
+            await supabase.from("project_document_chunks").update({
+              status: "failed",
+              error: String(err?.message || err).slice(0, 500),
+            }).eq("version_id", newVersion.id).eq("chunk_index", i);
             }
           } else {
             rewrittenSections.push(section);
+            await supabase.from("project_document_chunks").update({
+              status: "done",
+              content: JSON.stringify(beats, null, 2),
+              char_count: JSON.stringify(beats, null, 2).length,
+            }).eq("version_id", newVersion.id).eq("chunk_index", i);
           }
         }
 
@@ -11404,9 +11586,11 @@ INSTRUCTIONS:
           { actKey: "act_3_climax_resolution", actNumber: 4, label: findSectionDef("treatment", "act_3_climax_resolution")?.label ?? "Act 3 – Climax & Resolution" },
         ];
 
-        // Reset treatment_acts rows for this treatment_id (fresh rewrite pass)
-        await supabase.from("treatment_acts").delete().eq("treatment_id", documentId);
-        // Insert 4 pending rows
+        // Reset treatment_acts rows, but ONLY if not resuming (preserve partial progress on resume)
+        if (!isResumingProse) {
+          await supabase.from("treatment_acts").delete().eq("treatment_id", documentId);
+        }
+        // Insert 4 pending rows (or only missing ones on resume)
         const pendingRows = ACT_SEQUENCE.map(({ actKey, actNumber }) => ({
           treatment_id: documentId,
           act_number: actNumber,
@@ -11433,6 +11617,27 @@ INSTRUCTIONS:
 
         for (const { actKey, actNumber } of ACT_SEQUENCE) {
           console.log("[treatment-per-act] starting act=" + actKey + " (" + actNumber + "/4)");
+
+          // ── RESUME CHECK: skip acts already completed in a previous run ──
+          if (isResumingProse) {
+            const { data: resumeChunk } = await supabase.from("project_document_chunks")
+              .select("status, content, char_count")
+              .eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1)
+              .maybeSingle();
+            if (resumeChunk && resumeChunk.status === "done" && resumeChunk.content) {
+              console.log("[treatment-per-act] act=" + actKey + " — resumed from existing chunk (" + resumeChunk.char_count + " chars)");
+              // Load content from existing treatment_acts row too
+              const { data: resumeAct } = await supabase.from("treatment_acts")
+                .select("*").eq("treatment_id", documentId).eq("act_key", actKey).maybeSingle();
+              const existingContent = resumeChunk.content;
+              const existingDeltas = resumeAct?.arc_state_deltas || null;
+              priorActResults.push({
+                actKey, actNumber, label: actKey,
+                content: existingContent, arcStateDeltas: existingDeltas,
+              });
+              continue;
+            }
+          }
 
           // Mark row as rewriting
           const markResult = await supabase.from("treatment_acts")
@@ -11521,6 +11726,12 @@ INSTRUCTIONS:
               content: actContent,
               arcStateDeltas: arcDeltas,
             });
+            // Persist chunk result for crash-resumability
+            await supabase.from("project_document_chunks").update({
+              status: "done",
+              content: actContent,
+              char_count: actContent.length,
+            }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
           } catch (actErr: any) {
             console.error("[treatment-per-act] act=" + actKey + " FAILED: " + String(actErr?.message || actErr));
             await supabase.from("treatment_acts").update({
@@ -11535,6 +11746,11 @@ INSTRUCTIONS:
             priorActResults.push({
               actKey, actNumber, label: actKey, content: fallbackContent, arcStateDeltas: null,
             });
+            // Persist chunk failure for crash-resumability
+            await supabase.from("project_document_chunks").update({
+              status: "failed",
+              error: String(actErr?.message || actErr).slice(0, 500),
+            }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
           }
         }
 
@@ -11662,6 +11878,18 @@ INSTRUCTIONS:
 
       for (let i = 0; i < flatSections.length; i++) {
         const section = flatSections[i];
+
+        // ── RESUME CHECK: skip sections already completed in a previous run ──
+        if (isResumingProse && isResumingProse.chunks[i]?.status === 'done') {
+          console.log(`[dev-engine-v2][resume] section ${i+1} (${section.label}) — resumed from existing chunk`);
+          rewrittenSections.push({
+            header: section.header,
+            content: isResumingProse.chunks[i].content || section.content,
+            label: section.label,
+            sk: section.sk,
+          });
+          continue;
+        }
 
         // ── SURGICAL CHECK: skip LLM call for sections not mentioned in notes ──
         if (!isSectionAffected(section) && flatSections.length > 1) {
