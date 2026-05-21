@@ -6,6 +6,7 @@ import {
   parseEpisodeBlocks,
   mergeByEpisodeNumber,
   findMissing,
+  buildMetaJsonUpdate,
 } from "./episodeBeatsChunkedTestHelpers";
 
 // ── parseEpisodeBlocks ──
@@ -120,6 +121,82 @@ describe("findMissing", () => {
     const blocks = [{ episodeNumber: 1, text: "ep1" }];
     expect(findMissing(blocks, 1)).toEqual([]);
     expect(findMissing(blocks, 3)).toEqual([2, 3]);
+  });
+});
+
+// ── buildMetaJsonUpdate (the .single() destructuring fix) ──
+
+describe("buildMetaJsonUpdate", () => {
+  it("preserves bg_started_at when existing version has it", () => {
+    const existingRow = {
+      meta_json: { bg_started_at: "2024-06-15T10:00:00Z" },
+    };
+    const result = buildMetaJsonUpdate(existingRow, 30, 15);
+    expect(result.bg_started_at).toBe("2024-06-15T10:00:00Z");
+    expect(result.bg_generating).toBe(true);
+    expect(result.episodes_completed).toBe(15);
+    expect(result.episodes_total).toBe(30);
+  });
+
+  it("omits bg_started_at when existing version has no meta_json", () => {
+    const existingRow = {} as any;
+    const result = buildMetaJsonUpdate(existingRow, 20, 10);
+    expect(result).not.toHaveProperty("bg_started_at");
+    expect(result.bg_generating).toBe(true);
+  });
+
+  it("omits bg_started_at when existing version has null meta_json", () => {
+    const existingRow = { meta_json: null } as any;
+    const result = buildMetaJsonUpdate(existingRow, 10, 5);
+    expect(result).not.toHaveProperty("bg_started_at");
+  });
+
+  it("omits bg_started_at when bg_started_at is undefined", () => {
+    const existingRow = { meta_json: { bg_started_at: undefined } } as any;
+    const result = buildMetaJsonUpdate(existingRow, 10, 5);
+    expect(result).not.toHaveProperty("bg_started_at");
+  });
+
+  it("handles null existing row (no data returned from .single())", () => {
+    const result = buildMetaJsonUpdate(null, 24, 12);
+    expect(result).not.toHaveProperty("bg_started_at");
+    expect(result.bg_generating).toBe(true);
+    expect(result.episodes_completed).toBe(12);
+  });
+
+  it("correctly simulates the fixed .single() destructuring pattern", () => {
+    // This test validates the pattern fix: .single() returns { data, error }
+    // not the row directly. Before the fix, the code didn't destructure .data
+    // and existingMeta was always the response wrapper, not the row.
+    //
+    // Simulate the BUGGY behavior:
+    const singleResponse = { data: { meta_json: { bg_started_at: "2024-01-01T00:00:00Z" } }, error: null };
+    const buggyAccess = (singleResponse as any)?.meta_json?.bg_started_at;  // Response wrapper, not row
+    expect(buggyAccess).toBeUndefined();  // This is why bg_started_at was never preserved!
+
+    // Simulate the FIXED behavior:
+    const { data: existingVersion } = singleResponse;
+    const fixedAccess = existingVersion?.meta_json?.bg_started_at;
+    expect(fixedAccess).toBe("2024-01-01T00:00:00Z");  // Now correctly accessed
+
+    // The helper function uses the fixed pattern
+    const result = buildMetaJsonUpdate(existingVersion, 30, 15);
+    expect(result.bg_started_at).toBe("2024-01-01T00:00:00Z");
+  });
+
+  it("passes buildMetaJsonUpdate through the full meta_json shape", () => {
+    const existingRow = {
+      meta_json: { bg_started_at: "2024-03-10T08:30:00Z" },
+    };
+    const result = buildMetaJsonUpdate(existingRow, 24, 24);
+    expect(result).toEqual({
+      bg_generating: true,
+      episode_count: 24,
+      episodes_total: 24,
+      episodes_completed: 24,
+      current_episode: 24,
+      bg_started_at: "2024-03-10T08:30:00Z",
+    });
   });
 });
 

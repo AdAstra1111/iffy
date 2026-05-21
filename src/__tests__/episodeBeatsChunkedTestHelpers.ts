@@ -50,3 +50,27 @@ export function findMissing(blocks: EpisodeBeatBlock[], expectedCount: number): 
   }
   return missing;
 }
+
+/**
+ * Build a meta_json update preserving bg_started_at from existing version data.
+ * This mirrors the logic in generateEpisodeBeatsChunked that was fixed to
+ * destructure .data from the .single() Supabase response.
+ *
+ * .single() returns { data: T | null, error: ... } — not T directly.
+ * The fix ensures existingVersion is the actual row, not the response wrapper.
+ */
+export function buildMetaJsonUpdate(
+  existingVersionRow: { meta_json?: { bg_started_at?: string } } | null,
+  episodeCount: number,
+  maxEpNum: number,
+): Record<string, unknown> {
+  const origStartedAt = existingVersionRow?.meta_json?.bg_started_at;
+  return {
+    bg_generating: true,
+    episode_count: episodeCount,
+    episodes_total: episodeCount,
+    episodes_completed: maxEpNum,
+    current_episode: maxEpNum,
+    ...(origStartedAt ? { bg_started_at: origStartedAt } : {}),
+  };
+}

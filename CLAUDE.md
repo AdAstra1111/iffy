@@ -79,9 +79,8 @@ Critical events must be emitted as structured logs: `authoritative_version_resol
 ## Branch Workflow
 
 - `main` is the primary branch — push directly, no Lovable involvement
-- Two independent deploy workflows run on push to `main`:
-  - `.github/workflows/deploy-frontend.yml` — builds and deploys the frontend to Vercel
-  - `.github/workflows/deploy-functions.yml` — validates and deploys Supabase Edge Functions
+- Deployment uses **`./deploy.sh`** — single command that builds the frontend, deploys to Vercel, and deploys critical edge functions
+- Push to `origin/main` for code history/review only (deploy is via `./deploy.sh`, not CI/CD)
 - See `DEPLOYMENT.md` for full deployment documentation, rollback procedures, and checklists
 
 ## Protected Files — Verify on Every Main Push
