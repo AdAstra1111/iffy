@@ -110,6 +110,7 @@ const LookBookPage = lazy(() => import("./pages/LookBookPage"));
 const ProjectImageLibrary = lazy(() => import("./pages/ProjectImageLibrary"));
 const ActorLibrary = lazy(() => import("./pages/ActorLibrary"));
 const CharacterEntityMergePage = lazy(() => import("./pages/CharacterEntityMergePage"));
+const NeuralDiagnostics = lazy(() => import("./pages/NeuralDiagnostics"));
 
 
 // ProjectShell — new unified workspace frame (Week 1 refactor)
@@ -261,6 +262,7 @@ const AnimatedRoutes = () => {
           <Route path="/share/pack/:token" element={<SharePackView />} />
           
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
+          <Route path="/dev/neural" element={<ProtectedRoute><NeuralDiagnostics /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
