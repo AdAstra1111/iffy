@@ -2432,7 +2432,11 @@ function buildRewriteSystem(deliverable: string, format: string, behavior: strin
 - OUTPUT THE FULL REWRITTEN BEAT SHEET — all acts, all beats.
 - If approved notes require adding new beats (especially Act 3), ADD THEM. Do not truncate or omit acts.
 - If Act 3 beats are identified as missing or underdeveloped in the notes, CREATE the required beats: climax, antagonist arc resolution, character arc resolution, aftermath, and final image.
-- Do not reduce the scope or omit beats not mentioned in the notes.`;
+- Do not reduce the scope or omit beats not mentioned in the notes.
+- Each beat MUST use the following format template:
+  ### <N>. **<Beat Name>**
+  <4-6 sentence prose describing what happens, dramatic function, emotional shift>
+  *Dramatic Function:* <purpose>`;
   }
 
   // Idea stage format enforcement — must not produce screenplay format
@@ -2695,6 +2699,7 @@ GOALS:
 - Maintain the ## section header format for every section.
 - Do NOT merge, rename, or reorder sections.
 - Do NOT convert to screenplay format (no INT./EXT. sluglines, no dialogue cues).
+- For beat sheet documents: each beat MUST use the format ### <N>. **<Beat Name>** followed by prose and *Dramatic Function:* <purpose>. Do NOT use plain numbered list items — use H3 headers for beat labels.
 - Do NOT summarise or collapse sections.
 
 CRITICAL:
@@ -11960,7 +11965,7 @@ INSTRUCTIONS:
         // This works for both treatment (has ACT_SEQUENCE) and story_outline/character_bible (no ACT_SEQUENCE).
         const def = findSectionDef(doc.doc_type || "treatment", s.sk);
         const actLabel = def?.label ?? s.label;
-        const strippedContent = s.content.replace(/^#{1,6}\s+[^\n]+\n*/," ").trim();
+        const strippedContent = s.content.replace(/^\s*#{1,6}\s+[^\n]+\n*/," ").trim();
         return `## ${actLabel}\n\n${strippedContent}`;
       }).join("\n\n").replace(/\n{3,}/g, "\n\n");
 

@@ -330,6 +330,20 @@ function parseBeatSheet(plaintext: string): Act[] {
         continue;
       }
 
+      // Beat header: "### N. Beat Name" or "### N. **Beat Name**" — H3 format fallback (LLM sometimes outputs this)
+      const h3BeatMatch = trimmed.match(/^###\s+(\d+)\.\s+(.+)/);
+      if (h3BeatMatch) {
+        // flush previous beat
+        if (currentBeatLines.length > 0 || Object.keys(currentBeatMeta).length > 0) {
+          const beat = parseBeatContent(currentBeatMeta as { id: string; name: string }, currentBeatLines, 'numbered');
+          if (beat && currentAct) currentAct.beats.push(beat);
+        }
+        const name = h3BeatMatch[2].replace(/^\*{2}|\*{2}$/g, '').trim();
+        currentBeatMeta = { id: h3BeatMatch[1], name };
+        currentBeatLines = [line];
+        continue;
+      }
+
       // Beat header: "1. **Beat Name**" — numbered list item with bold name
       const beatMatch = trimmed.match(/^(\d+)\.\s+\*\*(.+?)\*\*/);
       if (beatMatch) {
