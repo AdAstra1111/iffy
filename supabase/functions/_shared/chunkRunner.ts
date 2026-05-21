@@ -390,6 +390,7 @@ CRITICAL RULES:
 - Do NOT skip ahead to later beats. Output ONLY this beat's content.
 - Maintain consistent character voice, tone, and story continuity.
 
+|- Do NOT include meta-commentary, subtext tables, meaning shift sections, analytical/deconstructive text, or any material describing dramatic function. Output ONLY screenplay content — no tables, bullet points, or analysis.
 ${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
 ${previousChunkEnding ? `PREVIOUS BEAT ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}
 UPSTREAM CONTEXT:
@@ -427,11 +428,13 @@ ${formatReinforcement ? formatReinforcement.trim() + "\n" : ""}CRITICAL RULES:
 - Output ONLY screenplay content for ${sceneRangeLabel}.
 - Write COMPLETE scenes: INT./EXT. slugline, action paragraphs, character names, dialogue.
 - Each scene from the upstream feature_script must be expanded into full screenplay format.
+|- Output SCENE N markers (SCENE 1, SCENE 2...) before each scene for consistent numbering across the assembled document.
 - Do NOT compress, summarise, or skip any scene in this batch.
 - Maintain consistent character voice, tone, and story continuity.
 - Each scene must have its own slugline — do NOT merge adjacent scenes.
 - Action lines should be descriptive and visual. Dialogue should reveal character and advance plot.
 - Do NOT use placeholder text, "(CONTINUED)" markers, or transitional phrases like "we see".
+|- Do NOT include meta-commentary, subtext tables, meaning shift sections, analytical/deconstructive text, or any material describing dramatic function. Output ONLY screenplay content — no tables, bullet points, or analysis.
 
 ${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
 ${previousChunkEnding ? `PREVIOUS SCENE BATCH ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}

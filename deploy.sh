@@ -25,7 +25,7 @@ fi
 echo ""
 
 echo "3. Deploying edge functions..."
-FUNCTIONS="dev-engine-v2 auto-run devseed-autopilot devseed-orchestrator generate-seed-pack generate-document promote-to-devseed derive-seed-docs canon-decisions"
+FUNCTIONS="dev-engine-v2 auto-run devseed-autopilot devseed-orchestrator generate-seed-pack generate-document promote-to-devseed derive-seed-docs canon-decisions scheduled-refresh-trends refresh-trends"
 for fn in $FUNCTIONS; do
   if [ -f "supabase/functions/$fn/index.ts" ]; then
     echo "  -> $fn"

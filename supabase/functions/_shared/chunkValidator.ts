@@ -74,6 +74,9 @@ const BANNED_PHRASES = [
   "this pattern repeats",
   "etc.",
   "…and more",
+  "SUBTEXT SCENE",
+  "MEANING SHIFT",
+  "DRAMATIC FUNCTION",
 ];
 
 const BANNED_PATTERNS = [

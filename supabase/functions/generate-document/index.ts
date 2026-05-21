@@ -1878,10 +1878,12 @@ ${conceptBriefContent.slice(0, 30000)}`;
             resolvedSceneCount = count;
             console.log(`[generate-document] production_draft: resolved ${resolvedSceneCount} active scenes for scene_indexed strategy`);
           } else {
-            console.warn(`[generate-document] production_draft: no active scenes found — will fall back to sectioned strategy`);
+            console.info(`[generate-document] production_draft: no active scenes found — using default 50 for scene_indexed strategy`);
+            resolvedSceneCount = 50;
           }
         } catch (scErr: any) {
-          console.warn(`[generate-document] production_draft: scene count query failed (${scErr?.message}) — falling back to sectioned`);
+          console.warn(`[generate-document] production_draft: scene count query failed (${scErr?.message}) — using default 50`);
+          resolvedSceneCount = 50;
         }
       }
 
@@ -2107,20 +2109,12 @@ ${conceptBriefContent.slice(0, 30000)}`;
             projectFormat: project.format || undefined,
           });
           // runChunkedGeneration already writes plaintext to the version — promote only on full success
-          if (chunkResult.success) {
-            await serviceClient.from("project_document_versions")
-              .update({ is_current: true, meta_json: { bg_generating: false, bg_completed_at: new Date().toISOString(), chunks_total: chunkResult.totalChunks, chunks_completed: chunkResult.completedChunks } })
-              .eq("id", chunkVersion!.id);
-            // NOW set latest_version_id — content is confirmed valid
-            await serviceClient.from("project_documents")
-              .update({ latest_version_id: chunkVersion!.id, updated_at: new Date().toISOString() })
-              .eq("id", chunkDocRecord!.id);
-            console.log(`[generate-document] Chunked background generation COMPLETE: ${docType} v${chunkVersionNum} chunks=${chunkResult.completedChunks}/${chunkResult.totalChunks}`);
 
-            // ── POST-GENERATION SCENE GRAPH BOOTSTRAP ──────────────────────────
-            // For screenplay-class docs that fell back to sectioned (no scene graph),
-            // auto-extract scenes from the generated text so the next regeneration
-            // can use scene-indexed strategy. Only runs on full success with assembled output.
+            // ── PRE-PROMOTION SCENE GRAPH BOOTSTRAP ────────────────────────────
+            // For screenplay-class docs (feature_script only — production_draft has
+            // resolvedSceneCount so it skips this), auto-extract scenes from the
+            // generated text BEFORE version promotion so auto-run never sees the
+            // version as complete before scenes are indexed.
             const SCREENPLAY_BOOTSTRAP_TYPES = new Set(["feature_script", "production_draft"]);
             if (SCREENPLAY_BOOTSTRAP_TYPES.has(docType) && !resolvedSceneCount) {
               const bootstrapTag = `[generate-document][scene-bootstrap]`;
@@ -2154,7 +2148,7 @@ ${conceptBriefContent.slice(0, 30000)}`;
                         sourceVersionId: chunkVersion!.id,
                         mode: "from_text",
                         text: assembledText,
-                        force: false,
+                        force: true,
                       }),
                     }
                   );
@@ -2200,6 +2194,16 @@ ${conceptBriefContent.slice(0, 30000)}`;
               }
             }
             // ── END SCENE GRAPH BOOTSTRAP ───────────────────────────────────────
+
+          if (chunkResult.success) {
+            await serviceClient.from("project_document_versions")
+              .update({ is_current: true, meta_json: { bg_generating: false, bg_completed_at: new Date().toISOString(), chunks_total: chunkResult.totalChunks, chunks_completed: chunkResult.completedChunks } })
+              .eq("id", chunkVersion!.id);
+            // NOW set latest_version_id — content is confirmed valid
+            await serviceClient.from("project_documents")
+              .update({ latest_version_id: chunkVersion!.id, updated_at: new Date().toISOString() })
+              .eq("id", chunkDocRecord!.id);
+            console.log(`[generate-document] Chunked background generation COMPLETE: ${docType} v${chunkVersionNum} chunks=${chunkResult.completedChunks}/${chunkResult.totalChunks}`);
 
             // ── POST-GENERATION TREATMENT ACTS POPULATION ─────────────────
             // Populate treatment_acts from the assembled plaintext so the
