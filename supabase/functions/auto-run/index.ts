@@ -5854,7 +5854,7 @@ Deno.serve(async (req) => {
 
       if (hasBlockingRemaining) {
         // When allow_defaults is on, auto-resolve remaining blocking decisions instead of re-pausing
-        if (job.allow_defaults) {
+        if (job.allow_defaults || job.meta_json?.auto_approve_all) {
           const remainingBlocking = remainingDecisions.filter((d: any) => d.impact === "blocking");
           for (const rd of remainingBlocking) {
             const autoValue = rd.recommended || rd.options?.[0]?.value || "accept";
@@ -6619,7 +6619,7 @@ Deno.serve(async (req) => {
         }
 
         // No blocking decisions — resume (or continue directly if allow_defaults)
-        if (job.allow_defaults) {
+        if (job.allow_defaults || job.meta_json?.auto_approve_all) {
           await logStep(supabase, jobId, stepCount, currentDoc, "decision_mode_skipped",
             `Executive strategy applied — no blocking decisions, allow_defaults=ON → continuing without pause.`
           );
@@ -7478,7 +7478,7 @@ Deno.serve(async (req) => {
 
           if (plateauV2.isPlateaued) {
             // ── IEL: When allow_defaults is ON and plateaued, auto-promote best version instead of looping ──
-            if (job.allow_defaults) {
+            if (job.allow_defaults || job.meta_json?.auto_approve_all) {
               const plateauForcePromote = await tryPlateauForcePromote(supabase, {
                 jobId,
                 job,
@@ -7582,7 +7582,7 @@ Deno.serve(async (req) => {
           console.log(`[auto-run][IEL] ci_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", best_ci: ${ciProgress.bestCi}, current_ci: ${ciProgress.currentCi} }`);
         } else if (ciProgress.plateau) {
           // ── IEL: When allow_defaults is ON and plateaued, auto-promote best version instead of looping ──
-          if (job.allow_defaults) {
+          if (job.allow_defaults || job.meta_json?.auto_approve_all) {
             const plateauForcePromote = await tryPlateauForcePromote(supabase, {
               jobId,
               job,
@@ -8886,7 +8886,7 @@ Deno.serve(async (req) => {
           await updateJob(supabase, jobId, { step_count: newStep, stage_loop_count: 0, stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4 });
 
           // ── APPROVAL GATE: after convert ──
-          if (job.allow_defaults) {
+          if (job.allow_defaults || job.meta_json?.auto_approve_all) {
             // Full Autopilot: auto-approve the generated doc and continue
             if (convertedVersionId) {
               // ── CCE: Post-generation drift detection for auto-run-convert ──
@@ -9120,7 +9120,7 @@ Deno.serve(async (req) => {
           const ns2 = stepCount + 1;
           await logStep(supabase, jobId, ns2, currentDoc, "generate", `Generated ${currentDoc} from ${prevStage2} (empty-slot recovery)`, {}, genDocId2 ? `Created doc ${genDocId2}` : undefined, genDocId2 ? { docId: genDocId2 } : undefined);
           await updateJob(supabase, jobId, { step_count: ns2, stage_loop_count: 0, stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4 });
-          if (job.allow_defaults) {
+          if (job.allow_defaults || job.meta_json?.auto_approve_all) {
             if (genVerId2) {
               // ── CCE: drift check for empty-slot recovery convert ──
               let arCCEMeta2: Record<string, any> = {};
@@ -9297,7 +9297,7 @@ Deno.serve(async (req) => {
       if (criteriaResult.classification === 'CRITERIA_STALE_PROVENANCE') {
         // If Auto-Decide is ON, auto-trigger canonical regen inline and continue.
         // This prevents deadlocks after canon/criteria tweaks during long-running jobs.
-        if (job.allow_defaults) {
+        if (job.allow_defaults || job.meta_json?.auto_approve_all) {
           console.log(`[auto-run][IEL] criteria_stale_auto_regen_triggered`, JSON.stringify({
             job_id: jobId,
             doc_type: currentDoc,
@@ -10055,7 +10055,7 @@ Deno.serve(async (req) => {
                   // Proceed to promotion
                   const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
                   if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
-                    if (job.allow_defaults) {
+                    if (job.allow_defaults || job.meta_json?.auto_approve_all) {
                       try {
                         await supabase.from("project_document_versions").update({
                           approval_status: "approved",
@@ -10112,7 +10112,7 @@ Deno.serve(async (req) => {
               } else {
               const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
               if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
-                if (job.allow_defaults) {
+                if (job.allow_defaults || job.meta_json?.auto_approve_all) {
                   // Full Autopilot: auto-approve and promote without pausing
                   try {
                     await supabase.from("project_document_versions").update({
@@ -10249,7 +10249,7 @@ Deno.serve(async (req) => {
               };
 
               // When allow_defaults is ON (Full Autonomous), auto-resolve upstream note debt instead of pausing
-              if (job.allow_defaults) {
+              if (job.allow_defaults || job.meta_json?.auto_approve_all) {
                 // Auto-resolve project_notes upstream blockers
                 const noteBlockerIds = upstreamBlockers
                   .filter((b: any) => b.source_table === "project_notes")
@@ -12275,7 +12275,7 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
 
             const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
             if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
-              if (job.allow_defaults) {
+              if (job.allow_defaults || job.meta_json?.auto_approve_all) {
                 // Full Autopilot: auto-approve and promote without pausing
                 try {
                   await supabase.from("project_document_versions").update({
