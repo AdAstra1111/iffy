@@ -7426,8 +7426,7 @@ Deno.serve(async (req) => {
                   return respondWithJob(supabase, jobId);
                 }
               }
-              }
-            } else {
+              } else {
               console.log(`[auto-run][SIMPLE_PROMOTE] notes_exhausted_below_floor { job_id: \"${jobId}\", doc_type: \"${currentDoc}\", ci: ${bestCi}, floor: ${GLOBAL_MIN_CI}, action: \"direct_promote\" }`);
               await logStep(supabase, jobId, stepCount + 1, currentDoc, "simple_notes_exhausted_below_floor",
                 `Notes exhausted but CI (${bestCi}) < floor (${GLOBAL_MIN_CI}). Promoting best available directly.`,
@@ -7475,6 +7474,7 @@ Deno.serve(async (req) => {
                   await releaseProcessingLock(supabase, jobId);
                   return respondWithJob(supabase, jobId);
                 }
+              }
               }
             }
         }
