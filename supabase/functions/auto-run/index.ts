@@ -4008,7 +4008,7 @@ async function tryPlateauForcePromote(
   }
 ): Promise<Response | null> {
   const { jobId, job, currentDoc, format, stepCount, targetCi, detectedCi, detectedBestCi, plateauVersion } = params;
-  if (!job.allow_defaults) return null;
+  if (!job.allow_defaults && !job.meta_json?.auto_approve_all) return null;
 
   // ── PATCH D: require qualifying rewrite attempt before plateau promotion ──
   const hasQualifyingAttempt = await hasQualifyingRewriteAttempt(supabase, jobId, currentDoc);
@@ -7323,7 +7323,7 @@ Deno.serve(async (req) => {
                 detectedCi: ciGate.ci, detectedBestCi: ciGate.bestCiSoFar,
                 plateauVersion: "v1", escalationSource: "iteration_cap_exceptional",
               });
-            } else if (job.allow_defaults && ciGate.bestCiSoFar >= GLOBAL_MIN_CI) {
+            } else if ((job.allow_defaults || job.meta_json?.auto_approve_all) && ciGate.bestCiSoFar >= GLOBAL_MIN_CI) {
               const iterCapForcePromote = await tryPlateauForcePromote(supabase, {
                 jobId, job, currentDoc, format, stepCount,
                 targetCi: targetCiForIterCap,
@@ -7373,7 +7373,7 @@ Deno.serve(async (req) => {
             .in("status", ["open", "in_progress", "reopened"])
             .limit(1);
           const notesExhausted = !anyOpenNotes || anyOpenNotes.length === 0;
-          if (notesExhausted && job.allow_defaults) {
+          if (notesExhausted && (job.allow_defaults || job.meta_json?.auto_approve_all)) {
             const bestForDoc = await resolveBestScoredEligibleVersionForDoc(supabase, job.project_id, currentDoc);
             const bestCi = bestForDoc?.ci ?? 0;
             if (bestCi >= GLOBAL_MIN_CI && bestForDoc) {
@@ -8694,7 +8694,7 @@ Deno.serve(async (req) => {
         // Before deriving a downstream doc, ensure seed core is approved
         const seedCheck = await isSeedCoreOfficial(supabase, job.project_id);
         if (!seedCheck.official) {
-          if (job.allow_defaults && seedCheck.missing.length === 0) {
+          if ((job.allow_defaults || job.meta_json?.auto_approve_all) && seedCheck.missing.length === 0) {
             // Auto-approve seed core in Full Autopilot mode (all docs exist, just unapproved)
             const gateStep = stepCount + 1;
             for (const dt of seedCheck.unapproved) {
@@ -9000,7 +9000,7 @@ Deno.serve(async (req) => {
         // Re-run the generation logic inline (same as the !doc branch above)
         const seedCheck2 = await isSeedCoreOfficial(supabase, job.project_id);
         if (!seedCheck2.official) {
-          if (job.allow_defaults && seedCheck2.missing.length === 0) {
+          if ((job.allow_defaults || job.meta_json?.auto_approve_all) && seedCheck2.missing.length === 0) {
             for (const dt of seedCheck2.unapproved) {
               const { data: sDocs } = await supabase.from("project_documents").select("id").eq("project_id", job.project_id).eq("doc_type", dt).limit(1);
               const sDocId = sDocs?.[0]?.id;
@@ -9916,7 +9916,7 @@ Deno.serve(async (req) => {
                 const earlyTargetCi = resolveTargetCI(job);
                 const earlyStageBest = await getStageBestFromSteps(supabase, jobId, currentDoc, job.project_id);
                 const earlyBestCi = earlyStageBest?.ci ?? ci;
-                if (earlyBestCi >= earlyTargetCi && blockersCount === 0 && job.allow_defaults !== false) {
+                if (earlyBestCi >= earlyTargetCi && blockersCount === 0 && (job.allow_defaults !== false || job.meta_json?.auto_approve_all)) {
                   const earlyNext = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
                   if (earlyNext && isStageAtOrBeforeTarget(earlyNext, job.target_document, format)) {
                     try {
@@ -12079,7 +12079,7 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
             // log as warning, and continue. Entity injection hurts quality more than it helps
             // when the project canon is sparse or manually seeded.
             if (e.message?.includes("CANON_MISMATCH")) {
-              if (job.allow_defaults === true) {
+              if (job.allow_defaults === true || job.meta_json?.auto_approve_all) {
                 await logStep(supabase, jobId, null, currentDoc, "canon_mismatch_advisory",
                   `CANON_MISMATCH suppressed in autonomous mode (allow_defaults=true) — treating as advisory, not blocking`,
                   { ci: baselineCI, gp: baselineGP });
