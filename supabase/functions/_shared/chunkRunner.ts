@@ -275,19 +275,20 @@ LONG TREATMENT LENGTH — MANDATORY:
     // ── Story Outline ────────────────────────────────────────────────────────
     } else if (docType === "story_outline") {
       const PER_ACT_TARGETS: Record<string, string> = {
-        "act_1_setup":         "12–16 scenes (approximately 1,800–3,000 words). Each scene: slug line, 2–4 sentence description, dramatic purpose. Covers world establishment through inciting incident to end of Act 1.",
-        "act_2a_complication": "14–18 scenes (approximately 2,200–3,600 words). Rising action, B story introduction, Fun & Games section, build to Midpoint. Each scene fully described.",
-        "act_2b_crisis":       "14–18 scenes (approximately 2,200–3,600 words). Post-midpoint complications, All Is Lost, Dark Night of the Soul. Every scene fully described.",
-        "act_3_resolution":    "10–14 scenes (approximately 1,500–2,600 words). Break Into Three, finale sequence, climax, resolution, final image. Every scene fully described.",
+        "act_1_setup":         "5\u20138 JSON entries (approximately 800\u20131,500 words). Each entry: 3-5 sentence description covering dramatic purpose and emotional shift. Covers world establishment through inciting incident to end of Act 1.",
+        "act_2a_complication": "5\u20138 JSON entries (approximately 800\u20131,500 words). Rising action, B story introduction, Fun & Games section, build to Midpoint. Each entry fully described.",
+        "act_2b_crisis":       "5\u20138 JSON entries (approximately 800\u20131,500 words). Post-midpoint complications, All Is Lost, Dark Night of the Soul. Every entry fully described.",
+        "act_3_resolution":    "5\u20138 JSON entries (approximately 600\u20131,200 words). Break Into Three, finale sequence, climax, resolution, final image. Every entry fully described.",
       };
-      const actTarget = PER_ACT_TARGETS[sectionKey] ?? "12–16 scenes (approximately 2,000–3,000 words)";
+      const actTarget = PER_ACT_TARGETS[sectionKey] ?? "5\u20138 JSON entries (approximately 800\u20131,500 words)";
       lengthGuidance = `
-STORY OUTLINE LENGTH — MANDATORY:
-- A feature film story outline is 50–80 scenes (approximately 8,000–13,000 words total across all 4 acts).
+STORY OUTLINE LENGTH \u2014 MANDATORY:
+- A feature film story outline is 25\u201332 entries (approximately 3,000\u20135,500 words total across all 4 acts).
 - This act (${sectionLabel}) must contain: ${actTarget}
-- Each scene entry MUST include: location/time slug, 2–4 sentence action description, and dramatic purpose.
-- Do NOT summarise multiple scenes into one entry. Every scene is its own entry.
-- Do NOT skip scenes to save space. Do NOT stop writing until you have reached the scene count and word target above.
+- Each entry is one {"number", "title", "description"} object in the "entries" JSON array. Description: 3\u20135 sentences covering what happens, dramatic purpose, and emotional shift.
+- Do NOT use sluglines, character cues, or dialogue formatting.
+- Do NOT summarise multiple moments into one entry. Every moment is its own entry.
+- Do NOT stop writing until you have reached the entry count target above.
 `;
 
     // ── Beat Sheet ───────────────────────────────────────────────────────────

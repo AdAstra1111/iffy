@@ -1102,7 +1102,7 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         : "";
 
       const storyOutlineRule = (docType === "story_outline" || docType === "architecture")
-        ? `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. Break EACH act from the Treatment into 5-8 individual moments. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all acts.`
+        ? `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. Break EACH act from the Treatment into 5-8 individual moments. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array — EVERY entry follows THIS EXACT schema. NO per-act schema variation is permitted. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all acts.`
         : "";
 
       // ── Stage Identity Prompt Injection ──
