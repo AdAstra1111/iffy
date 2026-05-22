@@ -311,6 +311,24 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
           isRunning: running,
         });
 
+        // Fire-and-forget fetch latest steps so UI shows pipeline progress
+        if (mergedJob.id) {
+          supabase.from('auto_run_steps')
+            .select('*')
+            .eq('job_id', mergedJob.id)
+            .order('step_index', { ascending: false })
+            .limit(50)
+            .then(({ data: freshSteps }) => {
+              if (freshSteps && freshSteps.length > 0) {
+                dispatch({
+                  type: 'STEPS_UPDATED',
+                  steps: freshSteps as any,
+                });
+              }
+            })
+            .catch(() => { /* silent */ });
+        }
+
         // NOTE: Cache invalidation moved to separate deferred effect below
         // to avoid blocking the main-thread Realtime message handler (~269ms).
       }
@@ -590,6 +608,24 @@ export function useAutoRunMissionControl(projectId: string | undefined) {
         isRunning: running,
       });
       console.log(`[mission-control][IEL] start_new_job { job_id: "${result.job?.id}", current_document: "${result.job?.current_document}" }`);
+
+      // Nudge run-next immediately after start to advance the pipeline
+      if (running && result.job?.id) {
+        try {
+          const nextResult = await callAutoRun('run-next', { jobId: result.job.id });
+          if (nextResult?.job) {
+            const stillRunning = nextResult.job.status === 'running' && !nextResult.job.awaiting_approval;
+            dispatch({
+              type: 'JOB_UPDATED',
+              job: nextResult.job,
+              steps: nextResult.latest_steps || [],
+              isRunning: stillRunning,
+            });
+          }
+        } catch (nextErr: any) {
+          console.warn(`[mission-control] start run-next nudge failed: ${nextErr.message}`);
+        }
+      }
     } catch (e: any) {
       dispatch({ type: 'ERROR', error: e.message });
       // Don't re-throw — let the UI show the error gracefully instead of blank screen

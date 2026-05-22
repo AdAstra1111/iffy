@@ -421,7 +421,6 @@ async function createDocWithVersion(
       generatorId: 'devseed',
       createdBy: userId,
       sourceMode: 'seed_override',
-      approvalStatus: 'approved',
       metaJson: metaWithProvenance,
     });
   } catch (verErr: any) {
@@ -1011,6 +1010,18 @@ export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
                   }
                 } else {
                   parts.push('auto-run started');
+                  // Nudge run-next immediately after start to advance the pipeline
+                  const newJobId = arData?.job?.id || arData?.job_id;
+                  if (newJobId) {
+                    try {
+                      await supabase.functions.invoke('auto-run', {
+                        body: { action: 'run-next', jobId: newJobId },
+                      });
+                      parts.push('auto-run progressing');
+                    } catch (nextErr: any) {
+                      console.warn('[DevSeed] auto-run run-next nudge failed (non-fatal):', nextErr?.message);
+                    }
+                  }
                 }
               }
             } catch (arErr: any) {

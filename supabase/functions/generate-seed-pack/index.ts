@@ -684,7 +684,6 @@ Preserve the concept. Return the same JSON schema with structural elements stren
           docType: cfg.doc_type,
           plaintext: content,
           label: `seed_v1`,
-          approvalStatus: "approved",
           metaJson: parsed.provenance,
           source: "seed",
           title: cfg.title,
