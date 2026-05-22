@@ -126,6 +126,8 @@ describe('Large-Risk Router', () => {
     expect(isLargeRiskDocType('topline_narrative')).toBe(false);
     expect(isLargeRiskDocType('one_pager')).toBe(false);
     expect(isLargeRiskDocType('logline')).toBe(false);
+    // Regression: concept_brief is NOT a sectioned doc type — single-pass generation
+    expect(isLargeRiskDocType('concept_brief')).toBe(false);
   });
 
   it('single-pass rewrite must be blocked for large-risk regardless of size', () => {
