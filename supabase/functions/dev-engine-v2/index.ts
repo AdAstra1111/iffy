@@ -23865,6 +23865,17 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
           description: spec.description,
           required_by: spec.required_by,
           severity_default: spec.severity_default,
+          detection_confidence: null,
+          detection_mode: 'explicit',
+          evidence_refs: [],
+          human_verified: true,
+          projection_scope: [],
+          domain: 'structural',
+          lifecycle_state: 'background_active',
+          charge: 5.0,
+          source_scene_id: null,
+          target_scene_id: null,
+          thread_label: null,
           provenance: JSON.stringify({
             source: provenanceSource,
             has_canon: hasCanon,
@@ -24312,6 +24323,23 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
           unresolved: results.filter((r)=>r.status === "unresolved").length,
           violated: results.filter((r)=>r.status === "violated").length,
           unavailable: results.filter((r)=>r.status === "unavailable").length
+        },
+        confidence_summary: {
+          average_confidence: (()=>{
+            const confs = results.map((r)=>r.detection_confidence).filter((c)=>c !== null && c !== undefined);
+            return confs.length > 0 ? confs.reduce((a, b)=>a + b, 0) / confs.length : null;
+          })(),
+          by_detection_mode: results.reduce((acc, r)=>{
+            const mode = r.detection_mode ?? "explicit";
+            acc[mode] = (acc[mode] ?? 0) + 1;
+            return acc;
+          }, {} as Record<string,number>),
+          human_verified_count: results.filter((r)=>r.human_verified === true).length,
+          by_domain: results.reduce((acc, r)=>{
+            const domain = r.domain ?? "structural";
+            acc[domain] = (acc[domain] ?? 0) + 1;
+            return acc;
+          }, {} as Record<string,number>)
         }
       }), {
         headers: {

@@ -1023,6 +1023,53 @@ Deno.serve(async (req) => {
             END $$;
           `,
 
+          "narrative_obligations_v1_5": `
+            -- CONFIDENCE SCHEMA
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS detection_confidence REAL
+                CHECK (detection_confidence IS NULL OR (detection_confidence >= 0 AND detection_confidence <= 1));
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS evidence_refs JSONB NOT NULL DEFAULT '[]'::jsonb;
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS detection_mode TEXT NOT NULL DEFAULT 'explicit'
+                CHECK (detection_mode IN ('explicit', 'inferred', 'pattern_matched', 'ai_suggested'));
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS human_verified BOOLEAN NOT NULL DEFAULT false;
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS projection_scope JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+            -- TAXONOMY BIFURCATION
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS domain TEXT NOT NULL DEFAULT 'structural'
+                CHECK (domain IN ('structural', 'character', 'thematic', 'tonal', 'genre', 'pacing', 'continuity'));
+
+            -- FIELD INTENSITY STATE MACHINE
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'background_active'
+                CHECK (lifecycle_state IN ('background_active', 'active', 'resolved', 'superseded', 'archived'));
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS charge REAL NOT NULL DEFAULT 5.0
+                CHECK (charge >= 0 AND charge <= 10);
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS source_scene_id UUID
+                REFERENCES public.scene_graph_scenes(id) ON DELETE SET NULL;
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS target_scene_id UUID
+                REFERENCES public.scene_graph_scenes(id) ON DELETE SET NULL;
+            ALTER TABLE public.narrative_obligations
+              ADD COLUMN IF NOT EXISTS thread_label TEXT;
+
+            -- INDEXES
+            CREATE INDEX IF NOT EXISTS narrative_obligations_detection_mode_lifecycle_idx
+              ON public.narrative_obligations(detection_mode, lifecycle_state);
+            CREATE INDEX IF NOT EXISTS narrative_obligations_domain_idx
+              ON public.narrative_obligations(domain);
+            CREATE INDEX IF NOT EXISTS narrative_obligations_source_scene_id_idx
+              ON public.narrative_obligations(source_scene_id);
+            CREATE INDEX IF NOT EXISTS narrative_obligations_lifecycle_charge_idx
+              ON public.narrative_obligations(lifecycle_state, charge DESC);
+          `,
+
           "narrative_repairs_v1": `
             CREATE TABLE IF NOT EXISTS public.narrative_repairs (
               repair_id             UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
