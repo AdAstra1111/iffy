@@ -280,23 +280,32 @@ export function assignSceneActs(input: AssignSceneActsInput): AssignSceneActsRes
       }
 
       // Compute act boundaries from beats
+      // Using cumulative proportional rounding so the remainder is spread
+      // across acts rather than dumped into the last act.
+      // (was: Math.floor per-beat — 11 scenes dumped into Act 4 for 83/12)
       const actSceneBoundaries: number[] = [];
       let sceneCursor = 0;
+      let remainingScenes = totalScenes;
+      let remainingBeats = beats.length;
+
       for (let a = 1; a <= actCount; a++) {
         const actBeats = beatActMap.get(a)!;
         const beatCount = actBeats.length;
-        // Give each beat in this act an equal share of scenes
-        const scenesPerBeat = beatCount > 0
-          ? Math.floor(totalScenes / beats.length)
-          : 0;
-        const actScenes = beatCount * scenesPerBeat;
+
+        let actScenes: number;
+        if (a === actCount) {
+          // Last act takes all remaining scenes (guarantees exact total)
+          actScenes = remainingScenes;
+        } else {
+          // Proportional share: scenes proportional to beat count ratio
+          // Math.round distributes the remainder across acts naturally
+          actScenes = Math.round((beatCount / remainingBeats) * remainingScenes);
+          remainingScenes -= actScenes;
+          remainingBeats -= beatCount;
+        }
+
         sceneCursor += actScenes;
         actSceneBoundaries.push(Math.min(sceneCursor, totalScenes));
-      }
-
-      // Ensure final boundary reaches totalScenes
-      if (actSceneBoundaries.length > 0) {
-        actSceneBoundaries[actSceneBoundaries.length - 1] = totalScenes;
       }
 
       // Assign acts to scenes
@@ -352,9 +361,17 @@ export function assignSceneActs(input: AssignSceneActsInput): AssignSceneActsRes
 }
 
 // ─── LOCAL PARSE BEATS FROM TEXT ─────────────────────────────────────────────
-// Mirrors the logic in dev-engine-v2's inline parseBeatsFromText.
-// This allows standalone operation without importing from dev-engine-v2.
-// (dev-engine-v2 still exports it for external use.)
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║  SYNC WARNING — DUPLICATED LOGIC                                ║
+// ║  ParseBeatsFromTextLocal is a duplicate of dev-engine-v2's      ║
+// ║  parseBeatsFromText() (dev-engine-v2/index.ts ~line 5435).      ║
+// ║  Any bug fix or format change to beat parsing MUST be           ║
+// ║  applied in BOTH locations.                                     ║
+// ║                                                                  ║
+// ║  We keep a local copy rather than importing from dev-engine-v2  ║
+// ║  because _shared modules must not depend on consumer edge        ║
+// ║  functions (dev-engine-v2 is 42K+ lines).                       ║
+// ╚═══════════════════════════════════════════════════════════════════╝
 
 export function parseBeatsFromTextLocal(text: string): ParsedBeat[] {
   if (!text || text.trim().length === 0) return [];

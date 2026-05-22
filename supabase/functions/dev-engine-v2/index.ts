@@ -5429,9 +5429,12 @@ async function computeSelectiveRegenerationPlanHelper(supabase, projectId, unitK
 }
 
 // ── parseBeatsFromText (named export) ──────────────────────────────────────
-// Extracted from the inline handler for use by sceneGraphActAssigner and
-// canonicalize-scene-substrate. Mirrors the identical logic defined inside
-// the beat_sheet rewrite handler (line ~42363).
+// ╔═══════════════════════════════════════════════════════════════════╗
+// ║  SYNC WARNING — DUPLICATED LOGIC                                ║
+// ║  This function has a duplicate in _shared/sceneGraphActAssigner  ║
+// ║  as parseBeatsFromTextLocal(). Any bug fix or format change      ║
+// ║  MUST be applied in BOTH locations.                              ║
+// ╚═══════════════════════════════════════════════════════════════════╝
 export function parseBeatsFromText(text) {
   if (!text || text.trim().length === 0) return [];
   // Try ## Beat header format first

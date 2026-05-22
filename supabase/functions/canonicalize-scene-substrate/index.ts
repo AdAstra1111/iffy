@@ -184,35 +184,40 @@ serve(async (req) => {
     console.log(`[canonicalize-scene-substrate] Act assignment: path=${actResult.path}, resolvedLane=${actResult.resolvedLane}`);
 
     // 6. Enrich each scene: assign act, write provenance
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
-      const sceneNumber = i + 1;
-      const { act } = actResult.assignments[i];
+    // Use Promise.all for parallel DB updates — scene-level updates are independent
+    // (was: sequential for-await loop, 166 round-trips for 83 scenes — perf regression)
+    const enrichResults = await Promise.all(
+      scenes.map(async (scene, i) => {
+        const sceneNumber = i + 1;
+        const { act } = actResult.assignments[i];
 
-      // Update scene_graph_order with act assignment
-      await sb
-        .from("scene_graph_order")
-        .update({ act })
-        .eq("project_id", projectId)
-        .eq("scene_id", scene.scene_id);
+        // Update scene_graph_order with act assignment
+        await sb
+          .from("scene_graph_order")
+          .update({ act })
+          .eq("project_id", projectId)
+          .eq("scene_id", scene.scene_id);
 
-      // Write provenance to scene_graph_scenes
-      await sb
-        .from("scene_graph_scenes")
-        .update({
-          provenance: {
-            source_version_id: versionId,
-            source_doc_type: docType,
-            scene_number: sceneNumber,
-            act,
-            canonicalized_at: new Date().toISOString(),
-            canonicalization_pass: "v2-format-aware",
-            assignment_path: actResult.path,
-            resolved_lane: actResult.resolvedLane,
-          },
-        })
-        .eq("id", scene.scene_id);
-    }
+        // Write provenance to scene_graph_scenes
+        await sb
+          .from("scene_graph_scenes")
+          .update({
+            provenance: {
+              source_version_id: versionId,
+              source_doc_type: docType,
+              scene_number: sceneNumber,
+              act,
+              canonicalized_at: new Date().toISOString(),
+              canonicalization_pass: "v2-format-aware",
+              assignment_path: actResult.path,
+              resolved_lane: actResult.resolvedLane,
+            },
+          })
+          .eq("id", scene.scene_id);
+
+        return { scene_id: scene.scene_id, act };
+      }),
+    );
 
     // 7. Build act distribution for response
     const actDistribution: Record<number, number> = {};
