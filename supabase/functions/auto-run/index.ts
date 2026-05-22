@@ -7373,7 +7373,7 @@ Deno.serve(async (req) => {
             .in("status", ["open", "in_progress", "reopened"])
             .limit(1);
           const notesExhausted = !anyOpenNotes || anyOpenNotes.length === 0;
-          if (notesExhausted && (job.allow_defaults || job.meta_json?.auto_approve_all)) {
+          if (notesExhausted) {
             const bestForDoc = await resolveBestScoredEligibleVersionForDoc(supabase, job.project_id, currentDoc);
             const bestCi = bestForDoc?.ci ?? 0;
             if (bestForDoc) {

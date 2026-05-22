@@ -1840,6 +1840,7 @@ export default function ProjectDevelopmentEngine() {
   const isFoundationDoc = FOUNDATION_DOC_TYPES.has(selectedDoc?.doc_type || '');
 
   const doApproveAndActivate = async () => {
+    await supabase.auth.refreshSession({ force: true });
     if (!projectId || !selectedVersionId) throw new Error('No version selected');
     setApprovePending(true);
     try {

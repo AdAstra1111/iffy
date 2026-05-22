@@ -5,7 +5,7 @@ ALTER TABLE public.production_companies
   ADD COLUMN IF NOT EXISTS jurisdiction TEXT NOT NULL DEFAULT '';
 
 -- Create storage bucket for company logos
-INSERT INTO storage.buckets (id, name, public) VALUES ('company-logos', 'company-logos', true) ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
+INSERT INTO storage.buckets (id, name, public) VALUES ('company-logos', 'company-logos', true) ON CONFLICT (id) DO NOTHING;
 
 -- Allow authenticated users to upload their own logos
 CREATE POLICY "Users can upload company logos"
