@@ -8776,10 +8776,62 @@ MATERIAL:\n${version.plaintext}`;
             }
           });
         }
+        // Graceful fallback: construct basic single-option decisions from note descriptions
+        const fallbackDecisions = [];
+        for (const n of [...blockers, ...highImpact]) {
+          const noteId = n.stable_key || n.id || n.note_key || `note-${fallbackDecisions.length + 1}`;
+          const noteDesc = n.description || n.note || "";
+          fallbackDecisions.push({
+            note_id: noteId,
+            severity: n.severity || (blockers.includes(n) ? "blocker" : "high"),
+            note: noteDesc,
+            options: [
+              {
+                option_id: `${noteId}-resolve`,
+                title: noteDesc
+                  ? `Resolve: ${noteDesc.length > 55 ? noteDesc.slice(0, 55) + "..." : noteDesc}`
+                  : `Address ${noteId}`,
+                what_changes: noteDesc ? [noteDesc] : [`Address the issue: ${noteId}`],
+                tradeoffs: n.why_it_matters
+                  ? `Why it matters: ${n.why_it_matters.length > 200 ? n.why_it_matters.slice(0, 200) + "..." : n.why_it_matters}`
+                  : "",
+                creative_risk: "med",
+                commercial_lift: 0
+              }
+            ],
+            recommended_option_id: `${noteId}-resolve`
+          });
+        }
+        const fallbackResponse = {
+          decisions: fallbackDecisions,
+          global_directions: notes?.global_directions || []
+        };
+        // Store as OPTIONS run (same pattern as the inline decision fallback above)
+        const { data: fallbackRun, error: fallbackErr } = await supabase.from("development_runs").insert({
+          project_id: projectId,
+          document_id: documentId,
+          version_id: versionId,
+          user_id: user.id,
+          run_type: "OPTIONS",
+          output_json: fallbackResponse
+        }).select().single();
+        if (fallbackErr) {
+          console.error("[dev-engine-v2] options: fallback insert failed:", fallbackErr);
+          return new Response(JSON.stringify({
+            error: "Fallback insert failed",
+            details: fallbackErr.message
+          }), {
+            status: 500,
+            headers: {
+              ...corsHeaders,
+              "Content-Type": "application/json"
+            }
+          });
+        }
         return new Response(JSON.stringify({
-          error: "MODEL_JSON_PARSE_FAILED — no inline decisions available"
+          run: fallbackRun,
+          options: fallbackResponse
         }), {
-          status: 500,
           headers: {
             ...corsHeaders,
             "Content-Type": "application/json"
