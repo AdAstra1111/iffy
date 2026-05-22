@@ -7376,7 +7376,8 @@ Deno.serve(async (req) => {
           if (notesExhausted && (job.allow_defaults || job.meta_json?.auto_approve_all)) {
             const bestForDoc = await resolveBestScoredEligibleVersionForDoc(supabase, job.project_id, currentDoc);
             const bestCi = bestForDoc?.ci ?? 0;
-            if (bestCi >= GLOBAL_MIN_CI && bestForDoc) {
+            if (bestForDoc) {
+              if (bestCi >= GLOBAL_MIN_CI) {
               console.log(`[auto-run][SIMPLE_PROMOTE] notes_exhausted_above_floor { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${bestCi}, floor: ${GLOBAL_MIN_CI}, action: "direct_promote" }`);
               await logStep(supabase, jobId, stepCount + 1, currentDoc, "simple_notes_exhausted_promote",
                 `Notes exhausted (CI:${bestCi} ≥ ${GLOBAL_MIN_CI}). Promoting directly.`,
@@ -7425,9 +7426,59 @@ Deno.serve(async (req) => {
                   return respondWithJob(supabase, jobId);
                 }
               }
+              }
+            } else {
+              console.log(`[auto-run][SIMPLE_PROMOTE] notes_exhausted_below_floor { job_id: \"${jobId}\", doc_type: \"${currentDoc}\", ci: ${bestCi}, floor: ${GLOBAL_MIN_CI}, action: \"direct_promote\" }`);
+              await logStep(supabase, jobId, stepCount + 1, currentDoc, "simple_notes_exhausted_below_floor",
+                `Notes exhausted but CI (${bestCi}) < floor (${GLOBAL_MIN_CI}). Promoting best available directly.`,
+                { ci: bestCi, gp: bestForDoc.gp }, undefined,
+                { action: "direct_promote", notes_exhausted: true, below_floor: true, ci: bestCi, floor: GLOBAL_MIN_CI }
+              );
+              // Promote the best version
+              const { error: promoteErr } = await supabase.rpc("set_current_version", {
+                p_document_id: bestForDoc.documentId,
+                p_new_version_id: bestForDoc.versionId,
+              });
+              if (!promoteErr) {
+                await persistVersionScores(supabase, {
+                  versionId: bestForDoc.versionId, ci: bestForDoc.ci, gp: bestForDoc.gp,
+                  source: "auto-run-simple-promote", jobId, protectHigher: true, docType: currentDoc,
+                }).catch(() => {});
+                await supabase.from("project_document_versions").update({
+                  approval_status: "approved", approved_at: new Date().toISOString(), approved_by: job.user_id,
+                }).eq("id", bestForDoc.versionId);
+                await lockNarrativeSpine(supabase, job.project_id, currentDoc);
+                await updateJob(supabase, jobId, {
+                  best_version_id: bestForDoc.versionId, best_document_id: bestForDoc.documentId,
+                  best_ci: bestForDoc.ci, best_gp: bestForDoc.gp, best_score: bestForDoc.ci + bestForDoc.gp,
+                });
+                const nextDoc = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
+                if (nextDoc && isStageAtOrBeforeTarget(nextDoc, job.target_document, format)) {
+                  await logStep(supabase, jobId, stepCount + 2, currentDoc, "simple_below_floor_promoted",
+                    `Promoted ${currentDoc} (CI:${bestForDoc.ci}) → ${nextDoc}. CI below floor but no notes remain.`,
+                    { ci: bestForDoc.ci, gp: bestForDoc.gp }, undefined,
+                    { from: currentDoc, to: nextDoc, best_version_id: bestForDoc.versionId, trigger: "notes_exhausted_below_floor" }
+                  );
+                  await updateJob(supabase, jobId, {
+                    current_document: nextDoc, stage_loop_count: 0,
+                    stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4,
+                    status: "running", stop_reason: null, pause_reason: null, error: null,
+                    awaiting_approval: false, approval_type: null,
+                    pending_doc_id: null, pending_version_id: null,
+                    pending_doc_type: null, pending_next_doc_type: null,
+                  });
+                  await releaseProcessingLock(supabase, jobId);
+                  return respondWithJob(supabase, jobId, "run-next");
+                } else {
+                  await updateJob(supabase, jobId, { status: "completed", stop_reason: "All stages satisfied up to target" });
+                  await logStep(supabase, jobId, stepCount + 2, currentDoc, "stop", "All stages satisfied up to target (after simple promote)");
+                  await releaseProcessingLock(supabase, jobId);
+                  return respondWithJob(supabase, jobId);
+                }
+              }
             }
-          }
         }
+      }
       // ── IEL: MONOTONIC CI IMPROVEMENT GATE (PRIMARY LIMITER) ──
       // Replaces version cap as the primary stop condition.
       // Allows unlimited stabilise attempts while CI is improving.
