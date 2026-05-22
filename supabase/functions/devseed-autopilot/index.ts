@@ -578,61 +578,7 @@ async function executeApplySeedIntelPack(
   console.log("[devseed-autopilot] APPLY_SEED_INTEL_PACK done");
 }
 
-// Background polling helper — runs after HTTP response is sent
-async function pollRegenJobAndUpdateCanon(
-  sb: any, supabaseUrl: string, authHeader: string,
-  projectId: string, jobId: string, total: number, userId: string | null,
-) {
-  let done = false;
-  let iterations = 0;
-  const MAX_ITERATIONS = 50;
-  let backoff = 500;
-
-  try {
-    while (!done && iterations < MAX_ITERATIONS) {
-      iterations++;
-      const tickResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
-        body: JSON.stringify({ action: "regen-insufficient-tick", jobId, maxItemsPerTick: 3, userId }),
-      });
-      const tickData = await tickResp.json();
-      if (!tickResp.ok) {
-        await updateAutopilotStage(projectId, "regen_foundation", "error",
-          `tick failed: ${tickData.error || tickResp.status}`, userId, sb);
-        return;
-      }
-      done = tickData.done === true;
-      if (!done) await new Promise(r => setTimeout(r, backoff));
-      backoff = Math.min(backoff * 1.2, 3000);
-    }
-
-    // Fetch final status
-    const statusResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
-      body: JSON.stringify({ action: "regen-insufficient-status", jobId, userId }),
-    });
-    const statusData = await statusResp.json();
-    const items = statusData?.items || [];
-    const errorItems = items.filter((i: any) => i.status === "error");
-
-    if (!done) {
-      await updateAutopilotStage(projectId, "regen_foundation", "error",
-        `timed_out_after_${MAX_ITERATIONS}_ticks`, userId, sb);
-    } else if (errorItems.length > 0) {
-      await updateAutopilotStage(projectId, "regen_foundation", "error",
-        `${errorItems.length} items errored`, userId, sb);
-    } else {
-      const regenCount = items.filter((i: any) => i.status === "regenerated").length;
-      await updateAutopilotStage(projectId, "regen_foundation", "done",
-        `regenerated ${regenCount}/${total} docs`, userId, sb);
-    }
-  } catch (e: any) {
-    await updateAutopilotStage(projectId, "regen_foundation", "error",
-      e.message?.slice(0, 500) || "unknown error", userId, sb);
-  }
-}
+// ─── seed_writing_voice ────────────────────────────────────────────────────
 
 async function updateAutopilotStage(
   projectId: string, stage: string, status: string, notes: string,
@@ -694,27 +640,58 @@ async function executeRegenFoundation(
     return;
   }
 
-  // Mark stage running and persist immediately (fetch canonRow fresh to avoid overwrites)
-  const { data: canonRowForUpsert } = await sb
-    .from("project_canon").select("canon_json").eq("project_id", projectId).single();
+  // Poll inline instead of dispatching via waitUntil — eliminates race condition
+  // where the main tick handler marks the stage as 'done' before background work finishes.
+  let done = false;
+  let iterations = 0;
+  const MAX_INLINE_ITERATIONS = 50;
+  let backoff = 500;
+
   autopilot.stages.regen_foundation.status = "running";
   autopilot.stages.regen_foundation.updated_at = nowISO();
-  autopilot.stages.regen_foundation.notes = "background_regen";
-  autopilot.updated_at = nowISO();
-  await sb.from("project_canon").upsert({
-    project_id: projectId,
-    canon_json: { ...(canonRowForUpsert?.canon_json || {}), autopilot },
-    updated_by: userId,
-  }, { onConflict: "project_id" });
+  autopilot.stages.regen_foundation.notes = "regenerating";
+  console.log(`[devseed-autopilot] regen_foundation: polling inline for job ${jobId} (${total} doc(s))`);
 
-  // Dispatch background polling — return immediately so HTTP response isn't timed out
-  waitUntil(
-    pollRegenJobAndUpdateCanon(sb, supabaseUrl, authHeader, projectId, jobId, total, userId)
-  );
+  while (!done && iterations < MAX_INLINE_ITERATIONS) {
+    iterations++;
+    const tickResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
+      body: JSON.stringify({ action: "regen-insufficient-tick", jobId, maxItemsPerTick: 3, userId }),
+    });
+    const tickData = await tickResp.json();
+    if (!tickResp.ok) {
+      throw new Error(tickData.error || `regen-insufficient-tick failed: ${tickResp.status}`);
+    }
+    done = tickData.done === true;
+    if (!done) {
+      autopilot.stages.regen_foundation.notes = `regenerating (tick ${iterations}/${MAX_INLINE_ITERATIONS})`;
+      await new Promise(r => setTimeout(r, backoff));
+      backoff = Math.min(backoff * 1.2, 3000);
+    }
+  }
 
-  // Return immediately — stage status will be updated by background worker
-  console.log(`[devseed-autopilot] regen_foundation dispatched job ${jobId}, returning immediately`);
-  return;
+  // Fetch final status
+  const statusResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${authHeader}` },
+    body: JSON.stringify({ action: "regen-insufficient-status", jobId, userId }),
+  });
+  const statusData = await statusResp.json();
+  const statusItems = statusData?.items || [];
+  const errorItems = statusItems.filter((i: any) => i.status === "error");
+
+  if (!done) {
+    throw new Error(`regen_foundation timed out after ${MAX_INLINE_ITERATIONS} ticks (${total} docs)`);
+  }
+  if (errorItems.length > 0) {
+    throw new Error(`regen_foundation: ${errorItems.length}/${total} items errored`);
+  }
+
+  const regenCount = statusItems.filter((i: any) => i.status === "regenerated").length;
+  autopilot.stages.regen_foundation.notes = `regenerated ${regenCount}/${total} docs`;
+  console.log(`[devseed-autopilot] regen_foundation complete: ${regenCount}/${total} docs regenerated`);
+  // Note: stage status is set to "done" by the main tick handler after this returns
 }
 
 // ─── seed_writing_voice ────────────────────────────────────────────────────
