@@ -15,6 +15,9 @@
     "api/supabase-proxy/functions/v1/auto-run.ts": {
       "maxDuration": 300
     },
+    "api/supabase-proxy/functions/v1/canonicalize-scene-substrate.ts": {
+      "maxDuration": 300
+    },
     "api/supabase-proxy/functions/v1/generate-document.ts": {
       "maxDuration": 300
     },
