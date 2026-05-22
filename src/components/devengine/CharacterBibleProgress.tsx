@@ -149,7 +149,7 @@ export function CharacterBibleProgress({ versionId, docType, mode = 'generate' }
         <p className="text-sm text-center max-w-sm">
           {mode === 'rewrite'
             ? 'Preparing per-character rewrite — reading existing character profiles…'
-            : 'Preparing character generation — identifying characters from concept brief…'}
+            : 'Preparing character generation — analyzing source materials…'}
         </p>
       </div>
     );

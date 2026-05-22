@@ -1632,6 +1632,26 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         try {
           const conceptBriefContent = upstreamContent || "";
 
+          // Load existing character bible content for regeneration context
+          let existingCBContent = "";
+          try {
+            const { data: prevBible } = await serviceClient
+              .from("project_document_versions")
+              .select("plaintext")
+              .eq("document_id", cbDocRecord!.id)
+              .neq("id", cbVersion!.id)
+              .not("plaintext", "eq", "")
+              .order("version_number", { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (prevBible?.plaintext) {
+              existingCBContent = prevBible.plaintext;
+              console.log(`[generate-document] Loaded existing bible content (${existingCBContent.length} chars)`);
+            }
+          } catch (e) {
+            console.log(`[generate-document] No previous bible — first-time generation`);
+          }
+
           // Step A: Read characters from project_canon (canonical source established by DevSeed).
           // This avoids canon conflicts: same source → same characters → no conflicting notes.
           let characters: Array<{name: string; role: string; description: string}> = [];
@@ -1758,7 +1778,10 @@ Example:
 
               // Generate character profile via LLM
               const profilePrompt = `You are generating a detailed character profile for a character bible. 
-Based on the concept brief and character details below, write a thorough character profile using markdown.
+Based on the concept brief, character details, and any existing bible content below, write a thorough character profile using markdown.
+
+IMPORTANT: If existing bible content is provided, PRESERVE and enhance it — don't discard previous work. 
+Incorporate new details from the concept brief while keeping established character traits and arcs.
 
 Include these sections where applicable:
 - **Overview**: Who is this character?
@@ -1775,7 +1798,10 @@ Role: ${char.role}
 Description: ${char.description}
 
 Source Concept Brief:
-${conceptBriefContent.slice(0, 30000)}`;
+${conceptBriefContent.slice(0, 30000)}
+
+Existing Bible Content:
+${existingCBContent.slice(0, 30000)}`;
 
               const profile = await callLLM(apiKey, profilePrompt, profileUser);
               profiles.push({ name: char.name, role: char.role, profile });
