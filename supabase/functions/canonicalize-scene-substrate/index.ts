@@ -46,7 +46,16 @@ serve(async (req) => {
   const url = new URL(req.url);
   const projectId = url.searchParams.get("projectId") || "";
 
-  if (!projectId) {
+  // Also accept projectId from POST body (used by the intake pipeline)
+  let bodyProjectId = "";
+  try {
+    const body = await req.clone().json().catch(() => ({}));
+    bodyProjectId = body.projectId || "";
+  } catch {}
+
+  const pid = projectId || bodyProjectId;
+
+  if (!pid) {
     return new Response(JSON.stringify({ error: "projectId required" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -60,11 +69,11 @@ serve(async (req) => {
     const { data: project } = await sb
       .from("projects")
       .select("assigned_lane")
-      .eq("id", projectId)
+      .eq("id", pid)
       .maybeSingle();
 
     const assignedLane = project?.assigned_lane || "unspecified";
-    console.log(`[canonicalize-scene-substrate] Project ${projectId}: lane=${assignedLane}`);
+    console.log(`[canonicalize-scene-substrate] Project ${pid}: lane=${assignedLane}`);
 
     // 2. Find the script document — try each script doc type in priority order
     let docId: string | null = null;
@@ -75,7 +84,7 @@ serve(async (req) => {
       const { data: docs } = await sb
         .from("project_documents")
         .select("id")
-        .eq("project_id", projectId)
+        .eq("project_id", pid)
         .eq("doc_type", st)
         .order("created_at", { ascending: false })
         .limit(1);
@@ -117,7 +126,7 @@ serve(async (req) => {
       const { data: beatDocs } = await sb
         .from("project_documents")
         .select("id")
-        .eq("project_id", projectId)
+        .eq("project_id", pid)
         .eq("doc_type", "beat_sheet")
         .order("created_at", { ascending: false })
         .limit(1);
@@ -142,7 +151,7 @@ serve(async (req) => {
     // 4. Call dev-engine-v2 scene_graph_extract with explicit source doc/version IDs
     // This handles all slugline parsing: INT./EXT. with various formats,
     // orphaned scene numbers, bare sluglines, page breaks, etc.
-    console.log(`[canonicalize-scene-substrate] Calling scene_graph_extract for ${projectId} (doc=${docId}, ver=${versionId})`);
+    console.log(`[canonicalize-scene-substrate] Calling scene_graph_extract for ${pid} (doc=${docId}, ver=${versionId})`);
 
     const extractResp = await fetch(`${SUPABASE_URL}/functions/v1/dev-engine-v2`, {
       method: "POST",
@@ -152,7 +161,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         action: "scene_graph_extract",
-        projectId,
+        projectId: pid,
         sourceDocumentId: docId,
         sourceVersionId: versionId,
         force: true,
@@ -171,7 +180,7 @@ serve(async (req) => {
     }
 
     const scenes = extractResult.scenes;
-    console.log(`[canonicalize-scene-substrate] Extracted ${scenes.length} scenes for "${extractResult.project_title || projectId}"`);
+    console.log(`[canonicalize-scene-substrate] Extracted ${scenes.length} scenes for "${extractResult.project_title || pid}"`);
 
     // 5. Assign acts using format-aware sceneGraphActAssigner
     const totalScenes = scenes.length;
@@ -195,7 +204,7 @@ serve(async (req) => {
         await sb
           .from("scene_graph_order")
           .update({ act })
-          .eq("project_id", projectId)
+          .eq("project_id", pid)
           .eq("scene_id", scene.scene_id);
 
         // Write provenance to scene_graph_scenes
@@ -231,7 +240,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({
         ok: true,
-        project_id: projectId,
+        project_id: pid,
         source_version_id: versionId,
         source_doc_type: docType,
         scenes_canonicalized: totalScenes,

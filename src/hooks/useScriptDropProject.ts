@@ -71,6 +71,7 @@ export const STAGE_DEFINITIONS: StageDef[] = [
   { key: 'ingest',         label: 'Extracting text & detecting title…',   functionName: 'script-intake',      actionName: 'ingest_pdf',                          retryable: true  },
   { key: 'project_create', label: 'Creating project…',                    functionName: 'supabase:projects',  retryable: false },
   { key: 'scene_extract',  label: 'Extracting scene graph…',              functionName: 'dev-engine-v2',      actionName: 'scene_graph_extract',                 retryable: true  },
+  { key: 'canonicalize',   label: 'Canonicalizing scenes…',               functionName: 'canonicalize-scene-substrate',                                 retryable: true  },
   { key: 'entity_extract', label: 'Extracting entities & links…',         functionName: 'entity-links-engine',                                          retryable: true  },
   { key: 'nit_dialogue',   label: 'Linking characters (dialogue)…',       functionName: 'nit-sync',           actionName: 'sync_dialogue_characters',            retryable: true  },
   { key: 'role_classify',  label: 'Classifying scene roles…',             functionName: 'dev-engine-v2',      actionName: 'scene_graph_classify_roles_heuristic',retryable: true  },
@@ -465,7 +466,7 @@ export function useScriptDropProject() {
           // Ingest failed — text was not extracted, so we cannot determine document type.
           // Fail enrichment stages (not skip) so the user knows something is wrong
           // and can retry ingest before proceeding.
-          const failedStages = ["scene_extract", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
+          const failedStages = ["scene_extract", "canonicalize", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
           for (const key of failedStages) {
             await markFailed(key, new Error(`ingest failed — no text available; retry ingest or re-upload`));
           }
@@ -478,7 +479,7 @@ export function useScriptDropProject() {
           return;
         }
         // Non-screenplay document — skip all screenplay-specific enrichment stages
-        const skippedStages = ["scene_extract", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
+        const skippedStages = ["scene_extract", "canonicalize", "entity_extract", "nit_dialogue", "role_classify", "spine_sync", "binding_derive", "scene_index"];
         for (const key of skippedStages) {
           await markSkipped(key, `Document has ${sceneCount} detected scene headings — not a screenplay; skipping screenplay-specific enrichment`);
         }
@@ -521,6 +522,25 @@ export function useScriptDropProject() {
       } catch (e: any) {
         await markFailed('scene_extract', e);
         // Without scenes, downstream stages will produce no output but won't error
+      }
+
+      // Stage 3.5: canonicalize
+      // Calls canonicalize-scene-substrate to read scene_graph_versions slugline
+      // data and enrich scene_graph_scenes with act assignment + act_label.
+      // Fail-tolerant — act data is additive, not structural.
+      await markRunning('canonicalize');
+      try {
+        const canResult = await callFunction('canonicalize-scene-substrate', {
+          projectId: pid,
+        }, token);
+        await markDone('canonicalize', {
+          scenes_canonicalized: canResult?.scenes_canonicalized ?? canResult?.scene_count,
+          assigned_lane: canResult?.assigned_lane,
+          path: canResult?.path,
+        });
+      } catch (e: any) {
+        await markFailed('canonicalize', e);
+        // Act assignment failure is non-fatal — scenes still exist with sluglines
       }
 
       // Stage 4: entity_extract
