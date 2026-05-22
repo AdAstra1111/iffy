@@ -209,7 +209,7 @@ export function NoteResolutionDrawer({
     } finally {
       setApplying(false);
     }
-  }, [note, projectId, selectedFixId, fixOptions, approveAfter, currentVersionId, onApplied, onOpenChange]);
+  }, [note, projectId, selectedFixId, fixOptions, approveAfter, currentVersionId, onApplied, onOpenChange, classifyMutations]);
 
   const handleMarkResolved = useCallback(async () => {
     if (!note) return;
