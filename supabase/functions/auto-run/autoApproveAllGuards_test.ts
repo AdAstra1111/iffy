@@ -68,24 +68,21 @@ Deno.test("Guard 2 (L7326): force promote blocked when both are false/absent", (
   assertEquals(guard2_canForcePromote({ meta_json: {} }), false);
 });
 
-// ── Guard 3: notesExhausted simple promote (L7376) ──
-//   if (notesExhausted && (job.allow_defaults || job.meta_json?.auto_approve_all))
-//   Semantics: Same condition as Guard 2 — identical pattern.
-function guard3_canSimplePromote(job: Job): boolean {
-  return !!(job.allow_defaults || job.meta_json?.auto_approve_all);
+// ── Guard 3: notesExhausted simple promote (L7376) — now unconditional on notesExhausted ──
+//   if (notesExhausted)  // allow_defaults/auto_approve_all guard removed per FIX
+//   Semantics: notes=0 alone is sufficient to enter SIMPLE PROMOTION block.
+function guard3_canSimplePromote(_job: Job): boolean {
+  // Always returns true — the guard at L7376 is now `if (notesExhausted)` only.
+  // The allow_defaults/auto_approve_all check was removed.
+  return true;
 }
 
-Deno.test("Guard 3 (L7376): simple promote allowed when allow_defaults is true", () => {
+Deno.test("Guard 3 (L7376): simple promote always allowed when notes are exhausted (guard removed)", () => {
   assertEquals(guard3_canSimplePromote({ allow_defaults: true }), true);
-});
-
-Deno.test("Guard 3 (L7376): simple promote allowed when auto_approve_all is true", () => {
+  assertEquals(guard3_canSimplePromote({ allow_defaults: false }), true);
+  assertEquals(guard3_canSimplePromote({}), true);
+  assertEquals(guard3_canSimplePromote({ allow_defaults: false, meta_json: { auto_approve_all: false } }), true);
   assertEquals(guard3_canSimplePromote({ meta_json: { auto_approve_all: true } }), true);
-});
-
-Deno.test("Guard 3 (L7376): simple promote blocked when both are false/absent", () => {
-  assertEquals(guard3_canSimplePromote({ allow_defaults: false }), false);
-  assertEquals(guard3_canSimplePromote({}), false);
 });
 
 // ── Guard 4: seedCore auto-approve (derive downstream doc, L8697) ──
