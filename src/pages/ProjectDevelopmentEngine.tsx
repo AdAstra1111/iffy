@@ -78,6 +78,8 @@ import { AutoRunBanner } from '@/components/devengine/AutoRunBanner';
 import { AutoRunProgressPanel } from '@/components/devengine/AutoRunProgressPanel';
 import { CriteriaPanel } from '@/components/devengine/CriteriaPanel';
 import { useAutoRunMissionControl } from '@/hooks/useAutoRunMissionControl';
+import { useGraphMutations } from '@/hooks/useGraphMutations';
+import { GraphMutationArbitrationPanel } from '@/components/devengine/GraphMutationArbitrationPanel';
 import { CanonicalQualificationsPanel } from '@/components/devengine/CanonicalQualificationsPanel';
 import { QualificationConflictBanner } from '@/components/devengine/QualificationConflictBanner';
 import { GenerateSeasonScriptsPanel } from '@/components/devengine/GenerateSeasonScriptsPanel';
@@ -344,6 +346,10 @@ export default function ProjectDevelopmentEngine() {
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
   const lastPromotionGateVersionRef = useRef<string | null>(null);
+  // Graph Mutation Pipeline state
+  const [showMutationPanel, setShowMutationPanel] = useState(false);
+  const mutationRewriteParamsRef = useRef<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
+  const mutationHandledRef = useRef(false);
 
   // Canonical notes for NextActionsPanel
   const { data: canonicalNotes = [] } = useProjectNotes(projectId, {
@@ -502,6 +508,7 @@ export default function ProjectDevelopmentEngine() {
     autoRun.job?.pending_decisions as any[] | undefined,
     autoRun.job?.id,
   );
+  const graphMutations = useGraphMutations();
   const seedStatus = useSeedPackStatus(projectId);
   const effectiveExecutionMode = autoRun.job ? deriveExecutionMode(autoRun.job) : localExecutionMode;
   const { resolveOnEntry, currentResolverHash, resolvedQuals } = useStageResolve(projectId);
@@ -1266,6 +1273,17 @@ export default function ProjectDevelopmentEngine() {
     return latestNotes?.protect || latestAnalysis?.protect || [];
   }, [latestNotes, latestAnalysis]);
 
+  // ── Continue rewrite after Graph Mutation Pipeline resolution ──
+  const continueRewriteWithMutations = () => {
+    setShowMutationPanel(false);
+    const params = mutationRewriteParamsRef.current;
+    mutationRewriteParamsRef.current = null;
+    if (params) {
+      mutationHandledRef.current = true;
+      handleRewrite(params.decisions, params.globalDirections);
+    }
+  };
+
   const handleRewrite = async (decisions?: Record<string, string>, globalDirections?: any[]) => {
     setIsApplyingRewrite(true);
     try {
@@ -1358,6 +1376,38 @@ export default function ProjectDevelopmentEngine() {
       // use all items directly (handles case where selectedNotes state lagged behind at click time)
       if (enrichedNotes.length === 0 && allPrioritizedMoves.length > 0) {
         enrichedNotes = allPrioritizedMoves.map((n: any) => ({ ...n }));
+      }
+
+      // ── Graph Mutation Pipeline: topology notes → classify → arbitrate ──
+      // Only for character_bible rewrites; skips if mutationHandledRef is already true
+      // (second invocation after panel resolution).
+      if (
+        !mutationHandledRef.current &&
+        (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') &&
+        enrichedNotes.some((n: any) => n.category === 'missing_character' || n.category === 'cast_balance')
+      ) {
+        try {
+          const topologyNotes = enrichedNotes.filter(
+            (n: any) => n.category === 'missing_character' || n.category === 'cast_balance'
+          );
+          console.log(`[graph-mutations] ${topologyNotes.length} topology notes found — calling classifyMutations`);
+          const proposals = await graphMutations.classifyMutations({
+            projectId: projectId!,
+            documentId: selectedDocId!,
+            versionId: selectedVersionId!,
+            approvedNotes: topologyNotes,
+          });
+          if (proposals.length > 0) {
+            console.log(`[graph-mutations] ${proposals.length} proposals returned — showing arbitration panel`);
+            mutationRewriteParamsRef.current = { decisions, globalDirections };
+            setShowMutationPanel(true);
+            return; // pause — user resolves via panel, then continueRewriteWithMutations is called
+          }
+          console.log('[graph-mutations] No proposals returned — continuing with normal rewrite');
+        } catch (err: any) {
+          console.warn('[graph-mutations] classify failed, continuing with normal rewrite:', err?.message);
+          // Non-blocking: continue to normal rewrite path
+        }
       }
 
       // Record decisions after rewrite, then auto-trigger options generation
@@ -3600,6 +3650,37 @@ export default function ProjectDevelopmentEngine() {
                 setPendingStageAction(null);
               }}>Proceed Anyway</Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Graph Mutation Arbitration Panel Dialog */}
+      <Dialog open={showMutationPanel} onOpenChange={(open) => { if (!open) continueRewriteWithMutations(); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-blue-500" />
+              Review Character Proposals
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <GraphMutationArbitrationPanel
+              proposals={graphMutations.proposals}
+              loading={graphMutations.loading}
+              error={graphMutations.error}
+              onApprove={async (id) => { return await graphMutations.approveMutation(id); }}
+              onReject={async (id, comment) => { return await graphMutations.rejectMutation(id, comment); }}
+              onApproveAll={async () => { return await graphMutations.approveAll(); }}
+              onRetry={() => { setShowMutationPanel(false); }}
+            />
+            {/* Continue button — shown after all proposals are resolved */}
+            {graphMutations.proposals.length > 0 &&
+              graphMutations.proposals.filter(p => p.proposal_status === 'pending').length === 0 && (
+              <Button onClick={continueRewriteWithMutations} className="w-full">
+                Continue Rewrite
+                <ChevronRight className="ml-1 h-4 w-4" />
+              </Button>
+            )}
           </div>
         </DialogContent>
       </Dialog>

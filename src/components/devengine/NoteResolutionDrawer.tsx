@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import {
   Loader2, Check, X, Wand2, Shield, AlertTriangle, Clock, ExternalLink, Sparkles,
 } from 'lucide-react';
+import { useGraphMutations, ClassifyMutationsParams } from '@/hooks/useGraphMutations';
 
 export interface FixOption {
   id: string;
@@ -63,6 +64,7 @@ export function NoteResolutionDrawer({
   const [applying, setApplying] = useState(false);
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { classifyMutations } = useGraphMutations();
 
   // Reset state when note changes
   const currentNoteId = note?.id || note?.note_key || '';
@@ -180,6 +182,27 @@ export function NoteResolutionDrawer({
       toast.success(`Fix applied → v${data.new_version_number}${data.approved ? ' (approved)' : ''}`);
       setApplied(true);
       onApplied?.(data);
+
+      // ── Graph Mutation Pipeline routing ──
+      // If the fix detected an entity-type BREAK_SIGNAL, route the note
+      // through the graph mutation pipeline for human review.
+      if (data.route_to_graph_mutation && note) {
+        const classifyParams: ClassifyMutationsParams = {
+          projectId,
+          documentId: data.target_document_id,
+          versionId: data.new_version_id,
+          approvedNotes: [{
+            id: note.id || note.note_key,
+            category: note.category,
+            description: note.summary,
+            detail: note.detail,
+          }],
+        };
+        // Fire-and-forget: proposals load into useGraphMutations state
+        classifyMutations(classifyParams).then(() => {
+          toast.info('Entity mutation proposals created — review in Graph panel');
+        });
+      }
     } catch (e: any) {
       setError(e.message);
       toast.error(e.message || 'Failed to apply fix');

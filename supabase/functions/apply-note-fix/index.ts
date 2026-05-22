@@ -48,16 +48,21 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const BREAK_SIGNALS = [
-  "change the protagonist name", "rename the main character",
+const ENTITY_BREAK_SIGNALS = [
   "add a new character", "introduce a new location",
-  "move the setting to", "remove the character",
-  "change the genre", "change the tone",
+  "remove the character", "remove a character",
 ];
 
-function isCanonBreaking(noteDescription: string): boolean {
+const STRUCTURAL_BREAK_SIGNALS = [
+  "change the protagonist name", "rename the main character",
+  "move the setting to", "change the genre", "change the tone",
+];
+
+function classifyBreakType(noteDescription: string): 'entity' | 'structural' | 'none' {
   const lower = noteDescription.toLowerCase();
-  return BREAK_SIGNALS.some(signal => lower.includes(signal));
+  if (ENTITY_BREAK_SIGNALS.some(s => lower.includes(s))) return 'entity';
+  if (STRUCTURAL_BREAK_SIGNALS.some(s => lower.includes(s))) return 'structural';
+  return 'none';
 }
 
 const DOWNSTREAM_DOCS: Record<string, string[]> = {
@@ -236,9 +241,9 @@ Generate fix options for this note.`;
         console.warn("[apply-note-fix] canonical context fetch failed (non-fatal):", e);
       }
 
-      // Detect canon-breaking note
-      const canonBreaking = isCanonBreaking(noteText) || isCanonBreaking(fix.instructions || "");
-      const canonBreakWarning = canonBreaking
+// Detect canon-breaking note
+      const breakType = classifyBreakType(noteText) || classifyBreakType(fix.instructions || "");
+      const canonBreakWarning = breakType !== 'none'
         ? "\n\nCANON BREAK NOTE DETECTED: This note may invalidate upstream canonical facts. After applying, related documents will be marked stale and require re-validation."
         : "";
 
@@ -443,7 +448,7 @@ Apply the fix above. Return ONLY the complete revised document text.`;
       }
 
       // Write canon_break record if detected
-      if (canonBreaking) {
+      if (breakType !== 'none') {
         try {
           await db.from("locked_decisions").insert({
             project_id,
@@ -458,6 +463,37 @@ Apply the fix above. Return ONLY the complete revised document text.`;
         }
       }
 
+      // ── Graph Mutation Pipeline routing ──
+      // Entity-related BREAK_SIGNALS create a proposal for human review
+      // instead of (or before) applying the fix directly
+      let routeToGraphMutation = false;
+
+      if (breakType === 'entity' && note_id) {
+        try {
+          const { data: proposal } = await db
+            .from('graph_mutation_proposals')
+            .insert({
+              project_id,
+              source_note_id: note_id,
+              mutation_type: 'add_entity',
+              entity_type: 'character',
+              proposal_json: {
+                note_summary: noteText,
+                note_detail: noteDetail,
+                derived_from: docType,
+              },
+              proposal_status: 'pending',
+            })
+            .select('id')
+            .single();
+          if (proposal) {
+            routeToGraphMutation = true;
+          }
+        } catch (gmpErr) {
+          console.warn('[apply-note-fix] graph_mutation_proposals insert failed (non-fatal):', gmpErr);
+        }
+      }
+
       return json({
         ok: true,
         new_version_id: (newVersion as any).id,
@@ -467,6 +503,7 @@ Apply the fix above. Return ONLY the complete revised document text.`;
         approved: !!approve_after_apply,
         ...(surgicalMeta.surgical ? { surgical_rewrite: surgicalMeta } : {}),
         stale_docs: staleDocs,
+        ...(routeToGraphMutation ? { route_to_graph_mutation: true } : {}),
       });
     }
 

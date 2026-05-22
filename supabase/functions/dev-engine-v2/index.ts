@@ -32,6 +32,8 @@ import { classifySceneRoles } from "../_shared/sceneRoleClassifier.ts";
 import { classifySceneGraphState } from "../_shared/sceneGraphClassifier.ts";
 import { buildActBlueprint, renderActBlueprintBlock } from "../_shared/actBlueprintSynthesizer.ts";
 import { buildArcStateDeltaSystemInstruction, parseActRewriteResponse } from "../_shared/arcStateDeltaGenerator.ts";
+import { classifyMutationsHandler } from "./handlers/classify-mutations.ts";
+import { applyGraphMutationsHandler } from "./handlers/apply-graph-mutations.ts";
 // ── Constraint Pack: unified loader for all generation prompts ──
 const CONSTRAINT_PACK_BUDGET = 6000;
 async function loadConstraintPack(supabaseClient, projectId) {
@@ -7473,6 +7475,56 @@ ${docTextForScoring}`;
           "Content-Type": "application/json"
         }
       });
+    }
+    // ══════════════════════════════════════════════
+    // CLASSIFY MUTATIONS — classify topology notes into graph mutation proposals
+    // ══════════════════════════════════════════════
+    if (action === "classify_mutations") {
+      try {
+        const { projectId, documentId, versionId, approvedNotes } = body;
+        if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
+        const result = await classifyMutationsHandler(supabase, supabase, { projectId, documentId, versionId, approvedNotes });
+        return new Response(JSON.stringify(result), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      } catch (err) {
+        console.error("[dev-engine-v2] classify_mutations error:", err);
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      }
+    }
+    // ══════════════════════════════════════════════
+    // APPLY GRAPH MUTATIONS — approve/reject and apply graph mutation proposals
+    // ══════════════════════════════════════════════
+    if (action === "apply_graph_mutations") {
+      try {
+        const { projectId, proposalIds, approved, reviewComment } = body;
+        if (!projectId || !proposalIds) throw new Error("projectId, proposalIds required");
+        const result = await applyGraphMutationsHandler(supabase, supabase, { projectId, proposalIds, approved, reviewComment });
+        return new Response(JSON.stringify(result), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      } catch (err) {
+        console.error("[dev-engine-v2] apply_graph_mutations error:", err);
+        return new Response(JSON.stringify({ error: err.message }), {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
+        });
+      }
     }
     // ══════════════════════════════════════════════
     // NOTES — tiered structured notes with tracking

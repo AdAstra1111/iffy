@@ -1448,3 +1448,157 @@ export async function syncDialogueCharactersForProject(
 
   return { scenes_processed: processed, links_upserted: totalLinks, characters_written: charsWritten, per_scene };
 }
+
+// ── Graph Mutation: Manual Entity Addition ────────────────────────────────
+
+/**
+ * addManualEntity — Adds a manually proposed character entity to the NIT registry
+ * and synchronises it into project_canon.canon_json.characters[].
+ *
+ * This is the target function for Graph Mutation Pipeline Phase 1 processed proposals.
+ * It creates a new narrative_entities row with source_kind='manual', then updates
+ * the project's canon_json to include the new character, and finally records
+ * the event in the transition_ledger.
+ *
+ * Steps:
+ *   1. Duplicate check — fail if (project_id, entity_key) already exists
+ *   2. INSERT into narrative_entities (source_kind='manual', graph_mutation=true)
+ *   3. Fetch current project_canon.canon_json
+ *   4. Append character to canon_json.characters[]
+ *   5. Upsert project_canon row
+ *   6. INSERT into transition_ledger (entity_type='entity', action='entity_added')
+ *   7. Return new entity ID
+ */
+export async function addManualEntity(
+  supabase: SupabaseClient,
+  projectId: string,
+  params: {
+    proposedName: string;
+    proposedRole: string;
+    proposedDescription: string;
+    entityKey: string;
+    sourceProposalId: string;
+  },
+): Promise<{ entityId: string; error?: string }> {
+  const { proposedName, proposedRole, proposedDescription, entityKey, sourceProposalId } = params;
+
+  // ── Step 1: Duplicate check ───────────────────────────────────────────
+  const { data: existing, error: dupErr } = await supabase
+    .from("narrative_entities")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("entity_key", entityKey)
+    .maybeSingle();
+
+  if (dupErr) {
+    return { entityId: "", error: `Duplicate check failed: ${dupErr.message}` };
+  }
+  if (existing) {
+    return { entityId: "", error: `Entity with key '${entityKey}' already exists in project` };
+  }
+
+  // ── Step 2: INSERT narrative_entities ─────────────────────────────────
+  const { data: newEntity, error: insErr } = await supabase
+    .from("narrative_entities")
+    .insert({
+      project_id:     projectId,
+      entity_key:     entityKey,
+      canonical_name: proposedName,
+      entity_type:    "character",
+      source_kind:    "manual",
+      source_key:     null,
+      status:         "active",
+      meta_json: {
+        canon_role:      proposedRole,
+        description:     proposedDescription,
+        is_protagonist:  /protagonist/i.test(proposedRole),
+        aliases:         [],
+        graph_mutation:  true,
+        source_proposal_id: sourceProposalId,
+      },
+    })
+    .select("id")
+    .single();
+
+  if (insErr || !newEntity) {
+    return { entityId: "", error: `Failed to insert narrative_entity: ${insErr?.message ?? "unknown"}` };
+  }
+
+  const entityId = newEntity.id;
+
+  // ── Step 3: Fetch current project_canon ────────────────────────────────
+  const { data: canonRow, error: canonErr } = await supabase
+    .from("project_canon")
+    .select("canon_json")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (canonErr) {
+    return { entityId, error: `Failed to fetch project_canon: ${canonErr.message}` };
+  }
+
+  // ── Step 4: Append to canon_json.characters[] ─────────────────────────
+  const canonJson = canonRow?.canon_json ?? { characters: [] };
+  if (!Array.isArray(canonJson.characters)) {
+    canonJson.characters = [];
+  }
+
+  const newCharEntry = {
+    entity_key:      entityKey,
+    canonical_name:  proposedName,
+    role:            proposedRole,
+    description:     proposedDescription,
+  };
+
+  // Check for duplicate entries by entity_key before appending
+  const existingIdx = canonJson.characters.findIndex(
+    (c: any) => c.entity_key === entityKey,
+  );
+  if (existingIdx === -1) {
+    canonJson.characters.push(newCharEntry);
+  } else {
+    // Update in-place if already present (should not happen after Step 1 check,
+    // but being defensive)
+    canonJson.characters[existingIdx] = newCharEntry;
+  }
+
+  // ── Step 5: Upsert project_canon ──────────────────────────────────────
+  const { error: upsErr } = await supabase
+    .from("project_canon")
+    .upsert(
+      {
+        project_id: projectId,
+        canon_json: canonJson,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "project_id" },
+    );
+
+  if (upsErr) {
+    return { entityId, error: `Failed to upsert project_canon: ${upsErr.message}` };
+  }
+
+  // ── Step 6: Transition ledger entry ────────────────────────────────────
+  const { error: ledgerErr } = await supabase
+    .from("transition_ledger")
+    .insert({
+      project_id:   projectId,
+      entity_type:  "entity",
+      entity_id:    entityId,
+      action:       "entity_added",
+      payload:      {
+        entity_key: entityKey,
+        canonical_name: proposedName,
+        role: proposedRole,
+        source_proposal_id: sourceProposalId,
+        graph_mutation: true,
+      },
+    });
+
+  if (ledgerErr) {
+    console.warn("[addManualEntity] transition_ledger insert warning:", ledgerErr.message);
+    // Non-fatal: entity was already created and canon updated
+  }
+
+  return { entityId };
+}
