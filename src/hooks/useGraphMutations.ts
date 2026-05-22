@@ -61,7 +61,7 @@ export function useGraphMutations() {
     setLoading(true);
     try {
       const { data, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-        body: { action: 'apply_graph_mutations', project_id: proposals[0]?.project_id, proposal_ids: [proposalId], approved: true },
+        body: { action: 'apply_graph_mutations', projectId: proposals[0]?.project_id, proposalIds: [proposalId], approved: true },
       });
       if (invokeError) throw invokeError;
       if (!data?.ok) throw new Error(data?.error || 'Approval failed');
@@ -79,7 +79,7 @@ export function useGraphMutations() {
     setLoading(true);
     try {
       const { data, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
-        body: { action: 'apply_graph_mutations', project_id: proposals[0]?.project_id, proposal_ids: [proposalId], approved: false, review_comment: comment },
+        body: { action: 'apply_graph_mutations', projectId: proposals[0]?.project_id, proposalIds: [proposalId], approved: false, reviewComment: comment },
       });
       if (invokeError) throw invokeError;
       if (!data?.ok) throw new Error(data?.error || 'Rejection failed');
