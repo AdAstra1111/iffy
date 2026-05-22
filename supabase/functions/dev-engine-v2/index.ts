@@ -5427,6 +5427,88 @@ async function computeSelectiveRegenerationPlanHelper(supabase, projectId, unitK
     }
   };
 }
+
+// ── parseBeatsFromText (named export) ──────────────────────────────────────
+// Extracted from the inline handler for use by sceneGraphActAssigner and
+// canonicalize-scene-substrate. Mirrors the identical logic defined inside
+// the beat_sheet rewrite handler (line ~42363).
+export function parseBeatsFromText(text) {
+  if (!text || text.trim().length === 0) return [];
+  // Try ## Beat header format first
+  const headerPattern = /^##\s+Beat\s+\d+/gm;
+  const headerStarts = [];
+  let hm;
+  while ((hm = headerPattern.exec(text)) !== null) headerStarts.push(hm.index);
+  if (headerStarts.length > 0) {
+    return headerStarts.map((start, i) => ({
+      beat: text.slice(start, i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length),
+      start,
+      end: i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length,
+    }));
+  }
+  // Try ### Beat header (h3) format
+  const headerPatternH3 = /^###\s+Beat\s+\d+/gm;
+  const headerStartsH3 = [];
+  let hm3;
+  while ((hm3 = headerPatternH3.exec(text)) !== null) headerStartsH3.push(hm3.index);
+  if (headerStartsH3.length > 0) {
+    return headerStartsH3.map((start, i) => ({
+      beat: text.slice(start, i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length),
+      start,
+      end: i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length,
+    }));
+  }
+  // Fallback: ### N. Title format (h1/h2/h3 followed by number and period)
+  const h3NumberedPattern = /^#{1,3}\s+\d+\.?\s+/gm;
+  const h3NumberedStarts = [];
+  let hn3;
+  while ((hn3 = h3NumberedPattern.exec(text)) !== null) h3NumberedStarts.push(hn3.index);
+  if (h3NumberedStarts.length > 0) {
+    return h3NumberedStarts.map((start, i) => ({
+      beat: text.slice(start, i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length),
+      start,
+      end: i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length,
+    }));
+  }
+  // Fallback: numbered markdown format "N. **Beat Name**"
+  const numberedPattern = /^\d+\.\s+\*\*/gm;
+  const numberedStarts = [];
+  let nm;
+  while ((nm = numberedPattern.exec(text)) !== null) numberedStarts.push(nm.index);
+  if (numberedStarts.length > 0) {
+    return numberedStarts.map((start, i) => ({
+      beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
+      start,
+      end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
+    }));
+  }
+  // Fallback: plain numbered "N. Name" (no bold markers)
+  const plainNumberedPattern = /^\d+\.\s+(?!\*\*)/gm;
+  const plainNumberedStarts = [];
+  let pnm;
+  while ((pnm = plainNumberedPattern.exec(text)) !== null) plainNumberedStarts.push(pnm.index);
+  if (plainNumberedStarts.length > 0) {
+    return plainNumberedStarts.map((start, i) => ({
+      beat: text.slice(start, i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length),
+      start,
+      end: i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length,
+    }));
+  }
+  // Fallback: plain text "BEAT N: Name" format
+  const beatTextPattern = /^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/gim;
+  const beatTextStarts = [];
+  let btm;
+  while ((btm = beatTextPattern.exec(text)) !== null) beatTextStarts.push(btm.index);
+  if (beatTextStarts.length > 0) {
+    return beatTextStarts.map((start, i) => ({
+      beat: text.slice(start, i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length),
+      start,
+      end: i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length,
+    }));
+  }
+  return [];
+}
+
 serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
     headers: corsHeaders
