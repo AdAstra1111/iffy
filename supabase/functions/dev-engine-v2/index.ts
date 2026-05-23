@@ -3483,7 +3483,7 @@ function computeRepairConfidence(params) {
 //
 // Hard bounds: [1, 8]
 //
-function computeAdaptiveBatchSize(plan) {
+function computeAdaptiveBatchSize(plan, engagementSceneCount) {
   const { recommended_scope, impacted_scene_count, repair_strategy } = plan;
   // Strategy hard caps override scope-based sizing:
   //   precision     → max 4 (minimal blast radius)
@@ -3511,7 +3511,14 @@ function computeAdaptiveBatchSize(plan) {
       base = Math.min(5, impacted_scene_count);
       break;
   }
-  return Math.max(1, Math.min(8, base));
+  // Engagement adjustment: when engagement scenes exist, increase max from 8 to 10
+  // but cap total at min(10, impacted_scene_count + engagementSceneCount)
+  const hasEngagement = (engagementSceneCount ?? 0) > 0;
+  const hardMax = hasEngagement ? 10 : 8;
+  const effectiveCount = hasEngagement
+    ? Math.min(hardMax, impacted_scene_count + engagementSceneCount)
+    : impacted_scene_count;
+  return Math.max(1, Math.min(hardMax, Math.min(base, effectiveCount)));
 }
 // ── Entity Propagation — Allowed Relation Types (depth=1 only) ──────────────
 //
@@ -25675,7 +25682,7 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
     // STAGE 2 (dryRun: false): generates exactly one scene, inserts new version row,
     //   writes provenance metadata, updates run to completed/failed, runs NDG post-check.
     if (action === "execute_selective_regeneration") {
-      const { projectId, unitKeys, dryRun = true, repair_strategy: rawExecStrategy } = body;
+      const { projectId, unitKeys, dryRun = true, repair_strategy: rawExecStrategy, documentVersionId } = body;
       const execStrategy = rawExecStrategy ?? DEFAULT_REPAIR_STRATEGY;
       if (!REPAIR_STRATEGIES.has(execStrategy)) {
         return new Response(JSON.stringify({
@@ -25800,15 +25807,76 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
           }
         });
       }
+      // ── Engagement scene injection (TRIBE neural feedback) ──────────────
+      // Query scene_engagement_scores for low-engagement scenes and inject
+      // them as impacted scenes with risk_source 'engagement'.
+      // Engagement scenes join the batch with priority after direct but before propagated.
+      const engagementScenes = [];
+      if (documentVersionId) {
+        try {
+          const { data: engRows } = await supabase
+            .from("scene_engagement_scores")
+            .select("scene_key, total_score")
+            .eq("document_version_id", documentVersionId)
+            .lt("total_score", ENGAGEMENT_DEFAULTS.threshold);
+
+          if (engRows && engRows.length > 0) {
+            const lowEngagementKeys = [...new Set(engRows.map(r => r.scene_key))];
+            // Load scene_graph metadata for these keys
+            const { data: sceneRows } = await supabase
+              .from("scene_graph_scenes")
+              .select("id, scene_key")
+              .in("scene_key", lowEngagementKeys)
+              .eq("project_id", projectId);
+
+            if (sceneRows && sceneRows.length > 0) {
+              const sceneKeyToId = new Map(sceneRows.map(s => [s.scene_key, s.id]));
+              const sceneIds = sceneRows.map(s => s.id);
+              const { data: verRows } = await supabase
+                .from("scene_graph_versions")
+                .select("scene_id, slugline")
+                .in("scene_id", sceneIds)
+                .order("version_number", { ascending: false });
+              const sluglineMap = new Map();
+              for (const v of verRows || []) {
+                if (!sluglineMap.has(v.scene_id)) sluglineMap.set(v.scene_id, v.slugline ?? null);
+              }
+              // Deduplicate against existing plan scenes
+              const existingSceneIds = new Set(plan.impacted_scenes.map(s => s.scene_id));
+              const existingSceneKeys = new Set(plan.impacted_scenes.map(s => s.scene_key));
+              for (const row of engRows) {
+                if (existingSceneKeys.has(row.scene_key)) continue;
+                const sceneId = sceneKeyToId.get(row.scene_key);
+                if (!sceneId || existingSceneIds.has(sceneId)) continue;
+                engagementScenes.push({
+                  scene_id: sceneId,
+                  scene_key: row.scene_key,
+                  slugline: sluglineMap.get(sceneId) ?? null,
+                  axis_key: "engagement",
+                  risk_source: "engagement",
+                  risk_reason: `low_engagement: score=${row.total_score} threshold=${ENGAGEMENT_DEFAULTS.threshold}`,
+                });
+                existingSceneIds.add(sceneId);
+                existingSceneKeys.add(row.scene_key);
+              }
+            }
+          }
+        } catch (engErr) {
+          console.warn("[dev-engine-v2] engagement scene injection failed (non-fatal):", engErr?.message);
+        }
+      }
       // ── Step 6: Derive rewrite targets — v4: adaptive batch + propagated fill ──
       //
-      // Execution order: direct → propagated → entity_link
+      // Execution order: direct → engagement → propagated → entity_link
       //
       // Adaptive policy (computeAdaptiveBatchSize):
       //   targeted_scenes  → min(6, impacted_scene_count)
       //   propagated_only  → min(5, impacted_scene_count)
       //   broad_impact     → min(4, impacted_scene_count)
-      //   bounds:            [1, 8]
+      //   bounds:            [1, 10] when engagement scenes exist, else [1, 8]
+      //
+      // Engagement adjustment: when engagement scenes exist, batch max increases
+      // from 8 to 10 with 2 engagement slots (ENGAGEMENT_DEFAULTS.batch_max_with_engagement).
       //
       // Entity cap: floor(batchLimit / 2) — entity scenes never dominate a batch.
       // Entity execution gated on: directScenes.length > 0 AND scope allows it.
@@ -25817,14 +25885,16 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
         "targeted_scenes",
         "broad_impact"
       ]);
-      const batchLimit = computeAdaptiveBatchSize(plan);
+      const batchLimit = computeAdaptiveBatchSize(plan, engagementScenes.length);
       const entityCap = (plan.entity_impacted_scenes?.length ?? 0) > 0 ? Math.floor(batchLimit / 2) : 0;
       const directOnlyScenes = plan.impacted_scenes.filter((s)=>s.risk_source === "direct");
+      const engagementOnlyScenes = engagementScenes;
       const propagatedOnlyScenes = plan.impacted_scenes.filter((s)=>s.risk_source === "propagated");
       // ── Step 7: Sequence scenes deterministically ─────────────────────────
       // Direct:     axis rank ASC, then scene_key ASC.
+      // Engagement: scene_key ASC — always after direct, before propagated.
       // Propagated: axis rank ASC (propagated axes rank 99), then scene_key ASC.
-      // Entity:     scene_key ASC — always after direct + propagated.
+      // Entity:     scene_key ASC — always after direct + engagement + propagated.
       const axisRankMap = new Map((plan.source_units || []).map((u)=>[
           u.axis,
           u.sequence_rank

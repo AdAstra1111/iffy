@@ -32,6 +32,7 @@ import {
   getForkDirections,
   type AttemptStrategy,
 } from "../_shared/convergencePolicy.ts";
+import { ENGAGEMENT_DEFAULTS } from "../_shared/engagementMetric.ts";
 
 // ── PATCH D: plateau eligibility check ──
 async function hasQualifyingRewriteAttempt(
@@ -849,6 +850,48 @@ async function evaluateCIGate(
 
   // Default: CI-only gate
   return { pass: ci >= targetCi, ci, gp, bestCiSoFar: ci };
+}
+
+/**
+ * ENGAGEMENT CHECK GATE — block promotion if engagement scores are below threshold.
+ * Skips the gate if:
+ *   - No versionId provided (no version yet)
+ *   - No engagement data exists for this version
+ *   - All prediction sources are 'surrogate' (not real neural data)
+ */
+async function checkEngagementGate(
+  supabase: any,
+  projectId: string,
+  docType: string,
+  versionId: string | null,
+): Promise<boolean> {
+  if (!versionId) return true; // no version = skip gate
+
+  const { data: engagementRows } = await supabase
+    .from("scene_engagement_scores")
+    .select("total_score, prediction_source")
+    .eq("document_version_id", versionId);
+
+  if (!engagementRows || engagementRows.length === 0) {
+    console.log(`[auto-run][IEL] engagement_gate_skip { version_id: "${versionId}", reason: "no_data" }`);
+    return true; // no engagement data = skip gate gracefully
+  }
+
+  // If all sources are surrogate, skip (not real neural data)
+  const allSurrogate = engagementRows.every(r => r.prediction_source === 'surrogate');
+  if (allSurrogate) {
+    console.log(`[auto-run][IEL] engagement_gate_skip { version_id: "${versionId}", reason: "surrogate_only" }`);
+    return true;
+  }
+
+  const avgTotal = Math.round(
+    engagementRows.reduce((s, r) => s + (r.total_score || 0), 0) / engagementRows.length
+  );
+  const threshold = ENGAGEMENT_DEFAULTS.threshold;
+  const passed = avgTotal >= threshold;
+
+  console.log(`[auto-run][IEL] engagement_gate_eval { version_id: "${versionId}", avg_total: ${avgTotal}, threshold: ${threshold}, passed: ${passed} }`);
+  return passed;
 }
 
 /**
@@ -10105,43 +10148,54 @@ Deno.serve(async (req) => {
                   // Fall through to rewrite below
                 } else {
                   console.log(`[auto-run][IEL] ci_blocker_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${blockerGate.ci} }`);
-                  // ── IEL: ACTIONABLE NOTE EXHAUSTION GATE — block promotion if notes remain ──
-                  const noteExhaust = await checkActionableNoteExhaustion(supabase, job.project_id, currentDoc, latestVersion?.id || null);
-                  if (noteExhaust.hasActionable) {
-                    console.warn(`[auto-run][IEL] note_exhaustion_blocked_promote { job_id: "${jobId}", doc_type: "${currentDoc}", actionable_notes: ${noteExhaust.count} }`);
-                    await logStep(supabase, jobId, null, currentDoc, "note_exhaustion_blocked",
-                      `Promotion blocked: ${noteExhaust.count} actionable note(s) remain for ${currentDoc}. Continuing stabilise to apply/resolve notes.`,
+                  // ── ENGAGEMENT CHECK GATE — block promotion if engagement below threshold ──
+                  const engagementGatePass = await checkEngagementGate(supabase, job.project_id, currentDoc, latestVersion?.id || null);
+                  if (!engagementGatePass) {
+                    console.warn(`[auto-run][IEL] engagement_gate_blocked { job_id: "${jobId}", doc_type: "${currentDoc}", version_id: "${latestVersion?.id}" }`);
+                    await logStep(supabase, jobId, null, currentDoc, "engagement_gate_blocked",
+                      `Promotion blocked: engagement score below threshold for ${currentDoc}. Continuing stabilise.`,
                       { ci: blockerGate.ci, gp: blockerGate.gp }, undefined,
-                      { actionable_count: noteExhaust.count, trigger: "blocker_gate_promote" });
+                      { version_id: latestVersion?.id, trigger: "blocker_gate_promote" });
                     await updateJob(supabase, jobId, { stage_loop_count: newLoopCount });
                     // Fall through to rewrite below
                   } else {
-                  // Proceed to promotion
-                  const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
-                  if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
-                    if (job.allow_defaults || job.meta_json?.auto_approve_all) {
-                      try {
-                        await supabase.from("project_document_versions").update({
-                          approval_status: "approved",
-                          approved_at: new Date().toISOString(),
-                          approved_by: job.user_id,
-                        }).eq("id", latestVersion.id);
-                      } catch (e: any) {
-                        console.warn("[auto-run] non-fatal auto-approve failed before promote:", e?.message || e);
-                      }
-                      await logStep(supabase, jobId, null, currentDoc, "auto_approved_promote",
-                        `Converged (CI=${ci}, GP=${gp}). Auto-promoting ${currentDoc} → ${next} (allow_defaults, blocker_gate_passed)`,
-                        {}, undefined, { docId: doc.id, versionId: latestVersion.id, doc_type: currentDoc, next_doc_type: next }
-                      );
-                      await updateJob(supabase, jobId, {
-                        stage_loop_count: 0, current_document: next,
-                        stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4,
-                        status: "running", stop_reason: null,
+                    // ── IEL: ACTIONABLE NOTE EXHAUSTION GATE — block promotion if notes remain ──
+                    const noteExhaust = await checkActionableNoteExhaustion(supabase, job.project_id, currentDoc, latestVersion?.id || null);
+                    if (noteExhaust.hasActionable) {
+                      console.warn(`[auto-run][IEL] note_exhaustion_blocked_promote { job_id: "${jobId}", doc_type: "${currentDoc}", actionable_notes: ${noteExhaust.count} }`);
+                      await logStep(supabase, jobId, null, currentDoc, "note_exhaustion_blocked",
+                        `Promotion blocked: ${noteExhaust.count} actionable note(s) remain for ${currentDoc}. Continuing stabilise to apply/resolve notes.`,
+                        { ci: blockerGate.ci, gp: blockerGate.gp }, undefined,
+                        { actionable_count: noteExhaust.count, trigger: "blocker_gate_promote" });
+                      await updateJob(supabase, jobId, { stage_loop_count: newLoopCount });
+                      // Fall through to rewrite below
+                    } else {
+                      // Proceed to promotion
+                      const next = await nextUnsatisfiedStage(supabase, job.project_id, format, currentDoc, job.target_document, job.allow_defaults, job.user_id, jobId);
+                      if (next && isStageAtOrBeforeTarget(next, job.target_document, format)) {
+                        if (job.allow_defaults || job.meta_json?.auto_approve_all) {
+                          try {
+                            await supabase.from("project_document_versions").update({
+                              approval_status: "approved",
+                              approved_at: new Date().toISOString(),
+                              approved_by: job.user_id,
+                            }).eq("id", latestVersion.id);
+                          } catch (e: any) {
+                            console.warn("[auto-run] non-fatal auto-approve failed before promote:", e?.message || e);
+                          }
+                          await logStep(supabase, jobId, null, currentDoc, "auto_approved_promote",
+                            `Converged (CI=${ci}, GP=${gp}). Auto-promoting ${currentDoc} → ${next} (allow_defaults, blocker_gate_passed)`,
+                            {}, undefined, { docId: doc.id, versionId: latestVersion.id, doc_type: currentDoc, next_doc_type: next }
+                          );
+                          await updateJob(supabase, jobId, {
+                            stage_loop_count: 0, current_document: next,
+                            stage_exhaustion_remaining: job.stage_exhaustion_default ?? 4,
+                            status: "running", stop_reason: null,
                         awaiting_approval: false, approval_type: null,
                         pending_doc_id: null, pending_version_id: null,
                         pending_doc_type: null, pending_next_doc_type: null,
-                        frontier_version_id: null, frontier_ci: null, frontier_gp: null, frontier_attempts: 0,
-                      });
+                            frontier_version_id: null, frontier_ci: null, frontier_gp: null, frontier_attempts: 0,
+                          });
                       console.log(`[auto-run][IEL] stage_transition { job_id: "${jobId}", from: "${currentDoc}", to: "${next}", best_preserved: true, trigger: "blocker_gate_promote" }`);
                       return respondWithJob(supabase, jobId, "run-next");
                     }
@@ -10158,7 +10212,7 @@ Deno.serve(async (req) => {
                     });
                     return respondWithJob(supabase, jobId, "awaiting-approval");
                   }
-                  } // close note exhaustion else
+                  } // close engagement gate else
                 }
               } else {
               // Flag off — original promotion path

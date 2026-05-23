@@ -73,6 +73,7 @@ export function computeEligibilityFingerprint(input: EligibilityInput): string {
     `st:${input.isStale ? "1" : "0"}`,
     `sg:${input.strategy}`,
     `fv:${input.frontierVersionId || "null"}`,
+    `ebt:${input.engagementBelowThreshold ? "1" : "0"}`,
   ];
   return djb2(parts.join("|"));
 }
@@ -99,6 +100,7 @@ function diffInputs(
     ["stale_state", current.isStale !== previous.isStale],
     ["strategy", current.strategy !== previous.strategy],
     ["frontier_version", current.frontierVersionId !== previous.frontierVersionId],
+    ["engagement_below_threshold", current.engagementBelowThreshold !== previous.engagementBelowThreshold],
   ];
 
   for (const [label, didChange] of checks) {
@@ -222,6 +224,25 @@ export async function buildEligibilityInput(
     // ignore — default false
   }
 
+  // Check engagement below threshold
+  let engagementBelowThreshold = false;
+  try {
+    const { data: engRows } = await supabase
+      .from("scene_engagement_scores")
+      .select("total_score")
+      .eq("document_version_id", baselineVersionId);
+
+    if (engRows && engRows.length > 0) {
+      const avgTotal = engRows.reduce((s: number, r: any) => s + r.total_score, 0) / engRows.length;
+      // Import threshold from engagementMetric (50)
+      const { ENGAGEMENT_DEFAULTS: ED } = await import("./engagementMetric.ts");
+      engagementBelowThreshold = avgTotal < ED.threshold;
+    }
+    // No engagement data = not below threshold (legacy docs, no neural validation run yet)
+  } catch {
+    // ignore — default false
+  }
+
   const blockerIds = (options.blockers || [])
     .map((b: any) => b.id || b.note_key || "")
     .filter(Boolean)
@@ -243,6 +264,7 @@ export async function buildEligibilityInput(
     isStale,
     strategy: options.strategy || "unknown",
     frontierVersionId: options.frontierVersionId || null,
+    engagementBelowThreshold,
   };
 }
 
