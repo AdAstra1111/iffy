@@ -1,5 +1,5 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { addManualEntity } from "../_shared/narrativeEntityEngine.ts";
+import { addManualEntity } from "../../_shared/narrativeEntityEngine.ts";
 
 export interface ApplyGraphMutationsInput {
   projectId: string;

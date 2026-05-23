@@ -372,7 +372,7 @@ Format: ${rq.format}.${episodeLengthBlock}`;
       const isBeatsDeliverable = effectiveDeliverable === "vertical_episode_beats" || effectiveDeliverable === "episode_beats";
       if (isBeatsDeliverable && version.plaintext.length > 1000) {
         try {
-          const { parseEpisodeBlocks: parseBeatBlocks } = await import("../_shared/surgicalEpisodeRewrite.ts");
+          const { parseEpisodeBlocks: parseBeatBlocks } = await import("../../_shared/surgicalEpisodeRewrite.ts");
           const bBlocks = parseBeatBlocks(version.plaintext);
           const bTotalParsed = bBlocks.size;
           const bExpected = effectiveSeasonCount || bTotalParsed;

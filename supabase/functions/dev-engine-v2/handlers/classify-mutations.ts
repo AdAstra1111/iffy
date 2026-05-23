@@ -1,7 +1,7 @@
 import { SupabaseClient, createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { composeSystem, resolveGateway } from "../_shared/llm.ts";
-import { MODELS } from "../_shared/llm.ts";
-import { toEntityKey } from "../_shared/narrativeEntityEngine.ts";
+import { composeSystem, resolveGateway } from "../../_shared/llm.ts";
+import { MODELS } from "../../_shared/llm.ts";
+import { toEntityKey } from "../../_shared/narrativeEntityEngine.ts";
 import { ENTITY_EXTRACTION_SYSTEM } from "../prompts/entity-extraction.ts";
 
 // Topology note categories that trigger graph mutation proposals

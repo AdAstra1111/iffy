@@ -647,7 +647,7 @@ ${(() => {
 
             // ── L4.7: Parse sections once (hoisted) — used for both context window shift and L4.5 write-time verification ──
             // Fail-closed: stays [] if doc type is unsupported or parse throws.
-            let spineCheckSections: import("../_shared/sectionRepairEngine.ts").SectionBoundary[] = [];
+            let spineCheckSections: import("../../_shared/sectionRepairEngine.ts").SectionBoundary[] = [];
             try {
               if (isSectionRepairSupported(spineCheckDocType)) {
                 spineCheckSections = parseSections(version.plaintext, spineCheckDocType);
