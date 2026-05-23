@@ -23,6 +23,7 @@ import {
   type CanonConstraints,
 } from "./canonConstraintEnforcement.ts";
 import { resolveStructuralLineage, type StructuralLineage } from "./structuralLineageResolver.ts";
+import type { ObligationTopologyState } from "./obligation-topology.ts";
 
 // ── Caps ──
 const SIGNALS_CAP = 6;
@@ -53,6 +54,7 @@ export interface NarrativeContext {
   effectiveProfile: { blockText: string };
   worldPopulation: { density: string; blockText: string };
   structuralLineage: StructuralLineage;
+  obligationTopology?: ObligationTopologyState;
   metadata: {
     provenance: Record<string, string>;
     counts: Record<string, number>;
@@ -549,6 +551,9 @@ export async function resolveNarrativeContext(
  * Concatenates all non-empty block texts in canonical order.
  */
 export function buildNarrativeContextBlock(ctx: NarrativeContext): string {
+  const topologyBlock = ctx.obligationTopology
+    ? buildObligationTopologyBlock(ctx.obligationTopology)
+    : "";
   return [
     ctx.nec.blockText,
     ctx.canon.blockText,
@@ -559,6 +564,7 @@ export function buildNarrativeContextBlock(ctx: NarrativeContext): string {
     ctx.lockedDecisions.blockText,
     ctx.voice.blockText,
     ctx.worldPopulation.blockText,
+    topologyBlock,
   ].filter(Boolean).join("\n");
 }
 
@@ -635,4 +641,34 @@ NARRATIVE ENERGY CONTRACT (DEFAULT — no project NEC found):
   • Prefer prestige pressure: intimate stakes, reputational friction, relational loss, psychological suspense.
   • Stay inside the tonal envelope established by the source material.
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
+}
+
+/**
+ * Build a prompt block from an ObligationTopologyState for injection into
+ * narrative context. This block is appended to the end of the narrative
+ * context when scene-level obligation topology data is available.
+ */
+function buildObligationTopologyBlock(topology: ObligationTopologyState): string {
+  const tf = topology.tensionField;
+  const oc = topology.obligationCharge;
+  const di = topology.deferredIntimacy;
+  const nd = topology.narrativeDensity;
+  const sig = topology.signals;
+
+  const signalFlags = [
+    sig.overpressure ? "⚠ OVERPRESSURE" : null,
+    sig.intimacyCritical ? "⚠ INTIMACY CRITICAL" : null,
+    sig.obligationOverload ? "⚠ OBLIGATION OVERLOAD" : null,
+    sig.densityAnomaly ? "⚠ DENSITY ANOMALY" : null,
+  ].filter(Boolean).join(" | ");
+
+  return `\n\n=== OBLIGATION TOPOLOGY (scene ${topology.meta.sceneId}) ===
+Narrative Pressure: ${topology.narrativePressure.toFixed(3)} | Mode: ${topology.dominantMode}
+${signalFlags ? `Signals: ${signalFlags}` : ""}
+Tension: ${tf.aggregateScore.toFixed(3)} (${tf.aggregateDirection}, gradient ${tf.gradient ?? "N/A"}) | ${tf.activeThreadCount} threads
+Obligation Charge: ${oc.chargeScore.toFixed(3)} | ${oc.outstanding.length} outstanding, ${oc.overdueCount} overdue
+Deferred Intimacy: ${di.aggregateIndex.toFixed(3)} | ${di.deferredMoments.length} deferred moments, ${di.avoidantCharacters.length} avoidant
+Narrative Density: ${nd.score.toFixed(3)} (${nd.band}) | ${nd.anomalous ? "ANOMALOUS" : "normal"}
+Brief: ${sig.narrativeBrief}
+=== END OBLIGATION TOPOLOGY ===`;
 }
