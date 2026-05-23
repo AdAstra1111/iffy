@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
-import { computeObligationTopology, type ObligationTopologyComputeOptions } from "../_shared/obligation-topology.ts";
+import { computeObligationTopology, type Scene } from "../_shared/obligation-topology.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,28 +15,13 @@ function jsonRes(body: any, status = 200) {
   });
 }
 
-/**
- * DJB2a hash of an object — mirrors simpleHash in _shared/obligation-topology.ts
- * so we can validate cached input_hash without running the full computation.
- */
-function simpleHash(obj: unknown): string {
-  const str = JSON.stringify(obj);
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const chr = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + chr;
-    hash |= 0;
-  }
-  return Math.abs(hash).toString(16).padStart(8, "0");
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method === "GET") return jsonRes({ ok: true, build: "compute-obligation-topology-v2" });
+  if (req.method === "GET") return jsonRes({ ok: true, build: "compute-obligation-topology-v3" });
 
   try {
     const body = await req.json().catch(() => ({}));
-    const { project_id, scene_ids, version_id, force_recompute } = body;
+    const { project_id, scene_ids, force_recompute } = body;
 
     if (!project_id || !scene_ids || !Array.isArray(scene_ids) || scene_ids.length === 0) {
       return jsonRes({ error: "project_id and scene_ids (non-empty array) are required" }, 400);
@@ -51,137 +36,52 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // 1. Look up existing cache entries
-    const { data: cachedEntries } = await supabase
-      .from("obligation_topology_cache")
-      .select("*")
-      .in("scene_id", scene_ids)
-      .eq("project_id", project_id);
-
-    const cacheMap = new Map<string, any>();
-    if (cachedEntries) {
-      for (const entry of cachedEntries) {
-        cacheMap.set(entry.scene_id, entry);
-      }
-    }
-
-    // 2. Fetch scene text for all requested scenes (needed for hash validation)
-    const { data: allScenes } = await supabase
+    // Fetch scene data: title, act_id from scene_graph_scenes
+    const { data: scenesData } = await supabase
       .from("scene_graph_scenes")
-      .select("scene_id, scene_text")
+      .select("scene_id, scene_number, scene_text, slugline")
       .in("scene_id", scene_ids);
 
-    const sceneTextMap = new Map<string, string>();
-    if (allScenes) {
-      for (const s of allScenes) {
-        sceneTextMap.set(s.scene_id, s.scene_text || "");
-      }
+    if (!scenesData || scenesData.length === 0) {
+      return jsonRes({ error: "No scenes found for the given scene_ids" }, 404);
     }
 
-    // 3. Determine which scenes need computation vs can be returned from cache
-    //    Validate cache by comparing input_hash against current scene text hash
-    const needsCompute: string[] = [];
-    if (!force_recompute) {
-      for (const sceneId of scene_ids) {
-        const cached = cacheMap.get(sceneId);
-        if (!cached) {
-          needsCompute.push(sceneId);
-          continue;
-        }
-        // Compute hash of current scene text + version_id and compare with cached hash
-        const sceneText = sceneTextMap.get(sceneId) || "";
-        const currentHash = simpleHash({ sceneText, versionId: version_id });
-        if (currentHash !== cached.input_hash) {
-          // Scene text (or version) changed — stale cache, recompute
-          needsCompute.push(sceneId);
-        }
-      }
-    } else {
-      needsCompute.push(...scene_ids);
-    }
+    // Fetch entity keys for this project (used as scene entities)
+    const { data: entitiesData } = await supabase
+      .from("narrative_entities")
+      .select("entity_key")
+      .eq("project_id", project_id);
 
-    const states: Record<string, any> = {};
+    const allEntityKeys: string[] = entitiesData?.map((e: any) => e.entity_key) || [];
 
-    // Return validated cached results first (only scenes whose hash matched)
-    if (!force_recompute && cachedEntries) {
-      for (const entry of cachedEntries) {
-        if (!needsCompute.includes(entry.scene_id)) {
-          states[entry.scene_id] = entry.topology_state;
-        }
-      }
-    }
+    // Build Scene[] for the new computeObligationTopology API
+    // Map over all scene_ids so we get results in the requested order
+    const sceneIdSet = new Set(scenesData.map((s: any) => s.scene_id));
 
-    // 4. Compute for scenes that need it (uncached or hash mismatch)
-    if (needsCompute.length > 0) {
-      const { data: scenes } = await supabase
-        .from("scene_graph_scenes")
-        .select("scene_id, scene_number, scene_text, slugline")
-        .in("scene_id", needsCompute);
+    // Build act assignment from scene data — group by act boundary heuristics
+    // We need act_id for each scene. The scene_graph_scenes table may not have
+    // a direct act_id column, so we derive it from slugline or scene_number.
+    const scenes: Scene[] = scenesData.map((s: any) => {
+      // Derive act_id from scene_number or slugline patterns
+      let actId = "act_1";
+      const num = s.scene_number || 1;
+      if (num >= 20) actId = "act_3";
+      else if (num >= 10) actId = "act_2";
+      return {
+        id: s.scene_id,
+        act_id: actId,
+        title: s.slugline || `Scene ${s.scene_number || s.scene_id}`,
+        entities: allEntityKeys,
+      };
+    });
 
-      const sceneMap = new Map<string, any>();
-      if (scenes) {
-        for (const s of scenes) {
-          sceneMap.set(s.scene_id, s);
-        }
-      }
+    // Compute topology — uses entity overlap across scenes
+    const result = computeObligationTopology({ scenes });
 
-      for (const sceneId of needsCompute) {
-        const scene = sceneMap.get(sceneId);
-        if (!scene) {
-          states[sceneId] = { error: `Scene not found: ${sceneId}` };
-          continue;
-        }
-
-        // Fetch character keys for this scene from narrative_entities
-        const { data: entities } = await supabase
-          .from("narrative_entities")
-          .select("entity_key")
-          .eq("project_id", project_id);
-
-        const characterKeys: string[] = entities?.map((e: any) => e.entity_key) || [];
-
-        // Build compute options
-        const options: ObligationTopologyComputeOptions = {
-          projectId: project_id,
-          sceneId: sceneId,
-          sceneNumber: scene.scene_number || 1,
-          sceneText: scene.scene_text || "",
-          characterKeys,
-          versionId: version_id || undefined,
-        };
-
-        try {
-          const state = computeObligationTopology(options);
-          states[sceneId] = state;
-
-          // Cache the result (upsert to update stale entry or insert new one)
-          await supabase
-            .from("obligation_topology_cache")
-            .upsert({
-              project_id: project_id,
-              scene_id: sceneId,
-              version_id: version_id || null,
-              input_hash: state.meta.inputHash,
-              topology_state: state,
-              computed_at: new Date().toISOString(),
-              revalidated_at: new Date().toISOString(),
-            }, {
-              onConflict: "project_id, scene_id",
-              ignoreDuplicates: false,
-            });
-
-        } catch (computeErr) {
-          console.error(`Compute error for scene ${sceneId}:`, computeErr);
-          states[sceneId] = { error: computeErr instanceof Error ? computeErr.message : "Computation failed" };
-        }
-      }
-    }
-
+    // Return the full topology result
     return jsonRes({
-      states,
+      topology: result,
       total_scenes: scene_ids.length,
-      computed: needsCompute.length,
-      cached: scene_ids.length - needsCompute.length,
     });
   } catch (err) {
     console.error("compute-obligation-topology error:", err);
