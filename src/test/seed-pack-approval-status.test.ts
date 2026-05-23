@@ -109,7 +109,7 @@ describe("ensureSeedPack — post-generation re-verify (removed approval_status 
 
 // ── REGRESSION GUARD: initial ensureSeedPack check still filters by approval_status ──
 
-describe("ensureSeedPack — initial check STILL filters by approval_status (regression guard)", () => {
+describe("ensureSeedPack — initial check no longer filters by approval_status (BP-1/BP-2 guarantee approved docs)", () => {
   let source: string;
 
   beforeAll(() => {
@@ -119,13 +119,24 @@ describe("ensureSeedPack — initial check STILL filters by approval_status (reg
     );
   });
 
-  it("the initial check query still has .eq('approval_status', 'approved') after .eq('is_current', true)", () => {
-    // This is the first project_document_versions query in ensureSeedPack
-    // that checks if existing seed docs have approved current versions
-    const match = source.match(
-      /\.in\(["']document_id["'],\s*docIds\)\s*\n\s+\.eq\(["']is_current["'],\s*true\)\s*\n\s+\.eq\(["']approval_status["'],\s*["']approved["']\)/
-    );
-    expect(match).not.toBeNull();
+  it("the initial check query no longer filters by approval_status (BP-1/BP-2 guarantee approved docs)", () => {
+    // Since BP-1/BP-2 make generate-seed-pack create approved docs,
+    // any existing current version is already approved.
+    // The initial ensureSeedPack check no longer needs to filter by approval_status.
+    const fnStart = source.indexOf("async function ensureSeedPack(");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = source.slice(fnStart, fnStart + 3000);
+
+    // Find the first .from("project_document_versions") query in ensureSeedPack
+    const queryStart = fnBody.indexOf('.from("project_document_versions")');
+    expect(queryStart).not.toBe(-1);
+
+    const query = fnBody.slice(queryStart, queryStart + 250);
+    expect(query).toContain('.in("document_id", docIds)');
+    expect(query).toContain('.eq("is_current"');
+    // BP-1/BP-2 guarantee all generated docs are approved,
+    // so the initial check no longer filters by approval_status
+    expect(query).not.toContain("approval_status");
   });
 
   it("at least one is_current query in ensureSeedPack lacks approval_status (the post-gen re-verify)", () => {
@@ -196,13 +207,16 @@ describe("auto-run main pipeline — seedResult.failed handler", () => {
   });
 
   it("has a seedResult.failed check that fails the job with SEED_PACK_INCOMPLETE", () => {
-    // Search for the pattern within the main Deno.serve pipeline handler
-    const seedFailedIndex = source.indexOf(
-      "if (seedResult.failed) {"
-    );
-    expect(seedFailedIndex).not.toBe(-1);
+    // Find the SECOND seedResult.failed handler (the resume/bgTask handler
+    // that has a job to update with status: "failed" via updateJob()).
+    // The first handler (pre-job-creation guard) returns before creating a job.
+    const firstIndex = source.indexOf("if (seedResult.failed) {");
+    expect(firstIndex).not.toBe(-1);
 
-    const block = source.slice(seedFailedIndex, seedFailedIndex + 800);
+    const secondIndex = source.indexOf("if (seedResult.failed) {", firstIndex + 1);
+    expect(secondIndex).not.toBe(-1);
+
+    const block = source.slice(secondIndex, secondIndex + 800);
     expect(block).toContain("seedResult.failed");
     expect(block).toContain("SEED_PACK_INCOMPLETE");
     expect(block).toContain('status: "failed"');
@@ -261,13 +275,23 @@ describe("Seed pack — stuck Pending invariant protection", () => {
     expect(match).not.toBeNull();
   });
 
-  it("initial ensureSeedPack check still filters by approval_status", () => {
-    // The initial check determines if seed docs need to be generated.
-    // If they exist with a non-approved current version, they're treated as
-    // missing, which triggers generation. This is correct behavior.
-    const match = source.match(
-      /\.in\(["']document_id["'],\s*docIds\)\s*\n\s+\.eq\(["']is_current["'],\s*true\)\s*\n\s+\.eq\(["']approval_status["'],\s*["']approved["']\)/
-    );
-    expect(match).not.toBeNull();
+  it("initial ensureSeedPack check no longer filters by approval_status (BP-1/BP-2 guarantee approved docs)", () => {
+    // Since BP-1/BP-2 make generate-seed-pack create approved docs,
+    // any existing current version is already approved.
+    // The initial ensureSeedPack check no longer needs to filter by approval_status.
+    const fnStart = source.indexOf("async function ensureSeedPack(");
+    expect(fnStart).not.toBe(-1);
+    const fnBody = source.slice(fnStart, fnStart + 3000);
+
+    // Find the first .from("project_document_versions") query in ensureSeedPack
+    const queryStart = fnBody.indexOf('.from("project_document_versions")');
+    expect(queryStart).not.toBe(-1);
+
+    const query = fnBody.slice(queryStart, queryStart + 250);
+    expect(query).toContain('.in("document_id", docIds)');
+    expect(query).toContain('.eq("is_current"');
+    // BP-1/BP-2 guarantee all generated docs are approved,
+    // so the initial check no longer filters by approval_status
+    expect(query).not.toContain("approval_status");
   });
 });
