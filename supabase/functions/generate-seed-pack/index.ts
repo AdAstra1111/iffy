@@ -348,6 +348,7 @@ serve(async (req) => {
           dependsOnResolverHash: project.resolved_qualifications_hash || null,
           inputsUsed: { seed_source: "generate-seed-pack", nec_override: true, project_id: projectId },
           metaJson: provenance,
+          approvalStatus: "approved",
         });
         versionNumber = newVer.version_number;
       } catch (vErr: any) {
@@ -690,6 +691,7 @@ Preserve the concept. Return the same JSON schema with structural elements stren
           dependsOnResolverHash: project.resolved_qualifications_hash || undefined,
           generatorId: "seed-pack",
           inputsUsed: { seed_source: "generate-seed-pack", project_id: projectId, doc_type: cfg.doc_type, ...(parsed.provenance || {}) },
+          approvalStatus: "approved",
         });
 
         if (result.isNewDoc) {

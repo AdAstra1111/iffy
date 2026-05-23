@@ -5162,6 +5162,26 @@ Deno.serve(async (req) => {
       // ── Ensure seed pack docs exist before downstream generation ──
       const seedResult = await ensureSeedPack(supabase, supabaseUrl, projectId, token, jobUserId);
 
+      // ── Guard: check seed pack result BEFORE creating the job ──
+      // Prevents orphaned records created then immediately marked failed.
+      if (seedResult.failed) {
+        const stopReason = seedResult.fail_type || "SEED_PACK_INCOMPLETE";
+        const sd = seedResult.seed_debug || {};
+        const compactError = `${stopReason} | http=${sd.http_status ?? 'n/a'} | inserted=${sd.insertedCount ?? '?'} updated=${sd.updatedCount ?? '?'} | ${(seedResult.error || seedResult.missing.join(", ")).slice(0, 200)}`;
+        console.error(`[auto-run] ${stopReason} — seed pack failed for project ${projectId}. Missing: ${seedResult.missing.join(", ")}. Error: ${compactError}`);
+        return respond({
+          missing_seed_docs: seedResult.missing,
+          seed_debug: { ...sd, fail_type: stopReason, error: seedResult.error },
+          seed_warnings: seedResult.warnings || [],
+          error: compactError,
+          created: false,
+        });
+      }
+
+      if (seedResult.ensured) {
+        console.log(`[auto-run] seed_pack_ensured: generated ${seedResult.missing.join(", ")}`);
+      }
+
       // ── Guard: check for existing resumable job before creating a new one ──
       if (!body.force_new_run) {
         const { data: existingJobs } = await supabase
@@ -5254,35 +5274,6 @@ Deno.serve(async (req) => {
       }
 
       await logStep(supabase, job.id, 0, effectiveStartDoc, "start", `Auto-run started: ${effectiveStartDoc} → ${effectiveTargetDoc} (${mode || "balanced"} mode)`);
-
-      if (seedResult.failed) {
-        const stopReason = seedResult.fail_type || "SEED_PACK_INCOMPLETE";
-        const sd = seedResult.seed_debug || {};
-        const compactError = `${stopReason} | http=${sd.http_status ?? 'n/a'} | inserted=${sd.insertedCount ?? '?'} updated=${sd.updatedCount ?? '?'} | ${(seedResult.error || seedResult.missing.join(", ")).slice(0, 200)}`;
-        console.error(`[auto-run] ${stopReason} — failing job ${job.id}. Missing: ${seedResult.missing.join(", ")}. Error: ${compactError}`);
-        await supabase.from("auto_run_jobs").update({
-          status: "failed",
-          stop_reason: stopReason,
-          error: compactError.slice(0, 500),
-          last_ui_message: `Seed pack issue: ${compactError.slice(0, 300)}`,
-        }).eq("id", job.id);
-        await logStep(supabase, job.id, 0, effectiveStartDoc, "seed_pack_failed",
-          `${stopReason} — cannot proceed. ${compactError.slice(0, 200)}`);
-        return respond({
-          job: { ...job, status: "failed", stop_reason: stopReason, error: compactError.slice(0, 500) },
-          missing_seed_docs: seedResult.missing,
-          seed_debug: { ...sd, fail_type: stopReason, error: seedResult.error },
-          seed_warnings: seedResult.warnings || [],
-          error: compactError,
-          created: false,
-        });
-      }
-
-      if (seedResult.ensured) {
-        await logStep(supabase, job.id, 0, effectiveStartDoc, "seed_pack_ensured",
-          `Seed pack generated for missing docs: ${seedResult.missing.join(", ")}`,
-        );
-      }
 
       // ── LADDER DOC-SLOT PREFLIGHT: ensure first N ladder stages have doc slots ──
       {
@@ -8502,47 +8493,60 @@ Deno.serve(async (req) => {
               setupResolved.push(`comparables_from_pack=${packComps.length}`);
               console.log(`[auto-run] ${gateLabel}: init comparables from seed_intel_pack`, { count: packComps.length });
             } else if (allowDefaults) {
-              // Auto-generate comparables via LLM (dev-engine-v2 action)
-              try {
-                const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-                const compResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
-                  body: JSON.stringify({
-                    action: "auto_generate_comparables",
-                    projectId: job.project_id,
-                    userId: job.user_id,
-                  }),
-                });
-                if (compResp.ok) {
-                  const compResult = await compResp.json();
-                  if (compResult.generated) {
-                    setupResolved.push(`comparables_auto_generated=${compResult.count}`);
-                    console.log(`[auto-run] ${gateLabel}: auto-generated comparables via LLM`, { count: compResult.count });
-                  } else if (compResult.reason === "already_exists" || compResult.reason === "table_has_candidates") {
-                    setupResolved.push("comparables_already_exist");
-                  } else if (compResult.reason === "no_logline_or_premise") {
-                    // Need canon extract first — trigger it and retry
-                    console.warn(`[auto-run] ${gateLabel}: comparables need logline/premise first, scheduling retry`);
-                    if (existingSetupAttempts + 1 < MAX_SETUP_ATTEMPTS) {
-                      const retryDelay = BACKOFF_DELAYS[existingSetupAttempts] || 30;
-                      const nextRetry = new Date(Date.now() + retryDelay * 1000).toISOString();
-                      stageHist[`${setupKey}_setup_attempts`] = existingSetupAttempts + 1;
-                      stageHist[`${setupKey}_setup_next_retry_at`] = nextRetry;
-                      await updateJob(supabase, jobId, { stage_history: stageHist });
-                      return respondWithJob(supabase, jobId, "run-next");
+              // ── Inline retry loop for comparables auto-generation ──
+              // Replaces the old respondWithJob self-chain which was unreliable (isolate terminates
+              // before the next run-next fetch, permanently stalling setup). Inline await is always reliable.
+              let compOk = false;
+              for (let attempt = existingSetupAttempts; attempt < MAX_SETUP_ATTEMPTS; attempt++) {
+                console.log(`[auto-run] ${gateLabel}: comparables auto-generate attempt ${attempt + 1}/${MAX_SETUP_ATTEMPTS}`);
+                try {
+                  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+                  const compResp = await fetch(`${supabaseUrl}/functions/v1/dev-engine-v2`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", Authorization: `Bearer ${serviceKey}` },
+                    body: JSON.stringify({
+                      action: "auto_generate_comparables",
+                      projectId: job.project_id,
+                      userId: job.user_id,
+                    }),
+                  });
+                  if (compResp.ok) {
+                    const compResult = await compResp.json();
+                    if (compResult.generated) {
+                      setupResolved.push(`comparables_auto_generated=${compResult.count}`);
+                      console.log(`[auto-run] ${gateLabel}: auto-generated comparables via LLM`, { count: compResult.count });
+                      compOk = true;
+                      break;
+                    } else if (compResult.reason === "already_exists" || compResult.reason === "table_has_candidates") {
+                      setupResolved.push("comparables_already_exist");
+                      compOk = true;
+                      break;
+                    } else if (compResult.reason === "no_logline_or_premise") {
+                      console.warn(`[auto-run] ${gateLabel}: comparables need logline/premise first (attempt ${attempt + 1})`);
+                      // Fall through to retry — canon OS extract should populate logline/premise
+                    } else {
+                      console.warn(`[auto-run] ${gateLabel}: comparables generation returned`, compResult);
                     }
-                    setupMissing.push("comparables");
                   } else {
-                    console.warn(`[auto-run] ${gateLabel}: comparables generation returned`, compResult);
-                    setupMissing.push("comparables");
+                    console.warn(`[auto-run] ${gateLabel}: comparables generation HTTP error`, { status: compResp.status });
                   }
-                } else {
-                  console.warn(`[auto-run] ${gateLabel}: comparables generation HTTP error`, { status: compResp.status });
-                  setupMissing.push("comparables");
+                } catch (compErr: any) {
+                  console.warn(`[auto-run] ${gateLabel}: comparables auto-generate attempt ${attempt + 1} failed`, { error: compErr.message });
                 }
-              } catch (compErr: any) {
-                console.warn(`[auto-run] ${gateLabel}: comparables auto-generate failed`, { error: compErr.message });
+
+                if (attempt + 1 < MAX_SETUP_ATTEMPTS) {
+                  const retryDelay = BACKOFF_DELAYS[attempt] || 30;
+                  console.log(`[auto-run] ${gateLabel}: comparables retry in ${retryDelay}s (attempt ${attempt + 1}/${MAX_SETUP_ATTEMPTS})`);
+                  stageHist[`${setupKey}_setup_attempts`] = attempt + 1;
+                  await updateJob(supabase, jobId, {
+                    stage_history: stageHist,
+                    last_ui_message: `${gateLabel}: Comparables retrying (attempt ${attempt + 1}/${MAX_SETUP_ATTEMPTS})...`,
+                  });
+                  await new Promise<void>(res => setTimeout(res, retryDelay * 1000));
+                }
+              }
+
+              if (!compOk) {
                 setupMissing.push("comparables");
               }
             } else {
@@ -8678,8 +8682,11 @@ Deno.serve(async (req) => {
                     targetOutput: "CONCEPT_BRIEF",
                   }, token, job.project_id, format, currentDoc, jobId, stepCount + 1
                 );
-              } catch (_e) {
-                // conversion failed — continue anyway at concept_brief
+              } catch (e: any) {
+                console.error(`[auto-run] thin-idea upsift conversion failed:`, { error: e.message, project_id: job.project_id, document_id: ideaDoc.id, version_id: ideaVersion.id });
+                await logStep(supabase, jobId, stepCount, currentDoc, "conversion-failed",
+                  `Thin idea → concept brief conversion failed: ${e.message}. Continuing at concept_brief stage.`,
+                  {}, undefined, { error: e.message });
               }
             }
           }
