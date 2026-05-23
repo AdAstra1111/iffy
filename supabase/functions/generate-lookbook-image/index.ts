@@ -85,6 +85,8 @@ interface SectionContext {
   locationAtomBlock?: string;
   atomBindingStatus?: string;
   missingAtomRefs?: string[];
+  /** Shot plan context from pipeline orchestrator */
+  shotPlanContext?: ShotPlanContext | null;
 }
 
 // ── Narrative Moment (from scene graph) ─────────────────────────────────────
@@ -106,6 +108,18 @@ interface NarrativeMoment {
   content_preview: string;
   canon_location_id: string | null;
   scene_roles: SceneRoleAffinity[];
+}
+
+// ── Shot Plan Context (from pipeline orchestrator) ───────────────────────────
+
+interface ShotPlanContext {
+  pipelinePhase?: string;
+  shotIndex?: number;
+  shotCount?: number;
+  narrativeTarget?: string;
+  characterTargets?: string[];
+  locationTargets?: string[];
+  parentGenerationId?: string;
 }
 
 /** Shot-type to narrative selection strategy */
@@ -141,8 +155,24 @@ function selectNarrativeMoment(
   moments: NarrativeMoment[],
   shotType: ShotType | null,
   variantIndex: number,
+  shotPlanContext?: ShotPlanContext | null,
 ): NarrativeMoment | null {
   if (!moments.length) return null;
+
+  // If shot plan context has a narrativeTarget, prefer moments whose purpose or summary
+  // matches the target narrative function
+  if (shotPlanContext?.narrativeTarget) {
+    const target = shotPlanContext.narrativeTarget.toLowerCase();
+    const matching = moments.filter(m =>
+      (m.purpose && m.purpose.toLowerCase().includes(target)) ||
+      (m.slugline && m.slugline.toLowerCase().includes(target)) ||
+      (m.summary && m.summary.toLowerCase().includes(target))
+    );
+    if (matching.length > 0) {
+      moments = matching;
+    }
+  }
+
   const strategy = shotType ? SHOT_NARRATIVE_STRATEGY[shotType] : null;
   if (!strategy) {
     // Round-robin through available moments
@@ -850,7 +880,7 @@ function buildPackPrompt(assetGroup: AssetGroup, shotType: ShotType, ctx: Sectio
 
   // ── Narrative moment selection ──
   let narrativeMoment = (ctx.narrativeMoments?.length)
-    ? selectNarrativeMoment(ctx.narrativeMoments, shotType, variantIndex)
+    ? selectNarrativeMoment(ctx.narrativeMoments, shotType, variantIndex, ctx.shotPlanContext)
     : null;
 
   // ── ACTION AUTHORITY: Filter narrative moments for world/location/visual_language slots ──
@@ -1219,6 +1249,7 @@ serve(async (req) => {
       height: requestedHeight = null,
       aspect_ratio: requestedAspectRatio = null,
       dataset_provenance: clientDatasetProvenance = null,
+      shot_plan_context: shotPlanContextRaw = null,
     } = body as {
       project_id: string;
       section: LookbookSection;
@@ -1261,6 +1292,7 @@ serve(async (req) => {
       height?: number | null;
       aspect_ratio?: string | null;
       dataset_provenance?: Record<string, unknown> | null;
+      shot_plan_context?: ShotPlanContext | null;
     };
 
     // IEL: location_binding_write_enforcement — warn if world image without canon location_id
@@ -1659,6 +1691,7 @@ serve(async (req) => {
       characterBindingBlock: canonicalBindings.characterPromptBlock,
       boundCharacterNames: canonicalBindings.characters.map(c => c.character_name),
       narrativeMoments,
+      shotPlanContext: shotPlanContextRaw as ShotPlanContext | null | undefined,
     };
 
     // ── Resolve identity anchor signed URLs if provided ──
@@ -1925,6 +1958,23 @@ FRAMING RULES:
       // Injected BEFORE style/shot/composition layers to ground the image in planned cinematics
       if (shotListPromptBlock && !isIdentityGeneration && !promptOverrideUsed) {
         prompt += `\n\n${shotListPromptBlock}`;
+      }
+
+      // Step 8b¾: PIPELINE CONTEXT — shot plan metadata from orchestrator
+      // Injected when the pipeline orchestrator provides shot_plan_context
+      if (shotPlanContextRaw && !isIdentityGeneration && !promptOverrideUsed) {
+        const spc = shotPlanContextRaw as ShotPlanContext;
+        const lines = ['[PIPELINE CONTEXT — ORCHESTRATION METADATA]', ''];
+        if (spc.pipelinePhase) lines.push(`PRODUCTION PHASE: ${spc.pipelinePhase}`);
+        if (spc.shotIndex !== undefined && spc.shotCount !== undefined) {
+          lines.push(`SHOT: ${spc.shotIndex} of ${spc.shotCount}`);
+        } else if (spc.shotIndex !== undefined) {
+          lines.push(`SHOT INDEX: ${spc.shotIndex}`);
+        }
+        if (spc.narrativeTarget) lines.push(`NARRATIVE TARGET: ${spc.narrativeTarget}`);
+        lines.push('');
+        lines.push('This image is generated as part of a sequenced pipeline — maintain visual continuity with other shots in this sequence.');
+        prompt += `\n\n${lines.join('\n')}`;
       }
 
       // Step 8c: CINEMATIC STYLE LOCK — project-wide visual cohesion

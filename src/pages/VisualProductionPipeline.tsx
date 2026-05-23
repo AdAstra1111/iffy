@@ -1924,6 +1924,29 @@ export default function VisualProductionPipeline() {
   const completedCount = stages.filter(s => s.status === 'locked' || s.status === 'approved').length;
   const totalCount = stages.length;
 
+  // ── Pipeline state for Generate Pipeline button ──
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineError, setPipelineError] = useState<string | null>(null);
+
+  async function handleGeneratePipeline() {
+    if (!projectId) return;
+    setPipelineRunning(true);
+    setPipelineError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('pipeline-orchestrator', {
+        body: { action: 'start', project_id: projectId },
+      });
+      if (error) throw new Error(error.message || 'Pipeline start failed');
+      if (data?.error) throw new Error(data.error);
+      toast.success('Pipeline started — atoms → images');
+    } catch (err: any) {
+      setPipelineError(err.message);
+      toast.error(`Pipeline failed: ${err.message}`);
+    } finally {
+      setPipelineRunning(false);
+    }
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* Top bar */}
@@ -1938,10 +1961,29 @@ export default function VisualProductionPipeline() {
           <Palette className="h-4 w-4 text-primary" />
           <span className="text-sm font-display font-semibold text-foreground">Visual Production Pipeline</span>
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="text-[10px] tabular-nums">
             {completedCount}/{totalCount} stages complete
           </Badge>
+          {pipelineError && (
+            <span className="text-[10px] text-destructive max-w-[120px] truncate" title={pipelineError}>
+              {pipelineError}
+            </span>
+          )}
+          <Button
+            variant="default"
+            size="sm"
+            className="gap-1.5 text-xs"
+            onClick={handleGeneratePipeline}
+            disabled={pipelineRunning}
+          >
+            {pipelineRunning ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Zap className="h-3.5 w-3.5" />
+            )}
+            {pipelineRunning ? 'Starting...' : 'Generate Pipeline'}
+          </Button>
         </div>
       </div>
 
