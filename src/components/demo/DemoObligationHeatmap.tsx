@@ -1,170 +1,227 @@
-import { useState, useMemo } from 'react';
-import { motion } from 'framer-motion';
+import React, { useMemo, useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 
-export interface SceneData {
-  sceneNumber: number;
-  tensionScore: number;
-  obligationCharge: number;
-  deferredIntimacy: number;
-  narrativeDensity: number;
-  narrativePressure: number;
-  sceneHeading: string;
-  actNumber: number;
+export interface ObligationData {
+  source_scene_key: string;
+  target_scene_key: string;
+  type: string;
+  charge: number;
+  lifecycle_state: 'discharged' | 'active' | 'loaded' | 'pending';
 }
 
-interface Props {
-  scenes: SceneData[];
+export interface SceneInfo {
+  id: string;
+  title: string;
+}
+
+export interface DemoObligationHeatmapProps {
+  obligations: ObligationData[];
+  scenes: SceneInfo[];
   className?: string;
 }
 
-interface MetricDef {
-  key: keyof SceneData;
-  label: string;
-  description: string;
+/** Map lifecycle_state + charge to a color class. */
+function heatColor(state: string, charge: number): string {
+  switch (state) {
+    case 'discharged':
+      return 'bg-green-500/30';
+    case 'active':
+      return charge > 0.6
+        ? 'bg-yellow-500/50'
+        : charge > 0.3
+          ? 'bg-yellow-500/35'
+          : 'bg-yellow-500/20';
+    case 'loaded':
+    case 'pending':
+      return charge > 0.6
+        ? 'bg-red-500/60'
+        : charge > 0.3
+          ? 'bg-red-500/40'
+          : 'bg-red-500/25';
+    default:
+      return 'bg-muted/10';
+  }
 }
 
-const METRICS: MetricDef[] = [
-  { key: 'tensionScore', label: 'Tension', description: 'Narrative tension score' },
-  { key: 'obligationCharge', label: 'Obligation', description: 'Obligation charge level' },
-  { key: 'deferredIntimacy', label: 'Intimacy', description: 'Deferred intimacy debt' },
-  { key: 'narrativeDensity', label: 'Density', description: 'Narrative density per scene' },
-  { key: 'narrativePressure', label: 'Pressure', description: 'Narrative pressure gauge' },
-];
-
-function valueToColorClass(value: number): string {
-  if (value >= 0.8) return 'bg-red-500/70';
-  if (value >= 0.6) return 'bg-orange-500/60';
-  if (value >= 0.4) return 'bg-yellow-500/50';
-  if (value >= 0.25) return 'bg-lime-500/40';
-  return 'bg-green-500/30';
+/** Text contrast label based on charge. */
+function heatLabel(value: number): string {
+  if (value >= 0.8) return 'High';
+  if (value >= 0.5) return 'Med';
+  if (value >= 0.2) return 'Low';
+  return '—';
 }
 
-function valueToOpacity(value: number): string {
-  return `${0.25 + value * 0.55}`;
-}
-
-export function DemoObligationHeatmap({ scenes, className = '' }: Props) {
-  const [hoveredCell, setHoveredCell] = useState<{ sceneIdx: number; metricIdx: number; value: number } | null>(null);
-
-  const grouped = useMemo(() => {
-    if (!scenes.length) return [];
-    const groups: { actNumber: number; scenes: SceneData[] }[] = [];
-    let currentAct = scenes[0].actNumber;
-    let currentGroup: SceneData[] = [];
-
-    for (const scene of scenes) {
-      if (scene.actNumber !== currentAct && currentGroup.length > 0) {
-        groups.push({ actNumber: currentAct, scenes: currentGroup });
-        currentGroup = [];
-        currentAct = scene.actNumber;
-      }
-      currentGroup.push(scene);
+export function DemoObligationHeatmap({
+  obligations,
+  scenes,
+  className,
+}: DemoObligationHeatmapProps) {
+  // Derive distinct obligation types
+  const obligationTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const o of obligations) {
+      if (o.type) set.add(o.type);
     }
-    if (currentGroup.length > 0) {
-      groups.push({ actNumber: currentAct, scenes: currentGroup });
-    }
-    return groups;
-  }, [scenes]);
+    return Array.from(set).sort();
+  }, [obligations]);
 
-  if (!scenes.length) {
+  // Build a lookup map: sceneKey -> { type -> aggregated charge/state }
+  const cellMap = useMemo(() => {
+    const map = new Map<string, Map<string, { charge: number; state: string }>>();
+    for (const o of obligations) {
+      const key = o.target_scene_key || o.source_scene_key;
+      if (!key) continue;
+      if (!map.has(key)) map.set(key, new Map());
+      const inner = map.get(key)!;
+      inner.set(o.type, {
+        charge: o.charge,
+        state: o.lifecycle_state,
+      });
+    }
+    return map;
+  }, [obligations]);
+
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+
+  if (!obligations.length || !scenes.length) {
     return (
-      <div className="p-4 text-center text-sm text-muted-foreground/60">
-        No scene data loaded.
-      </div>
+      <Card className={cn('border-border/40', className)}>
+        <CardContent className="p-6 text-center">
+          <p className="text-sm text-muted-foreground/60">
+            No obligation data loaded. Run analysis to populate the heatmap.
+          </p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className={`space-y-3 ${className}`}>
-      {/* Header row: metric labels */}
-      <div className="flex items-center gap-1 pl-12">
-        <div className="w-8 shrink-0" />
-        {METRICS.map((m) => (
-          <div key={m.key} className="flex-1 text-center">
-            <span className="text-[10px] font-medium text-muted-foreground/70">{m.label}</span>
-          </div>
-        ))}
-      </div>
+    <TooltipProvider delayDuration={200}>
+      <Card className={cn('border-border/40', className)}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold text-foreground">
+            Obligation Heatmap
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-4 pt-0 overflow-x-auto">
+          <div className="min-w-max">
+            {/* Color Legend */}
+            <div className="flex items-center gap-3 mb-3 text-[10px] text-muted-foreground/60">
+              <span>Discharged</span>
+              <span className="w-3 h-3 rounded-sm bg-green-500/30" />
+              <span>Active</span>
+              <span className="w-3 h-3 rounded-sm bg-yellow-500/40" />
+              <span>Loaded</span>
+              <span className="w-3 h-3 rounded-sm bg-red-500/50" />
+              <span className="ml-auto text-[9px] text-muted-foreground/40">
+                Cell intensity = charge level
+              </span>
+            </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-3 pl-12 text-[10px] text-muted-foreground/50">
-        <span>Low</span>
-        <span className="w-4 h-3 rounded bg-green-500/30" />
-        <span className="w-4 h-3 rounded bg-lime-500/40" />
-        <span className="w-4 h-3 rounded bg-yellow-500/50" />
-        <span className="w-4 h-3 rounded bg-orange-500/60" />
-        <span className="w-4 h-3 rounded bg-red-500/70" />
-        <span>High</span>
-      </div>
-
-      {/* Per-act groups */}
-      {grouped.map((group, gi) => (
-        <div key={`act-${gi}`}>
-          {/* Act separator */}
-          <div className="flex items-center gap-2 pl-12 mb-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
-              Act {group.actNumber}
-            </span>
-            <div className="flex-1 h-px bg-border/20" />
-            <span className="text-[9px] text-muted-foreground/40">{group.scenes.length} scenes</span>
-          </div>
-
-          {/* Scene rows */}
-          {group.scenes.map((scene, si) => {
-            const globalIdx = scenes.indexOf(scene);
-            return (
-              <motion.div
-                key={`scene-${scene.sceneNumber}`}
-                className="flex items-center gap-1 py-0.5"
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: globalIdx * 0.02, duration: 0.3 }}
-              >
-                {/* Scene label */}
-                <div className="w-8 shrink-0 text-right pr-1">
-                  <span className="text-[10px] font-mono text-muted-foreground/60">{scene.sceneNumber}</span>
-                </div>
-                <div className="w-4 shrink-0">
-                  <span className="text-[8px] text-muted-foreground/30 truncate block" title={scene.sceneHeading}>
-                    {scene.sceneHeading?.slice(0, 2) || '--'}
-                  </span>
-                </div>
-
-                {/* Metric cells */}
-                {METRICS.map((metric, mi) => {
-                  const value = scene[metric.key] as number;
-                  return (
-                    <motion.div
-                      key={`cell-${scene.sceneNumber}-${metric.key}`}
-                      className="flex-1 h-6 rounded-sm flex items-center justify-center cursor-crosshair relative"
-                      style={{ opacity: valueToOpacity(value) as any }}
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: valueToOpacity(value) as any }}
-                      transition={{ duration: 0.25, delay: globalIdx * 0.01 + mi * 0.03 }}
-                      onMouseEnter={() => setHoveredCell({ sceneIdx: globalIdx, metricIdx: mi, value })}
-                      onMouseLeave={() => setHoveredCell(null)}
+            <table className="border-collapse">
+              <thead>
+                <tr>
+                  {/* Top-left corner: type label */}
+                  <th className="text-right pr-2 pb-1 text-[10px] font-medium text-muted-foreground/50 align-bottom">
+                    Scene &rarr;
+                    <br />
+                    Type &darr;
+                  </th>
+                  {/* Scene columns */}
+                  {scenes.map((scene) => (
+                    <th
+                      key={scene.id}
+                      className="pb-1 px-1"
                     >
-                      <div className={`w-full h-full rounded-sm ${valueToColorClass(value)}`} />
-                      {/* Tooltip */}
-                      {hoveredCell?.sceneIdx === globalIdx && hoveredCell?.metricIdx === mi && (
-                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 z-10 px-2 py-1 rounded bg-popover border border-border/40 text-[10px] font-mono text-foreground whitespace-nowrap shadow-lg pointer-events-none">
-                          {scene.sceneHeading || `Scene ${scene.sceneNumber}`} — {metric.label}: {(value * 100).toFixed(0)}%
-                        </div>
-                      )}
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            );
-          })}
-        </div>
-      ))}
+                      <div
+                        className="text-[9px] font-medium text-muted-foreground/60 whitespace-nowrap truncate max-w-[80px] mx-auto"
+                        style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}
+                      >
+                        {scene.title || scene.id}
+                      </div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {obligationTypes.map((type) => (
+                  <tr key={type}>
+                    <td className="text-right pr-2 py-1 text-[10px] font-medium text-muted-foreground/60 whitespace-nowrap">
+                      {type}
+                    </td>
+                    {scenes.map((scene) => {
+                      const inner = cellMap.get(scene.id);
+                      const cell = inner?.get(type);
+                      const charge = cell?.charge ?? 0;
+                      const state = cell?.state ?? '';
+                      const color = cell ? heatColor(state, charge) : 'bg-muted/5';
 
-      {/* Summary footer */}
-      <div className="flex items-center gap-4 pl-12 text-[9px] text-muted-foreground/40 pt-1">
-        <span>{scenes.length} scenes</span>
-        <span>{grouped.length} acts</span>
-      </div>
-    </div>
+                      return (
+                        <td key={`${scene.id}-${type}`} className="px-1 py-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <div
+                                className={cn(
+                                  'w-8 h-8 rounded-sm flex items-center justify-center cursor-crosshair transition-transform hover:scale-110',
+                                  color,
+                                  cell ? 'ring-1 ring-border/10' : '',
+                                )}
+                                onMouseEnter={() =>
+                                  setHoverKey(`${scene.id}:${type}`)
+                                }
+                                onMouseLeave={() => setHoverKey(null)}
+                              >
+                                <span className="text-[7px] font-mono text-foreground/60">
+                                  {cell ? heatLabel(charge) : ''}
+                                </span>
+                              </div>
+                            </TooltipTrigger>
+                            {cell && hoverKey === `${scene.id}:${type}` && (
+                              <TooltipContent side="top" className="text-[10px]">
+                                <p>
+                                  <strong>{scene.title || scene.id}</strong> &mdash;{' '}
+                                  {type}
+                                </p>
+                                <p>
+                                  Charge: {(charge * 100).toFixed(0)}% &middot; State:{' '}
+                                  {state}
+                                </p>
+                              </TooltipContent>
+                            )}
+                          </Tooltip>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Empty rows message */}
+            {obligationTypes.length === 0 && (
+              <p className="text-[10px] text-muted-foreground/40 text-center py-4">
+                No obligation types detected in the data.
+              </p>
+            )}
+          </div>
+
+          {/* Summary */}
+          <div className="flex items-center gap-3 mt-3 text-[9px] text-muted-foreground/40">
+            <span>{obligations.length} obligations</span>
+            <span>{obligationTypes.length} types</span>
+            <span>{scenes.length} scenes</span>
+          </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   );
 }
+
+export default DemoObligationHeatmap;

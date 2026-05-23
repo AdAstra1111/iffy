@@ -1,51 +1,46 @@
-import { useCallback, useState } from 'react';
-import { Upload, FileCheck } from 'lucide-react';
+import React from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Upload } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-export function DemoScriptUpload({ className = '' }: { className?: string }) {
-  const [uploaded, setUploaded] = useState(false);
+export interface DemoScriptUploadProps {
+  className?: string;
+}
 
-  const handleUpload = useCallback(() => {
-    setUploaded(true);
-    setTimeout(() => {
-      console.log('Mock upload success — script ingested');
-    }, 0);
-  }, []);
-
+export function DemoScriptUpload({ className }: DemoScriptUploadProps) {
   return (
-    <div className={`border border-border/20 bg-card/30 rounded-lg p-4 ${className}`}>
-      {!uploaded ? (
-        <div className="flex flex-col items-center gap-3 py-6">
+    <Card className={cn('border-border/40', className)}>
+      <CardHeader className="pb-2">
+        <div className="flex items-center gap-2">
+          <Upload className="h-4 w-4 text-muted-foreground/70" />
+          <CardTitle className="text-sm font-semibold text-foreground">
+            Script Upload
+          </CardTitle>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 pt-0 flex flex-col items-center gap-3">
+        {/* Placeholder area */}
+        <div className="w-full border-2 border-dashed border-border/30 rounded-lg py-8 flex flex-col items-center gap-2 bg-muted/5">
           <div className="p-3 rounded-full bg-primary/10">
             <Upload className="h-6 w-6 text-primary/60" />
           </div>
-          <p className="text-xs text-muted-foreground/60 text-center">
-            Drop a screenplay (.fountain, .fdx) or paste text
+          <p className="text-xs text-muted-foreground/60 text-center max-w-[200px]">
+            Upload your script to begin analysis
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="border-primary/30 text-[11px] hover:bg-primary/5 mt-1"
-            onClick={handleUpload}
-          >
-            <Upload className="h-3.5 w-3.5 mr-1.5" />
-            Upload Script
-          </Button>
         </div>
-      ) : (
-        <div className="flex items-center gap-3 py-3">
-          <div className="p-2 rounded-full bg-green-500/10">
-            <FileCheck className="h-5 w-5 text-green-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground">Script uploaded</p>
-            <p className="text-[11px] text-muted-foreground/60">cyberpunk_thriller_v2.fountain — 112 pages</p>
-          </div>
-          <Button variant="ghost" size="sm" className="text-[11px] h-7" onClick={() => setUploaded(false)}>
-            Reset
-          </Button>
-        </div>
-      )}
-    </div>
+
+        {/* Disabled button */}
+        <Button variant="outline" disabled className="w-full text-xs">
+          <Upload className="h-3.5 w-3.5 mr-1.5" />
+          Upload Script
+        </Button>
+        <p className="text-[9px] text-muted-foreground/40 text-center">
+          Coming in live mode
+        </p>
+      </CardContent>
+    </Card>
   );
 }
+
+export default DemoScriptUpload;
