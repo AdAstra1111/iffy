@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,8 @@ interface BeatRewritePanelProps {
   onComplete?: (newVersionId: string) => void;
   /** Simple callback for parent to trigger Apply All (replaces ref + start/done callbacks) */
   onApplyAll?: () => void;
+  /** External trigger counter — increment to fire handleApplyAll from parent */
+  applyAllTrigger?: number;
 }
 
 // ── Parser ───────────────────────────────────────────────────────────────────
@@ -633,6 +635,7 @@ function RewriteModal({
     setLoading(true);
     setError('');
     try {
+      await supabase.auth.refreshSession().catch(() => {});
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
@@ -768,7 +771,7 @@ function RewriteModal({
 // ── Main component ───────────────────────────────────────────────────────────
 
 export default function BeatRewritePanel({
-  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAll,
+  projectId, documentId, versionId, version, approvedNotes, protectItems, onComplete, onApplyAll, applyAllTrigger,
 }: BeatRewritePanelProps) {
   const [expandedActs, setExpandedActs] = useState<Set<string>>(new Set());
   const [rewriteTarget, setRewriteTarget] = useState<Beat | null>(null);
@@ -783,6 +786,15 @@ export default function BeatRewritePanel({
   useEffect(() => {
     setExpandedActs(new Set(acts.map(a => a.name)));
   }, [acts]);
+
+  // External trigger: when applyAllTrigger changes, fire handleApplyAll
+  const triggerRef = useRef(applyAllTrigger);
+  useEffect(() => {
+    if (applyAllTrigger !== undefined && applyAllTrigger !== triggerRef.current) {
+      triggerRef.current = applyAllTrigger;
+      handleApplyAll();
+    }
+  }, [applyAllTrigger]);
 
   const toggleAct = (actName: string) => {
     setExpandedActs(prev => {
@@ -811,6 +823,7 @@ export default function BeatRewritePanel({
     for (const beat of allBeats) {
       setBeatStatuses(prev => ({ ...prev, [beat.id]: 'running' }));
       try {
+        await supabase.auth.refreshSession().catch(() => {});
         const { data: { session } } = await supabase.auth.getSession();
         const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
           method: 'POST',

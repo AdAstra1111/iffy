@@ -198,6 +198,8 @@ export default function ProjectDevelopmentEngine() {
   // Auto-trigger Generate Options after notes land — flag-based to avoid const assignment
   // errors in React Query internals when chaining mutations in onSuccess callbacks.
   const [pendingAutoTrigger, setPendingAutoTrigger] = useState(false);
+  // Trigger counter for BeatRewritePanel — increment to trigger Apply All from handleRewrite
+  const [beatRewriteTrigger, setBeatRewriteTrigger] = useState(0);
   const qc = useQueryClient();
 
   // Generate decision options mutation (used by Rewrite Plan card fallback)
@@ -402,11 +404,13 @@ export default function ProjectDevelopmentEngine() {
   }, [selectedVersion, selectedVersionId, selectedDocId, generateOptionsMutation]);
 
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
+  const versionHasContent = ((selectedVersion?.plaintext || '').trim().length > 100);
+  const isStuckGenerating = isBgGenerating && versionHasContent;
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
 
   // Structured viewer support
   const SECTIONED_VIEW_TYPES = new Set(['feature_script', 'treatment', 'story_outline', 'beat_sheet', 'production_draft', 'concept_brief', 'character_bible']);
-  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'beat_sheet', 'character_bible']);
+  const SECTIONED_REWRITE_TYPES = new Set(['treatment', 'long_treatment', 'character_bible']);
   const isSectionedDocType = !!(selectedDoc?.doc_type && SECTIONED_VIEW_TYPES.has(selectedDoc.doc_type));
   const { data: hasChunks = false, isLoading: isLoadingChunks } = useHasChunks(selectedVersionId, selectedDoc?.doc_type);
   const [docViewMode, setDocViewMode] = useState<'structured' | 'raw' | 'blueprint'>('raw');
@@ -1522,6 +1526,14 @@ export default function ProjectDevelopmentEngine() {
         });
         return;
       }
+      // NOTE: beat_sheet intentionally removed from SECTIONED_REWRITE_TYPES (Fix 2).
+      // The ActionToolbar "Apply Rewrite" for beat_sheet now routes here instead of
+      // the sectioned chunk pipeline, which triggers BeatRewritePanel's per-beat API.
+      if (selectedDoc?.doc_type === 'beat_sheet' && selectedDocId && selectedVersionId) {
+        toast.info('Applying all notes & decisions to beats...');
+        setBeatRewriteTrigger(prev => prev + 1);
+        return;
+      }
 
       if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
         const provenance = {
@@ -1899,18 +1911,27 @@ export default function ProjectDevelopmentEngine() {
   const isFoundationDoc = FOUNDATION_DOC_TYPES.has(selectedDoc?.doc_type || '');
 
   const doApproveAndActivate = async () => {
-    await supabase.auth.refreshSession({ force: true });
     if (!projectId || !selectedVersionId) throw new Error('No version selected');
     setApprovePending(true);
     try {
+      await supabase.auth.refreshSession({ force: true });
       await approveAndActivate({
         projectId,
         documentVersionId: selectedVersionId,
         sourceFlow: 'dev_engine',
       });
+      // Optimistic update: immediately reflect the approve in approvedVersionMap
+      // so the UI doesn't briefly show "pending" before the async refetch resolves
+      qc.setQueryData(['dev-v2-approved', projectId], (old: Record<string, string> = {}) => ({
+        ...old,
+        [selectedDocId!]: selectedVersionId!,
+      }));
       qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
+      // Invalidate dev-v2-docs to ensure the document list refetches alongside approval state
+      // This prevents read-replica lag from showing stale "pending" badge
+      qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
     } finally {
       setApprovePending(false);
     }
@@ -2586,6 +2607,7 @@ export default function ProjectDevelopmentEngine() {
                       version={selectedVersion as any}
                       approvedNotes={beatSheetApprovedNotes}
                       protectItems={protectItems}
+                      applyAllTrigger={beatRewriteTrigger}
                       onApplyAll={() => handleRewrite()}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
@@ -2630,7 +2652,7 @@ export default function ProjectDevelopmentEngine() {
                    {/* Document content — editable */}
                    <Card>
                      <CardContent className="p-4">
-                          {isBgGenerating ? (
+                          {isBgGenerating && !isStuckGenerating ? (
                             selectedVersionId ? (
                               <BgGenBanner
                                 versionId={selectedVersionId}

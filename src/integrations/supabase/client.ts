@@ -52,7 +52,7 @@ function createProxiedClient(url: string, key: string) {
     const body = options.body !== undefined ? options.body : options;
     // Refresh session BEFORE getting token to ensure we have a valid one
     // This prevents edge functions from receiving expired tokens
-    await client.auth.refreshSession();
+    try { await client.auth.refreshSession(); } catch (_) { /* Best-effort refresh — ignore errors */ }
     const { data: sessionData } = await client.auth.getSession();
     const authToken = sessionData?.session?.access_token || key;
     const headers: Record<string, string> = {

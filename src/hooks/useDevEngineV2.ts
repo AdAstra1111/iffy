@@ -183,6 +183,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return map;
     },
     enabled: !!projectId && documents.length > 0,
+    refetchInterval: 10_000,
   });
 
   // Versions for selected document
