@@ -583,13 +583,13 @@ Deno.test("Edge case: duplicate entity name in same scene doesn't cause issues",
 
 // ============================================================================
 // 13. INTEGRATION — narrativeContextResolver type import check
-//   NOTE: The ObligationTopologyState type is imported by narrativeContextResolver.ts
-//   but was removed from obligation-topology.ts in commit b12fa49 (demo consolidation).
-//   This test verifies the namespace conflict — the type check will fail.
+//   NOTE: ObligationTopologyState import was removed from narrativeContextResolver.ts
+//   in the same fix that resolved the demo-consolidation breakage (commit b12fa49).
+//   The type check should now pass cleanly.
 // ============================================================================
 
-Deno.test("Integration: narrativeContextResolver type-check against obligation-topology types", async () => {
-  // Run deno check on narrativeContextResolver to verify the import resolves
+Deno.test("Integration: narrativeContextResolver type-checks cleanly", async () => {
+  // Run deno check on narrativeContextResolver to verify no broken imports
   const cmd = new Deno.Command("deno", {
     args: ["check", "supabase/functions/_shared/narrativeContextResolver.ts"],
     cwd: "/Users/laralane/code/iffy",
@@ -598,9 +598,9 @@ Deno.test("Integration: narrativeContextResolver type-check against obligation-t
   const stderr = new TextDecoder().decode(output.stderr);
   const stdout = new TextDecoder().decode(output.stdout);
 
-  // This test is expected to FAIL because ObligationTopologyState was removed
-  // from obligation-topology.ts but still imported by narrativeContextResolver.ts
-  // See SOUL.md: we report actual results, not expected ones
+  // After fixing: ObligationTopologyState import removed, dead code cleaned up.
+  // narrativeContextResolver no longer depends on types that were removed from
+  // obligation-topology.ts. Deno check should pass.
   assert(
     output.code === 0,
     `narrativeContextResolver.ts Deno check should pass, but got exit code ${output.code}\nStderr: ${stderr.substring(0, 500)}`,
