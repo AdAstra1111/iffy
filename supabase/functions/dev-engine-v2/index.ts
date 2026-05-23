@@ -8,6 +8,7 @@ import { deduplicateConceptBriefSections } from "../_shared/deduplicateConceptBr
 import { isCPMEnabled, CPM_EVAL_PROMPT_EXTENSION, logCPM } from "../_shared/characterPressureMatrix.ts";
 import { CHARACTER_BIBLE_DEPTH_EVAL_BLOCK } from "../_shared/ciBlockerGate.ts";
 import { getDocPurposeClass, PURPOSE_SCORING_RUBRICS, PURPOSE_REWRITE_GOALS } from "../_shared/docPurposeRegistry.ts";
+import { ENGAGEMENT_DEFAULTS } from "../_shared/engagementMetric.ts";
 import { shouldRunNIE, loadAdjacentDocPack, evaluateNarrativeIntegrity } from "../_shared/narrativeIntegrityEngine.ts";
 import { resolveNarrativeContext, buildNarrativeContextBlock } from "../_shared/narrativeContextResolver.ts";
 import { extractCanonConstraints, detectCanonDrift, logDriftResult } from "../_shared/canonConstraintEnforcement.ts";
@@ -7058,6 +7059,60 @@ ${docTextForScoring}`;
         parsed.gap = scores.gap;
         parsed.allowed_gap = scores.allowed_gap;
       }
+      // ── TRIBE Neural Feedback: Engagement Score ──
+      // Fetch engagement scores from scene_engagement_scores for this version.
+      // If no engagement data exists, skip gracefully (edge case #1).
+      if (versionId) {
+        try {
+          const { data: engagementRows } = await supabase
+            .from("scene_engagement_scores")
+            .select("total_score, emotional_journey_score, character_connection_score, narrative_absorption_score, visceral_impact_score, cognitive_load_score, confidence, prediction_source, scene_key")
+            .eq("document_version_id", versionId);
+          
+          if (engagementRows && engagementRows.length > 0) {
+            const sceneCount = engagementRows.length;
+            const avgTotal = Math.round(engagementRows.reduce((s, r) => s + r.total_score, 0) / sceneCount);
+            const avgEmotional = Math.round(engagementRows.reduce((s, r) => s + (r.emotional_journey_score || 0), 0) / sceneCount);
+            const avgConnection = Math.round(engagementRows.reduce((s, r) => s + (r.character_connection_score || 0), 0) / sceneCount);
+            const avgAbsorption = Math.round(engagementRows.reduce((s, r) => s + (r.narrative_absorption_score || 0), 0) / sceneCount);
+            const avgVisceral = Math.round(engagementRows.reduce((s, r) => s + (r.visceral_impact_score || 0), 0) / sceneCount);
+            const avgCognitive = Math.round(engagementRows.reduce((s, r) => s + (r.cognitive_load_score || 0), 0) / sceneCount);
+            const avgConfidence = parseFloat((engagementRows.reduce((s, r) => s + (r.confidence || 0), 0) / sceneCount).toFixed(2));
+            const sources = new Set(engagementRows.map(r => r.prediction_source));
+            const predictionSource = sources.has('tribe_realtime') ? 'tribe_realtime'
+              : sources.has('tribe_simulated') ? 'tribe_simulated' : 'surrogate';
+            
+            const engagementThreshold = ENGAGEMENT_DEFAULTS.threshold;
+            const thresholdPassed = avgTotal >= engagementThreshold;
+            
+            parsed.engagement = {
+              total_score: avgTotal,
+              scene_count: sceneCount,
+              avg_emotional_journey: avgEmotional,
+              avg_character_connection: avgConnection,
+              avg_narrative_absorption: avgAbsorption,
+              avg_visceral_impact: avgVisceral,
+              avg_cognitive_load: avgCognitive,
+              avg_confidence: avgConfidence,
+              prediction_source: predictionSource,
+              threshold_passed: thresholdPassed,
+              threshold: engagementThreshold,
+            };
+            parsed.engagement_threshold_passed = thresholdPassed;
+            
+            console.log(`[dev-engine-v2] engagement_gate: total=${avgTotal}/${engagementThreshold} scenes=${sceneCount} source=${predictionSource} passed=${thresholdPassed}`);
+          } else {
+            // No engagement data — skip gracefully (legacy docs, no neural validation run yet)
+            parsed.engagement = null;
+            parsed.engagement_threshold_passed = null;
+            console.log(`[dev-engine-v2] engagement_gate: no data for version ${versionId} — skipping`);
+          }
+        } catch (engErr) {
+          console.warn(`[dev-engine-v2] engagement fetch failed: ${engErr?.message || engErr} — skipping`);
+          parsed.engagement = null;
+          parsed.engagement_threshold_passed = null;
+        }
+      }
       // Ensure meta is present
       if (!parsed.meta) {
         parsed.meta = {
@@ -7375,10 +7430,20 @@ ${docTextForScoring}`;
           // Check score thresholds still apply
           const ciOk = (parsed.ci_score || 0) >= 60;
           const gpOk = (parsed.gp_score || 0) >= 60;
-          if (ciOk && gpOk) {
+          // Engagement gate: only enforce when engagement data exists
+          const engagementDataExists = parsed.engagement !== null && parsed.engagement !== undefined;
+          const engagementOk = !engagementDataExists || parsed.engagement_threshold_passed === true;
+          if (ciOk && gpOk && engagementOk) {
             parsed.convergence.status = "converged";
             if (!parsed.convergence.reasons) parsed.convergence.reasons = [];
-            parsed.convergence.reasons.push("All blockers resolved");
+            const reasons = ["All blockers resolved"];
+            if (engagementDataExists && !parsed.engagement_threshold_passed) {
+              reasons.push("Engagement below threshold");
+            }
+            parsed.convergence.reasons = reasons;
+          } else if (!engagementOk) {
+            // Explicitly prevent convergence when engagement is below threshold
+            parsed.convergence.reasons = [...parsed.convergence.reasons || [], "Engagement below threshold"];
           }
         }
       }

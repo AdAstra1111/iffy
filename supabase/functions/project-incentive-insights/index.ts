@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { buildGuardrailBlock } from "../_shared/guardrails.ts";
-import { MODELS } from "../_shared/llm.ts";
+import { MODELS, resolveGateway } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,7 +14,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const gw = resolveGateway();
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
