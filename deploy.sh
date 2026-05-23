@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+# Ensure SUPABASE_ACCESS_TOKEN is available for supabase CLI
+if [ -z "$SUPABASE_ACCESS_TOKEN" ] && [ -f "$HOME/.config/supabase/access-token" ]; then
+  export SUPABASE_ACCESS_TOKEN=$(cat "$HOME/.config/supabase/access-token")
+fi
+
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
