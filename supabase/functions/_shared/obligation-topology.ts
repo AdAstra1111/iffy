@@ -59,6 +59,8 @@ export interface ObligationTopologyMetrics {
   avg_charge: number;
   avg_confidence: number;
   acts_spanning: number;
+  discharged_count: number;
+  active_count: number;
 }
 
 export interface ObligationTopologyResult {
@@ -135,6 +137,8 @@ function computeMetrics(obligations: Obligation[], scenes: Scene[]): ObligationT
     avg_charge: obligations.length > 0 ? totalCharge / obligations.length : 0,
     avg_confidence: obligations.length > 0 ? totalConfidence / obligations.length : 0,
     acts_spanning: actIds.size,
+    discharged_count: (byLifecycle['discharged'] || 0),
+    active_count: (byLifecycle['active'] || 0),
   };
 }
 
@@ -205,6 +209,8 @@ function getEmptyMetrics(): ObligationTopologyMetrics {
     avg_charge: 0,
     avg_confidence: 0,
     acts_spanning: 0,
+    discharged_count: 0,
+    active_count: 0,
   };
 }
 

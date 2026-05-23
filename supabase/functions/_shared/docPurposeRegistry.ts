@@ -77,6 +77,21 @@ export const DOC_PURPOSE_MAP: Record<string, DocPurposeClass> = {
 };
 
 
+// ── Engagement Threshold Overrides ──
+
+/**
+ * Per-purpose-class engagement threshold adjustment.
+ * Uses ENGAGEMENT_DEFAULTS.threshold (50) as baseline.
+ * Some doc types may need higher or lower engagement bars.
+ */
+export const ENGAGEMENT_THRESHOLD_OVERRIDES: Record<DocPurposeClass, number | null> = {
+  DEVELOPMENT_ARCHITECTURE: null,  // use default (50)
+  PREMISE_POSITIONING: null,      // use default (50)
+  PACKAGING_COMMERCIAL: null,     // use default (50)
+  SCRIPT_EXECUTION: null,         // use default (50)
+};
+
+
 // ── Public Lookup ──
 
 /**

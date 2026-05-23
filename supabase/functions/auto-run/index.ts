@@ -100,6 +100,10 @@ function pickBestScoredVersion<T extends { ci: number; gp: number; version_numbe
     if (bComposite !== aComposite) return bComposite - aComposite;
     if (b.ci !== a.ci) return b.ci - a.ci;
     if (b.gp !== a.gp) return b.gp - a.gp;
+    // Engagement tiebreaker: higher engagement wins
+    const aEng = a.engagement || 0;
+    const bEng = b.engagement || 0;
+    if (bEng !== aEng) return bEng - aEng;
     return b.version_number - a.version_number;
   });
   return sorted[0];
@@ -130,9 +134,10 @@ async function persistVersionScores(
     jobId: string;
     protectHigher?: boolean;
     docType?: string;
+    engagement?: Record<string, any> | null;
   },
 ): Promise<{ ci: number; gp: number; scoreSource: string; downgradedBlocked: boolean }> {
-  const { versionId, ci, gp, source, jobId, protectHigher = true, docType } = params;
+  const { versionId, ci, gp, source, jobId, protectHigher = true, docType, engagement } = params;
 
   const { data: existingRow, error: existingErr } = await supabase
     .from("project_document_versions")

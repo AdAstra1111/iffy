@@ -32,6 +32,8 @@ export interface EligibilityInput {
   strategy: string;
   /** Frontier version ID if in explore path */
   frontierVersionId: string | null;
+  /** Whether engagement threshold was not met (neural validation failed) */
+  engagementBelowThreshold: boolean;
 }
 
 export interface EligibilityResult {

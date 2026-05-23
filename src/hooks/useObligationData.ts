@@ -61,6 +61,8 @@ export interface ObligationTopologyMetrics {
   avg_charge: number;
   avg_confidence: number;
   acts_spanning: number;
+  discharged_count: number;
+  active_count: number;
 }
 
 export interface ObligationTopologyResult {
