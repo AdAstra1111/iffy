@@ -74,8 +74,26 @@ export interface DriftEvent {
 
 // ── API helper ──
 
+// Concurrency limiter — prevents Chrome 6-connection-per-host exhaustion
+// when 20+ hooks call dev-engine-v2 simultaneously on page load.
+const ENGINE_V2_MAX_CONCURRENT = 3;
+let engineV2InFlight = 0;
+const engineV2Queue: (() => void)[] = [];
+
+async function acquireEngineV2Slot(): Promise<void> {
+  if (engineV2InFlight < ENGINE_V2_MAX_CONCURRENT) { engineV2InFlight++; return; }
+  return new Promise<void>(r => engineV2Queue.push(() => { engineV2InFlight++; r(); }));
+}
+function releaseEngineV2Slot(): void {
+  engineV2InFlight--;
+  const next = engineV2Queue.shift();
+  if (next) next();
+}
+
 async function callEngineV2(action: string, extra: Record<string, any> = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
+  await acquireEngineV2Slot();
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
   const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
     method: 'POST',
@@ -127,6 +145,9 @@ async function callEngineV2(action: string, extra: Record<string, any> = {}) {
   // Stale version — surface as a user-friendly error rather than a blank screen
   if (result.stale_version) throw new Error('The selected version no longer exists. Please re-select your document and try again.');
   return result;
+  } finally {
+    releaseEngineV2Slot();
+  }
 }
 
 // ── Hook ──
