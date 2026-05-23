@@ -24517,7 +24517,11 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
           source_key: srcKey,
           summary,
           details,
-          recommended_action
+          recommended_action,
+          detection_confidence: obl.detection_confidence,
+          detection_mode: obl.detection_mode,
+          human_verified: obl.human_verified,
+          domain: obl.domain
         });
       }
       // Sort: violated → unresolved → unavailable → fulfilled

@@ -49,7 +49,11 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate, s-maxage=0"
+          "value": "private, no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Surrogate-Control",
+          "value": "no-store"
         },
         {
           "key": "Pragma",
@@ -66,7 +70,11 @@
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "no-cache, no-store, must-revalidate, s-maxage=0"
+          "value": "private, no-cache, no-store, must-revalidate"
+        },
+        {
+          "key": "Surrogate-Control",
+          "value": "no-store"
         },
         {
           "key": "Pragma",

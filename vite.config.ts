@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { execSync } from "child_process";
+import fs from "fs";
 
 // Force dependency re-optimization v3
 
@@ -24,7 +25,29 @@ export default defineConfig(({ mode }) => ({
     __COMMIT_HASH__: JSON.stringify(commitHash),
     __BUILD_TIME__: JSON.stringify(buildTime),
   },
-  plugins: [react()].filter(Boolean),
+  plugins: [
+    react(),
+    {
+      name: "post-build-cache-bust",
+      closeBundle() {
+        // Runs after build completes and all files are written
+        // Appends build timestamp as query param to the script src
+        // Safe — pure file I/O after Rollup's module graph is finalized
+        const htmlPath = path.resolve(__dirname, "dist/index.html");
+        if (!fs.existsSync(htmlPath)) return;
+        const html = fs.readFileSync(htmlPath, "utf8");
+        const ts = Date.now();
+        const updated = html.replace(
+          /(<script[^>]+src=")(\/assets\/[^"]+)(")/,
+          `$1$2?v=${ts}$3`
+        );
+        if (updated !== html) {
+          fs.writeFileSync(htmlPath, updated, "utf8");
+          console.log(`[post-build-cache-bust] Added ?v=${ts} to script src in dist/index.html`);
+        }
+      },
+    },
+  ].filter(Boolean),
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

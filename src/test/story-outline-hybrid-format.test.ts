@@ -281,6 +281,14 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
     { "number": 1, "title": "Item 1", "description": "Desc" }
   ]
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "items": [
+    { "number": 2, "title": "Item 2", "description": "Desc 2" }
+  ]
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
@@ -295,6 +303,14 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
     { "number": 1, "title": "Beat 1", "description": "Desc" }
   ]
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "beats": [
+    { "number": 2, "title": "Beat 2", "description": "Desc 2" }
+  ]
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
@@ -306,6 +322,12 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 {
   "entries": [
     { "number": 1, "title": "Scene 1", "description": "Desc" }
+  ]
+}
+## Act 2
+{
+  "entries": [
+    { "number": 2, "title": "Scene 2", "description": "Desc 2" }
   ]
 }`;
     const result = convertStoryOutlineToJson(input);
@@ -369,6 +391,14 @@ also invalid`;
     { "title": "No Number", "description": "Missing number field" }
   ]
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "entries": [
+    { "number": 2, "title": "Valid", "description": "Has number" }
+  ]
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
@@ -381,6 +411,14 @@ also invalid`;
 {
   "entries": [
     { "number": 1, "description": "Missing title" }
+  ]
+}
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "entries": [
+    { "number": 2, "title": "Valid", "description": "Has title" }
   ]
 }
 \`\`\``;
