@@ -104,7 +104,8 @@ export function CharacterBibleProgress({ versionId, docType, mode = 'generate' }
       if (!m) return 5000;
       // Stop polling when generation is done or failed
       // Also stop when single-pass rewrite is detected: has character data but no bg_generating flag
-      if (m.bg_failed || m.bg_completed_at) return false;
+      if (m.bg_failed) return false;
+      if (mode !== 'rewrite' && m.bg_completed_at) return false;
       if (!m.bg_generating && !m.bg_completed_at && !m.bg_failed && ((m.characters_total ?? 0) > 0 || (m.sections_total ?? 0) > 0)) return false;
       return 4000;
     },
