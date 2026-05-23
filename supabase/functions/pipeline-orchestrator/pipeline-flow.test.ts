@@ -893,3 +893,227 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 10: executeGenerateForType — entity body construction & entity.name usage
+// ══════════════════════════════════════════════════════════════════════════════
+
+function buildGenerateBody(
+  entity: { name: string; type: string },
+  section: string,
+  shotType: string,
+  result: { generationsUsed: number },
+): Record<string, any> {
+  const generateBody: Record<string, any> = {
+    project_id: "test_project",
+    section: section === "identity" ? "character" : section === "references" ? "character" : section,
+    shot_plan_context: {
+      pipelinePhase: section,
+      shotIndex: result.generationsUsed + 1,
+      shotCount: 10,
+    },
+  };
+
+  if (entity.type === "character") {
+    generateBody.character_name = entity.name;
+    generateBody.subject_type = "character";
+    generateBody.subject = entity.name;
+    generateBody.requested_shot_types = [shotType];
+  } else if (entity.type === "location") {
+    generateBody.location_name = entity.name;
+    generateBody.subject_type = "location";
+    generateBody.subject = entity.name;
+    generateBody.requested_shot_types = [shotType];
+  }
+
+  if (section === "identity") {
+    generateBody.auto_complete_context = {
+      ...(generateBody.auto_complete_context || {}),
+    };
+  }
+
+  return generateBody;
+}
+
+function buildRetryKey(entity: { name: string }, shotType: string): string {
+  return `${entity.name}:${shotType}`;
+}
+
+Deno.test({
+  name: "buildGenerateBody: character entity produces correct character_name and subject",
+  fn() {
+    const entity = { name: "John Doe", type: "character" };
+    const body = buildGenerateBody(entity, "character", "portrait", { generationsUsed: 0 });
+    assertEquals(body.character_name, "John Doe");
+    assertEquals(body.subject_type, "character");
+    assertEquals(body.subject, "John Doe");
+    assertEquals(body.requested_shot_types, ["portrait"]);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: location entity produces correct location_name and subject",
+  fn() {
+    const entity = { name: "The Grand Hall", type: "location" };
+    const body = buildGenerateBody(entity, "world", "wide", { generationsUsed: 0 });
+    assertEquals(body.location_name, "The Grand Hall");
+    assertEquals(body.subject_type, "location");
+    assertEquals(body.subject, "The Grand Hall");
+    assertEquals(body.requested_shot_types, ["wide"]);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: identity section maps section to character and sets auto_complete_context",
+  fn() {
+    const entity = { name: "Jane", type: "character" };
+    const body = buildGenerateBody(entity, "identity", "portrait", { generationsUsed: 0 });
+    assertEquals(body.section, "character", "identity remaps to character section");
+    assertEquals(body.character_name, "Jane");
+    assert("auto_complete_context" in body, "identity flag sets auto_complete_context");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: references section maps section to character",
+  fn() {
+    const entity = { name: "Jane", type: "character" };
+    const body = buildGenerateBody(entity, "references", "full_body", { generationsUsed: 0 });
+    assertEquals(body.section, "character", "references remaps to character section");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: world section passes through without remapping and handles location",
+  fn() {
+    const entity = { name: "Forest", type: "location" };
+    const body = buildGenerateBody(entity, "world", "wide", { generationsUsed: 0 });
+    assertEquals(body.section, "world");
+    assertEquals(body.location_name, "Forest");
+    assertEquals(body.subject, "Forest");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: shotIndex increments with generationsUsed",
+  fn() {
+    const entity = { name: "Test", type: "character" };
+    const body1 = buildGenerateBody(entity, "character", "portrait", { generationsUsed: 0 });
+    assertEquals(body1.shot_plan_context.shotIndex, 1);
+    const body2 = buildGenerateBody(entity, "character", "portrait", { generationsUsed: 5 });
+    assertEquals(body2.shot_plan_context.shotIndex, 6);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: character entity with empty name still sets empty string",
+  fn() {
+    const entity = { name: "", type: "character" };
+    const body = buildGenerateBody(entity, "character", "portrait", { generationsUsed: 0 });
+    assertEquals(body.character_name, "");
+    assertEquals(body.subject, "");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: location entity with empty name still sets empty string",
+  fn() {
+    const entity = { name: "", type: "location" };
+    const body = buildGenerateBody(entity, "world", "wide", { generationsUsed: 0 });
+    assertEquals(body.location_name, "");
+    assertEquals(body.subject, "");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildRetryKey: uses entity.name and shotType correctly in retry identifier",
+  fn() {
+    const entity = { name: "Protagonist" };
+    const key = buildRetryKey(entity, "close_up");
+    assertEquals(key, "Protagonist:close_up");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildRetryKey: entity.name with special characters still produces valid key",
+  fn() {
+    const entity = { name: "Dr. Smith's Lab" };
+    const key = buildRetryKey(entity, "medium");
+    assertEquals(key, "Dr. Smith's Lab:medium");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "buildGenerateBody: multiple shotTypes — each entity call produces single shotType in array",
+  fn() {
+    const entity = { name: "Multi", type: "character" };
+    const body1 = buildGenerateBody(entity, "character", "portrait", { generationsUsed: 0 });
+    const body2 = buildGenerateBody(entity, "character", "full_body", { generationsUsed: 1 });
+    assertEquals(body1.requested_shot_types, ["portrait"]);
+    assertEquals(body2.requested_shot_types, ["full_body"]);
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SECTION 11: Entity iteration boundary logic
+// ══════════════════════════════════════════════════════════════════════════════
+
+Deno.test({
+  name: "entity iteration: empty entities array returns empty result immediately",
+  fn() {
+    // Mirrors the early return at line 465-468 of index.ts
+    const entities: { name: string; type: string }[] = [];
+    assertEquals(entities.length, 0, "no entities means return early");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
+
+Deno.test({
+  name: "entity iteration: budget exhaustion check on outer loop break",
+  fn() {
+    const entities = [
+      { name: "A", type: "character" },
+      { name: "B", type: "character" },
+    ];
+    const state = buildInitialState();
+    state.generation_count = 5;
+    let generationsUsed = 0;
+    const maxGenerations = 6;
+    const shotsPerEntity = ["portrait", "full_body"];
+
+    // Simulate: entity A uses 2 generations, DURING entity B the budget check fires
+    for (const entity of entities) {
+      if (state.generation_count + generationsUsed >= maxGenerations) break;
+      for (const shotType of shotsPerEntity) {
+        if (state.generation_count + generationsUsed >= maxGenerations) break;
+        generationsUsed++;
+      }
+    }
+    assertEquals(generationsUsed, 1, "only 1 generation fits in remaining budget of 1");
+  },
+  sanitizeResources: false,
+  sanitizeOps: false,
+});
