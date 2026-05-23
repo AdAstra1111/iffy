@@ -15,14 +15,17 @@ import { CorpusIntegrityBanner } from "@/components/corpus/CorpusIntegrityBanner
 import { UIModeProvider } from "@/hooks/useUIMode";
 import { ProcessingProvider } from "@/lib/processing/ProcessingContext";
 
-// Eagerly load landing + auth (first paint)
+// Eagerly load core app pages (first paint)
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Dashboard from "./pages/Dashboard";
+import ProjectDetail from "./pages/ProjectDetail";
+import ProjectDevelopmentEngine from "./pages/ProjectDevelopmentEngine";
+import DevelopmentEngine from "./pages/DevelopmentEngine";
+import SeriesWriterPage from "./pages/SeriesWriter";
 
 // Lazy-load everything else
-const Dashboard = lazy(() => import("./pages/Dashboard"));
 const NewProject = lazy(() => import("./pages/NewProject"));
-const ProjectDetail = lazy(() => import("./pages/ProjectDetail"));
 const Trends = lazy(() => import("./pages/Trends"));
 const StoryTrends = lazy(() => import("./pages/StoryTrends"));
 const CastTrends = lazy(() => import("./pages/CastTrends"));
@@ -60,11 +63,8 @@ const CoverageLab = lazy(() => import("./pages/CoverageLab"));
 const PitchIdeas = lazy(() => import("./pages/PitchIdeas"));
 const CalibrationLab = lazy(() => import("./pages/CalibrationLab"));
 const PitchDeckViewer = lazy(() => import("./pages/PitchDeckViewer"));
-const InvestorPresentation = lazy(() => import("./pages/InvestorPresentation"));
-const DevelopmentEngine = lazy(() => import("./pages/DevelopmentEngine"));
-const ProjectDevelopmentEngine = lazy(() => import("./pages/ProjectDevelopmentEngine"));
-const SeriesWriterPage = lazy(() => import("./pages/SeriesWriter"));
 const FeatureScript = lazy(() => import("./pages/FeatureScript"));
+const InvestorPresentation = lazy(() => import("./pages/InvestorPresentation"));
 const ProducerCockpit = lazy(() => import("./pages/ProducerCockpit"));
 const SharePackView = lazy(() => import("./pages/SharePackView"));
 const ShotListPage = lazy(() => import("./pages/ShotListPage"));
