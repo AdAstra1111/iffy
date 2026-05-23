@@ -1728,10 +1728,16 @@ serve(async (req) => {
     let locationAtomBlock = '';
     let atomBindingStatus: string | undefined;
     let missingAtomRefs: string[] = [];
+    let charAtomsBound = 0;
+    let charAtomsTotal = 0;
+    let locAtomsBound = 0;
+    let locAtomsTotal = 0;
 
     if (SECTION_BINDING_RELEVANCE[section]?.characters && ctx.boundCharacterNames?.length) {
       const charResult = await enrichWithCharacterAtoms(supabase, project_id, ctx.boundCharacterNames);
       characterAtomBlock = charResult.atomBlock;
+      charAtomsBound = charResult.bound;
+      charAtomsTotal = charResult.total;
       if (charResult.missingNames.length > 0) {
         missingAtomRefs.push(...charResult.missingNames.map(n => `character_atom:${n}`));
       }
@@ -1740,6 +1746,8 @@ serve(async (req) => {
     if (SECTION_BINDING_RELEVANCE[section]?.locations && location_name) {
       const locResult = await enrichWithLocationAtoms(supabase, project_id, [location_name]);
       locationAtomBlock = locResult.atomBlock;
+      locAtomsBound = locResult.bound;
+      locAtomsTotal = locResult.total;
       if (locResult.missingNames.length > 0) {
         missingAtomRefs.push(...locResult.missingNames.map(n => `location_atom:${n}`));
       }
@@ -2103,6 +2111,14 @@ FRAMING RULES:
               resolved_location_names: canonicalBindings.locations.map(l => l.canonical_name),
               world_binding_active: canonicalBindings.world.bound,
               world_binding_era: canonicalBindings.world.era || null,
+              // ── ATOM ENRICHMENT: provenance ──
+              atom_enrichment_applied: !!characterAtomBlock || !!locationAtomBlock,
+              character_atoms_bound: charAtomsBound,
+              character_atoms_total: charAtomsTotal,
+              location_atoms_bound: locAtomsBound,
+              location_atoms_total: locAtomsTotal,
+              atom_binding_status: atomBindingStatus || null,
+              missing_atom_refs: missingAtomRefs.length > 0 ? missingAtomRefs : null,
               // ── VERTICAL COMPLIANCE: audit trail ──
               requested_aspect_ratio: effectiveAspect,
               requested_width: effectiveWidth,
