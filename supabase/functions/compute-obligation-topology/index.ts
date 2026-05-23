@@ -15,9 +15,24 @@ function jsonRes(body: any, status = 200) {
   });
 }
 
+/**
+ * DJB2a hash of an object — mirrors simpleHash in _shared/obligation-topology.ts
+ * so we can validate cached input_hash without running the full computation.
+ */
+function simpleHash(obj: unknown): string {
+  const str = JSON.stringify(obj);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const chr = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0;
+  }
+  return Math.abs(hash).toString(16).padStart(8, "0");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  if (req.method === "GET") return jsonRes({ ok: true, build: "compute-obligation-topology-v1" });
+  if (req.method === "GET") return jsonRes({ ok: true, build: "compute-obligation-topology-v2" });
 
   try {
     const body = await req.json().catch(() => ({}));
@@ -50,11 +65,34 @@ serve(async (req) => {
       }
     }
 
-    // 2. Determine which scenes need computation vs can be returned from cache
+    // 2. Fetch scene text for all requested scenes (needed for hash validation)
+    const { data: allScenes } = await supabase
+      .from("scene_graph_scenes")
+      .select("scene_id, scene_text")
+      .in("scene_id", scene_ids);
+
+    const sceneTextMap = new Map<string, string>();
+    if (allScenes) {
+      for (const s of allScenes) {
+        sceneTextMap.set(s.scene_id, s.scene_text || "");
+      }
+    }
+
+    // 3. Determine which scenes need computation vs can be returned from cache
+    //    Validate cache by comparing input_hash against current scene text hash
     const needsCompute: string[] = [];
     if (!force_recompute) {
       for (const sceneId of scene_ids) {
-        if (!cacheMap.has(sceneId)) {
+        const cached = cacheMap.get(sceneId);
+        if (!cached) {
+          needsCompute.push(sceneId);
+          continue;
+        }
+        // Compute hash of current scene text + version_id and compare with cached hash
+        const sceneText = sceneTextMap.get(sceneId) || "";
+        const currentHash = simpleHash({ sceneText, versionId: version_id });
+        if (currentHash !== cached.input_hash) {
+          // Scene text (or version) changed — stale cache, recompute
           needsCompute.push(sceneId);
         }
       }
@@ -62,17 +100,18 @@ serve(async (req) => {
       needsCompute.push(...scene_ids);
     }
 
-    // 3. Fetch scene data for uncached scenes
     const states: Record<string, any> = {};
 
-    // Return cached results first
+    // Return validated cached results first (only scenes whose hash matched)
     if (!force_recompute && cachedEntries) {
       for (const entry of cachedEntries) {
-        states[entry.scene_id] = entry.topology_state;
+        if (!needsCompute.includes(entry.scene_id)) {
+          states[entry.scene_id] = entry.topology_state;
+        }
       }
     }
 
-    // 4. Compute for uncached scenes
+    // 4. Compute for scenes that need it (uncached or hash mismatch)
     if (needsCompute.length > 0) {
       const { data: scenes } = await supabase
         .from("scene_graph_scenes")
@@ -115,7 +154,7 @@ serve(async (req) => {
           const state = computeObligationTopology(options);
           states[sceneId] = state;
 
-          // Cache the result
+          // Cache the result (upsert to update stale entry or insert new one)
           await supabase
             .from("obligation_topology_cache")
             .upsert({
@@ -125,6 +164,7 @@ serve(async (req) => {
               input_hash: state.meta.inputHash,
               topology_state: state,
               computed_at: new Date().toISOString(),
+              revalidated_at: new Date().toISOString(),
             }, {
               onConflict: "project_id, scene_id",
               ignoreDuplicates: false,

@@ -1,111 +1,85 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * useObligationData — Fetches demo obligation topology data via TanStack Query.
+ * Uses the Vercel proxy to call the supabase edge function.
+ */
+
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
-export interface SceneObligationData {
-  sceneId: string;
+const FUNC_URL = '/api/supabase-proxy/functions/v1/demo-obligation-data';
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface SceneData {
   sceneNumber: number;
-  title: string;
-  tensionField: {
-    value: number;
-    trend: 'rising' | 'falling' | 'steady';
-    angle?: string;
-    pairTensions?: { pair: string; value: number }[];
-    threads?: string[];
-    gradient?: number;
-  };
-  obligationCharge: {
-    outstandingObligations: number;
-    introducedObligations: number;
-    fulfilledObligations: number;
-    velocity: number;
-    overdueCount: number;
-    activeObligations: { type: string; description: string; tier: number }[];
-  };
-  deferredIntimacy: {
-    value: number;
-    trend: 'rising' | 'falling' | 'steady';
-    pairStates?: { pair: string; deferred: number }[];
-    deferredMoments: number;
-    resolvedMoments: number;
-    avoidantCharacters: string[];
-  };
-  narrativeDensity: {
-    value: number;
-    band: 'low' | 'moderate' | 'high' | 'critical';
-    subScores: Record<string, number>;
-    metrics?: { wordCount: number; beatCount: number; characterCount: number; plotThreads: number };
-  };
+  sceneHeading: string;
+  tensionScore: number;
+  obligationCharge: number;
+  deferredIntimacy: number;
+  narrativeDensity: number;
   narrativePressure: number;
-  dominantMode: 'tension_driven' | 'obligation_driven' | 'intimacy_driven' | 'balanced';
-  signals: {
-    overpressure: boolean;
-    intimacyCritical: boolean;
-    obligationOverload: boolean;
-    densityAnomaly: boolean;
-    narrativeBrief: string;
-  };
   actNumber: number;
-  actName: string;
+  dominantMode: 'tension_driven' | 'obligation_driven' | 'intimacy_driven' | 'balanced';
 }
 
 export interface ObligationSummary {
-  totalScenes: number;
-  avgNarrativePressure: number;
   dominantModeAcrossScenes: string;
-  actBreakdown: {
-    actNumber: number;
-    actName: string;
-    avgPressure: number;
-    sceneCount: number;
-    modes: Record<string, number>;
-  }[];
+  avgTension: number;
+  avgObligation: number;
+}
+
+interface ObligationDataResponse {
+  scenes: SceneData[];
+  summary: ObligationSummary;
 }
 
 interface UseObligationDataResult {
-  scenes: SceneObligationData[];
+  scenes: SceneData[];
   summary: ObligationSummary | null;
   loading: boolean;
   error: string | null;
-  refresh: () => void;
 }
 
-export function useObligationData(projectId?: string): UseObligationDataResult {
-  const [scenes, setScenes] = useState<SceneObligationData[]>([]);
-  const [summary, setSummary] = useState<ObligationSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+async function fetchObligationData(): Promise<ObligationDataResponse> {
+  const { data: { session } } = await supabase.auth.getSession();
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const body: Record<string, any> = { mock: true };
-      if (projectId) body.projectId = projectId;
+  const res = await fetch(FUNC_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: JSON.stringify({
+      projectId: 'demo',
+      mock: true,
+    }),
+  });
 
-      const { data, error: fetchError } = await supabase.functions.invoke(
-        'demo-obligation-data',
-        { body }
-      );
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody?.error || `HTTP ${res.status}`);
+  }
 
-      if (fetchError) throw fetchError;
-      if (!data?.scenes) throw new Error('No scene data returned');
+  const data = await res.json();
+  if (!data?.scenes) throw new Error('No scene data returned');
 
-      setScenes(data.scenes);
-      setSummary(data.summary || null);
-    } catch (err: any) {
-      console.error('[useObligationData] Failed to load:', err);
-      setError(err.message || 'Failed to load obligation data');
-    } finally {
-      setLoading(false);
-    }
-  }, [projectId]);
+  return data;
+}
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData, refreshKey]);
+export function useObligationData(): UseObligationDataResult {
+  const { data, isLoading, error } = useQuery<ObligationDataResponse>({
+    queryKey: ['demo-obligation-data'],
+    queryFn: fetchObligationData,
+    staleTime: 5 * 60 * 1000, // 5 min — demo data doesn't change often
+    retry: 2,
+  });
 
-  const refresh = useCallback(() => setRefreshKey(k => k + 1), []);
-
-  return { scenes, summary, loading, error, refresh };
+  return {
+    scenes: data?.scenes ?? [],
+    summary: data?.summary ?? null,
+    loading: isLoading,
+    error: error ? (error instanceof Error ? error.message : 'Failed to load obligation data') : null,
+  };
 }

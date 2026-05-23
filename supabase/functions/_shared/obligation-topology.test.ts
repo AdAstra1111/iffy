@@ -508,7 +508,7 @@ Deno.test("NarrativeDensity: band assignment — dense vs balanced vs sparse", (
   };
   const denseResult = computeNarrativeDensity(denseConfig);
   // With 4 beats in 7 words, should be dense
-  assert(denseResult.beatDensity > 0, "should have beat density");
+  assert(denseResult.metrics.beatDensity > 0, "should have beat density");
 
   // Sparse: few beats for many words
   const sparseConfig: NarrativeDensityConfig = {
