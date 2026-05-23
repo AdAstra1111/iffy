@@ -2634,7 +2634,7 @@ export default function ProjectDevelopmentEngine() {
                     />
                   )}
                   {/* Treatment rewrite panel — persistent per-act editing for Treatment/Long Treatment docs */}
-                  {isTreatmentDocType(selectedDoc?.doc_type) && selectedDocId && selectedVersionId && (
+                  {isTreatmentDocType(selectedDoc?.doc_type) && selectedDocId && selectedVersionId && !treatmentRewritePending && (
                     <TreatmentRewritePanel
                       projectId={projectId!}
                       documentId={selectedDocId}
