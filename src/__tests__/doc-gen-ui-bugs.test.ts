@@ -313,13 +313,109 @@ describe('Fix 5 — approvedVersionMap refetch interval', () => {
     // Find versions query — should NOT have refetchInterval
     const versionsQueryStart = src.indexOf("queryKey: ['dev-v2-versions'");
     if (versionsQueryStart > 0) {
-      const versionsQueryEnd = src.indexOf('};', versionsQueryStart);
-      const versionsBody = src.substring(versionsQueryStart, versionsQueryEnd > 0 ? versionsQueryEnd : versionsQueryStart + 300);
+      const versionsQueryEnd = src.indexOf('});', versionsQueryStart);
+      const versionsBody = src.substring(versionsQueryStart, versionsQueryEnd > 0 ? versionsQueryEnd + 3 : versionsQueryStart + 300);
       // Either no refetchInterval, or refetchInterval: false
       const hasInterval = versionsBody.includes('refetchInterval');
       if (hasInterval) {
         expect(versionsBody).toContain('refetchInterval: false');
       }
+    }
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════════
+// FIX 6: Systemic UI state staleness fix — refetchInterval polling for all dev-v2 queries
+// ════════════════════════════════════════════════════════════════════════════════
+
+describe('Fix 6 — refetchInterval polling on all dev-v2 queries', () => {
+
+  it('documents query (dev-v2-docs) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-docs'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    // Find the closing of this useQuery block
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('runs query (dev-v2-runs) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-runs'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('allDocRuns query (dev-v2-doc-runs) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-doc-runs'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('convergenceHistory query (dev-v2-convergence) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-convergence'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('convergenceRuns/SR query (dev-v2-sr-convergence) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-sr-convergence'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('driftEvents query (dev-v2-drift) has refetchInterval: 10_000', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-drift'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('};', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd : queryStart + 400);
+    expect(body).toContain('refetchInterval: 10_000');
+  });
+
+  it('versions query (dev-v2-versions) does NOT have refetchInterval (excluded per design)', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(HOOK_PATH, 'utf-8');
+
+    const queryStart = src.indexOf("queryKey: ['dev-v2-versions'");
+    expect(queryStart).toBeGreaterThan(0);
+
+    const queryEnd = src.indexOf('});', queryStart);
+    const body = src.substring(queryStart, queryEnd > 0 ? queryEnd + 3 : queryStart + 300);
+    // Must NOT have refetchInterval: 10_000 — it has staleTime: 0 instead
+    const hasInterval = body.includes('refetchInterval');
+    if (hasInterval) {
+      expect(body).toContain('refetchInterval: false');
     }
   });
 });

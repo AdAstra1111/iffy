@@ -160,6 +160,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       });
     },
     enabled: !!projectId,
+    refetchInterval: 10_000,
   });
 
   // Approved version map: doc_id -> version_id (one approved per doc)
@@ -224,6 +225,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DevRun[];
     },
     enabled: !!selectedVersionId,
+    refetchInterval: 10_000,
   });
 
   // All runs for document (for history across versions)
@@ -240,6 +242,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DevRun[];
     },
     enabled: !!selectedDocId,
+    refetchInterval: 10_000,
   });
 
   // Convergence history — scoped to selected version when available, else document
@@ -259,6 +262,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as ConvergencePoint[];
     },
     enabled: !!selectedDocId,
+    refetchInterval: 10_000,
   });
 
   // ── Stage Readiness (SR) — latest CONVERGENCE run for selected version ──
@@ -278,6 +282,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return data || [];
     },
     enabled: !!selectedVersionId,
+    refetchInterval: 10_000,
   });
 
   const latestConvergence = convergenceRuns[0]?.output_json || null;
@@ -296,6 +301,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DriftEvent[];
     },
     enabled: !!selectedVersionId,
+    refetchInterval: 10_000,
   });
 
   const latestDrift = driftEvents.length > 0 ? driftEvents[0] : null;
