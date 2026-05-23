@@ -4,115 +4,132 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, AlertTriangle, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { ObligationTopologyState } from '@/hooks/useObligationTopology';
+import type { SceneObligationMetrics, ObligationTopologyResult, ObligationTopologyEdge } from '@/lib/obligation-topology-types';
 import { ObligationTopologyTooltip } from './ObligationTopologyTooltip';
 
 interface Props {
-  states: Record<string, ObligationTopologyState>;
+  states: Record<string, SceneObligationMetrics>;
   sceneIds: string[];
+  topology: ObligationTopologyResult | null;
   isLoading: boolean;
   error: string | null;
   onRefetch: () => void;
 }
 
-// Metric definitions with display info and color palettes
-const METRICS = [
+type MetricKey = keyof Pick<SceneObligationMetrics, 'entityCount' | 'totalObligations' | 'avgCharge' | 'activeObligations'>;
+
+interface MetricDef {
+  key: MetricKey;
+  label: string;
+  subtitle: string;
+  unit: 'count' | 'percent';
+  highColor: string;
+  lowColor: string;
+  format: (v: number) => string;
+}
+
+const METRICS: MetricDef[] = [
   {
-    key: 'tensionField' as const,
-    label: 'Tension',
-    subtitle: 'aggregateScore',
-    highColor: '#ef4444',
-    lowColor: '#fecaca',
-    bandLabel: (v: number) => v > 0.7 ? 'High' : v > 0.3 ? 'Medium' : 'Low',
+    key: 'entityCount',
+    label: 'Entities',
+    subtitle: 'count',
+    unit: 'count',
+    highColor: '#8b5cf6',
+    lowColor: '#ede9fe',
+    format: (v: number) => v.toFixed(0),
   },
   {
-    key: 'obligationCharge' as const,
-    label: 'Obligation',
-    subtitle: 'chargeScore',
+    key: 'totalObligations',
+    label: 'Obligations',
+    subtitle: 'total',
+    unit: 'count',
     highColor: '#f59e0b',
     lowColor: '#fef3c7',
-    bandLabel: (v: number) => v > 0.7 ? 'High' : v > 0.3 ? 'Medium' : 'Low',
+    format: (v: number) => v.toFixed(0),
   },
   {
-    key: 'deferredIntimacy' as const,
-    label: 'Intimacy',
-    subtitle: 'aggregateIndex',
-    highColor: '#e879f9',
-    lowColor: '#fae8ff',
-    bandLabel: (v: number) => v > 0.7 ? 'High' : v > 0.3 ? 'Medium' : 'Low',
+    key: 'avgCharge',
+    label: 'Avg Charge',
+    subtitle: 'average',
+    unit: 'percent',
+    highColor: '#ef4444',
+    lowColor: '#fecaca',
+    format: (v: number) => `${(v * 100).toFixed(0)}%`,
   },
   {
-    key: 'narrativeDensity' as const,
-    label: 'Density',
-    subtitle: 'score',
+    key: 'activeObligations',
+    label: 'Active',
+    subtitle: 'count',
+    unit: 'count',
     highColor: '#06b6d4',
     lowColor: '#cffafe',
-    bandLabel: (v: number) => v > 0.7 ? 'High' : v > 0.3 ? 'Medium' : 'Low',
+    format: (v: number) => v.toFixed(0),
   },
 ];
 
-function interpolateColor(lowColor: string, highColor: string, value: number): string {
-  // Parse hex colors
-  const low = {
-    r: parseInt(lowColor.slice(1, 3), 16),
-    g: parseInt(lowColor.slice(3, 5), 16),
-    b: parseInt(lowColor.slice(5, 7), 16),
+function hexToRgb(hex: string) {
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
   };
-  const high = {
-    r: parseInt(highColor.slice(1, 3), 16),
-    g: parseInt(highColor.slice(3, 5), 16),
-    b: parseInt(highColor.slice(5, 7), 16),
-  };
+}
 
+function interpolateColor(lowColor: string, highColor: string, value: number): string {
+  const low = hexToRgb(lowColor);
+  const high = hexToRgb(highColor);
   const r = Math.round(low.r + (high.r - low.r) * value);
   const g = Math.round(low.g + (high.g - low.g) * value);
   const b = Math.round(low.b + (high.b - low.b) * value);
-
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-function getScoreValue(state: ObligationTopologyState, metric: typeof METRICS[number]): number | null {
-  const m = state[metric.key];
-  if (!m) return null;
-  if (metric.key === 'tensionField') return (m as any).aggregateScore ?? null;
-  if (metric.key === 'obligationCharge') return (m as any).chargeScore ?? null;
-  if (metric.key === 'deferredIntimacy') return (m as any).aggregateIndex ?? null;
-  if (metric.key === 'narrativeDensity') return (m as any).score ?? null;
-  return null;
+function getNormalizedValue(
+  metrics: SceneObligationMetrics,
+  metric: MetricDef,
+  ranges: Record<string, { min: number; max: number }>,
+): number {
+  const raw = metrics[metric.key];
+  const range = ranges[metric.key];
+  if (!range || range.max === range.min) return 0.5;
+  return (raw - range.min) / (range.max - range.min);
 }
 
-function getDensityBand(state: ObligationTopologyState): string {
-  return state.narrativeDensity?.band || 'balanced';
-}
-
-export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, onRefetch }: Props) {
+export function ObligationTopologyHeatmap({ states, sceneIds, topology, isLoading, error, onRefetch }: Props) {
   const [tooltipInfo, setTooltipInfo] = useState<{
     sceneId: string;
-    metric: typeof METRICS[number];
-    state: ObligationTopologyState;
+    metric: MetricDef;
+    metrics: SceneObligationMetrics;
     x: number;
     y: number;
   } | null>(null);
 
-  // Compute act-level rollups
-  const actRollups = useMemo(() => {
-    const rollups: Record<number, { scenes: string[]; averages: Record<string, number> }> = {};
-    for (const sceneId of sceneIds) {
-      const state = states[sceneId];
-      if (!state) continue;
-      const actRollup = state.actRollup;
-      if (!actRollup) continue;
-      const actNum = actRollup.tension?.actNumber || 1;
-      if (!rollups[actNum]) {
-        rollups[actNum] = { scenes: [], averages: {} };
-      }
-      rollups[actNum].scenes.push(sceneId);
+  // Compute value ranges for normalization
+  const ranges = useMemo(() => {
+    const values: Record<string, number[]> = {};
+    for (const m of METRICS) {
+      values[m.key] = [];
     }
-    return Object.entries(rollups).map(([act, data]) => ({
-      act: Number(act),
-      sceneCount: data.scenes.length,
-    }));
+    for (const sceneId of sceneIds) {
+      const s = states[sceneId];
+      if (!s) continue;
+      for (const m of METRICS) {
+        values[m.key].push(s[m.key]);
+      }
+    }
+    const result: Record<string, { min: number; max: number }> = {};
+    for (const m of METRICS) {
+      const arr = values[m.key];
+      result[m.key] = {
+        min: arr.length > 0 ? Math.min(...arr) : 0,
+        max: arr.length > 0 ? Math.max(...arr) : 1,
+      };
+    }
+    return result;
   }, [states, sceneIds]);
+
+  // Get edges for tooltip
+  const edges = topology?.topology?.edges ?? [];
 
   if (isLoading) {
     return (
@@ -156,31 +173,6 @@ export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, 
         ))}
       </div>
 
-      {/* Density band legend */}
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-        <span className="font-medium">Density bands:</span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-cyan-600" /> Dense
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-cyan-400" /> Balanced
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded-full bg-cyan-200" /> Sparse
-        </span>
-      </div>
-
-      {/* Act rollups */}
-      {actRollups.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {actRollups.map(r => (
-            <Badge key={r.act} variant="secondary" className="text-[9px]">
-              Act {r.act} — {r.sceneCount} scenes
-            </Badge>
-          ))}
-        </div>
-      )}
-
       {/* Heatmap grid */}
       <ScrollArea className="max-h-[400px]">
         <table className="w-full text-[11px] border-collapse">
@@ -190,23 +182,12 @@ export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, 
               {METRICS.map(m => (
                 <th key={m.key} className="text-center py-1 px-2 font-medium">{m.label}</th>
               ))}
-              <th className="text-center py-1 px-2 font-medium">Pressure</th>
-              <th className="text-center py-1 px-2 font-medium">Mode</th>
-              <th className="text-center py-1 px-2 font-medium">Signals</th>
             </tr>
           </thead>
           <tbody>
             {sceneIds.map(sceneId => {
-              const state = states[sceneId];
-              if (!state) return null;
-
-              const signals = state.signals;
-              const activeSignals = [
-                signals?.overpressure && 'Overpressure',
-                signals?.intimacyCritical && 'Intimacy!',
-                signals?.obligationOverload && 'Overload',
-                signals?.densityAnomaly && 'Density!',
-              ].filter(Boolean);
+              const metrics = states[sceneId];
+              if (!metrics) return null;
 
               return (
                 <tr
@@ -217,30 +198,20 @@ export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, 
                     {sceneId.slice(0, 8)}...
                   </td>
                   {METRICS.map(metric => {
-                    const score = getScoreValue(state, metric);
-                    if (score === null) {
-                      return (
-                        <td key={metric.key} className="text-center px-2 py-1 text-[9px] text-muted-foreground">
-                          —
-                        </td>
-                      );
-                    }
-
-                    const bgColor = interpolateColor(metric.lowColor, metric.highColor, score);
-                    const densityBand = metric.key === 'narrativeDensity' ? getDensityBand(state) : null;
-                    const bandClass = densityBand === 'dense' ? 'ring-1 ring-cyan-600/30' :
-                      densityBand === 'sparse' ? 'opacity-60' : '';
+                    const raw = metrics[metric.key];
+                    const normalized = getNormalizedValue(metrics, metric, ranges);
+                    const bgColor = interpolateColor(metric.lowColor, metric.highColor, normalized);
 
                     return (
                       <td
                         key={metric.key}
-                        className={`text-center px-2 py-1 cursor-pointer relative ${bandClass}`}
+                        className="text-center px-2 py-1 cursor-pointer relative"
                         onMouseEnter={(e) => {
                           const rect = e.currentTarget.getBoundingClientRect();
                           setTooltipInfo({
                             sceneId,
                             metric,
-                            state,
+                            metrics,
                             x: rect.left + rect.width / 2,
                             y: rect.top - 8,
                           });
@@ -251,45 +222,14 @@ export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, 
                           className="w-full h-6 rounded flex items-center justify-center text-[9px] font-medium"
                           style={{
                             backgroundColor: bgColor,
-                            color: score > 0.5 ? '#fff' : '#666',
+                            color: normalized > 0.5 ? '#fff' : '#666',
                           }}
                         >
-                          {(score * 100).toFixed(0)}
+                          {metric.format(raw)}
                         </div>
                       </td>
                     );
                   })}
-                  <td className="text-center px-2 py-1">
-                    <span className={`text-[10px] font-medium ${
-                      state.narrativePressure > 0.7 ? 'text-red-500' :
-                      state.narrativePressure > 0.4 ? 'text-amber-500' :
-                      'text-muted-foreground'
-                    }`}>
-                      {(state.narrativePressure * 100).toFixed(0)}
-                    </span>
-                  </td>
-                  <td className="text-center px-2 py-1">
-                    <span className="text-[9px] text-muted-foreground capitalize">
-                      {state.dominantMode?.replace(/_/g, ' ') || '—'}
-                    </span>
-                  </td>
-                  <td className="text-center px-2 py-1">
-                    <div className="flex gap-0.5 justify-center">
-                      {activeSignals.length === 0 && (
-                        <span className="text-[9px] text-muted-foreground">—</span>
-                      )}
-                      {activeSignals.slice(0, 2).map(s => (
-                        <Badge key={s} variant="destructive" className="text-[7px] h-3.5 px-1">
-                          {s}
-                        </Badge>
-                      ))}
-                      {activeSignals.length > 2 && (
-                        <Badge variant="outline" className="text-[7px] h-3.5 px-1">
-                          +{activeSignals.length - 2}
-                        </Badge>
-                      )}
-                    </div>
-                  </td>
                 </tr>
               );
             })}
@@ -297,11 +237,11 @@ export function ObligationTopologyHeatmap({ states, sceneIds, isLoading, error, 
         </table>
       </ScrollArea>
 
-      {/* Tooltip */}
-      {tooltipInfo && (
+      {/* Tooltip — only for Avg Charge metric which has edge details */}
+      {tooltipInfo && tooltipInfo.metric.key === 'avgCharge' && (
         <ObligationTopologyTooltip
-          state={tooltipInfo.state}
-          metric={tooltipInfo.metric}
+          metrics={tooltipInfo.metrics}
+          edges={edges.filter(e => e.source === tooltipInfo.sceneId)}
           sceneId={tooltipInfo.sceneId}
           position={{ x: tooltipInfo.x, y: tooltipInfo.y }}
           onClose={() => setTooltipInfo(null)}

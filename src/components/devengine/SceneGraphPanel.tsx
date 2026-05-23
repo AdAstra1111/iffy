@@ -52,6 +52,7 @@ export function SceneGraphPanel({ projectId, documents }: SceneGraphPanelProps) 
   const sceneIds = useMemo(() => sg.scenes.map(s => s.scene_id), [sg.scenes]);
   const {
     states: topologyStates,
+    topology: topologyResult,
     isLoading: topologyLoading,
     error: topologyError,
     refetch: topologyRefetch,
@@ -249,6 +250,7 @@ export function SceneGraphPanel({ projectId, documents }: SceneGraphPanelProps) 
           <ObligationTopologyHeatmap
             states={topologyStates}
             sceneIds={sceneIds}
+            topology={topologyResult}
             isLoading={topologyLoading}
             error={topologyError}
             onRefetch={topologyRefetch}

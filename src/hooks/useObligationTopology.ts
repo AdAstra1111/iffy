@@ -1,69 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-
-export interface ObligationTopologyState {
-  meta: {
-    computedAt: string;
-    projectId: string;
-    sceneId: string;
-    versionId: string | null;
-    inputHash: string;
-  };
-  tensionField: {
-    aggregateScore: number;
-    aggregateDirection: string;
-    pairTensions: any[];
-    gradient: number | null;
-    activeThreadCount: number;
-    newThreads: any[];
-    resolvedThreads: any[];
-  };
-  obligationCharge: {
-    chargeScore: number;
-    outstanding: any[];
-    introduced: any[];
-    fulfilled: any[];
-    velocity: number;
-    overdueCount: number;
-  };
-  deferredIntimacy: {
-    aggregateIndex: number;
-    pairStates: any[];
-    deferredMoments: any[];
-    resolvedMoments: any[];
-    avoidantCharacters: string[];
-    velocity: number;
-  };
-  narrativeDensity: {
-    score: number;
-    subScores: { dimension: string; score: number; weight: number; explanation: string }[];
-    band: 'dense' | 'balanced' | 'sparse';
-    metrics: {
-      wordCount: number;
-      beatDensity: number;
-      characterBeatDensity: number;
-      dialogueRatio: number;
-      thematicCoverage: number;
-      plotThreadDensity: number;
-      turnaroundDensity: number;
-    };
-    expectedDensity: number;
-    anomalous: boolean;
-  };
-  narrativePressure: number;
-  dominantMode: string;
-  signals: {
-    overpressure: boolean;
-    intimacyCritical: boolean;
-    obligationOverload: boolean;
-    densityAnomaly: boolean;
-    narrativeBrief: string;
-  };
-  actRollup?: {
-    tension: any;
-    obligation: any;
-  };
-}
+import type {
+  SceneObligationMetrics,
+  ObligationTopologyResult,
+} from '@/lib/obligation-topology-types';
+import { deriveSceneMetrics } from '@/lib/obligation-topology-types';
 
 interface UseObligationTopologyOptions {
   versionId?: string;
@@ -71,7 +12,10 @@ interface UseObligationTopologyOptions {
 }
 
 interface UseObligationTopologyReturn {
-  states: Record<string, ObligationTopologyState>;
+  /** Per-scene derived metrics from the graph model */
+  states: Record<string, SceneObligationMetrics>;
+  /** Raw topology result (nodes, edges, metrics, obligations) */
+  topology: ObligationTopologyResult | null;
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
@@ -82,7 +26,8 @@ export function useObligationTopology(
   sceneIds: string[],
   options?: UseObligationTopologyOptions,
 ): UseObligationTopologyReturn {
-  const [states, setStates] = useState<Record<string, ObligationTopologyState>>({});
+  const [states, setStates] = useState<Record<string, SceneObligationMetrics>>({});
+  const [topology, setTopology] = useState<ObligationTopologyResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -112,15 +57,11 @@ export function useObligationTopology(
       if (invokeError) throw invokeError;
       if (data?.error) throw new Error(data.error);
 
-      if (data?.states) {
-        // Filter out error states
-        const validStates: Record<string, ObligationTopologyState> = {};
-        for (const [id, state] of Object.entries(data.states)) {
-          if (state && typeof state === 'object' && !('error' in (state as any))) {
-            validStates[id] = state as ObligationTopologyState;
-          }
-        }
-        setStates(validStates);
+      // New response shape: data.topology is ObligationTopologyResult
+      const result = data?.topology as ObligationTopologyResult | undefined;
+      if (result?.topology?.nodes && result?.topology?.edges) {
+        setTopology(result);
+        setStates(deriveSceneMetrics(result.topology.nodes, result.topology.edges));
       }
     } catch (err: any) {
       if (err.name === 'AbortError') return;
@@ -142,6 +83,7 @@ export function useObligationTopology(
 
   return {
     states,
+    topology,
     isLoading,
     error,
     refetch: fetchTopology,

@@ -1,19 +1,15 @@
 import { useEffect, useRef } from 'react';
-import type { ObligationTopologyState } from '@/hooks/useObligationTopology';
+import type { SceneObligationMetrics, ObligationTopologyEdge } from '@/lib/obligation-topology-types';
 
 interface Props {
-  state: ObligationTopologyState;
-  metric: {
-    key: keyof ObligationTopologyState;
-    label: string;
-    subtitle: string;
-  };
+  metrics: SceneObligationMetrics;
+  edges: ObligationTopologyEdge[];
   sceneId: string;
   position: { x: number; y: number };
   onClose: () => void;
 }
 
-export function ObligationTopologyTooltip({ state, metric, sceneId, position, onClose }: Props) {
+export function ObligationTopologyTooltip({ metrics, edges, sceneId, position, onClose }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,10 +29,6 @@ export function ObligationTopologyTooltip({ state, metric, sceneId, position, on
     };
   }, [onClose]);
 
-  const metricData = state[metric.key] as any;
-  if (!metricData) return null;
-
-  // Determine position (fixed, anchored to cursor)
   const style: React.CSSProperties = {
     position: 'fixed',
     left: Math.min(position.x, window.innerWidth - 280),
@@ -44,170 +36,16 @@ export function ObligationTopologyTooltip({ state, metric, sceneId, position, on
     zIndex: 50,
   };
 
-  // Extract sub-scores based on metric type
-  const renderSubScores = () => {
-    if (metric.key === 'narrativeDensity') {
-      const density = state.narrativeDensity;
-      return (
-        <div className="space-y-1">
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Band</span>
-            <span className="font-medium capitalize">{density.band}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Anomalous</span>
-            <span className={density.anomalous ? 'text-destructive' : 'text-green-500'}>
-              {density.anomalous ? 'Yes' : 'No'}
-            </span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Expected density</span>
-            <span className="font-medium">{(density.expectedDensity * 100).toFixed(0)}%</span>
-          </div>
-          {density.subScores?.map((sub: any, i: number) => (
-            <div key={i} className="flex justify-between text-[10px]">
-              <span className="text-muted-foreground capitalize">{sub.dimension?.replace(/_/g, ' ')}</span>
-              <span className="font-medium">{(sub.score * 100).toFixed(0)}%</span>
-            </div>
-          ))}
-          <div className="mt-1.5 pt-1.5 border-t border-border/30 text-[9px] text-muted-foreground">
-            {density.metrics && (
-              <>
-                <div className="flex justify-between">
-                  <span>Words</span><span>{density.metrics.wordCount}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Beat density</span><span>{density.metrics.beatDensity?.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Dialogue ratio</span><span>{density.metrics.dialogueRatio?.toFixed(2)}</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-      );
-    }
+  const typeLabel = (type: string) => type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-    if (metric.key === 'tensionField') {
-      const tf = state.tensionField;
-      return (
-        <div className="space-y-1">
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Direction</span>
-            <span className="font-medium capitalize">{tf.aggregateDirection}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Active threads</span>
-            <span className="font-medium">{tf.activeThreadCount}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">New threads</span>
-            <span className="font-medium">{tf.newThreads?.length || 0}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Resolved</span>
-            <span className="font-medium">{tf.resolvedThreads?.length || 0}</span>
-          </div>
-          {tf.gradient !== null && (
-            <div className="flex justify-between text-[10px]">
-              <span className="text-muted-foreground">Gradient</span>
-              <span className={`font-medium ${tf.gradient > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                {tf.gradient > 0 ? '+' : ''}{tf.gradient.toFixed(2)}
-              </span>
-            </div>
-          )}
-          {tf.pairTensions?.length > 0 && (
-            <div className="mt-1.5 pt-1.5 border-t border-border/30">
-              <p className="text-[9px] text-muted-foreground mb-1">Character pairs:</p>
-              {tf.pairTensions.slice(0, 5).map((pair: any, i: number) => (
-                <div key={i} className="flex justify-between text-[9px]">
-                  <span className="truncate max-w-[120px]">{pair.characterA} / {pair.characterB}</span>
-                  <span className="font-medium">{(pair.score * 100).toFixed(0)}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
+  const lifecycleBadgeColor = (state: string) => {
+    switch (state) {
+      case 'active': return 'text-amber-500';
+      case 'discharging': return 'text-blue-500';
+      case 'discharged': return 'text-green-500';
+      case 'loaded': return 'text-muted-foreground';
+      default: return 'text-muted-foreground';
     }
-
-    if (metric.key === 'obligationCharge') {
-      const oc = state.obligationCharge;
-      return (
-        <div className="space-y-1">
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Velocity</span>
-            <span className="font-medium">{oc.velocity?.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Overdue</span>
-            <span className="font-medium text-destructive">{oc.overdueCount}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Outstanding</span>
-            <span className="font-medium">{oc.outstanding?.length || 0}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Introduced this scene</span>
-            <span className="font-medium">{oc.introduced?.length || 0}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Fulfilled this scene</span>
-            <span className="font-medium">{oc.fulfilled?.length || 0}</span>
-          </div>
-          {oc.outstanding?.length > 0 && (
-            <div className="mt-1.5 pt-1.5 border-t border-border/30">
-              <p className="text-[9px] text-muted-foreground mb-1">Top obligations:</p>
-              {oc.outstanding.slice(0, 3).map((obl: any, i: number) => (
-                <div key={i} className="text-[9px] truncate">
-                  <span className={obl.urgency === 'critical' ? 'text-destructive' : 'text-muted-foreground'}>
-                    {obl.description?.slice(0, 40)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    if (metric.key === 'deferredIntimacy') {
-      const di = state.deferredIntimacy;
-      return (
-        <div className="space-y-1">
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Velocity</span>
-            <span className="font-medium">{di.velocity?.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Deferred moments</span>
-            <span className="font-medium">{di.deferredMoments?.length || 0}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Resolved</span>
-            <span className="font-medium">{di.resolvedMoments?.length || 0}</span>
-          </div>
-          <div className="flex justify-between text-[10px]">
-            <span className="text-muted-foreground">Avoidant characters</span>
-            <span className="font-medium">{di.avoidantCharacters?.length || 0}</span>
-          </div>
-          {di.pairStates?.length > 0 && (
-            <div className="mt-1.5 pt-1.5 border-t border-border/30">
-              <p className="text-[9px] text-muted-foreground mb-1">Pair intimacy:</p>
-              {di.pairStates.slice(0, 3).map((pair: any, i: number) => (
-                <div key={i} className="flex justify-between text-[9px]">
-                  <span className="truncate max-w-[120px]">{pair.characterA} / {pair.characterB}</span>
-                  <span className="font-medium">{(pair.intimacyLevel * 100).toFixed(0)}%</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return null;
   };
 
   return (
@@ -216,17 +54,71 @@ export function ObligationTopologyTooltip({ state, metric, sceneId, position, on
       style={style}
       className="w-64 bg-popover border border-border/50 rounded-lg shadow-lg p-3 text-xs"
     >
+      {/* Header */}
       <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-border/30">
         <div>
-          <p className="text-[11px] font-semibold">{metric.label}</p>
+          <p className="text-[11px] font-semibold">Charge Details</p>
           <p className="text-[9px] text-muted-foreground font-mono">{sceneId.slice(0, 12)}...</p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-bold">{(((metricData as any)?.aggregateScore ?? (metricData as any)?.chargeScore ?? (metricData as any)?.aggregateIndex ?? (metricData as any)?.score ?? 0) * 100).toFixed(0)}%</p>
-          <p className="text-[9px] text-muted-foreground">Score</p>
+          <p className="text-sm font-bold">{(metrics.avgCharge * 100).toFixed(0)}%</p>
+          <p className="text-[9px] text-muted-foreground">Avg Charge</p>
         </div>
       </div>
-      {renderSubScores()}
+
+      {/* Summary metrics */}
+      <div className="grid grid-cols-3 gap-2 mb-2 pb-2 border-b border-border/30">
+        <div className="text-center">
+          <p className="text-sm font-bold">{metrics.totalObligations}</p>
+          <p className="text-[9px] text-muted-foreground">Obligations</p>
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-bold">{metrics.activeObligations}</p>
+          <p className="text-[9px] text-muted-foreground">Active</p>
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-bold">{metrics.entityCount}</p>
+          <p className="text-[9px] text-muted-foreground">Entities</p>
+        </div>
+      </div>
+
+      {/* Edge details */}
+      {edges.length > 0 && (
+        <div>
+          <p className="text-[9px] text-muted-foreground mb-1 font-medium">Obligation edges:</p>
+          <div className="space-y-1 max-h-[160px] overflow-y-auto">
+            {edges.slice(0, 8).map((edge, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between text-[9px] py-0.5 px-1 rounded hover:bg-muted/30"
+              >
+                <div className="flex items-center gap-1 min-w-0 flex-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${lifecycleBadgeColor(edge.lifecycle_state)}`} />
+                  <span className="truncate max-w-[80px] text-muted-foreground">
+                    {edge.target.slice(0, 8)}...
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[8px] text-muted-foreground uppercase">{typeLabel(edge.type)}</span>
+                  <span className="font-medium">{(edge.charge * 100).toFixed(0)}%</span>
+                </div>
+              </div>
+            ))}
+            {edges.length > 8 && (
+              <p className="text-[8px] text-muted-foreground text-center pt-0.5">
+                +{edges.length - 8} more
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {edges.length === 0 && (
+        <p className="text-[9px] text-muted-foreground text-center py-2">
+          No outgoing obligation edges from this scene.
+        </p>
+      )}
     </div>
   );
 }
