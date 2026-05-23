@@ -72,15 +72,16 @@ serve(async (req) => {
     });
   }
 
-  let body: Record<string, unknown>;
   try {
-    body = await req.json();
-  } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
   const { producer_note_id, service_key } = body as {
     producer_note_id?: string;
@@ -217,4 +218,11 @@ serve(async (req) => {
   }), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+  } catch (e) {
+    console.error("[cascade-engine] error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 });

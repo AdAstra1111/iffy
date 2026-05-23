@@ -673,8 +673,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
-
-  const supabaseClient = createClient(
+  try {
+    const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
   );
@@ -867,4 +867,11 @@ serve(async (req) => {
   }
 
   return Response.json({ ok: false, error: "Method not allowed" }, { status: 405 });
+  } catch (e) {
+    console.error("[character-performance-bible-builder] error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 });

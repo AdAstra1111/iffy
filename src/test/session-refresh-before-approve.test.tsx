@@ -85,16 +85,21 @@ describe('Static — refreshSession in doApproveAndActivate', () => {
     expect(fnBody).toContain('await supabase.auth.refreshSession({ force: true })');
   });
 
-  it('refreshSession is the first line after the opening brace, before null guard', async () => {
+  it('refreshSession is inside try block, after null guard', async () => {
     const fs = await import('fs');
     const src = fs.readFileSync(SRC_PATH, 'utf-8');
     const fnStart = src.indexOf('const doApproveAndActivate = async () => {');
     const fnClose = src.indexOf('};', fnStart);
     const fnBody = src.substring(fnStart, fnClose);
-    const refreshIdx = fnBody.indexOf('refreshSession');
+
+    // The null guard runs before the try block
     const nullGuardIdx = fnBody.indexOf('if (!projectId || !selectedVersionId)');
-    expect(refreshIdx).toBeGreaterThan(0);
-    expect(nullGuardIdx).toBeGreaterThan(refreshIdx);
+    const tryIdx = fnBody.indexOf('try {');
+    expect(tryIdx).toBeGreaterThan(nullGuardIdx);
+
+    // refreshSession is inside the try block (after try { )
+    const refreshIdx = fnBody.indexOf('refreshSession');
+    expect(refreshIdx).toBeGreaterThan(tryIdx);
   });
 
   it('refreshSession is called with { force: true } — not bare {} or empty parens', async () => {
@@ -149,68 +154,80 @@ describe('Edge cases — source-level verification', () => {
 
   it('Edge case 1: token already valid — refreshSession({ force: true }) is a no-op', async () => {
     // refreshSession({ force: true }) with a valid session silently succeeds.
-    // Verify the code path: refreshSession then approveAndActivate in sequence.
+    // Verify the code path: refreshSession is inside try block before approveAndActivate.
     const fs = await import('fs');
     const src = fs.readFileSync(SRC_PATH, 'utf-8');
     const fnStart = src.indexOf('const doApproveAndActivate = async () => {');
     const fnClose = src.indexOf('};', fnStart);
     const fnBody = src.substring(fnStart, fnClose);
 
-    // refreshSession is called before approveAndActivate
+    // refreshSession is inside the try block
+    const tryIdx = fnBody.indexOf('try {');
     const refreshIdx = fnBody.indexOf('refreshSession');
+    expect(refreshIdx).toBeGreaterThan(tryIdx);
+
+    // refreshSession is called before approveAndActivate (sequential in try block)
     const approveIdx = fnBody.indexOf('approveAndActivate');
     expect(approveIdx).toBeGreaterThan(refreshIdx);
 
-    // No guard between refreshSession and approveAndActivate that could skip approve
+    // Nothing meaningful between refreshSession and approveAndActivate that could skip it
     const between = fnBody.substring(
-      fnBody.indexOf(';', refreshIdx) + 1,
+      fnBody.indexOf('\n', refreshIdx) + 1,
       approveIdx
-    );
-    // The null guard starts with `if (!projectId || !selectedVersionId)`
-    // This runs AFTER refreshSession — that's correct behavior
-    // The null guard protects against missing project/version, not token issues
-    expect(between).toContain('projectId');
+    ).trim();
+    // Between them should be only `await` — no guards or branches
+    expect(between).toBe('await');
   });
 
   it('Edge case 2: token expired — refreshSession succeeds and approve proceeds', async () => {
     // Same code path as valid session — refreshSession({ force: true })
     // handles both fresh and expired tokens internally.
+    // refreshSession is inside the try block, so if it succeeds,
+    // approveAndActivate runs immediately after.
     const fs = await import('fs');
     const src = fs.readFileSync(SRC_PATH, 'utf-8');
     const fnStart = src.indexOf('const doApproveAndActivate = async () => {');
     const fnClose = src.indexOf('};', fnStart);
     const fnBody = src.substring(fnStart, fnClose);
 
-    // refreshSession is called BEFORE the try block — if it throws,
-    // the error propagates to the caller's catch (handleApproveVersion or onConfirm)
-    expect(fnBody).toContain('refreshSession');
-    expect(fnBody).toContain('approveAndActivate');
-    // refreshSession is before the first try { in the function
+    // refreshSession is INSIDE the try block
     const tryIdx = fnBody.indexOf('try {');
     const refreshIdx = fnBody.indexOf('refreshSession');
-    expect(refreshIdx).toBeGreaterThan(0);
-    expect(tryIdx).toBeGreaterThan(refreshIdx);
-    // No try/catch wraps refreshSession specifically — it's before the try
-    const beforeTry = fnBody.substring(0, tryIdx);
-    expect(beforeTry).toContain('refreshSession');
-    expect(beforeTry).not.toContain('catch');
+    expect(tryIdx).toBeGreaterThan(0);
+    expect(refreshIdx).toBeGreaterThan(tryIdx);
+
+    // refreshSession is not wrapped in its own try/catch inside the try block
+    const afterTryBrace = fnBody.substring(tryIdx, refreshIdx);
+    expect(afterTryBrace).toContain('try {');
+    expect(afterTryBrace).not.toContain('catch');
   });
 
-  it('Edge case 3: no session — refreshSession throws, caught by caller try/catch', async () => {
+  it('Edge case 3: no session — refreshSession throws, caught by finally + caller try/catch', async () => {
     // refreshSession without an active session throws.
-    // Since doApproveAndActivate has no try/catch of its own, the error
+    // doApproveAndActivate has try { ... } finally { ... } (no catch).
+    // The finally block runs (resets setApprovePending(false)), then the error
     // propagates to the caller (handleApproveVersion or CanonDeltaDialog onConfirm)
     // which wraps it in try/catch and shows toast.error.
     const fs = await import('fs');
     const src = fs.readFileSync(SRC_PATH, 'utf-8');
 
-    // Verify handleApproveVersion has try/catch
-    const fnStart = src.indexOf('const handleApproveVersion = async () => {');
+    // Verify doApproveAndActivate has try/finally (no catch)
+    const fnStart = src.indexOf('const doApproveAndActivate = async () => {');
     const fnClose = src.indexOf('};', fnStart);
     const fnBody = src.substring(fnStart, fnClose);
     expect(fnBody).toContain('try {');
-    expect(fnBody).toContain('catch');
-    expect(fnBody).toContain('toast.error(err.message');
+    expect(fnBody).toContain('} finally {');
+    // No catch in doApproveAndActivate — error propagates to caller
+    const tryBlock = fnBody.substring(fnBody.indexOf('try {'), fnBody.indexOf('};'));
+    expect(tryBlock).not.toContain('catch');
+
+    // Verify handleApproveVersion has its own try/catch
+    const fnStart2 = src.indexOf('const handleApproveVersion = async () => {');
+    const fnClose2 = src.indexOf('};', fnStart2);
+    const fnBody2 = src.substring(fnStart2, fnClose2);
+    expect(fnBody2).toContain('try {');
+    expect(fnBody2).toContain('catch');
+    expect(fnBody2).toContain('toast.error(err.message');
   });
 
   it('Edge case 4: Foundation doc approval goes through CanonDeltaDialog → same path', async () => {

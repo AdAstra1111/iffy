@@ -28,6 +28,9 @@ CREATE TABLE IF NOT EXISTS neural_validation_runs (
     -- Divergence analysis — flags + suggestions
     divergence_json JSONB NOT NULL DEFAULT '{}',
     
+    -- Prediction source (added by TRIBE neural feedback integration)
+    prediction_source TEXT CHECK (prediction_source IN ('tribe_realtime', 'tribe_simulated', 'surrogate')),
+    
     -- Run status
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed', 'skipped')),
     

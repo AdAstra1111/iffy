@@ -7247,7 +7247,8 @@ Deno.serve(async (req) => {
       const { data: project } = await supabase.from("projects")
         .select("title, format, development_behavior, episode_target_duration_seconds, season_episode_count, guardrails_config, assigned_lane, budget_range, genres")
         .eq("id", job.project_id).single();
-      const format = (project?.format || "film").toLowerCase().replace(/_/g, "-");
+      if (!project) throw new Error("Project not found — cannot continue run-next");
+      const format = project.format.toLowerCase().replace(/_/g, "-");
       const behavior = project?.development_behavior || "market";
 
       // [IEL] Backfill pipeline_key if NULL on running job (defensive; covers legacy jobs)

@@ -24,6 +24,8 @@ import { ChangeSetsPanel } from './ChangeSetsPanel';
 import { QCPanel } from './QCPanel';
 import { PassesPanel } from './PassesPanel';
 import { CanonOSPanel } from './CanonOSPanel';
+import { ObligationTopologyHeatmap } from './ObligationTopologyHeatmap';
+import { useObligationTopology } from '@/hooks/useObligationTopology';
 
 interface SceneGraphPanelProps {
   projectId: string;
@@ -46,6 +48,14 @@ export function SceneGraphPanel({ projectId, documents }: SceneGraphPanelProps) 
   const [showActionHistory, setShowActionHistory] = useState(false);
   const [rightTab, setRightTab] = useState<string>('impact');
   const [topTab, setTopTab] = useState<string>('scenes');
+
+  const sceneIds = useMemo(() => sg.scenes.map(s => s.scene_id), [sg.scenes]);
+  const {
+    states: topologyStates,
+    isLoading: topologyLoading,
+    error: topologyError,
+    refetch: topologyRefetch,
+  } = useObligationTopology(projectId, sceneIds);
 
   const selectedScene = useMemo(() => {
     return sg.scenes.find(s => s.scene_id === sg.selectedSceneId) || null;
@@ -194,6 +204,9 @@ export function SceneGraphPanel({ projectId, documents }: SceneGraphPanelProps) 
           <TabsTrigger value="canon" className="text-xs gap-1">
             <BookOpen className="h-3 w-3" /> Canon
           </TabsTrigger>
+          <TabsTrigger value="narrative" className="text-xs gap-1">
+            <BarChart3 className="h-3 w-3" /> Narrative
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="visual" className="mt-3">
@@ -230,6 +243,16 @@ export function SceneGraphPanel({ projectId, documents }: SceneGraphPanelProps) 
 
         <TabsContent value="canon" className="mt-3">
           <CanonOSPanel projectId={projectId} />
+        </TabsContent>
+
+        <TabsContent value="narrative" className="mt-3">
+          <ObligationTopologyHeatmap
+            states={topologyStates}
+            sceneIds={sceneIds}
+            isLoading={topologyLoading}
+            error={topologyError}
+            onRefetch={topologyRefetch}
+          />
         </TabsContent>
 
         <TabsContent value="scenes" className="mt-3 space-y-3">

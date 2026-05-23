@@ -26,16 +26,16 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+  try {
+    if (req.method === "GET") {
+      return jsonRes({ ok: true, build: "backfill-vd-script-types-v1" });
+    }
 
-  if (req.method === "GET") {
-    return jsonRes({ ok: true, build: "backfill-vd-script-types-v1" });
-  }
+    if (req.method !== "POST") {
+      return jsonRes({ error: "Method not allowed" }, 405);
+    }
 
-  if (req.method !== "POST") {
-    return jsonRes({ error: "Method not allowed" }, 405);
-  }
-
-  // ── Auth ──
+    // ── Auth ──
   const authHeader = req.headers.get("Authorization") || "";
   if (!authHeader.startsWith("Bearer ") || authHeader.length < 60) {
     return jsonRes({ error: "UNAUTHORIZED", code: "MISSING_TOKEN" }, 401);
@@ -178,4 +178,8 @@ Deno.serve(async (req) => {
     updatedVersionIds,
     ts: new Date().toISOString(),
   });
+  } catch (e) {
+    console.error("[backfill-vd-script-types] error:", e);
+    return jsonRes({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
+  }
 });

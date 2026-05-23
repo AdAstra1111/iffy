@@ -80,6 +80,11 @@ interface SectionContext {
   boundCharacterNames?: string[];
   /** Narrative moments pool from scene graph */
   narrativeMoments?: NarrativeMoment[];
+  /** Atom-enriched visual data from atomiser pipeline */
+  characterAtomBlock?: string;
+  locationAtomBlock?: string;
+  atomBindingStatus?: string;
+  missingAtomRefs?: string[];
 }
 
 // ── Narrative Moment (from scene graph) ─────────────────────────────────────
@@ -637,6 +642,128 @@ function buildIdentityLockMandate(characterName: string, identitySignatureBlock:
   }
 
   return lines.join('\n');
+}
+
+// ── Atom Enrichment: Query atomiser pipeline for production-ready visual data ──
+
+async function enrichWithCharacterAtoms(
+  sb: any,
+  projectId: string,
+  characterNames: string[],
+): Promise<{ atomBlock: string; bound: number; total: number; missingNames: string[] }> {
+  if (!characterNames?.length) return { atomBlock: '', bound: 0, total: 0, missingNames: [] };
+
+  const lowerNames = characterNames.map(n => n.toLowerCase());
+
+  const { data: atoms, error } = await sb
+    .from("atoms")
+    .select("canonical_name, attributes")
+    .eq("project_id", projectId)
+    .eq("atom_type", "character")
+    .eq("generation_status", "complete")
+    .eq("readiness_state", "generated");
+
+  if (error || !atoms?.length) {
+    console.warn(`[lookbook-image] enrichWithCharacterAtoms: no atoms found or query error`, error?.message);
+    return { atomBlock: '', bound: 0, total: characterNames.length, missingNames: characterNames };
+  }
+
+  const matchedAtoms = atoms.filter(a => lowerNames.includes((a.canonical_name || '').toLowerCase()));
+  const matchedNames = new Set(matchedAtoms.map(a => (a.canonical_name || '').toLowerCase()));
+  const missingNames = characterNames.filter(n => !matchedNames.has(n.toLowerCase()));
+
+  if (!matchedAtoms.length) return { atomBlock: '', bound: 0, total: characterNames.length, missingNames };
+
+  const blocks: string[] = [];
+  for (const atom of matchedAtoms) {
+    const attrs = (atom.attributes || {}) as Record<string, any>;
+    const lines: string[] = [];
+    lines.push(`[CHARACTER ATOM — ${atom.canonical_name}]`);
+    if (attrs.physical_description) lines.push(`Physical Description: ${attrs.physical_description}`);
+    if (attrs.age_estimate) lines.push(`Age: ${attrs.age_estimate}`);
+    if (attrs.build) lines.push(`Build: ${attrs.build}`);
+    if (attrs.height_estimate) lines.push(`Height: ${attrs.height_estimate}`);
+    if (attrs.skin_tone) lines.push(`Skin Tone: ${attrs.skin_tone}`);
+    if (attrs.hair) lines.push(`Hair: ${attrs.hair}`);
+    if (attrs.eyes) lines.push(`Eyes: ${attrs.eyes}`);
+    if (attrs.distinctive_features) lines.push(`Distinctive Features: ${attrs.distinctive_features}`);
+    if (attrs.wardrobe_notes) lines.push(`Wardrobe: ${attrs.wardrobe_notes}`);
+    if (attrs.physical_markings) lines.push(`Physical Markings: ${attrs.physical_markings}`);
+    if (attrs.movement_gait) lines.push(`Movement/Gait: ${attrs.movement_gait}`);
+    if (attrs.facial_expression_range) lines.push(`Facial Expression Range: ${attrs.facial_expression_range}`);
+    if (attrs.casting_suggestions) lines.push(`Casting: ${attrs.casting_suggestions}`);
+    if (attrs.cultural_context) lines.push(`Cultural Context: ${attrs.cultural_context}`);
+    if (attrs.visual_complexity) lines.push(`Visual Complexity: ${attrs.visual_complexity}`);
+    blocks.push(lines.join('\n'));
+  }
+
+  return {
+    atomBlock: blocks.join('\n\n'),
+    bound: matchedAtoms.length,
+    total: characterNames.length,
+    missingNames,
+  };
+}
+
+async function enrichWithLocationAtoms(
+  sb: any,
+  projectId: string,
+  locationNames: string[],
+): Promise<{ atomBlock: string; bound: number; total: number; missingNames: string[] }> {
+  if (!locationNames?.length) return { atomBlock: '', bound: 0, total: 0, missingNames: [] };
+
+  const lowerNames = locationNames.map(n => n.toLowerCase());
+
+  const { data: atoms, error } = await sb
+    .from("atoms")
+    .select("canonical_name, attributes")
+    .eq("project_id", projectId)
+    .eq("atom_type", "location")
+    .eq("generation_status", "complete")
+    .eq("readiness_state", "generated");
+
+  if (error || !atoms?.length) {
+    console.warn(`[lookbook-image] enrichWithLocationAtoms: no atoms found or query error`, error?.message);
+    return { atomBlock: '', bound: 0, total: locationNames.length, missingNames: locationNames };
+  }
+
+  const matchedAtoms = atoms.filter(a => lowerNames.includes((a.canonical_name || '').toLowerCase()));
+  const matchedNames = new Set(matchedAtoms.map(a => (a.canonical_name || '').toLowerCase()));
+  const missingNames = locationNames.filter(n => !matchedNames.has(n.toLowerCase()));
+
+  if (!matchedAtoms.length) return { atomBlock: '', bound: 0, total: locationNames.length, missingNames };
+
+  const blocks: string[] = [];
+  for (const atom of matchedAtoms) {
+    const attrs = (atom.attributes || {}) as Record<string, any>;
+    const lines: string[] = [];
+    lines.push(`[LOCATION ATOM — ${atom.canonical_name}]`);
+    if (attrs.architectureStyle) lines.push(`Architecture: ${attrs.architectureStyle}`);
+    if (attrs.era) lines.push(`Era: ${attrs.era}`);
+    if (attrs.period) lines.push(`Period: ${attrs.period}`);
+    if (attrs.settingType) lines.push(`Setting: ${attrs.settingType}`);
+    if (attrs.visualComplexity) lines.push(`Visual Complexity: ${attrs.visualComplexity}`);
+    if (attrs.signatureArchitecturalFeatures?.length) lines.push(`Signature Features: ${attrs.signatureArchitecturalFeatures.join(', ')}`);
+    if (attrs.dominantColors?.length) lines.push(`Dominant Colors: ${attrs.dominantColors.join(', ')}`);
+    if (attrs.lightingCharacter) lines.push(`Lighting: ${attrs.lightingCharacter}`);
+    if (attrs.sensoryTexture?.length) lines.push(`Sensory: ${attrs.sensoryTexture.join(', ')}`);
+    if (attrs.acousticCharacter) lines.push(`Acoustic: ${attrs.acousticCharacter}`);
+    if (attrs.temperatureImpression) lines.push(`Temperature: ${attrs.temperatureImpression}`);
+    if (attrs.atmosphericMood?.length) lines.push(`Mood: ${attrs.atmosphericMood.join(', ')}`);
+    if (attrs.thematicSymbolism) lines.push(`Symbolism: ${attrs.thematicSymbolism}`);
+    if (attrs.narrativeFunction) lines.push(`Narrative Function: ${attrs.narrativeFunction}`);
+    if (attrs.productionComplexity) lines.push(`Production Complexity: ${attrs.productionComplexity}`);
+    if (attrs.setRequirements?.length) lines.push(`Set Requirements: ${attrs.setRequirements.join(', ')}`);
+    if (attrs.moodBoardReference) lines.push(`Reference: ${attrs.moodBoardReference}`);
+    blocks.push(lines.join('\n'));
+  }
+
+  return {
+    atomBlock: blocks.join('\n\n'),
+    bound: matchedAtoms.length,
+    total: locationNames.length,
+    missingNames,
+  };
 }
 
 function buildIdentityPrompt(characterName: string, shotType: ShotType, ctx: SectionContext): string {
@@ -1594,6 +1721,37 @@ serve(async (req) => {
       });
     }
 
+    // ── ATOM ENRICHMENT: Query atomiser data for richer visual descriptions ──
+    // Uses canonical binding results to query atoms table for production-ready
+    // character physical descriptions and location architecture data
+    let characterAtomBlock = '';
+    let locationAtomBlock = '';
+    let atomBindingStatus: string | undefined;
+    let missingAtomRefs: string[] = [];
+
+    if (SECTION_BINDING_RELEVANCE[section]?.characters && ctx.boundCharacterNames?.length) {
+      const charResult = await enrichWithCharacterAtoms(supabase, project_id, ctx.boundCharacterNames);
+      characterAtomBlock = charResult.atomBlock;
+      if (charResult.missingNames.length > 0) {
+        missingAtomRefs.push(...charResult.missingNames.map(n => `character_atom:${n}`));
+      }
+    }
+
+    if (SECTION_BINDING_RELEVANCE[section]?.locations && location_name) {
+      const locResult = await enrichWithLocationAtoms(supabase, project_id, [location_name]);
+      locationAtomBlock = locResult.atomBlock;
+      if (locResult.missingNames.length > 0) {
+        missingAtomRefs.push(...locResult.missingNames.map(n => `location_atom:${n}`));
+      }
+    }
+
+    atomBindingStatus = missingAtomRefs.length === 0 ? 'all_bound' : 'partial';
+    ctx.characterAtomBlock = characterAtomBlock || undefined;
+    ctx.locationAtomBlock = locationAtomBlock || undefined;
+    ctx.atomBindingStatus = atomBindingStatus;
+    ctx.missingAtomRefs = missingAtomRefs.length > 0 ? missingAtomRefs : undefined;
+    console.log(`[lookbook-image] atom enrichment: charBlock=${characterAtomBlock.length > 0} locBlock=${locationAtomBlock.length > 0} status=${atomBindingStatus} missing=${missingAtomRefs.length}`);
+
     // Determine shots to generate
     // ── Single-slot mode: forced_shot_type overrides all pack logic ──
     const IDENTITY_PACK: ShotType[] = ["identity_headshot", "identity_profile", "identity_full_body"];
@@ -1801,11 +1959,19 @@ FRAMING RULES:
           const shotSpecificCharBlock = buildCharacterBindingBlock(canonicalBindings.characters, shotType as ShotType | null);
           prompt += `\n\n${shotSpecificCharBlock}`;
         }
+        // Atom enrichment: inject atomiser character data for richer visual prompt
+        if (assetGroup === 'character' && ctx.characterAtomBlock) {
+          prompt += `\n\n${ctx.characterAtomBlock}`;
+        }
         // Skip broad location binding for PD custom prompts — they already contain scoped location truth
         if (canonicalBindings.locationPromptBlock && !isPDCustomPrompt) {
           prompt += `\n\n${canonicalBindings.locationPromptBlock}`;
         } else if (isPDCustomPrompt) {
           console.log(`[PD-scope] Skipping broad locationPromptBlock — custom_prompt already contains scoped location truth`);
+        }
+        // Atom enrichment: inject atomiser location data for richer visual prompt
+        if (assetGroup === 'world' && ctx.locationAtomBlock) {
+          prompt += `\n\n${ctx.locationAtomBlock}`;
         }
       }
       // World binding always applies (even to identity shots — grounds the project universe)

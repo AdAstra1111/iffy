@@ -6,6 +6,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { computeEngagementMetric, type PredictionSource, type SceneEngagement } from '../_shared/engagementMetric.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -70,8 +71,9 @@ interface NeuralValidationRun {
   input_text_preview: string;
   model_version: string;
   target_json: IntentTarget;
-  output_json: { predictions: NeuralPrediction[]; segment_timings: number[] };
-  divergence_json: { flags: DivergenceFlag[]; summary: string; contrast_efficiency_score?: number };
+  output_json: { predictions: NeuralPrediction[]; segment_timings: number[]; engagement?: SceneEngagement };
+  divergence_json: { flags: DivergenceFlag[]; summary: string; contrast_efficiency_score?: number; engagement_recommendation?: string };
+  prediction_source?: string;
   status: string;
   created_at: string;
 }
@@ -313,6 +315,32 @@ function generateSummary(flags: DivergenceFlag[]): string {
   return `${critical} critical, ${warnings} warning, ${info} info flags. ${flags[0]?.message || ''}`;
 }
 
+/**
+ * Build a plain-text recommendation from engagement scores.
+ */
+function buildEngagementRecommendation(engagement: SceneEngagement): string {
+  const parts: string[] = [];
+  if (engagement.total_score < 50) {
+    parts.push(`Low engagement (${engagement.total_score}/100).`);
+  }
+  if (engagement.emotional_journey.fatigue_risk) {
+    parts.push('Emotional fatigue risk detected — consider a recovery beat.');
+  }
+  if (!engagement.character_connection.above_threshold) {
+    parts.push('Character connection below threshold — expose character vulnerability.');
+  }
+  if (engagement.narrative_absorption.absorption_risk === 'flat') {
+    parts.push('Narrative absorption flat — reinforce thematic through-line.');
+  }
+  if (engagement.visceral_impact.sensory_grounding === 'absent') {
+    parts.push('Visceral impact absent — add sensory grounding details.');
+  }
+  if (engagement.cognitive_load.overload_risk) {
+    parts.push('Cognitive load high — reduce exposition, increase implication.');
+  }
+  return parts.length > 0 ? parts.join(' ') : `Engagement adequate (${engagement.total_score}/100). Source: ${engagement.prediction_source}.`;
+}
+
 // ───────────────────────────────────────────────────────────────
 // VALIDATE BEAT
 // ───────────────────────────────────────────────────────────────
@@ -334,6 +362,16 @@ async function validateBeat(
   // Run inference
   const { predictions, segment_timings } = await runTribeInference(text);
 
+  // Determine prediction source — real TRIBE or surrogate
+  const predictionSource: PredictionSource = predictions[0]?.confidence >= 0.8
+    ? 'tribe_realtime'
+    : predictions[0]?.confidence >= 0.5
+      ? 'tribe_simulated'
+      : 'surrogate';
+
+  // Compute engagement metric from ROI predictions
+  const engagement = computeEngagementMetric(predictions, predictionSource);
+
   // Detect divergence against target
   const flags = detectDivergence(predictions, target);
   const summary = generateSummary(flags);
@@ -349,8 +387,8 @@ async function validateBeat(
     input_text_preview: text.slice(0, 200),
     model_version: 'tribev2-llama3.2-3b-cpu-20260521',
     target_json: target,
-    output_json: { predictions, segment_timings },
-    divergence_json: { flags, summary },
+    output_json: { predictions, segment_timings, engagement },
+    divergence_json: { flags, summary, engagement_recommendation: buildEngagementRecommendation(engagement) },
     status: 'completed',
     created_at: new Date().toISOString(),
   };
@@ -370,12 +408,42 @@ async function validateBeat(
       target_json: JSON.stringify(run.target_json),
       output_json: JSON.stringify(run.output_json),
       divergence_json: JSON.stringify(run.divergence_json),
+      prediction_source: predictionSource,
       status: run.status,
     });
 
   if (error) {
     console.error('Failed to store validation run:', error);
     run.status = 'failed';
+  } else {
+    // Upsert engagement scores to scene_engagement_scores
+    const sceneKey = `s-${run.layer_type}-${run.input_text_hash.slice(0, 8)}`;
+    const { error: engError } = await supabase
+      .from('scene_engagement_scores')
+      .upsert({
+        project_id: run.project_id,
+        document_id: run.document_id,
+        document_version_id: run.document_version_id,
+        neural_validation_run_id: run.id,
+        scene_key: sceneKey,
+        scene_heading: run.input_text_preview.slice(0, 120),
+        total_score: engagement.total_score,
+        emotional_journey_score: engagement.emotional_journey.score,
+        character_connection_score: engagement.character_connection.score,
+        narrative_absorption_score: engagement.narrative_absorption.score,
+        visceral_impact_score: engagement.visceral_impact.score,
+        cognitive_load_score: engagement.cognitive_load.score,
+        raw_roi_json: JSON.stringify(Object.fromEntries(
+          predictions.map(p => [p.roi, { value: p.value, confidence: p.confidence }])
+        )),
+        confidence: engagement.confidence,
+        prediction_source: predictionSource,
+        score_version: 1,
+      }, { onConflict: 'document_version_id, scene_key' });
+
+    if (engError) {
+      console.error('Failed to upsert engagement score:', engError);
+    }
   }
 
   return run;
