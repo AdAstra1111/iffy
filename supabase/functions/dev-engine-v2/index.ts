@@ -25916,7 +25916,18 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
       });
       // Propagated fill — takes remaining capacity after direct
       const afterDirect = batchLimit - sequencedDirectScenes.length;
-      const sequencedPropagatedScenes = afterDirect > 0 ? propagatedOnlyScenes.map((s)=>({
+      // Engagement fill — takes capacity after direct, before propagated
+      const sequencedEngagementScenes = afterDirect > 0 ? engagementOnlyScenes.map((s)=>({
+          scene_id: s.scene_id,
+          scene_key: s.scene_key,
+          slugline: s.slugline,
+          axis_key: s.axis_key,
+          risk_reason: s.risk_reason,
+          execution_source: "engagement"
+        })).sort((a, b)=>a.scene_key.localeCompare(b.scene_key)).slice(0, afterDirect) : [];
+      // Propagated fill — takes remaining capacity after direct + engagement
+      const afterEngagement = batchLimit - sequencedDirectScenes.length - sequencedEngagementScenes.length;
+      const sequencedPropagatedScenes = afterEngagement > 0 ? propagatedOnlyScenes.map((s)=>({
           scene_id: s.scene_id,
           scene_key: s.scene_key,
           slugline: s.slugline,
@@ -25930,9 +25941,9 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
       }).map((s)=>{
         const { _axis_rank: _, ...rest } = s;
         return rest;
-      }).slice(0, afterDirect) : [];
+      }).slice(0, afterEngagement) : [];
       // Entity fill — gated, capped at entityCap
-      const afterPropagated = batchLimit - sequencedDirectScenes.length - sequencedPropagatedScenes.length;
+      const afterPropagated = batchLimit - sequencedDirectScenes.length - sequencedEngagementScenes.length - sequencedPropagatedScenes.length;
       const entityFillScenes = [];
       if (afterPropagated > 0 && entityCap > 0 && sequencedDirectScenes.length > 0 && SAFE_ENTITY_EXEC_SCOPES.has(plan.recommended_scope)) {
         const entitySlots = Math.min(afterPropagated, entityCap);
@@ -25950,6 +25961,7 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
       }
       const targetScenes = [
         ...sequencedDirectScenes,
+        ...sequencedEngagementScenes,
         ...sequencedPropagatedScenes,
         ...entityFillScenes
       ].map((s, i)=>({
