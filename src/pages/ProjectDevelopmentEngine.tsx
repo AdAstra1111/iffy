@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { BgGenBanner } from '@/components/devengine/BgGenBanner';
 import { toast } from 'sonner';
@@ -1432,7 +1433,7 @@ export default function ProjectDevelopmentEngine() {
       // The per-act pipeline at dev-engine-v2:9891 is triggered by action === "treatment"/"long_treatment" (sectionedRewriteTypes handler)
       // Notes/decisions enrichment is already done above — enrichedNotes contains all context
       if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
-        setTreatmentRewritePending(true);
+        flushSync(() => setTreatmentRewritePending(true));
         const vid = selectedVersionId;
         const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
         
