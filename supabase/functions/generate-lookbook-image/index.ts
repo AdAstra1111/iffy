@@ -84,6 +84,12 @@ interface SectionContext {
 
 // ── Narrative Moment (from scene graph) ─────────────────────────────────────
 
+interface SceneRoleAffinity {
+  role_key: string;
+  confidence: number;
+  note: string | null;
+}
+
 interface NarrativeMoment {
   slugline: string;
   summary: string;
@@ -94,6 +100,7 @@ interface NarrativeMoment {
   tension_delta: number | null;
   content_preview: string;
   canon_location_id: string | null;
+  scene_roles: SceneRoleAffinity[];
 }
 
 /** Shot-type to narrative selection strategy */
@@ -110,6 +117,19 @@ const SHOT_NARRATIVE_STRATEGY: Partial<Record<ShotType, {
   over_shoulder:     { prefer: 'any', minCharacters: 2 },
   detail:            { prefer: 'atmospheric' },
   time_variant:      { prefer: 'establishing' },
+};
+
+/** Scene-role to shot-type affinity scores (additive to strategy score) */
+const SCENE_ROLE_SHOT_PREFERENCE: Record<string, Partial<Record<ShotType, number>>> = {
+  setup:       { wide: 5, medium: 3, close_up: 0, tableau: 0, over_shoulder: 0, full_body: 2, profile: 1, detail: 0, emotional_variant: 0, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  escalation:  { wide: 2, medium: 5, close_up: 4, tableau: 0, over_shoulder: 0, full_body: 0, profile: 0, detail: 1, emotional_variant: 3, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  reversal:    { wide: 2, medium: 3, close_up: 5, tableau: 2, over_shoulder: 0, full_body: 0, profile: 0, detail: 1, emotional_variant: 5, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  reveal:      { wide: 1, medium: 3, close_up: 5, tableau: 2, over_shoulder: 2, full_body: 0, profile: 0, detail: 2, emotional_variant: 4, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  payoff:      { wide: 2, medium: 4, close_up: 4, tableau: 3, over_shoulder: 0, full_body: 0, profile: 0, detail: 1, emotional_variant: 4, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  breather:    { wide: 5, medium: 4, close_up: 2, tableau: 0, over_shoulder: 0, full_body: 0, profile: 0, detail: 0, emotional_variant: 2, atmospheric: 2, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  transition:  { wide: 5, medium: 2, close_up: 1, tableau: 0, over_shoulder: 0, full_body: 0, profile: 0, detail: 1, emotional_variant: 0, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  climax:      { wide: 4, medium: 5, close_up: 4, tableau: 3, over_shoulder: 3, full_body: 0, profile: 0, detail: 2, emotional_variant: 3, atmospheric: 0, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
+  denouement:  { wide: 5, medium: 2, close_up: 2, tableau: 0, over_shoulder: 0, full_body: 0, profile: 0, detail: 0, emotional_variant: 1, atmospheric: 3, time_variant: 0, lighting_ref: 0, texture_ref: 0, composition_ref: 0, color_ref: 0, identity_headshot: 0, identity_profile: 0, identity_full_body: 0 },
 };
 
 function selectNarrativeMoment(
@@ -165,6 +185,17 @@ function selectNarrativeMoment(
     return { moment: m, score };
   });
 
+  // Scene role affinity scoring (additive to strategy score)
+  for (const scoredItem of scored) {
+    const m = scoredItem.moment;
+    if (m.scene_roles?.length && shotType) {
+      for (const role of m.scene_roles) {
+        const affinity = SCENE_ROLE_SHOT_PREFERENCE[role.role_key]?.[shotType] ?? 0;
+        scoredItem.score += affinity;
+      }
+    }
+  }
+
   scored.sort((a, b) => b.score - a.score);
 
   // Use variant index to pick from top candidates (avoid always picking the same one)
@@ -203,7 +234,7 @@ async function loadNarrativeMoments(sb: any, projectId: string): Promise<Narrati
   // Load latest version per scene (highest version_number)
   const { data: versions } = await sb
     .from('scene_graph_versions')
-    .select('scene_id, slugline, summary, content, characters_present, location, time_of_day, purpose, tension_delta, canon_location_id, version_number')
+    .select('scene_id, slugline, summary, content, characters_present, location, time_of_day, purpose, tension_delta, scene_roles, canon_location_id, version_number')
     .eq('project_id', projectId)
     .in('scene_id', sceneIds)
     .order('version_number', { ascending: false });
@@ -230,6 +261,7 @@ async function loadNarrativeMoments(sb: any, projectId: string): Promise<Narrati
       tension_delta: typeof v.tension_delta === 'number' ? v.tension_delta : null,
       content_preview: (v.content || '').slice(0, 200),
       canon_location_id: v.canon_location_id || null,
+      scene_roles: Array.isArray(v.scene_roles) ? v.scene_roles : [],
     });
   }
   return moments;
