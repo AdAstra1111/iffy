@@ -64,8 +64,12 @@ export function useCanonLocations(projectId: string | undefined) {
         characters?: string[];
       }> = [];
 
-      // Extract from locations array
-      const locArr = canonJson?.locations || canonJson?.settings || canonJson?.key_locations;
+      // Extract from locations array (handles both string and array forms)
+      let rawLocArr = canonJson?.locations ?? canonJson?.settings ?? canonJson?.key_locations;
+      if (typeof rawLocArr === 'string' && rawLocArr.length > 0) {
+        rawLocArr = rawLocArr.split(/[;,;\n]+/).map((s: string) => ({ name: s.trim() })).filter((s: { name: string }) => s.name.length > 0 && s.name !== 'Unknown');
+      }
+      const locArr = rawLocArr;
       if (Array.isArray(locArr)) {
         for (const loc of locArr) {
           if (typeof loc === 'string') {
@@ -115,6 +119,20 @@ export function useCanonLocations(projectId: string | undefined) {
               interior_or_exterior: scene.int_ext || undefined,
               importance: 'secondary',
             });
+          } else if (!locName && scene.title) {
+            // Fallback: extract location from scene title (slugline text)
+            const slugMatch = scene.title.match(/(?:INT\.|EXT\.|I\/E\.|INT\/EXT\.?)\s*(.+?)(?:\s*[–—]\s*(?:DAY|NIGHT|DAWN|DUSK|LATER|CONTINUOUS|MORNING|EVENING|SUNSET|SUNRISE).*)?$/i);
+            if (slugMatch) {
+              const tLoc = slugMatch[1].trim();
+              if (tLoc && !seenNames.has(tLoc.toLowerCase())) {
+                seenNames.add(tLoc.toLowerCase());
+                rawLocations.push({
+                  name: tLoc,
+                  interior_or_exterior: scene.int_ext || undefined,
+                  importance: 'secondary',
+                });
+              }
+            }
           }
         }
       }

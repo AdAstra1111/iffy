@@ -446,7 +446,36 @@ export function SourceTruthDashboard({ projectId }: { projectId: string }) {
           location: s.location_key || '',
           setting: s.location_key || '',
           scene_key: String(s.scene_number) || '',
+          title: s.title || '',  // NEW — enables title-based fallback
         }));
+      }
+      // Fallback: query scene_graph_versions for locations not found in scene_index
+      // scene_index.location_key is often null (parseLocation only handles INT./EXT. sluglines)
+      // scene_graph_versions.location is always populated from raw scene data
+      const existingLocNames = new Set(
+        (combined.scenes || []).map((s: any) => (s.location || '').toLowerCase().trim()).filter(Boolean)
+      );
+      const { data: sgvLocations } = await (supabase as any)
+        .from('scene_graph_versions')
+        .select('scene_id, location, slugline')
+        .eq('project_id', projectId)
+        .not('location', 'is', null)
+        .order('version_number', { ascending: false });
+      if (sgvLocations && sgvLocations.length > 0) {
+        if (!combined.scenes) combined.scenes = [];
+        const seenIds = new Set<string>();
+        for (const row of sgvLocations) {
+          if (seenIds.has(row.scene_id)) continue;
+          seenIds.add(row.scene_id);
+          const locName = (row.location || '').trim();
+          if (!locName || existingLocNames.has(locName.toLowerCase())) continue;
+          existingLocNames.add(locName.toLowerCase());
+          combined.scenes.push({
+            location: locName,
+            setting: locName,
+            scene_key: row.slugline || '',
+          });
+        }
       }
       const docIds = (projectDocs || []).map((d: any) => d.id);
       await seedLocationsMutation.mutateAsync({ canonJson: combined, documentSources: docIds });
