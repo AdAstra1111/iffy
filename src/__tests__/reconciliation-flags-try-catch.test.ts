@@ -190,7 +190,7 @@ describe('4 already-protected edge functions — handler-level try-catch confirm
         // Must JSON.stringify error — either directly in catch block or via helper like jsonRes()
         const hasDirectJsonStringify = lastPart.match(/JSON\.stringify/) !== null;
         const hasHelperJsonRes = lastPart.includes('jsonRes(') || source.includes('jsonRes');
-        expect(hasDirectJsonStringify || hasHelperJsonRes).toBe(true);
+        expect(hasDirectJsonStringify || hasHelperJsonRes).toBeTruthy();
       });
 
       it('includes error message in the 500 response', () => {
@@ -249,7 +249,7 @@ describe('Consistency — all 5 edge functions share error response pattern', ()
       // Has JSON.stringify with error — directly or via helper
       const hasDirectJsonStringify = lastPart.match(/JSON\.stringify/);
       const hasHelperJsonRes = lastPart.includes('jsonRes(') || source.includes('jsonRes');
-      expect(hasDirectJsonStringify || hasHelperJsonRes).toBe(true);
+      expect(hasDirectJsonStringify || hasHelperJsonRes).toBeTruthy();
     });
 
     it(`${fnName}: error response includes error message and proper headers`, () => {
