@@ -68,6 +68,23 @@ async function handleStatus(sb: any, projectId: string, atomType = "character") 
   return { atoms: data || [], count: (data || []).length };
 }
 
+/**
+ * Cancel atoms: set all pending/running atoms to "cancelled" status.
+ * This stops background generation by marking atoms the generate loop will skip.
+ */
+async function handleCancel(sb: any, projectId: string, atomType = "character") {
+  const { data: updated, error: updErr } = await sb
+    .from("atoms")
+    .update({ generation_status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("project_id", projectId)
+    .eq("atom_type", atomType)
+    .in("generation_status", ["pending", "running"])
+    .select("id");
+
+  if (updErr) throw updErr;
+  return { cancelled: updated?.length || 0, message: `Cancelled ${updated?.length || 0} atoms` };
+}
+
 async function handleExtract(sb: any, projectId: string) {
   // 1. Get all character entities linked to scenes
   const { data: entities, error: entErr } = await sb
@@ -192,6 +209,17 @@ async function handleGenerate(sb: any, apiKey: string, projectId: string, atomId
 
   for (const atom of atoms) {
     try {
+      // Check if this atom was cancelled while waiting in queue
+      const { data: currentAtom } = await sb
+        .from("atoms")
+        .select("generation_status")
+        .eq("id", atom.id)
+        .single();
+      if (currentAtom?.generation_status === "cancelled") {
+        console.log(`[character-atomiser] atom=${atom.id} skipped — cancelled`);
+        continue;
+      }
+
       const { data: entity } = await sb
         .from("narrative_entities")
         .select("canonical_name, entity_key, meta_json, entity_type")
@@ -324,6 +352,8 @@ Deno.serve(async (req) => {
         // @ts-ignore EdgeRuntime available in Deno Deploy
         EdgeRuntime.waitUntil(handleGenerate(sb, openrouterKey, projectId, atomIds));
       }
+    } else if (action === "cancel") {
+      result = await handleCancel(sb, projectId, body.atomType || "character");
     } else if (action === "debug") {
       const openrouterKey = Deno.env.get("OPENROUTER_API_KEY") || "";
       if (!openrouterKey) {

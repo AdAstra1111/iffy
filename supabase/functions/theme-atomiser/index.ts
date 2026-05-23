@@ -34,9 +34,9 @@ async function fetchProjectDocuments(admin: any, projectId: string) {
 
   const { data: docs, error } = await admin
     .from("project_documents")
-    .select("id, document_type, current_version_id")
+    .select("id, doc_type, latest_version_id")
     .eq("project_id", projectId)
-    .in("document_type", docTypes);
+    .in("doc_type", docTypes);
 
   if (error || !docs || docs.length === 0) {
     return { storyOutline: "", beatSheet: "", characterBible: "", scenes: [] };
@@ -44,13 +44,13 @@ async function fetchProjectDocuments(admin: any, projectId: string) {
 
   const results: Record<string, any> = {};
   for (const doc of docs) {
-    if (!doc.current_version_id) continue;
+    if (!doc.latest_version_id) continue;
     const { data: version } = await admin
       .from("project_document_versions")
-      .select("content, plaintext")
-      .eq("id", doc.current_version_id)
+      .select("plaintext")
+      .eq("id", doc.latest_version_id)
       .single();
-    results[doc.document_type] = version?.plaintext || version?.content || "";
+    results[doc.doc_type] = version?.plaintext || "";
   }
 
   // Fetch scene summaries

@@ -37,16 +37,16 @@ async function fetchCharacterDialogue(admin: any, projectId: string) {
   // Get feature_script for dialogue content
   const { data: docs } = await admin
     .from("project_documents")
-    .select("id, document_type, current_version_id")
+    .select("id, doc_type, latest_version_id")
     .eq("project_id", projectId)
-    .eq("document_type", "feature_script");
+    .eq("doc_type", "feature_script");
 
   let scriptContent = "";
-  if (docs && docs.length > 0 && docs[0].current_version_id) {
+  if (docs && docs.length > 0 && docs[0].latest_version_id) {
     const { data: version } = await admin
       .from("project_document_versions")
       .select("plaintext")
-      .eq("id", docs[0].current_version_id)
+      .eq("id", docs[0].latest_version_id)
       .single();
     scriptContent = version?.plaintext || "";
   }

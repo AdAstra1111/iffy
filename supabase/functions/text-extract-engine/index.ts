@@ -110,11 +110,14 @@ function extractLocation(content: string): string | null {
  */
 function extractCharacters(content: string): string[] {
   const chars = new Set<string>();
+  // Normalize \u2029 to null byte — V8 treats \u2029 as \s, which chains
+  // adjacent ALL-CAPS words from scene headings into fake character names
+  const cleaned = content.replace(/\u2029/g, "\0");
   // Match ALL-CAPS name lines: 2-4 words of 2+ chars each, possibly with (O.S.) or (V.O.)
   // Words must be all uppercase letters (no mixed case).
   const charPattern = /^([A-Z]{2,}(?:\s+[A-Z]{2,}){1,3}(?:\s*\([A-Z\.]+\))?)$/gm;
   let match;
-  while ((match = charPattern.exec(content)) !== null) {
+  while ((match = charPattern.exec(cleaned)) !== null) {
     const name = match[1].trim();
     // Skip noise: generic uppercase phrases (prefix-based)
     if (

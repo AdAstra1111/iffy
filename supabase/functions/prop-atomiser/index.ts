@@ -71,6 +71,13 @@ const STOP_WORDS = new Set([
   "TIME", "MAN", "WOMAN", "GIRL", "BOY", "PERSON", "PEOPLE", "SOMEONE",
   "EVERYONE", "NOBODY", "NOTHING", "SOMETHING", "ANYTHING", "EVERYTHING",
   "PAGE BREAK", "PAGE", "BREAK",
+  // Time/transition markers that leak from sluglines
+  "KST", "EST", "PST", "LATE", "EARLY", "MOMENTS", "SOMETIME", "ALMOST",
+  "CONT", "BACK", "NEXT", "FEW", "HOURS", "MINUTES", "SECONDS", "DAWN",
+  "DUSK", "SUNRISE", "SUNSET", "OVER", "THROUGH", "AGAINST", "ALONG",
+  "AROUND", "BETWEEN", "BEHIND", "BEFORE", "AFTER", "ABOVE", "BELOW",
+  "INSIDE", "OUTSIDE", "ACROSS", "UNDER", "UPON",
+  "TWO", "THREE", "FOUR", "MORE", "LESS", "ALSO", "JUST", "STILL",
 ]);
 
 // Narrative role keywords that boost a prop's score
@@ -104,6 +111,10 @@ const NARRATIVE_KEYWORDS = [
 function extractCapitalizedNounPhrases(text: string): string[] {
   if (!text) return [];
 
+  // Normalize \u2029 (paragraph separator) — V8 treats it as \s, 
+  // which chains adjacent ALL-CAPS words into false multi-word phrases
+  const normalized = text.replace(/\u2029/g, "\0");
+
   const results: Set<string> = new Set();
 
   // Match 1-3 word sequences where first word is capitalized
@@ -113,7 +124,7 @@ function extractCapitalizedNounPhrases(text: string): string[] {
   // Also find Title Case words that appear inline
   const allCapsPattern = /\b([A-Z]{2,}(?:\s+[A-Z]{2,}){0,2})\b/g;
   let match;
-  while ((match = allCapsPattern.exec(text)) !== null) {
+  while ((match = allCapsPattern.exec(normalized)) !== null) {
     const phrase = match[1].trim();
     // Filter out stop words
     const words = phrase.split(/\s+/);
@@ -158,6 +169,14 @@ async function handleExtract(projectId: string) {
       e.entity_key?.toUpperCase().trim(),
     ]).filter(Boolean)
   );
+  // Also build word-level filter: individual words from character names
+  // (catches "HAE" from "HAE SUNG", "SUNG" from "HAE SUNG", etc.)
+  const characterWords = new Set<string>(
+    (charEntities || []).flatMap((e) => {
+      const name = e.canonical_name?.toUpperCase().trim();
+      return name ? name.split(/\s+/) : [];
+    }).filter((w: string) => w.length >= 3)
+  );
 
   // 3. Load existing location entity names to filter out
   const { data: locEntities } = await admin
@@ -171,6 +190,13 @@ async function handleExtract(projectId: string) {
       e.canonical_name?.toUpperCase().trim(),
       e.entity_key?.toUpperCase().trim(),
     ]).filter(Boolean)
+  );
+  // Word-level location filter
+  const locationWords = new Set<string>(
+    (locEntities || []).flatMap((e) => {
+      const name = e.canonical_name?.toUpperCase().trim();
+      return name ? name.split(/\s+/) : [];
+    }).filter((w: string) => w.length >= 3)
   );
 
   // 4. Already existing prop atoms (to avoid duplication)
@@ -198,6 +224,8 @@ async function handleExtract(projectId: string) {
       // Filter out character/location names
       if (characterNames.has(upper)) continue;
       if (locationNames.has(upper)) continue;
+      // Word-level filter: skip if candidate matches any word in a character/location name
+      if (characterWords.has(upper) || locationWords.has(upper)) continue;
       if (STOP_WORDS.has(upper)) continue;
       // Filter single chars
       if (upper.length < 3) continue;

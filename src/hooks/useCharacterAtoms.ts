@@ -53,10 +53,12 @@ interface UseCharacterAtomsReturn {
   isRefreshing: boolean;
   isExtracting: boolean;
   isGenerating: boolean;
+  isCancelling: boolean;
   lastUpdated: Date | null;
   error: string | null;
   extract: () => Promise<{ created: number } | null>;
   generate: () => Promise<{ spawned: boolean } | null>;
+  cancel: () => Promise<{ cancelled: number } | null>;
   resetFailed: () => Promise<{ reset: number } | null>;
   refetch: () => Promise<void>;
 }
@@ -87,6 +89,7 @@ export function useCharacterAtoms({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -181,11 +184,26 @@ export function useCharacterAtoms({
     }
   }, [projectId, fetchStatus]);
 
+  const cancel = useCallback(async () => {
+    setIsCancelling(true);
+    setError(null);
+    try {
+      const data = await callAtomiserAction('cancel', projectId);
+      await fetchStatus();
+      setIsCancelling(false);
+      return data;
+    } catch (err: any) {
+      setError(err.message);
+      setIsCancelling(false);
+      return null;
+    }
+  }, [projectId, fetchStatus]);
+
   const refetch = useCallback(async () => {
     setIsRefreshing(true);
     await fetchStatus();
     setIsRefreshing(false);
   }, [fetchStatus]);
 
-  return { atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, extract, generate, resetFailed, refetch };
+  return { atoms, isLoading, isRefreshing, isExtracting, isGenerating, isCancelling, lastUpdated, error, extract, generate, cancel, resetFailed, refetch };
 }

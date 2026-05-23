@@ -9,6 +9,7 @@
  */
 
 import React, { useEffect, useState, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -49,6 +50,7 @@ export default function MomentRewritePanel({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [momentCount, setMomentCount] = useState<number | null>(null);
   const startGuardRef = useRef(false);
   const unitLabel = 'Moment';
 
@@ -63,6 +65,33 @@ export default function MomentRewritePanel({
       onComplete(pipeline.newVersionId);
     }
   }, [pipeline.mode, pipeline.newVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-detect moment count from version content on initial load
+  useEffect(() => {
+    if (!initialized || !versionId || momentCount !== null) return;
+    supabase
+      .from('document_versions')
+      .select('plaintext')
+      .eq('id', versionId)
+      .single()
+      .then(({ data, error }) => {
+        if (error || !data?.plaintext) return;
+        try {
+          const trimmed = (data.plaintext as string).trim();
+          let total = 0;
+          if (trimmed.startsWith('{')) {
+            const parsed = JSON.parse(trimmed);
+            const entries = parsed.entries || parsed.scenes || parsed.moments || parsed.items || parsed.beats || [];
+            if (Array.isArray(entries)) {
+              total = entries.filter((e: any) => e && (e.title || e.number != null)).length;
+            }
+          }
+          if (total > 0) setMomentCount(total);
+        } catch {
+          // Not JSON — can't detect moment count; silently skip
+        }
+      });
+  }, [initialized, versionId, momentCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleStart = async () => {
     if (startGuardRef.current) return;
@@ -137,6 +166,11 @@ export default function MomentRewritePanel({
           {pipeline.total > 0 && (
             <span className="text-xs text-muted-foreground">
               {pipeline.done}/{pipeline.total} {unitLabel.toLowerCase()}s
+            </span>
+          )}
+          {pipeline.total === 0 && momentCount !== null && (
+            <span className="text-xs text-muted-foreground">
+              {momentCount} {unitLabel.toLowerCase()}s
             </span>
           )}
         </div>

@@ -492,8 +492,8 @@ function parseBeatSheet(plaintext: string): Act[] {
   for (const line of lines) {
     const trimmed = line.trim();
 
-    // Act header: ## Act One, ## Act TwoA, etc.
-    const actMatch = trimmed.match(/^##\s+Act\s+(\w+[\w\s]*)$/i);
+    // Act header: ## Act One, ## Act TwoA, ## Act 1: Setup — Beats, ## Act 2A: Rising Action — Beats
+    const actMatch = trimmed.match(/^##\s+Act\s+([\w]+)\s*(?::[^]*?)?(?:\s*[—–-]\s*Beats)?$/i);
     if (actMatch) {
       flushBeat();
       if (currentAct) acts.push(currentAct);

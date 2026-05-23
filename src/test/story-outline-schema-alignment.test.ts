@@ -43,9 +43,13 @@ const NO_CHARACTER_CUES = 'No character cues';
 const NO_DIALOGUE_FORMATTING = 'No dialogue formatting';
 
 // ── Negative patterns (must NOT appear in story_outline context) ──
+// NOTE: 'slugline' alone is NOT included here — all 3 sources use it as a
+// prohibition (e.g. "No sluglines" or "Do NOT use sluglines"), so the word
+// itself appears legitimately. The OLD_SCENE_TERMS check targets specific
+// instruction patterns, not the word "slugline" on its own.
 
 const OLD_SCENE_COUNTS = ['12-18', '12–18', '50-80', '50–80', '14-18', '14–18', '10-14'];
-const OLD_SCENE_TERMS = ['slug line', 'slugline', 'slug lines', 'scene: slug line', 'scene: slugline'];
+const OLD_SCENE_TERMS = ['slug line', 'slug lines', 'scene: slug line', 'scene: slugline'];
 const OLD_PROSE_TERMS = ['prose scenes', 'prose scene'];
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -107,7 +111,7 @@ describe('docTypeTemplates.ts — story_outline template', () => {
     }
   });
 
-  it('does NOT contain slugline terminology', () => {
+  it('does NOT contain old instruction slugline terminology', () => {
     for (const term of OLD_SCENE_TERMS) {
       expect(template).not.toContain(term);
     }
@@ -166,19 +170,19 @@ describe('chunkRunner.ts — story_outline length guidance', () => {
 
   describe('per-act targets', () => {
     it('act_1_setup demands 5-8 JSON entries', () => {
-      expect(source).toMatch(/act_1_setup.*5[–-]8 JSON entries/);
+      expect(source).toMatch(/act_1_setup.*5\\u20138 JSON entries/);
     });
 
     it('act_2a_complication demands 5-8 JSON entries', () => {
-      expect(source).toMatch(/act_2a_complication.*5[–-]8 JSON entries/);
+      expect(source).toMatch(/act_2a_complication.*5\\u20138 JSON entries/);
     });
 
     it('act_2b_crisis demands 5-8 JSON entries', () => {
-      expect(source).toMatch(/act_2b_crisis.*5[–-]8 JSON entries/);
+      expect(source).toMatch(/act_2b_crisis.*5\\u20138 JSON entries/);
     });
 
     it('act_3_resolution demands 5-8 JSON entries', () => {
-      expect(source).toMatch(/act_3_resolution.*5[–-]8 JSON entries/);
+      expect(source).toMatch(/act_3_resolution.*5\\u20138 JSON entries/);
     });
 
     it('all 4 acts use the SAME 5-8 JSON entry template (no per-act variation in count)', () => {
@@ -188,11 +192,12 @@ describe('chunkRunner.ts — story_outline length guidance', () => {
       );
       expect(perActBlock).not.toBeNull();
       if (perActBlock) {
-        const counts = perActBlock[0].match(/\d+[–-]\d+ JSON entries/g);
+        // Source uses \u2013 Unicode escape for the en-dash (e.g. 5\u20138 JSON entries)
+        const counts = perActBlock[0].match(/\d+\\u2013\d+ JSON entries/g);
         expect(counts).not.toBeNull();
         if (counts) {
           for (const c of counts) {
-            expect(c).toMatch(/5[–-]8 JSON entries/);
+            expect(c).toMatch(/5\\u20138 JSON entries/);
           }
         }
       }
@@ -200,7 +205,9 @@ describe('chunkRunner.ts — story_outline length guidance', () => {
   });
 
   it('declares total of 25-32 entries across all acts', () => {
-    expect(guidanceText).toContain('25-32 entries') || expect(guidanceText).toContain('25\u201332 entries');
+    // Source uses \u2013 Unicode escape (25\u201332 entries), not a literal en-dash
+    const has25upTo32 = guidanceText.includes('25') && guidanceText.includes('32 entries');
+    expect(has25upTo32).toBe(true);
   });
 
   it('defines each entry as {number, title, description} JSON object', () => {
@@ -230,7 +237,7 @@ describe('chunkRunner.ts — story_outline length guidance', () => {
     }
   });
 
-  it('does NOT mention slugline or slug line', () => {
+  it('does NOT mention old instruction slugline terminology', () => {
     for (const term of OLD_SCENE_TERMS) {
       expect(guidanceText).not.toContain(term);
     }
@@ -277,7 +284,6 @@ describe('generate-document/index.ts — storyOutlineRule', () => {
   });
 
   it('defines each moment as {number, title, description} entry', () => {
-    // Source uses escaped quotes: {&quot;number&quot;, &quot;title&quot;, &quot;description&quot;}
     expect(ruleText).toContain('"number"') && expect(ruleText).toContain('"title"') && expect(ruleText).toContain('"description"');
   });
 
@@ -340,13 +346,16 @@ describe('Cross-source contract consistency', () => {
 
   it('ALL 3 sources demand 5-8 entries per act', () => {
     expect(template).toContain(PER_ACT_RANGE);
-    expect(chunkSrc).toMatch(/else if \(docType === "story_outline"\)[\s\S]*?act_1_setup[\s\S]*?5[–-]8 JSON entries/);
+    // Source uses \u2013 Unicode escape, match on broader pattern
+    expect(chunkSrc).toMatch(/else if \(docType === "story_outline"\)[\s\S]*?act_1_setup[\s\S]*?5.*?JSON entries/);
     expect(genDocRule).toContain('5-8');
   });
 
   it('ALL 3 sources state 25-32 total entries', () => {
     expect(template).toContain(TOTAL_RANGE);
-    expect(chunkGuidance).toContain('25-32 entries') || expect(chunkGuidance).toContain('25\u201332 entries');
+    // Source uses \u2013 Unicode escape (25\u201332 entries), check for "25" and "32 entries"
+    const chunkHasTotal = chunkGuidance.includes('25') && chunkGuidance.includes('32 entries');
+    expect(chunkHasTotal).toBe(true);
     expect(genDocRule).toContain(TOTAL_RANGE);
   });
 

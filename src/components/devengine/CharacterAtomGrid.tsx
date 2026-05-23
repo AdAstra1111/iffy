@@ -18,10 +18,12 @@ interface CharacterAtomGridProps {
   isRefreshing: boolean;
   isExtracting: boolean;
   isGenerating: boolean;
+  isCancelling: boolean;
   lastUpdated: Date | null;
   error: string | null;
   onExtract: () => Promise<any>;
   onGenerate: () => Promise<any>;
+  onCancel: () => Promise<any>;
   onResetFailed: () => Promise<any>;
   onRefresh: () => Promise<void>;
 }
@@ -33,6 +35,7 @@ function StatusBadge({ status }: { status: string }) {
     pending: { icon: <Clock className="h-3 w-3" />, label: 'Pending', cls: 'bg-muted text-muted-foreground border-border' },
     generating: { icon: <Loader2 className="h-3 w-3 animate-spin" />, label: 'Generating', cls: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
     running: { icon: <Loader2 className="h-3 w-3 animate-spin" />, label: 'Generating', cls: 'bg-blue-500/15 text-blue-400 border-blue-500/30' },
+    cancelled: { icon: <AlertTriangle className="h-3 w-3" />, label: 'Cancelled', cls: 'bg-amber-500/15 text-amber-400 border-amber-500/30' },
     failed: { icon: <AlertTriangle className="h-3 w-3" />, label: 'Failed', cls: 'bg-red-500/15 text-red-400 border-red-500/30' },
   };
   const s = map[status] || map.pending;
@@ -162,6 +165,7 @@ export function CharacterAtomGrid({
   error,
   onExtract,
   onGenerate,
+  onCancel,
   onResetFailed,
   onRefresh,
 }: CharacterAtomGridProps) {
@@ -192,6 +196,24 @@ export function CharacterAtomGrid({
                 ? `Generating character atoms (${completedCount}/${totalCount})...`
                 : ''}
             </span>
+            <div className="flex-1" />
+            {isGenerating && !isCancelling && (
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={onCancel}
+                className="h-7 text-xs"
+              >
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                Stop
+              </Button>
+            )}
+            {isCancelling && (
+              <span className="text-xs text-amber-400 flex items-center gap-1">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Cancelling...
+              </span>
+            )}
           </div>
           <Progress value={isExtracting ? 25 : generationProgress} className="h-1.5" />
           <div className="text-[10px] text-blue-300/70">

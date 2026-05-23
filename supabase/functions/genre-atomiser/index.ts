@@ -28,19 +28,19 @@ async function fetchProjectDocuments(admin: any, projectId: string) {
   const docTypes = ["story_outline", "beat_sheet"];
   const { data: docs } = await admin
     .from("project_documents")
-    .select("id, document_type, current_version_id")
+    .select("id, doc_type, latest_version_id")
     .eq("project_id", projectId)
-    .in("document_type", docTypes);
+    .in("doc_type", docTypes);
 
   const results: Record<string, string> = {};
   for (const doc of docs || []) {
-    if (!doc.current_version_id) continue;
+    if (!doc.latest_version_id) continue;
     const { data: version } = await admin
       .from("project_document_versions")
       .select("plaintext")
-      .eq("id", doc.current_version_id)
+      .eq("id", doc.latest_version_id)
       .single();
-    results[doc.document_type] = version?.plaintext || "";
+    results[doc.doc_type] = version?.plaintext || "";
   }
 
   const { data: sceneVersions } = await admin
