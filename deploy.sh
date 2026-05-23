@@ -2,8 +2,9 @@
 set -e
 
 # Ensure SUPABASE_ACCESS_TOKEN is available for supabase CLI
-if [ -z "$SUPABASE_ACCESS_TOKEN" ] && [ -f "$HOME/.config/supabase/access-token" ]; then
-  export SUPABASE_ACCESS_TOKEN=$(cat "$HOME/.config/supabase/access-token")
+# Note: HOME is overridden in Hermes, so use hard-coded path
+if [ -z "$SUPABASE_ACCESS_TOKEN" ] && [ -f "/Users/laralane/.config/supabase/access-token" ]; then
+  export SUPABASE_ACCESS_TOKEN=$(cat "/Users/laralane/.config/supabase/access-token")
 fi
 
 GREEN='\033[0;32m'
