@@ -1,96 +1,31 @@
-/**
- * Debug script for deduplicateConceptBriefSections failures
- */
-import { deduplicateConceptBriefSections } from "./deduplicateConceptBriefSections.ts";
+import { statesAreEquivalent } from "./holographic-canon.ts";
 
-// Test: content before first ## heading
-console.log("=== CONTENT BEFORE FIRST HEADING ===");
-const text = `# Concept Brief
+// Debug attractor comparison
+const a = {
+  stateId: "state-1",
+  projectId: "proj-test-1",
+  computedAt: "2026-01-01T00:00:00Z",
+  inputHash: "abc123",
+  modelVersion: 1,
+  attractors: {
+    alice: { entityKey: "alice", entityType: "character", label: "Alice", position: [0.1, 0.2, 0.3], canonicalMass: 0.8, resolutionDensity: 0.9, stability: 0.85, constitutionalLayer: "core" },
+    bob: { entityKey: "bob", entityType: "character", label: "Bob", position: [0.4, 0.5, 0.6], canonicalMass: 0.6, resolutionDensity: 0.7, stability: 0.75, constitutionalLayer: "core" },
+  },
+  tensionVectors: {},
+  obligationField: [],
+  resolutionDensity: { perAttractor: {}, perScene: {}, fieldAggregate: 0.75 },
+  thermodynamics: { totalEnergy: 0.65, entropy: 0.4, narrativeTemperature: "temperate", interferenceNoise: 0.2, resonanceStability: 0.7, dominantRegime: "sustaining" },
+};
 
-Some introductory paragraph about the project.
+const b = {
+  ...a,
+  attractors: {
+    ...a.attractors,
+    alice: { ...a.attractors.alice, canonicalMass: 0.9 },
+  },
+};
 
-## Logline
-A hero emerges.
-
-## Stakes
-The fate of everything.`;
-
-const result = deduplicateConceptBriefSections(text);
-console.log("OUTPUT length:", result.length);
-console.log("starts with # Concept Brief:", result.startsWith("# Concept Brief"));
-console.log("includes 'Some introductory':", result.includes("Some introductory paragraph"));
-
-// Test: case variations
-console.log("\n=== CASE VARIATIONS ===");
-const text2 = [
-  "## protagonist",
-  "Lowercase protagonist content.",
-  "",
-  "## STAKES",
-  "Uppercase stakes content.",
-  "",
-  "## Premise",
-  "Normal case premise.",
-  "",
-  "## TONE & ATMOSPHERE",
-  "Loud and clear.",
-].join("\n");
-const result2 = deduplicateConceptBriefSections(text2);
-console.log("OUTPUT:", JSON.stringify(result2));
-console.log("includes 'lowercase protagonist content':", result2.includes("lowercase protagonist content"));
-console.log("includes 'uppercase stakes content':", result2.includes("uppercase stakes content"));
-
-// Test: ## Protagonistic Villain
-console.log("\n=== PROTAGONISTIC VILLAIN ===");
-const text3 = [
-  "## Protagonist",
-  "John Doe is our hero.",
-  "",
-  "## Protagonistic Villain",
-  "This antagonist seems heroic.",
-  "",
-  "## Stakes",
-  "The fate of the world.",
-].join("\n");
-const result3 = deduplicateConceptBriefSections(text3);
-console.log("OUTPUT:", JSON.stringify(result3));
-const protoCount = (result3.match(/^## Protagonist$/m) || []).length;
-console.log("## Protagonist count:", protoCount);
-
-// Test: 14 valid headings
-console.log("\n=== 14 VALID HEADINGS ===");
-const headingTexts = [
-  "## Logline", "## Genre & Subgenre", "## Premise",
-  "## Protagonist", "## Opposition",
-  "## Key Relationships", "## World Building",
-  "## Central Conflict", "## Stakes",
-  "## Tone & Atmosphere", "## Themes",
-  "## Audience & Market", "## Unique Hook",
-  "## Visual & Sensory Palette",
-];
-const sections = headingTexts.map(h => h + "\n" + "Content for this section.");
-const text4 = sections.join("\n\n");
-const result4 = deduplicateConceptBriefSections(text4);
-for (const h of headingTexts) {
-  const escaped = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const count = (result4.match(new RegExp("^" + escaped + "$", "m")) || []).length;
-  const status = count === 1 ? "OK" : "FAIL";
-  console.log(`${h}: count=${count} -> ${status}`);
-}
-
-// Test: ## Tone matches tone_and_style (alias)
-console.log("\n=== TONE ALIAS ===");
-const text5 = [
-  "## Tone & Atmosphere",
-  "Dark and brooding.",
-  "",
-  "## Tone",
-  "Moody and atmospheric.",
-].join("\n");
-const result5 = deduplicateConceptBriefSections(text5);
-console.log("OUTPUT:", JSON.stringify(result5));
-const toneCount = (result5.match(/^## Tone & Atmosphere$/m) || []).length;
-const toneAliasCount = (result5.match(/^## Tone$/m) || []).length;
-console.log("## Tone & Atmosphere count:", toneCount);
-console.log("## Tone count:", toneAliasCount);
-console.log("includes 'Moody and atmospheric':", result5.includes("Moody and atmospheric"));
+console.log("A attractors JSON:", JSON.stringify(a.attractors, Object.keys(a.attractors).sort()));
+console.log("B attractors JSON:", JSON.stringify(b.attractors, Object.keys(b.attractors).sort()));
+console.log("Equal?:", JSON.stringify(a.attractors, Object.keys(a.attractors).sort()) === JSON.stringify(b.attractors, Object.keys(b.attractors).sort()));
+console.log("statesAreEquivalent:", statesAreEquivalent(a as any, b as any));

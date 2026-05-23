@@ -222,7 +222,7 @@ export function ObligationTopologyTooltip({ state, metric, sceneId, position, on
           <p className="text-[9px] text-muted-foreground font-mono">{sceneId.slice(0, 12)}...</p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-bold">{((metricData as any)?.aggregateScore ?? (metricData as any)?.chargeScore ?? (metricData as any)?.aggregateIndex ?? (metricData as any)?.score ?? 0 * 100).toFixed(0)}%</p>
+          <p className="text-sm font-bold">{(((metricData as any)?.aggregateScore ?? (metricData as any)?.chargeScore ?? (metricData as any)?.aggregateIndex ?? (metricData as any)?.score ?? 0) * 100).toFixed(0)}%</p>
           <p className="text-[9px] text-muted-foreground">Score</p>
         </div>
       </div>

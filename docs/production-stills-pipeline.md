@@ -346,10 +346,10 @@ The June 1 demo requires **atoms → basic character images** in a clean flow. M
 
 | Pipeline Step | What to Demo | Preconditions |
 |---------------|-------------|---------------|
-| 1. Atom generation | character-atomiser extracts physical descriptions for 1-2 characters | Script uploaded, narrative entities linked to scenes |
-| 2. Visual DNA enrichment | Atom physical descriptions flow into character_visual_dna | Phase 1 bridge deployed |
+| 1. Atom generation | character-atomiser extracts physical descriptions for 1-2 characters + location-atomiser extracts architecture/geography for 1-2 locations | Script uploaded, narrative entities linked to scenes |
+| 2. Visual DNA enrichment | Character atom physical descriptions flow into character_visual_dna AND location atom data flows into location_visual_datasets | Phase 1A and Phase 1B bridges deployed |
 | 3. Identity pack generation | 3 images per character (headshot, profile, full_body) | character_visual_dna has identity_signature |
-| 4. World establishing | 1-2 location establishing shots | location atoms completed |
+| 4. World establishing | 1-2 location establishing shots enriched with location atom architecture/geography/atmosphere data | location_visual_datasets populated for each location |
 | 5. Key moment | 1 tableau shot from a scene | scene_graph_versions populated |
 
 **Walkthrough:**
@@ -443,13 +443,13 @@ Every generated image must pass `classifyCharacterIdentity()`. The pipeline enfo
 | OpenRouter key for image generation | ✅ In env | None |
 | Supabase storage buckets | ✅ Configured | None |
 | `_shared/imageGenerationResolver.ts` | ✅ Exists | None |
-
----
+| `location_visual_datasets` table | ✅ Schema exists (migration 20260323171427) | Target for location atom enrichment (Phase 1B) |
+| `enrichWithLocationAtoms()` in generate-lookbook-image | ✅ Exists at line 708 | Client-side raw text enrichment — pipeline orchestrator prefers structured `location_visual_datasets` |
 
 ## 9. Build Order
 
-1. **`enrich-visual-dna-from-atoms` edge function** — read atoms, merge into character_visual_dna
-2. **`pipeline-orchestrator` edge function** — phase management, state persistence
+1. **`enrich-visual-dna-from-atoms` edge function** — read atoms, merge into character_visual_dna AND location_visual_datasets (entity_type discriminator)
+2. **`pipeline-orchestrator` edge function** — phase management, state persistence with error tracking and budget enforcement
 3. **`projects.pipeline_state` column** — single JSONB migration
 4. **`generate-lookbook-image` shot_plan_context support** — additive input contract
 5. **`VisualProductionPipeline.tsx` trigger button** — frontend integration for June 1 demo
@@ -462,6 +462,7 @@ Every generated image must pass `classifyCharacterIdentity()`. The pipeline enfo
 | Gate | Check | Failure Action |
 |------|-------|---------------|
 | Atom completion | All required atom types for selected phase have generation_status='complete' | Block phase, report missing atoms |
+| Location enrichment | `location_visual_datasets` has entries for all location entities in the scene graph | Skip world establishing generation, only generate character images |
 | DNA enrichment | character_visual_dna has at least identity_signature with face/body data | Skip character image generation, only generate world/location |
 | Identity lock | classifyCharacterIdentity() passes on generated images | Move to candidate pool (not active), flag for review |
 | Storage verification | Image binary exists at claimed storage_path | Re-generate, max 2 retries |
@@ -493,12 +494,19 @@ Every generated image must pass `classifyCharacterIdentity()`. The pipeline enfo
 
 ```
 atoms.attributes.physical_description ──→ enrich-visual-dna-from-atoms ──→ character_visual_dna
+  (entity_type: 'character')
+
+atoms.attributes.architecture/geography/atmosphere ──→ enrich-visual-dna-from-atoms ──→ location_visual_datasets
+  (entity_type: 'location')                                                 structural_substrate, atmosphere_behavior, slot_architectural_detail
 
 character_visual_dna ──→ resolveCharacterBindings() ──→ CharacterBinding[]
   └── traits_summary, identity_signature, locked_invariants
 
 CharacterBinding[] ──→ buildCharacterBindingBlock() ──→ [IDENTITY SIGNATURE] block
   └── Face, Body, Silhouette, Wardrobe sections
+
+location_visual_datasets ──→ resolveWorldBindings() ──→ WorldBinding[]
+  └── structural_substrate, atmosphere_behavior, slot_architectural_detail, slot_atmosphere
 
 character_visual_dna + scene_versions ──→ loadNarrativeMoments() ──→ NarrativeMoment[]
   └── selectNarrativeMoment() picks best moment for shot type
@@ -508,6 +516,7 @@ PromptContext {
   characterTraits: bindings[i].traits_summary,
   locationName: locationBinding.canonical_name,
   locationDescription: locationBinding.description,
+  worldRules: locationBinding.world_rules,
   tone, period, genre: from project meta
 }
 
@@ -522,13 +531,13 @@ slotPromptRegistry.buildPromptFromTemplate(template, context) → { prompt, nega
 
 ## 13. Missing Integration Points — Complete Spec
 
-### Missing #1: `enrich-visual-dna-from-atoms` (Phase 1)
+### Missing #1: `enrich-visual-dna-from-atoms` (Phase 1A + Phase 1B)
 **Priority:** HIGH — necessary for atom data to reach images
-**Implementation:** New edge function, ~200 lines
-**Reads:** `atoms` table, `character_visual_dna` table
-**Writes:** `character_visual_dna` table
+**Implementation:** New edge function, ~300 lines (character + location enrichment)
+**Reads:** `atoms` table, `character_visual_dna` table, `location_visual_datasets` table
+**Writes:** `character_visual_dna` table (character mode), `location_visual_datasets` table (location mode)
 **Calls:** None (self-contained)
-**Documented in:** Section 4, Phase 1
+**Documented in:** Section 4, Phase 1A and Phase 1B
 
 ### Missing #2: `pipeline-orchestrator` (Phase 2)
 **Priority:** HIGH — necessary for chain execution
@@ -562,6 +571,8 @@ slotPromptRegistry.buildPromptFromTemplate(template, context) → { prompt, nega
 
 5. **Failure isolation per phase** — If a phase fails (e.g., key moment generation), subsequent phases continue. The orchestrator reports per-phase status. This prevents cascading failures.
 
+6. **Location enrichment targets existing `location_visual_datasets` table** — The table already exists (migration 20260323171427) with 8 visual role layers and 6 slot-specific specs. The `enrich-visual-dna-from-atoms` function writes atom attributes into these structured JSONB columns rather than creating a new table. This avoids schema drift while resolving the missing connector between location atoms and world-establishing image generation. The existing `enrichWithLocationAtoms()` in `generate-lookbook-image` (raw text block appended to prompt) remains as a fallback for non-orchestrated calls.
+
 ---
 
 ## 15. File List
@@ -569,8 +580,8 @@ slotPromptRegistry.buildPromptFromTemplate(template, context) → { prompt, nega
 ### New Files
 | File | Purpose | Phase |
 |------|---------|-------|
-| `supabase/functions/enrich-visual-dna-from-atoms/index.ts` | Bridge atoms → character_visual_dna | Phase 1 |
-| `supabase/functions/pipeline-orchestrator/index.ts` | Pipeline state machine orchestrator | Phase 2 |
+| `supabase/functions/enrich-visual-dna-from-atoms/index.ts` | Bridge atoms → character_visual_dna + location_visual_datasets (entity_type discriminator) | Phase 1A + Phase 1B |
+| `supabase/functions/pipeline-orchestrator/index.ts` | Pipeline state machine orchestrator with error retry and budget enforcement | Phase 2 |
 
 ### Modified Files
 | File | Change | Phase |
@@ -604,8 +615,9 @@ slotPromptRegistry.buildPromptFromTemplate(template, context) → { prompt, nega
 
 ### Fallback
 If full pipeline fails, demonstrate phases independently:
-- Show atom data in `atoms` table
+- Show atom data in `atoms` table (character + location)
 - Show `character_visual_dna` enriched with atom data
+- Show `location_visual_datasets` populated with atom architecture/geography/atmosphere data
 - Show one `generate-lookbook-image` call manually
 - Show resulting image in storage
 

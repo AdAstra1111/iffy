@@ -72,7 +72,6 @@ interface UseObligationTopologyOptions {
 
 interface UseObligationTopologyReturn {
   states: Record<string, ObligationTopologyState>;
-  sceneIdsWithError: string[];
   isLoading: boolean;
   error: string | null;
   refetch: () => void;
@@ -141,14 +140,8 @@ export function useObligationTopology(
     };
   }, [fetchTopology]);
 
-  // Derive scene IDs with errors from the edge function response
-  const sceneIdsWithError = Object.entries(states)
-    .filter(([_, s]) => s && typeof s === 'object' && 'error' in (s as any))
-    .map(([id]) => id);
-
   return {
     states,
-    sceneIdsWithError,
     isLoading,
     error,
     refetch: fetchTopology,

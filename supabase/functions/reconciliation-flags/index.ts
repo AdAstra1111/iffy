@@ -36,6 +36,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+  try {
 
   // GET — list flags
   if (req.method === "GET") {
@@ -164,4 +165,11 @@ serve(async (req) => {
     status: 405,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+  } catch (e) {
+    console.error("[reconciliation-flags] error:", e);
+    return new Response(
+      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
 });

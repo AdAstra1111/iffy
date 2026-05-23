@@ -98,6 +98,7 @@ const ProductionDesign = lazy(() => import("./pages/ProductionDesign"));
 const VisualProductionPipeline = lazy(() => import("./pages/VisualProductionPipeline"));
 const NarrativeDna = lazy(() => import("./pages/NarrativeDna"));
 const NarrativeEngines = lazy(() => import("./pages/NarrativeEngines"));
+const DemoPortal = lazy(() => import("./pages/DemoPortal"));
 const DemoDashboard = lazy(() => import("./pages/DemoDashboard"));
 const IntelDashboard = lazy(() => import("./pages/IntelDashboard"));
 const IntelPolicies = lazy(() => import("./pages/IntelPolicies"));
@@ -206,7 +207,8 @@ const AnimatedRoutes = () => {
           <Route path="/ai-cast/actors" element={<ProtectedRoute><ActorLibrary /></ProtectedRoute>} />
           <Route path="/actor-marketplace" element={<ProtectedRoute><ActorMarketplace /></ProtectedRoute>} />
           <Route path="/calibration-lab" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
-          <Route path="/demo" element={<GuidedDemo />} />
+          <Route path="/demo" element={<DemoPortal />} />
+          <Route path="/demo/guided" element={<GuidedDemo />} />
           <Route path="/demo/cinematic" element={<CinematicDemo />} />
           <Route path="/demo/interactive" element={<InteractiveDemo />} />
           <Route path="/demo/executive" element={<ExecutiveDemo />} />
