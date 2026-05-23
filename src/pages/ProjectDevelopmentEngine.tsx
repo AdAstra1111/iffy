@@ -1542,7 +1542,9 @@ export default function ProjectDevelopmentEngine() {
 
       // story_outline: JSON format → moment pipeline; plaintext → sectioned fallback
       if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
-        const isJSONOutline = (selectedVersion?.plaintext || '').trim().startsWith('{');
+        const isJSONOutline = (selectedVersion?.plaintext || '').trim().startsWith('{') || (
+          selectedDoc?.doc_type === 'story_outline' && (selectedVersion?.plaintext || '').trim().startsWith('##')
+        );
         if (isJSONOutline) {
           if (allPrioritizedMoves.length > 0) {
             // Apply approved notes through moment pipeline
@@ -3388,10 +3390,12 @@ export default function ProjectDevelopmentEngine() {
                       isRefreshing={characterAtoms.isRefreshing}
                       isExtracting={characterAtoms.isExtracting}
                       isGenerating={characterAtoms.isGenerating}
+                      isCancelling={characterAtoms.isCancelling}
                       lastUpdated={characterAtoms.lastUpdated}
                       error={characterAtoms.error}
                       onExtract={characterAtoms.extract}
                       onGenerate={characterAtoms.generate}
+                      onCancel={characterAtoms.cancel}
                       onResetFailed={characterAtoms.resetFailed}
                       onRefresh={characterAtoms.refetch}
                     />

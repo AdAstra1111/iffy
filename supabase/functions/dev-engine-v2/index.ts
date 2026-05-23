@@ -917,6 +917,98 @@ function extractJSON(raw) {
   return c.trim();
 }
 /**
+ * Convert a story outline text to parsed JSON, handling both raw JSON
+ * and ##-prefixed hybrid format produced by chunkRunner assembly.
+ *
+ * Algorithm:
+ * 1. If text starts with "{" try JSON.parse directly
+ * 2. Else split by /\n##\s+/, extract per-act JSON blocks
+ * 3. Normalize wrapper keys (act, scene, entry → "entries")
+ * 4. Merge all entries into unified {title, format, entries}
+ * 5. Return null on truly unparseable content (fail closed)
+ */
+function convertStoryOutlineToJson(text) {
+  const trimmed = (text || "").trim();
+  if (!trimmed) return null;
+  // Case 1: Already raw JSON
+  if (trimmed.startsWith("{")) {
+    try { return JSON.parse(trimmed); }
+    catch { return null; }
+  }
+  // Case 2: ##-prefixed hybrid format from chunkRunner
+  // Split on ## headers and look for JSON code blocks after each header
+  const sections = trimmed.split(/\n##\s+/);
+  if (sections.length < 2) return null; // Not hybrid format either
+  const allEntries = [];
+  let title = "";
+  let format = "story_outline";
+  // Track seen wrapper key types to normalize across sections
+  for (const section of sections) {
+    // Skip the first section if it's just whitespace or raw text before the first ##
+    const sectionText = section.trim();
+    if (!sectionText || /^[A-Za-z\s]+$/.test(sectionText) || !/\{/.test(sectionText)) continue;
+    // Extract JSON code blocks: ```json ... ``` or bare { ... }
+    let jsonStr = sectionText;
+    // Try ```json ... ``` first
+    const codeBlockMatch = sectionText.match(/```(?:json)?\s*\n?([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1].trim();
+    } else {
+      // Try extracting the first { ... } block
+      const braceIdx = sectionText.indexOf("{");
+      if (braceIdx >= 0) {
+        const lastBrace = sectionText.lastIndexOf("}");
+        if (lastBrace > braceIdx) {
+          jsonStr = sectionText.slice(braceIdx, lastBrace + 1);
+        }
+      }
+    }
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== "object") continue;
+      // Extract title from first section or wrapper
+      if (!title && (parsed.title || parsed.name)) {
+        title = parsed.title || parsed.name;
+      }
+      // Normalize wrapper keys: look for entries, scenes, moments, items
+      const entries = parsed.entries || parsed.scenes || parsed.moments || parsed.items || parsed.beats || [];
+      if (Array.isArray(entries) && entries.length > 0) {
+        for (const entry of entries) {
+          if (entry && typeof entry.title === "string" && typeof entry.number === "number") {
+            allEntries.push(entry);
+          } else if (entry && typeof entry === "object") {
+            // Coerce entry to expected shape
+            allEntries.push({
+              number: entry.number || allEntries.length + 1,
+              title: entry.title || entry.name || entry.scene_title || entry.scene || `Entry ${allEntries.length + 1}`,
+              description: entry.description || entry.summary || entry.content || entry.text || entry.desc || entry.overview || entry.synopsis || ""
+            });
+          }
+        }
+      } else {
+        // Maybe the section itself IS an entry (single entry per act)
+        if (parsed.title && parsed.number) {
+          allEntries.push({
+            number: parsed.number,
+            title: parsed.title,
+            description: parsed.description || parsed.summary || ""
+          });
+        } else if (parsed.title || parsed.name) {
+          allEntries.push({
+            number: allEntries.length + 1,
+            title: parsed.title || parsed.name,
+            description: parsed.description || parsed.summary || parsed.content || ""
+          });
+        }
+      }
+    } catch {
+      continue; // Skip sections that don't parse
+    }
+  }
+  if (allEntries.length === 0) return null;
+  return { title, format, entries: allEntries };
+}
+/**
  * Process a story outline rewrite:
  * 1. Fetch the story outline JSON
  * 2. Create a new version and chunks
@@ -931,9 +1023,8 @@ function extractJSON(raw) {
   if (doc?.doc_type !== "story_outline") throw new Error("Not a story outline");
   const { data: version } = await bgSupabase.from("project_document_versions").select("plaintext, version_number").eq("id", sourceVersionId).single();
   if (!version) throw new Error("Source version not found (id: " + sourceVersionId + ")");
-  const trimmed = (version.plaintext || "").trim();
-  if (!trimmed.startsWith("{")) throw new Error("Source version plaintext is not JSON object");
-  const storyOutlineJSON = JSON.parse(trimmed);
+  const storyOutlineJSON = convertStoryOutlineToJson(version.plaintext);
+  if (!storyOutlineJSON) throw new Error("Source version plaintext is not valid story outline JSON");
   if (!Array.isArray(storyOutlineJSON.entries) || storyOutlineJSON.entries.length === 0) throw new Error("Story outline has no entries to rewrite");
   const totalEntries = storyOutlineJSON.entries.length;
   const newVersionNumber = (version.version_number || 1) + 1;
@@ -5949,6 +6040,35 @@ serve(async (req)=>{
         versionNumber: newVersionNumber,
         entriesConverted: outline.entries.length,
         hasNestedMoments
+      }), {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json"
+        }
+      });
+    }
+    // ══════════════════════════════════════════════
+    // CONVERT_STORY_OUTLINE_TO_JSON — parse story outline JSON handling hybrid format
+    // ══════════════════════════════════════════════
+    if (action === "convert_story_outline_to_json") {
+      const { projectId } = body;
+      if (!projectId) throw new Error("projectId required");
+      // Find the story outline document
+      const { data: docs } = await supabase.from("project_documents").select("id, latest_version_id").eq("project_id", projectId).eq("doc_type", "story_outline").limit(1);
+      if (!docs || docs.length === 0) throw new Error("No story outline document found");
+      const docId = docs[0].id;
+      const verId = docs[0].latest_version_id;
+      if (!verId) throw new Error("Story outline has no version");
+      const { data: ver } = await supabase.from("project_document_versions").select("plaintext, version_number").eq("id", verId).single();
+      if (!ver) throw new Error("Version not found");
+      const parsed = convertStoryOutlineToJson(ver.plaintext);
+      if (!parsed) throw new Error("Story outline could not be parsed as JSON — not valid JSON or hybrid format");
+      return new Response(JSON.stringify({
+        success: true,
+        parsed,
+        entryCount: parsed.entries?.length || 0,
+        hasEntries: Array.isArray(parsed.entries) && parsed.entries.length > 0,
+        isHybridFormat: !ver.plaintext?.trim().startsWith("{")
       }), {
         headers: {
           ...corsHeaders,
@@ -33397,11 +33517,8 @@ CRITICAL:
         const { data: _previewVer } = await supabase.from("project_document_versions").select("plaintext").eq("id", sourceVersionId).maybeSingle();
         const _entriesPreview = (()=>{
           try {
-            const trimmed = (_previewVer?.plaintext || "").trim();
-            if (trimmed.startsWith("{")) {
-              const preview = JSON.parse(trimmed);
-              return Array.isArray(preview.entries) ? preview.entries.length : 0;
-            }
+            const parsed = convertStoryOutlineToJson(_previewVer?.plaintext);
+            return parsed && Array.isArray(parsed.entries) ? parsed.entries.length : 0;
           } catch  {}
           return 0;
         })();
