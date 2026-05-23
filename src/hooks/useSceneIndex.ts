@@ -52,10 +52,14 @@ export function useSceneIndex(projectId: string | undefined) {
 
       return resp.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [SCENE_INDEX_KEY, projectId] });
+    onSuccess: (data) => {
+      // Synchronously populate cache from edge function response
+      if (data?.scenes && Array.isArray(data.scenes)) {
+        queryClient.setQueryData([SCENE_INDEX_KEY, projectId], data.scenes);
+      }
+      // Invalidate readiness query for detailed character/wardrobe counts
       queryClient.invalidateQueries({ queryKey: [SCENE_INDEX_READY_KEY, projectId] });
-      toast.success('Scene index built successfully');
+      toast.success(`Scene index built: ${data?.count ?? 0} scenes`);
     },
     onError: (err: Error) => {
       toast.error(`Scene index build failed: ${err.message}`);

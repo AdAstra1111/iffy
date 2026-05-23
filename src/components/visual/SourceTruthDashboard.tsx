@@ -465,7 +465,7 @@ export function SourceTruthDashboard({ projectId }: { projectId: string }) {
         wardrobe.extract();
         break;
       case 'scene_index':
-        try { await sceneIdx.extractSceneIndex(); } catch {}
+        await sceneIdx.extractSceneIndex();
         break;
       case 'locations':
         handleExtractLocations();
