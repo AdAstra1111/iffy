@@ -863,7 +863,15 @@ export function hashCanonInputs(narrativeState: NarrativeState): string {
     .sort()
     .join(",");
   // Use stable JSON serialization for canonJson
-  const canonStr = JSON.stringify(narrativeState.canonJson, Object.keys(narrativeState.canonJson).sort());
+  // Use stable deep-sort replacer — array replacer kills nested objects
+  const stableSortReplacer = (_k: string, v: unknown): unknown =>
+    v instanceof Object && !Array.isArray(v)
+      ? Object.keys(v).sort().reduce((acc: Record<string, unknown>, k: string) => {
+          acc[k] = (v as Record<string, unknown>)[k];
+          return acc;
+        }, {} as Record<string, unknown>)
+      : v;
+  const canonStr = JSON.stringify(narrativeState.canonJson, stableSortReplacer);
   const payload = `${narrativeState.projectId}|${sceneKeys}|${entityKeys}|${canonStr}`;
   return djb2a(payload);
 }
@@ -896,6 +904,17 @@ export function statesAreEquivalent(a: LatentCanonState, b: LatentCanonState): b
       JSON.stringify(b.attractors, Object.keys(b.attractors).sort()) &&
     JSON.stringify(a.tensionVectors, Object.keys(a.tensionVectors).sort()) ===
       JSON.stringify(b.tensionVectors, Object.keys(b.tensionVectors).sort()) &&
+    // Compare obligationField by content — not just length
+    JSON.stringify(
+      a.obligationField
+        .map((o) => ({ obligationId: o.obligationId, energy: o.energy, discharged: o.discharged }))
+        .sort((a, b) => a.obligationId.localeCompare(b.obligationId)),
+    ) ===
+      JSON.stringify(
+        b.obligationField
+          .map((o) => ({ obligationId: o.obligationId, energy: o.energy, discharged: o.discharged }))
+          .sort((a, b) => a.obligationId.localeCompare(b.obligationId)),
+      ) &&
     a.thermodynamics.totalEnergy === b.thermodynamics.totalEnergy &&
     a.thermodynamics.entropy === b.thermodynamics.entropy &&
     a.thermodynamics.resonanceStability === b.thermodynamics.resonanceStability &&
