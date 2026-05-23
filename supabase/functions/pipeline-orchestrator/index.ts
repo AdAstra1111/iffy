@@ -483,7 +483,6 @@ async function executeGenerateForType(
 
       result.totalCalls++;
       try {
-        entity.name;
         const generateBody: Record<string, any> = {
           project_id: projectId,
           section: section === "identity" ? "character" : section === "references" ? "character" : section,
