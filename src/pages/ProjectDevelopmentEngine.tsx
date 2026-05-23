@@ -1541,6 +1541,14 @@ export default function ProjectDevelopmentEngine() {
 
       // story_outline: JSON format → moment pipeline; plaintext → sectioned fallback
       if (selectedDoc?.doc_type === 'story_outline' && selectedDocId && selectedVersionId) {
+        // Content-empty guard: without story_outline in SECTIONED_REWRITE_TYPES,
+        // empty content would fall through to the generic rewrite.mutate path
+        const proseContent = selectedVersion?.plaintext || selectedDoc?.plaintext || '';
+        if (!proseContent || proseContent.trim().length < 10) {
+          toast.warning('Document version appears to have no content — generate the document first.');
+          console.warn(`[handleRewrite] story_outline version ${selectedVersionId} has no plaintext content`);
+          return;
+        }
         const isJSONOutline = (selectedVersion?.plaintext || '').trim().startsWith('{') || (
           selectedDoc?.doc_type === 'story_outline' && (selectedVersion?.plaintext || '').trim().startsWith('##')
         );
