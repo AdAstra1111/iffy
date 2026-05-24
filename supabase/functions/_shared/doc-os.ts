@@ -204,6 +204,7 @@ export async function ensureDocSlot(
     // Scripts bucket path: scripts/<user_id>/<project_id>/<filename>
     // (user_id prefix ensures user's storage namespace, not a shared UUID bucket)
     file_path: `${userId}/${projectId}/${fileName}`,
+    char_count: 0,
     extraction_status: "complete",
     source: opts?.source || "generated",
     is_primary: false,
@@ -519,7 +520,7 @@ export async function createVersion(
   if (hasRenderableContent) {
     const { error: lvErr } = await supabase
       .from("project_documents")
-      .update({ latest_version_id: newVersion.id })
+      .update({ latest_version_id: newVersion.id, char_count: opts.plaintext.trim().length })
       .eq("id", opts.documentId);
     if (lvErr) {
       console.warn(`[doc-os] failed to set latest_version_id for doc ${opts.documentId}: ${lvErr.message}`);

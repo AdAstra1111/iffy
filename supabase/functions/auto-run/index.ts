@@ -1967,7 +1967,7 @@ async function nextUnsatisfiedStage(
   }
 
   const APPROVAL_REQUIRED_STAGES = new Set([
-    "episode_grid", "character_bible", "season_arc", "format_rules",
+    "episode_grid", "character_bible", "season_arc", "format_rules", "season_script",
   ]);
 
   // Walk ladder from current+1 to target, find first unsatisfied
