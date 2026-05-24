@@ -71,7 +71,6 @@ import { getEffectiveMode } from '@/lib/visibility';
 
 // New architecture components
 import { ProjectSummaryBar } from '@/components/project/ProjectSummaryBar';
-import { SimpleProjectView } from '@/components/project/SimpleProjectView';
 import { AdvancedProjectView } from '@/components/project/AdvancedProjectView';
 import { AutoRunSetupPanel } from '@/components/project/AutoRunSetupPanel';
 import { ReverseEngineerCallout } from '@/components/project/ReverseEngineerCallout';
@@ -578,20 +577,7 @@ export default function ProjectDetail() {
             <div className="space-y-4">
               <NDGSummaryPanel projectId={id} />
               <SceneIntelligencePanel projectId={id} />
-              {effectiveMode === 'simple' ? (
-                <SimpleProjectView
-                  project={project}
-                  readiness={readiness}
-                  analysis={analysis}
-                  scriptCount={scripts.length}
-                  castCount={cast.length}
-                  partnerCount={partners.length}
-                  hodCount={hods.length}
-                  financeScenarioCount={financeScenarios.length}
-                  onSwitchToAdvanced={() => setMode('advanced')}
-                />
-              ) : (
-                <AdvancedProjectView
+              <AdvancedProjectView
                   project={project}
                   projectId={id!}
                   readiness={readiness}
@@ -637,7 +623,6 @@ export default function ProjectDetail() {
                   onIncentiveAnalysed={setIncentiveAnalysedThisSession}
                   costEntries={costEntries}
                 />
-              )}
             </div>
           </SystemSection>
 

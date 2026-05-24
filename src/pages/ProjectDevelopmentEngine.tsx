@@ -3436,6 +3436,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={locationAtoms.atoms}
                       isLoading={locationAtoms.isLoading}
                       isRefreshing={locationAtoms.isRefreshing}
+                      isExtracting={locationAtoms.isExtracting}
+                      isGenerating={locationAtoms.isGenerating}
                       lastUpdated={locationAtoms.lastUpdated}
                       error={locationAtoms.error}
                       onExtract={locationAtoms.extract}
@@ -3451,6 +3453,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={propAtoms.atoms}
                       isLoading={propAtoms.isLoading}
                       isRefreshing={propAtoms.isRefreshing}
+                      isExtracting={propAtoms.isExtracting}
+                      isGenerating={propAtoms.isGenerating}
                       lastUpdated={propAtoms.lastUpdated}
                       error={propAtoms.error}
                       onExtract={propAtoms.extract}
@@ -3465,6 +3469,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={costumeAtoms.atoms}
                       isLoading={costumeAtoms.isLoading}
                       isRefreshing={costumeAtoms.isRefreshing}
+                      isExtracting={costumeAtoms.isExtracting}
+                      isGenerating={costumeAtoms.isGenerating}
                       lastUpdated={costumeAtoms.lastUpdated}
                       error={costumeAtoms.error}
                       characterAtomsReady={characterAtoms.atoms.some(
@@ -3482,6 +3488,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={vehicleAtoms.atoms}
                       isLoading={vehicleAtoms.isLoading}
                       isRefreshing={vehicleAtoms.isRefreshing}
+                      isExtracting={vehicleAtoms.isExtracting}
+                      isGenerating={vehicleAtoms.isGenerating}
                       lastUpdated={vehicleAtoms.lastUpdated}
                       error={vehicleAtoms.error}
                       onExtract={vehicleAtoms.extract}
@@ -3496,6 +3504,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={creatureAtoms.atoms}
                       isLoading={creatureAtoms.isLoading}
                       isRefreshing={creatureAtoms.isRefreshing}
+                      isExtracting={creatureAtoms.isExtracting}
+                      isGenerating={creatureAtoms.isGenerating}
                       lastUpdated={creatureAtoms.lastUpdated}
                       error={creatureAtoms.error}
                       onExtract={creatureAtoms.extract}
@@ -3510,6 +3520,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={themeAtoms.atoms}
                       isLoading={themeAtoms.isLoading}
                       isRefreshing={themeAtoms.isRefreshing}
+                      isExtracting={themeAtoms.isExtracting}
+                      isGenerating={themeAtoms.isGenerating}
                       lastUpdated={themeAtoms.lastUpdated}
                       error={themeAtoms.error}
                       onExtract={themeAtoms.extract}
@@ -3538,6 +3550,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={genreAtoms.atoms}
                       isLoading={genreAtoms.isLoading}
                       isRefreshing={genreAtoms.isRefreshing}
+                      isExtracting={genreAtoms.isExtracting}
+                      isGenerating={genreAtoms.isGenerating}
                       lastUpdated={genreAtoms.lastUpdated}
                       error={genreAtoms.error}
                       onExtract={genreAtoms.extract}

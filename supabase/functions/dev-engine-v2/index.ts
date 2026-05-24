@@ -9943,6 +9943,62 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         console.warn(`Version ${nextVersion} conflict, retrying...`);
       }
       if (!newVersion) throw new Error("Failed to create version after retries");
+      // ── VERSION PROMOTION GATE: ensure new rewrite version becomes current ──
+      // The doc-os createVersion promotion logic (shouldPromote) can fail when the
+      // parent version is no longer current due to concurrent rewrites, leaving
+      // orphaned versions with is_current: false and bg_generating: true stuck.
+      // This gate explicitly promotes the new version and cleans up stale flags.
+      try {
+        // Clear is_current on all other versions for this document
+        await supabase.from("project_document_versions")
+          .update({ is_current: false })
+          .eq("document_id", documentId)
+          .eq("is_current", true)
+          .neq("id", newVersion.id);
+
+        // Promote the new version to current
+        await supabase.from("project_document_versions")
+          .update({ is_current: true })
+          .eq("id", newVersion.id);
+
+        // Clear stale bg_generating flags from any version for this document
+        // The progress init writes bg_generating: true to the source versionId
+        // during per-character generation. If the new version creation fails or
+        // dedupes, the flag remains stuck. Clean it up here unconditionally.
+        try {
+          await supabase.rpc('exec_sql', {
+            query: `UPDATE public.project_document_versions 
+                    SET meta_json = meta_json::jsonb - 'bg_generating'
+                    WHERE document_id = '${documentId}'::uuid
+                    AND meta_json->>'bg_generating' = 'true'
+                    AND id != '${newVersion.id}'::uuid`
+          });
+        } catch (sqlErr) {
+          // Fallback: fetch and update one by one
+          console.warn("[dev-engine-v2] rewrite: exec_sql bg_generating cleanup failed, trying fallback:", sqlErr?.message);
+          const { data: stuckVersions } = await supabase
+            .from("project_document_versions")
+            .select("id, meta_json")
+            .eq("document_id", documentId)
+            .neq("id", newVersion.id)
+            .not("meta_json", "is", null);
+          if (stuckVersions) {
+            for (const sv of stuckVersions) {
+              if (sv.meta_json?.bg_generating === true) {
+                const cleanedMeta = { ...sv.meta_json };
+                delete cleanedMeta.bg_generating;
+                await supabase.from("project_document_versions")
+                  .update({ meta_json: cleanedMeta })
+                  .eq("id", sv.id);
+              }
+            }
+          }
+        }
+
+        console.log(`[dev-engine-v2] rewrite: PROMOTED v${newVersion.version_number} to current, cleared bg_generating on stale versions`);
+      } catch (promoErr) {
+        console.warn("[dev-engine-v2] rewrite: promotion gate failed (non-fatal):", promoErr?.message);
+      }
       // ── CANON VIOLATION EXIT GATE (F2): if CCE detected violations in the new version,
       // return immediately. Do NOT continue to the auto-rewrite regeneration loop.
       // The violations are already persisted in the version's meta_json by writeVersionSafe.

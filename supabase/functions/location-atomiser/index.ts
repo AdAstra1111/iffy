@@ -80,8 +80,101 @@ async function handleExtract(projectId: string) {
     .eq("entity_type", "location");
 
   if (entErr) throw new Error(`Failed to load location entities: ${entErr.message}`);
+  
+  // If no location entities exist in narrative_entities, try extracting from season_script sluglines
   if (!locationEntities || locationEntities.length === 0) {
-    return { created: 0, message: "No location entities found for this project" };
+    // Scan season_script for INT./EXT. slugline locations
+    const { data: ssDocs } = await admin
+      .from("project_documents")
+      .select("id, latest_version_id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "season_script");
+
+    if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+      const { data: version } = await admin
+        .from("project_document_versions")
+        .select("plaintext")
+        .eq("id", ssDocs[0].latest_version_id)
+        .single();
+
+      if (version?.plaintext) {
+        // Extract location names from INT./EXT. sluglines
+        const sluglineRegex = /(?:^|\n)\s*(INT|EXT|INT\.|EXT\.)\s*\.?\s*(.+?)\s*[-–—]\s*(?:DAY|NIGHT|DUSK|DAWN|LATER|CONTINUOUS|MORNING|EVENING|SUNSET|SUNRISE|MOMENTS?\s*LATER|THE\s+NEXT\s+\w+)/gmi;
+        const locationNames = new Set<string>();
+        let slugMatch;
+        while ((slugMatch = sluglineRegex.exec(version.plaintext)) !== null) {
+          const locationName = slugMatch[2].trim();
+          // Clean up: remove parenthetical notes, trailing periods
+          const cleanName = locationName.replace(/\(.*?\)/g, '').replace(/\.$/, '').trim();
+          if (cleanName.length > 2 && !cleanName.match(/^\d/)) {
+            locationNames.add(cleanName);
+          }
+        }
+
+        if (locationNames.size > 0) {
+          console.log(`[location-atomiser] Extracted ${locationNames.size} locations from season_script sluglines`);
+
+          // Create location atoms directly without needing narrative_entities
+          const now = new Date().toISOString();
+          const { data: existingLocAtoms } = await admin
+            .from("atoms")
+            .select("canonical_name")
+            .eq("project_id", projectId)
+            .eq("atom_type", "location");
+
+          const existingNames = new Set((existingLocAtoms || []).map((a: any) => a.canonical_name.toUpperCase()));
+
+          const toInsert = Array.from(locationNames)
+            .filter((name) => !existingNames.has(name.toUpperCase()))
+            .map((name) => ({
+              project_id: projectId,
+              atom_type: "location",
+              entity_id: null,
+              canonical_name: name,
+              priority: 50,
+              confidence: 0,
+              readiness_state: "stub",
+              generation_status: "pending",
+              attributes: {
+                canonicalName: name,
+                aliases: [],
+                scene_count: 0,
+                era: "",
+                periodContext: "",
+                architecturalStyle: "",
+                functionInScript: "",
+                sensoryTexture: [],
+                acousticCharacter: "",
+                temperatureImpression: "",
+                atmosphericMood: [],
+                narrativeFunction: "",
+                frequencyInScript: 0,
+                associatedCharacters: [],
+                keyScenes: [],
+                thematicSymbolism: "",
+                budgetClassification: "",
+                setBuildingNotes: "",
+                confidence: 0,
+                readinessBadge: "foundation",
+                generationStatus: "pending",
+              },
+              created_at: now,
+              updated_at: now,
+            }));
+
+          if (toInsert.length > 0) {
+            const { data: inserted, error: insertErr } = await admin
+              .from("atoms")
+              .insert(toInsert)
+              .select("id");
+            if (insertErr) throw new Error(`Failed to insert location atoms: ${insertErr.message}`);
+            return { created: inserted?.length || 0, source: "season_script_sluglines" };
+          }
+          return { created: 0, message: "All slugline locations already have atoms" };
+        }
+      }
+    }
+    return { created: 0, message: "No location entities or season_script found for this project" };
   }
 
   // 2. Load entity aliases to identify fragment aliases

@@ -65,7 +65,20 @@ function makeStubAttributes(name: string, sceneCount: number) {
 const STOP_WORDS = new Set([
   "THE", "A", "AN", "SOME", "THIS", "THAT", "THESE", "THOSE", "HIS", "HER",
   "ITS", "OUR", "YOUR", "THEIR", "EVERY", "EACH", "ALL", "BOTH", "ANY",
-  "INT", "EXT", "DAY", "NIGHT", "SCENE", "ACT", "CUT", "FADE", "CLOSE",
+  // Scene directions and slugline prefixes
+  "INT", "EXT", "INT.", "EXT.", "FADE OUT", "FADE TO", "FADE IN",
+  "COLD OPEN", "CUT TO", "DISSOLVE TO", "SMASH CUT", "MATCH CUT",
+  "JUMP CUT", "FLASHBACK", "END FLASHBACK", "BACK TO PRESENT",
+  "LATER", "CONTINUOUS", "MOMENTS LATER", "CLOSE ON", "POV",
+  "SCENE 1", "SCENE 2", "SCENE 3", "SCENE 4", "SCENE 5",
+  "SCENE",
+  "DAY", "NIGHT", "DAWN", "DUSK", "MORNING", "EVENING", "SUNSET", "SUNRISE",
+  // Time periods
+  "TITLE", "OPENING", "CLOSING", "PRE", "POST",
+  // Generic descriptors often in scene direction
+  "MALE", "FEMALE", "WOMAN", "MAN", "BOY", "GIRL", "CHILD",
+  "CLOSE", "FILMING", "OPENING", "CLOSING",
+  "INT.", "EXT.", "INT/EXT",
   "WIDE", "SHOT", "POV", "ANGLE", "CAMERA", "CU", "ECU", "MS", "LS",
   "LATER", "CONTINUOUS", "MORNING", "EVENING", "AFTERNOON", "MOMENT",
   "TIME", "MAN", "WOMAN", "GIRL", "BOY", "PERSON", "PEOPLE", "SOMEONE",
@@ -78,6 +91,41 @@ const STOP_WORDS = new Set([
   "AROUND", "BETWEEN", "BEHIND", "BEFORE", "AFTER", "ABOVE", "BELOW",
   "INSIDE", "OUTSIDE", "ACROSS", "UNDER", "UPON",
   "TWO", "THREE", "FOUR", "MORE", "LESS", "ALSO", "JUST", "STILL",
+]);
+
+// ── Lowercase prop dictionary — for narrative prose (season_script vertical drama) ──
+// These words are detected in the season_script fallback even when not in ALL CAPS.
+const PROP_NOUNS = new Set([
+  // Kitchen / food prep (cooking competition show)
+  "knife", "knives", "pan", "pans", "pot", "pots", "plate", "plates", "bowl", "bowls",
+  "tray", "trays", "spoon", "spoons", "fork", "forks", "whisk", "spatula", "ladle",
+  "grater", "peeler", "colander", "strainer", "scale", "scales", "thermometer",
+  "timer", "oven", "stove", "burner", "grill", "griddle", "fryer", "steamer",
+  "blender", "mixer", "processor", "slicer", "mandoline", "shears", "scissors",
+  "cutting board", "cutting boards", "chopsticks", "skewer", "skewers",
+  "rolling pin", "pastry brush", "piping bag", "mold", "molds", "cutter", "cutters",
+  // Serveware
+  "platter", "platters", "dish", "dishes", "cup", "cups", "glass", "glasses",
+  "mug", "mugs", "jug", "pitcher", "carafe", "teapot", "coffeepot",
+  // Food items that are props
+  "fish", "meat", "steak", "chicken", "herbs", "spices", "sauce", "sauces",
+  "oil", "butter", "cream", "stock", "broth", "garnish", "garnishes",
+  // Weapons / tools
+  "gun", "rifle", "pistol", "sword", "blade", "axe", "hammer", "wrench",
+  "screwdriver", "drill", "saw", "flashlight", "rope", "chain", "lock", "key",
+  // Documents / tech
+  "phone", "laptop", "tablet", "camera", "remote", "battery", "charger",
+  "letter", "envelope", "file", "folder", "notebook", "pen", "pencil",
+  "map", "ticket", "receipt", "money", "cash", "wallet", "purse", "bag",
+  // Clothing that are costume-props
+  "coat", "jacket", "scarf", "gloves", "hat", "mask", "goggles", "belt",
+  // Furniture / set dressing
+  "chair", "table", "desk", "couch", "sofa", "bed", "lamp", "clock",
+  "mirror", "painting", "picture", "vase", "candle", "curtain", "rug",
+  // Miscellaneous
+  "candle", "match", "lighter", "cigarette", "bottle", "can", "box",
+  "briefcase", "suitcase", "backpack", "umbrella", "cane", "wheelchair",
+  "trophy", "medal", "ribbon", "flag", "sign", "poster", "banner",
 ]);
 
 // Narrative role keywords that boost a prop's score
@@ -112,8 +160,10 @@ function extractCapitalizedNounPhrases(text: string): string[] {
   if (!text) return [];
 
   // Normalize \u2029 (paragraph separator) — V8 treats it as \s, 
-  // which chains adjacent ALL-CAPS words into false multi-word phrases
-  const normalized = text.replace(/\u2029/g, "\0");
+  // which chains adjacent ALL-CAPS words into false multi-word phrases.
+  // Also normalize real newlines to spaces so scene directions split across
+  // lines (like "COLD OPEN\nINT") don't form false multi-word phrases.
+  const normalized = text.replace(/\u2029/g, "\0").replace(/[\n\r]+/g, " ").replace(/\s{2,}/g, " ");
 
   const results: Set<string> = new Set();
 
@@ -143,18 +193,57 @@ function extractCapitalizedNounPhrases(text: string): string[] {
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
 
-  // 1. Load all scene_graph_versions for the project
+  // 1. Load all scene_graph_versions for the project (feature film)
   const { data: sceneVersions, error: svErr } = await admin
     .from("scene_graph_versions")
     .select("id, scene_id, slugline, content, tension_delta")
     .eq("project_id", projectId);
 
   if (svErr) throw new Error(`Failed to load scene versions: ${svErr.message}`);
-  if (!sceneVersions || sceneVersions.length === 0) {
-    return { created: 0, message: "No scene content found for this project" };
-  }
 
-  console.log(`Scanning ${sceneVersions.length} scene versions for props...`);
+  let sceneContent: { id: string; content: string }[] = [];
+
+  if (sceneVersions && sceneVersions.length > 0) {
+    // Feature film path: use scene graph content
+    sceneContent = sceneVersions.map((sv: any) => ({
+      id: sv.scene_id || sv.id,
+      content: sv.content || "",
+    }));
+    console.log(`Scanning ${sceneVersions.length} scene versions for props...`);
+  } else {
+    // Vertical drama fallback: use season_script plaintext
+    const { data: ssDocs } = await admin
+      .from("project_documents")
+      .select("id, latest_version_id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "season_script");
+
+    if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+      const { data: version } = await admin
+        .from("project_document_versions")
+        .select("plaintext")
+        .eq("id", ssDocs[0].latest_version_id)
+        .single();
+
+      if (version?.plaintext) {
+        // Split the script into scene chunks by INT./EXT. slugline markers only.
+        // Uses a regex that matches INT/EXT sluglines specifically, not character
+        // dialogue names (ALL CAPS) or scene directions (FADE OUT, COLD OPEN, etc.)
+        const slugMatch = version.plaintext.split(/(?:^|\n)(?=INT\.?\s+|EXT\.?\s+)/gm);
+        sceneContent = slugMatch
+          .map((chunk: string, i: number) => ({
+            id: `ss_section_${i}`,
+            content: chunk.replace(/^##\s+EPISODE\s+\d+[^\n]*\n*/gmi, '').trim(),
+          }))
+          .filter((chunk) => chunk.content.length > 50); // Skip tiny fragments
+        console.log(`Split season_script into ${sceneContent.length} sections for prop scanning...`);
+      }
+    }
+
+    if (sceneContent.length === 0) {
+      return { created: 0, message: "No scene content or season_script found for this project" };
+    }
+  }
 
   // 2. Load existing character entity names to filter out
   const { data: charEntities } = await admin
@@ -210,13 +299,37 @@ async function handleExtract(projectId: string) {
     (existingAtoms || []).map((a) => a.canonical_name?.toUpperCase().trim()).filter(Boolean)
   );
 
+  // 4b. For vertical drama without full entity coverage, scan scene/script content
+  //     for CHARACTER dialogue markers (ALL CAPS name line followed by dialogue)
+  //     and add them to the character name filter so they're excluded from props.
+  const dialogueNameRegex = /(?:^|\n)\s*([A-Z][A-Z\s]{2,30}?)\s*\(?(?:O\.S\.|V\.O\.|CONT'D|CONTINUED)?\)?\s*\n\s*(?:[A-Z][a-z]|\(|\[|")/g;
+  for (const sv of sceneContent) {
+    const content = sv.content || "";
+    let dm;
+    while ((dm = dialogueNameRegex.exec(content)) !== null) {
+      const name = dm[1].trim().toUpperCase();
+      if (name.length >= 3 && name.length <= 30) {
+        characterNames.add(name);
+        // Also add individual words
+        for (const word of name.split(/\s+/)) {
+          if (word.length >= 3) characterWords.add(word);
+        }
+      }
+    }
+  }
+
   // 5. Scan scenes and build frequency map
   // propName (upper) → { displayName, scenes: Set<scene_id>, hasNarrativeRole: bool }
   const propMap = new Map<string, { displayName: string; scenes: Set<string>; narrativeScore: number }>();
 
-  for (const sv of sceneVersions) {
+  // Determine if we're scanning real scenes (feature film) or script sections (vertical drama)
+  const isRealScene = sceneVersions && sceneVersions.length > 0;
+  // For real scenes, require 3+ appearances; for script sections, use 2+ (sections are larger)
+  const minAppearances = isRealScene ? 3 : 2;
+
+  for (const sv of sceneContent) {
     const content = sv.content || "";
-    const sceneId = sv.scene_id || sv.id;
+    const sceneId = sv.id;
 
     const candidates = extractCapitalizedNounPhrases(content);
 
@@ -231,7 +344,24 @@ async function handleExtract(projectId: string) {
       if (upper.length < 3) continue;
       // Filter pure numbers
       if (/^\d+$/.test(upper)) continue;
-
+      // Split multi-word candidates and check each word individually
+      // (catches "LATER ELARA" where character name is concatenated with scene direction)
+      const words = upper.split(/\s+/);
+      if (words.some((w: string) => characterNames.has(w) || locationNames.has(w))) continue;
+      // Check if any prefix of the multi-word candidate matches a stop phrase
+      // (e.g. "COLD OPEN CLOSE" starts with stop phrase "COLD OPEN")
+      let hasStopPrefix = false;
+      if (words.length > 1) {
+        for (let i = 1; i <= Math.min(words.length, 3); i++) {
+          const prefix = words.slice(0, i).join(' ');
+          if (STOP_WORDS.has(prefix)) {
+            hasStopPrefix = true;
+            break;
+          }
+        }
+      }
+      if (hasStopPrefix) continue;
+ 
       if (!propMap.has(upper)) {
         propMap.set(upper, {
           displayName: upper, // Use uppercase as canonical (screenplay style)
@@ -258,9 +388,44 @@ async function handleExtract(projectId: string) {
     }
   }
 
-  // 6. Filter: only props that appear in 3+ scenes
+  // 5b. Lowercase prop noun pass — for narrative prose (vertical drama season_script).
+  // Scan content for lowercase prop dictionary words that the all-caps extractor misses.
+  // Only runs for the season_script fallback (not real scenes).
+  if (!isRealScene) {
+    const lowerContent = sceneContent.map((sv) => sv.content || "").join("\n").toLowerCase();
+    const sectionCount = sceneContent.length;
+    for (const propWord of PROP_NOUNS) {
+      // Use word-boundary regex to avoid partial matches
+      const regex = new RegExp("\\b" + propWord.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "g");
+      let match;
+      let count = 0;
+      while ((match = regex.exec(lowerContent)) !== null) {
+        count++;
+      }
+      if (count >= 2 && !existingPropNames.has(propWord.toUpperCase())) {
+        // Check it's not a character or location name
+        const upper = propWord.toUpperCase();
+        if (characterNames.has(upper) || locationNames.has(upper)) continue;
+        if (!propMap.has(upper)) {
+          propMap.set(upper, {
+            displayName: upper,
+            scenes: new Set(Array.from({ length: Math.min(count, sectionCount) }, (_, i) => `prop_dict_${i}`)),
+            narrativeScore: Math.min(count, 5),
+          });
+        } else {
+          const entry = propMap.get(upper)!;
+          for (let i = 0; i < Math.min(count, sectionCount); i++) {
+            entry.scenes.add(`prop_dict_${i}`);
+          }
+          entry.narrativeScore = Math.max(entry.narrativeScore, Math.min(count, 5));
+        }
+      }
+    }
+  }
+
+  // 6. Filter: only props that appear in enough sections (3+ for real scenes, 2+ for script sections)
   const qualified = Array.from(propMap.entries())
-    .filter(([, v]) => v.scenes.size >= 3)
+    .filter(([, v]) => v.scenes.size >= minAppearances)
     .filter(([upper]) => !existingPropNames.has(upper));
 
   // 7. Rank: frequency * 2 + narrativeScore, descending
@@ -384,12 +549,35 @@ async function handleGenerate(projectId: string) {
   EdgeRuntime.waitUntil(
     (async () => {
       // Load all scene content once for context assembly
-      const { data: sceneVersions } = await admin
+      // Try scene_graph_versions first (feature film), then season_script (vertical drama)
+      let sceneVersions: any[] = [];
+      const { data: sgv } = await admin
         .from("scene_graph_versions")
         .select("scene_id, slugline, content, tension_delta")
         .eq("project_id", projectId)
         .order("tension_delta", { ascending: false })
         .limit(200);
+
+      if (sgv && sgv.length > 0) {
+        sceneVersions = sgv;
+      } else {
+        // Fallback: try season_script for context
+        const { data: ssDocs } = await admin
+          .from("project_documents")
+          .select("id, latest_version_id")
+          .eq("project_id", projectId)
+          .eq("doc_type", "season_script");
+        if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+          const { data: version } = await admin
+            .from("project_document_versions")
+            .select("plaintext")
+            .eq("id", ssDocs[0].latest_version_id)
+            .single();
+          if (version?.plaintext) {
+            sceneVersions = [{ slugline: "Season Script", content: version.plaintext.substring(0, 10000), tension_delta: 5 }];
+          }
+        }
+      }
 
       for (const atom of pendingAtoms) {
         try {

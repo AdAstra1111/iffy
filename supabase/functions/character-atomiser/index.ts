@@ -125,7 +125,7 @@ async function handleExtract(sb: any, projectId: string) {
   // Filter: must have at least one scene link
   const entityIds = canonicalEntities.map((e: any) => e.id);
   if (entityIds.length === 0) {
-    return { created: 0, updated: 0, message: "No canonical character entities with scene links found" };
+    return { created: 0, updated: 0, message: "No canonical character entities found" };
   }
 
   const { data: links, error: linkErr } = await sb
@@ -141,9 +141,12 @@ async function handleExtract(sb: any, projectId: string) {
     sceneCountByEntity.set(link.entity_id, (sceneCountByEntity.get(link.entity_id) || 0) + 1);
   }
 
-  // 2. Build upsert rows — only canonical entities
+  // 2. Build upsert rows — all canonical entities.
+  //    Entities with scene links get "canon_linked" readiness; entities without
+  //    scene links (e.g. vertical drama where season_script has no scene graph)
+  //    still get atom stubs so the Atoms tab works regardless of format.
+  const hasSceneLinks = (links || []).length > 0;
   const rows = canonicalEntities
-    .filter((e: any) => sceneCountByEntity.has(e.id))
     .map((e: any) => ({
       project_id: projectId,
       atom_type: "character",
@@ -151,7 +154,7 @@ async function handleExtract(sb: any, projectId: string) {
       canonical_name: e.canonical_name || e.entity_key,
       priority: 50,
       confidence: 0,
-      readiness_state: "canon_linked",
+      readiness_state: hasSceneLinks && sceneCountByEntity.has(e.id) ? "canon_linked" : "canon_listed",
       generation_status: "pending",
       attributes: {
         entity_key: e.entity_key,

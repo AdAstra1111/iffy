@@ -161,6 +161,7 @@ export function CharacterAtomGrid({
   isRefreshing,
   isExtracting,
   isGenerating,
+  isCancelling,
   lastUpdated,
   error,
   onExtract,

@@ -34,12 +34,12 @@ async function fetchCharacterDialogue(admin: any, projectId: string) {
     .eq("atom_type", "character")
     .in("generation_status", ["completed", "complete"]);
 
-  // Get feature_script for dialogue content
+  // Get feature_script or season_script for dialogue content
   const { data: docs } = await admin
     .from("project_documents")
     .select("id, doc_type, latest_version_id")
     .eq("project_id", projectId)
-    .eq("doc_type", "feature_script");
+    .in("doc_type", ["feature_script", "season_script"]);
 
   let scriptContent = "";
   if (docs && docs.length > 0 && docs[0].latest_version_id) {
@@ -66,7 +66,7 @@ async function handleExtract(projectId: string) {
   }
 
   if (!scriptContent) {
-    return { error: "no_script", message: "No feature_script found for this project" };
+    return { error: "no_script", message: "No feature_script or season_script found for this project" };
   }
 
   // Check existing dialogue atoms

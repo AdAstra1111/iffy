@@ -3120,14 +3120,37 @@ async function checkActionableNoteExhaustion(
 
     if (error) {
       console.warn(`[auto-run][IEL] actionable_note_check_failed { project_id: "${projectId}", doc_type: "${docType}", error: "${error.message}" }`);
-      return { hasActionable: false, count: 0 }; // fail open
+      // fail open — don't block if query fails
     }
 
-    // Only HUMAN-REQUIRED notes block promotion — auto-resolvable notes are handled by rewrite loop
+    // Only HUMAN-REQUIRED project_notes block promotion — auto-resolvable notes are handled by rewrite loop
     const humanNotes = (notes || []).filter(noteRequiresHuman);
-    const totalCount = (notes || []).length;
-    console.log(`[auto-run][IEL] actionable_note_exhaustion_check { project_id: "${projectId}", doc_type: "${docType}", version_id: "${versionId}", actionable_count: ${totalCount}, requires_human_count: ${humanNotes.length} }`);
-    return { hasActionable: humanNotes.length > 0, count: humanNotes.length };
+    let totalProjectNotes = (notes || []).length;
+
+    // ── LEGACY COMPATIBILITY: also check development_notes for unresolved blockers ──
+    // The note-application pipeline writes to development_notes, not project_notes.
+    // Unresolved blocker/high notes in development_notes also block promotion.
+    let devBlockerCount = 0;
+    try {
+      const { data: devNotes } = await supabase
+        .from("development_notes")
+        .select("id, severity")
+        .eq("project_id", projectId)
+        .eq("resolved", false)
+        .in("severity", ["blocker", "high"])
+        .limit(50);
+
+      if (devNotes) {
+        devBlockerCount = devNotes.length;
+        console.log(`[auto-run][IEL] dev_note_check { project_id: "${projectId}", unresolved_blockers_high: ${devBlockerCount} }`);
+      }
+    } catch (devErr) {
+      console.warn(`[auto-run][IEL] dev_note_check_failed (non-fatal): ${devErr?.message}`);
+    }
+
+    const totalActionable = humanNotes.length + devBlockerCount;
+    console.log(`[auto-run][IEL] actionable_note_exhaustion_check { project_id: "${projectId}", doc_type: "${docType}", version_id: "${versionId}", project_notes_actionable: ${humanNotes.length}, dev_notes_blockers_high: ${devBlockerCount}, total_actionable: ${totalActionable} }`);
+    return { hasActionable: totalActionable > 0, count: totalActionable };
   } catch (e: any) {
     console.warn(`[auto-run][IEL] actionable_note_check_exception { error: "${e?.message}" }`);
     return { hasActionable: false, count: 0 }; // fail open

@@ -169,7 +169,29 @@ async function handleExtract(projectId: string) {
     .limit(500);
 
   // Aggregate all scene content
-  const allSceneText = (sceneVersions || []).map((sv) => sv.content || "").join("\n");
+  let allSceneText = (sceneVersions || []).map((sv) => sv.content || "").join("\n");
+
+  // 2b. Fallback: if no scene_graph_versions, try season_script (vertical drama)
+  if (!allSceneText || allSceneText.length < 100) {
+    const { data: ssDocs } = await admin
+      .from("project_documents")
+      .select("id, latest_version_id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "season_script");
+
+    if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+      const { data: version } = await admin
+        .from("project_document_versions")
+        .select("plaintext")
+        .eq("id", ssDocs[0].latest_version_id)
+        .single();
+
+      if (version?.plaintext) {
+        allSceneText = version.plaintext;
+        console.log(`[creature-atomiser] Using season_script fallback (${allSceneText.length} chars)`);
+      }
+    }
+  }
 
   // Extract creature names from scene content
   const sceneCreatures = extractCreatureNames(allSceneText);

@@ -25,7 +25,9 @@ function makeAdminClient() {
 }
 
 async function fetchProjectDocuments(admin: any, projectId: string) {
-  const docTypes = ["story_outline", "beat_sheet"];
+  // Feature film: story_outline, beat_sheet
+  // Vertical drama: season_arc, vertical_episode_beats, creative_brief, canon
+  const docTypes = ["story_outline", "beat_sheet", "creative_brief", "canon", "season_arc", "vertical_episode_beats"];
   const { data: docs } = await admin
     .from("project_documents")
     .select("id, doc_type, latest_version_id")
@@ -56,6 +58,10 @@ async function fetchProjectDocuments(admin: any, projectId: string) {
   return {
     storyOutline: results["story_outline"] || "",
     beatSheet: results["beat_sheet"] || "",
+    creativeBrief: results["creative_brief"] || "",
+    canon: results["canon"] || "",
+    seasonArc: results["season_arc"] || "",
+    verticalEpisodeBeats: results["vertical_episode_beats"] || "",
     scenes: sceneText,
   };
 }
@@ -65,9 +71,13 @@ async function handleExtract(projectId: string) {
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
-  const { storyOutline, beatSheet, scenes } = await fetchProjectDocuments(admin, projectId);
-  if (!storyOutline && !beatSheet) {
-    return { error: "no_content", message: "No story_outline or beat_sheet found" };
+  const { storyOutline, beatSheet, creativeBrief, canon, seasonArc, verticalEpisodeBeats, scenes } = await fetchProjectDocuments(admin, projectId);
+
+  // Support both formats: feature film (story_outline/beat_sheet) and vertical drama (creative_brief/canon/season_arc/vertical_episode_beats)
+  const hasFeatureContent = !!(storyOutline || beatSheet);
+  const hasVerticalContent = !!(creativeBrief || canon || seasonArc || verticalEpisodeBeats);
+  if (!hasFeatureContent && !hasVerticalContent) {
+    return { error: "no_content", message: "No story_outline/beat_sheet or creative_brief/season_arc found" };
   }
 
   const { data: existingAtoms } = await admin
@@ -90,15 +100,13 @@ Return a JSON array of genre labels (3-6 labels) representing the genre profile:
 Be specific. Use established film genre terminology.
 Example output: ["War Thriller", "Spy Espionage", "Film Noir", "WWII", "Gritty", "Period-Authentic"]
 
-PROJECT:
-${storyOutline.substring(0, 4000)}
-
-BEAT SHEET:
-${beatSheet.substring(0, 4000)}
-
-SCENE SUMMARIES:
-${scenes.substring(0, 2000)}
-
+${storyOutline ? `PROJECT STORY OUTLINE:\n${storyOutline.substring(0, 4000)}\n\n` : ""}
+${beatSheet ? `BEAT SHEET:\n${beatSheet.substring(0, 4000)}\n\n` : ""}
+${creativeBrief ? `CREATIVE BRIEF:\n${creativeBrief.substring(0, 4000)}\n\n` : ""}
+${canon ? `CANON & CONSTRAINTS:\n${canon.substring(0, 4000)}\n\n` : ""}
+${seasonArc ? `SEASON ARC:\n${seasonArc.substring(0, 4000)}\n\n` : ""}
+${verticalEpisodeBeats ? `VERTICAL EPISODE BEATS:\n${verticalEpisodeBeats.substring(0, 4000)}\n\n` : ""}
+${scenes ? `SCENE SUMMARIES:\n${scenes.substring(0, 2000)}\n\n` : ""}
 Respond with ONLY a JSON array of strings. No explanation.`;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -207,7 +215,7 @@ async function handleGenerate(projectId: string) {
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
-  const { storyOutline, beatSheet, scenes } = await fetchProjectDocuments(admin, projectId);
+  const { storyOutline, beatSheet, creativeBrief, canon, seasonArc, verticalEpisodeBeats, scenes } = await fetchProjectDocuments(admin, projectId);
   const atomIds = pendingAtoms.map((a: any) => a.id);
   await admin.from("atoms").update({ generation_status: "running", updated_at: new Date().toISOString() }).in("id", atomIds);
 
@@ -219,9 +227,13 @@ async function handleGenerate(projectId: string) {
           const prompt = `You are a film genre analyst. Generate rich genre attributes for the genre label: "${atom.canonical_name}".
 
 Project context:
-STORY: ${storyOutline.substring(0, 3000)}
-BEATS: ${beatSheet.substring(0, 3000)}
-SCENES: ${scenes.substring(0, 1500)}
+${storyOutline ? `STORY: ${storyOutline.substring(0, 3000)}\n` : ""}
+${beatSheet ? `BEATS: ${beatSheet.substring(0, 3000)}\n` : ""}
+${creativeBrief ? `CREATIVE BRIEF: ${creativeBrief.substring(0, 3000)}\n` : ""}
+${canon ? `CANON: ${canon.substring(0, 3000)}\n` : ""}
+${seasonArc ? `SEASON ARC: ${seasonArc.substring(0, 3000)}\n` : ""}
+${verticalEpisodeBeats ? `EPISODE BEATS: ${verticalEpisodeBeats.substring(0, 3000)}\n` : ""}
+${scenes ? `SCENES: ${scenes.substring(0, 1500)}\n` : ""}
 
 Output ONLY a valid JSON object (no markdown, no commentary) with ALL fields:
 - primaryGenre (string)

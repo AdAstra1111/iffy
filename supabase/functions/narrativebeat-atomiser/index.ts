@@ -25,7 +25,7 @@ function makeAdminClient() {
 }
 
 async function fetchSceneData(admin: any, projectId: string) {
-  // Get scene enrichment data (tension, momentum, narrative_beat flags)
+  // Try scene enrichment + scene graph first (feature film pipeline)
   const { data: enrichments } = await admin
     .from("scene_enrichment")
     .select("scene_id, scene_slugline, tension_level, emotional_tone, narrative_momentum, narrative_beat")
@@ -40,14 +40,54 @@ async function fetchSceneData(admin: any, projectId: string) {
     .eq("project_id", projectId)
     .limit(80);
 
-  const versionMap = new Map((sceneVersions || []).map((s: any) => [s.scene_id, s]));
-  const scenes = (enrichments || []).map((e: any) => ({
-    ...e,
-    content: versionMap.get(e.scene_id)?.content || "",
-    slugline: e.scene_slugline || versionMap.get(e.scene_id)?.slugline || e.scene_id,
-  }));
+  // If we have scene enrichment data, use it (feature film path)
+  if (enrichments && enrichments.length > 0) {
+    const versionMap = new Map((sceneVersions || []).map((s: any) => [s.scene_id, s]));
+    const scenes = enrichments.map((e: any) => ({
+      ...e,
+      content: versionMap.get(e.scene_id)?.content || "",
+      slugline: e.scene_slugline || versionMap.get(e.scene_id)?.slugline || e.scene_id,
+    }));
+    return { scenes };
+  }
 
-  return { scenes };
+  // Fallback: vertical drama — get vertical_episode_beats document content
+  const { data: vebDocs } = await admin
+    .from("project_documents")
+    .select("id, latest_version_id")
+    .eq("project_id", projectId)
+    .eq("doc_type", "vertical_episode_beats");
+
+  if (vebDocs && vebDocs.length > 0 && vebDocs[0].latest_version_id) {
+    const { data: version } = await admin
+      .from("project_document_versions")
+      .select("plaintext")
+      .eq("id", vebDocs[0].latest_version_id)
+      .single();
+
+    if (version?.plaintext) {
+      // Parse beat entries from the document — each ##-prefixed section is a beat
+      const beatSections = version.plaintext.split(/^##\s+/m).filter(Boolean);
+      const scenes = beatSections.map((section: string, i: number) => {
+        const lines = section.split("\n").filter(Boolean);
+        const slugline = lines[0]?.trim() || `Beat ${i + 1}`;
+        const content = lines.slice(1).join("\n").trim();
+        return {
+          scene_id: `veb_beat_${i}`,
+          slugline,
+          content,
+          summary: content.substring(0, 300),
+          tension_level: 5,
+          emotional_tone: "",
+          narrative_momentum: "medium",
+          narrative_beat: slugline,
+        };
+      });
+      return { scenes };
+    }
+  }
+
+  return { scenes: [] };
 }
 
 async function handleExtract(projectId: string) {

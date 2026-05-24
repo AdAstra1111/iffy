@@ -29,8 +29,10 @@ function makeAdminClient() {
 }
 
 async function fetchProjectDocuments(admin: any, projectId: string) {
-  // Fetch current versions of key documents
-  const docTypes = ["story_outline", "beat_sheet", "character_bible"];
+  // Fetch current versions of key documents.
+  // Feature film: story_outline, beat_sheet, character_bible
+  // Vertical drama: season_arc, vertical_episode_beats, character_bible (+ creative_brief, canon)
+  const docTypes = ["story_outline", "beat_sheet", "character_bible", "creative_brief", "canon", "season_arc", "vertical_episode_beats"];
 
   const { data: docs, error } = await admin
     .from("project_documents")
@@ -68,6 +70,10 @@ async function fetchProjectDocuments(admin: any, projectId: string) {
     storyOutline: results["story_outline"] || "",
     beatSheet: results["beat_sheet"] || "",
     characterBible: results["character_bible"] || "",
+    creativeBrief: results["creative_brief"] || "",
+    canon: results["canon"] || "",
+    seasonArc: results["season_arc"] || "",
+    verticalEpisodeBeats: results["vertical_episode_beats"] || "",
     scenes: sceneSummaries,
   };
 }
@@ -78,10 +84,13 @@ async function handleExtract(projectId: string) {
   if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
   // Fetch project content
-  const { storyOutline, beatSheet, characterBible, scenes } = await fetchProjectDocuments(admin, projectId);
+  const { storyOutline, beatSheet, characterBible, creativeBrief, canon, seasonArc, verticalEpisodeBeats, scenes } = await fetchProjectDocuments(admin, projectId);
 
-  if (!storyOutline && !beatSheet) {
-    return { error: "no_content", message: "No story_outline or beat_sheet found for this project" };
+  // Support both formats: feature film (story_outline/beat_sheet) and vertical drama (season_arc/vertical_episode_beats)
+  const hasFeatureContent = !!(storyOutline || beatSheet);
+  const hasVerticalContent = !!(creativeBrief || canon || seasonArc || verticalEpisodeBeats);
+  if (!hasFeatureContent && !hasVerticalContent) {
+    return { error: "no_content", message: "No source documents found (requires story_outline/beat_sheet or season_arc/vertical_episode_beats)" };
   }
 
   // Check existing theme atoms to avoid duplicates
@@ -105,15 +114,14 @@ Respond with ONLY a JSON array of theme names (strings). No explanation, no mark
 
 Example: ["Betrayal and Loyalty", "Identity and Deception", "Survival vs Sacrifice"]
 
-PROJECT STORY OUTLINE:
-${storyOutline.substring(0, 5000)}
-
-BEAT SHEET:
-${beatSheet.substring(0, 5000)}
-
-SCENE SUMMARIES (sample):
-${scenes.substring(0, 3000)}
-
+${storyOutline ? `PROJECT STORY OUTLINE:\n${storyOutline.substring(0, 5000)}\n\n` : ""}
+${beatSheet ? `BEAT SHEET:\n${beatSheet.substring(0, 5000)}\n\n` : ""}
+${creativeBrief ? `CREATIVE BRIEF:\n${creativeBrief.substring(0, 5000)}\n\n` : ""}
+${canon ? `CANON & CONSTRAINTS:\n${canon.substring(0, 5000)}\n\n` : ""}
+${seasonArc ? `SEASON ARC:\n${seasonArc.substring(0, 5000)}\n\n` : ""}
+${verticalEpisodeBeats ? `VERTICAL EPISODE BEATS:\n${verticalEpisodeBeats.substring(0, 5000)}\n\n` : ""}
+${characterBible ? `CHARACTER BIBLE:\n${characterBible.substring(0, 5000)}\n\n` : ""}
+${scenes ? `SCENE SUMMARIES (sample):\n${scenes.substring(0, 3000)}\n\n` : ""}
 Respond with a JSON array of theme name strings.`;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -256,7 +264,7 @@ async function handleGenerate(projectId: string) {
     .update({ generation_status: "running", updated_at: new Date().toISOString() })
     .in("id", atomIds);
 
-  const { storyOutline, beatSheet, characterBible, scenes } = await fetchProjectDocuments(admin, projectId);
+  const { storyOutline, beatSheet, characterBible, creativeBrief, canon, seasonArc, verticalEpisodeBeats, scenes } = await fetchProjectDocuments(admin, projectId);
 
   // @ts-ignore
   EdgeRuntime.waitUntil(
@@ -269,18 +277,14 @@ async function handleGenerate(projectId: string) {
 
 Analyse the full project content to understand how this theme manifests, and generate a complete ThemeAtomAttributes JSON object.
 
-PROJECT STORY OUTLINE:
-${storyOutline.substring(0, 4000)}
-
-BEAT SHEET:
-${beatSheet.substring(0, 4000)}
-
-CHARACTER BIBLE (arc tensions):
-${characterBible.substring(0, 2000)}
-
-SCENE SUMMARIES (sample):
-${scenes.substring(0, 2000)}
-
+${storyOutline ? `PROJECT STORY OUTLINE:\n${storyOutline.substring(0, 4000)}\n\n` : ""}
+${beatSheet ? `BEAT SHEET:\n${beatSheet.substring(0, 4000)}\n\n` : ""}
+${creativeBrief ? `CREATIVE BRIEF:\n${creativeBrief.substring(0, 4000)}\n\n` : ""}
+${canon ? `CANON & CONSTRAINTS:\n${canon.substring(0, 4000)}\n\n` : ""}
+${seasonArc ? `SEASON ARC:\n${seasonArc.substring(0, 4000)}\n\n` : ""}
+${verticalEpisodeBeats ? `VERTICAL EPISODE BEATS:\n${verticalEpisodeBeats.substring(0, 4000)}\n\n` : ""}
+${characterBible ? `CHARACTER BIBLE (arc tensions):\n${characterBible.substring(0, 2000)}\n\n` : ""}
+${scenes ? `SCENE SUMMARIES (sample):\n${scenes.substring(0, 2000)}\n\n` : ""}
 Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the following fields:
 - thematicCategory (string: "moral" | "political" | "psychological" | "relational" | "existential")
 - treatment (string: how the theme is explored — cynical | hopeful | ambivalent | didactic)

@@ -304,6 +304,48 @@ async function handleExtract(projectId: string) {
     }
   }
 
+  // 4b. Fallback: if no scene_graph_versions, try season_script (vertical drama)
+  if (!sceneVersions || sceneVersions.length === 0) {
+    try {
+      const { data: ssDocs } = await admin
+        .from("project_documents")
+        .select("id, latest_version_id")
+        .eq("project_id", projectId)
+        .eq("doc_type", "season_script");
+      if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+        const { data: version } = await admin
+          .from("project_document_versions")
+          .select("plaintext")
+          .eq("id", ssDocs[0].latest_version_id)
+          .single();
+        if (version?.plaintext) {
+          console.log(`[vehicle-atomiser] Using season_script fallback (${version.plaintext.length} chars)`);
+          const vehicleCounts = extractVehicleTerms(version.plaintext);
+          const cmap = new Map();
+          for (const [term, cnt] of vehicleCounts) {
+            const c = canonicalise(term);
+            cmap.set(c, (cmap.get(c) || 0) + cnt);
+          }
+          for (const [cname, cnt] of cmap) {
+            if (cnt < 2) continue;
+            const nk = cname.toLowerCase().trim();
+            if (existingNames.has(nk)) continue;
+            if (toInsert.some((t) => t.canonical_name.toLowerCase().trim() === nk)) continue;
+            toInsert.push({
+              project_id: projectId, atom_type: "vehicle", entity_id: null,
+              canonical_name: cname, priority: Math.min(100, cnt * 5 + 5),
+              confidence: 0, readiness_state: "stub", generation_status: "pending",
+              attributes: makeStubAttributes(cname, cnt, 'extracted'),
+              created_at: now, updated_at: now,
+            });
+          }
+        }
+      }
+    } catch (ssErr) {
+      console.warn("[vehicle-atomiser] season_script fallback failed:", ssErr?.message);
+    }
+  }
+
   if (toInsert.length === 0) {
     return {
       created: 0,
