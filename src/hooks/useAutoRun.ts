@@ -183,8 +183,7 @@ export function useAutoRun(projectId: string | undefined) {
     if (existingJob?.job) {
       setJob(existingJob.job);
       setSteps(existingJob.latest_steps || []);
-
-      const isRunning = existingJob.job.status === 'running' && !existingJob.job.awaiting_approval;
+const isRunning = existingJob.job.status === 'running' && !existingJob.job.awaiting_approval;
 
       // ── Self-chain freeze recovery: if recovery_needed flag is set, fire recover ──
       if (existingJob.recovery_needed && existingJob.job.id) {

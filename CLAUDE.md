@@ -91,6 +91,28 @@ approval_status = 'approved' AND is_current = true
 ```
 Historical versions are archival only and must never drive pipeline decisions. `effectiveVersionId = authoritativeVersion.id` (or `selectedVersionId` only when no authoritative exists).
 
+### Self-Chain Freeze Recovery Protocol
+
+The auto-run pipeline uses HTTP self-chaining (`bgTask → self-chain fetch → bgTask → ...`). The self-chain is maintained via `waitUntilSafe(chainPromise)` inside the bgTask `finally` block (line ~13121). When the Deno isolate is under memory pressure, `waitUntilSafe` returns `false` and the self-chain fetch runs as a **detached promise** — the isolate may terminate before the fetch resolves, leaving the job in `status=running, is_processing=false` indefinitely.
+
+**Freeze Signature:**
+- `status === "running"` (job should be progressing)
+- `is_processing === false` (no active bgTask holds the lock)
+- `awaiting_approval === false` (no human input needed)
+- `pending_decisions` is empty or null
+- `last_step_at` is stale (> 30 seconds old)
+
+**Recovery Architecture:**
+1. **`detectFrozen(job)`** — module-level helper at line ~340. Returns `true` when all freeze conditions are met. Used by both the status response and the recover action handler.
+2. **`recovery_needed: boolean`** — computed via `detectFrozen(job)` and included in every status response. The frontend checks this on mount.
+3. **`recover` action handler** — inserted between `status` and `start` handlers. Validates freeze via `detectFrozen()`, fires a one-shot `{ action: "run-next", jobId }` self-chain fetch (same pattern as the standard self-chain at line ~13096), and returns `respondWithJob`. If the job is not actually frozen, it returns normally (idempotent).
+4. **Frontend auto-recovery** — in `useAutoRun.ts` mounting useEffect: if `existingJob.recovery_needed === true`, fires `callAutoRun('recover', { jobId })` and auto-starts `runLoopRef.current(jobId)`. Also auto-starts `runLoop` on mount for any running job to ensure continuous polling after navigation.
+
+**Invariants:**
+- The `recover` action is **idempotent** — `run-next` acquires a processing lock, so concurrent recover calls are safe.
+- The freeze check (30s staleness) is intentionally conservative to avoid false positives.
+- No schema changes required — all detection uses existing fields (`last_step_at`, `is_processing`, `awaiting_approval`, `pending_decisions`).
+
 ### Format Ladders
 
 Each format has its own stage ladder — no universal pipeline:

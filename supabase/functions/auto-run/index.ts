@@ -10291,6 +10291,7 @@ Deno.serve(async (req) => {
                   }
                   } // close engagement gate else
                 }
+                }
               } else {
               // Flag off — original promotion path
               console.log(`[auto-run][IEL] ci_gate_passed { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${ciGate.ci} }`);
