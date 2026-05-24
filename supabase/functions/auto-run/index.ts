@@ -439,6 +439,41 @@ async function completionGate(
   return null; // All gates pass
 }
 
+/**
+ * Detect self-chain freeze: job is stuck in "running" status with no processing
+ * lock and no recent step progress. The Deno isolate may have terminated before
+ * the self-chain fetch completed (waitUntilSafe returned false in fire-and-forget
+ * mode at line ~12533).
+ *
+ * Freeze signature:
+ * - status = "running"
+ * - !is_processing (no active lock)
+ * - !awaiting_approval (not waiting on user)
+ * - No pending_decisions
+ * - last_step_at is stale (>30s ago) — no progress being made
+ */
+function detectFrozen(job: any): boolean {
+  if (!job) return false;
+  if (job.status !== "running") return false;
+  if (job.is_processing) return false;
+  if (job.awaiting_approval) return false;
+  if (Array.isArray(job.pending_decisions) && job.pending_decisions.length > 0) return false;
+
+  // Staleness check: has last_step_at been updated recently?
+  if (job.last_step_at) {
+    const staleness = Date.now() - new Date(job.last_step_at).getTime();
+    return staleness >= 30_000;
+  }
+
+  // No last_step_at at all — check if job is old enough to be considered frozen
+  if (job.created_at) {
+    const age = Date.now() - new Date(job.created_at).getTime();
+    return age >= 60_000; // Created >1 min ago with no steps and no lock = frozen
+  }
+
+  return true; // No timestamp info at all — recover to be safe
+}
+
 function waitUntilSafe(p: Promise<any>): boolean {
   try {
     // @ts-ignore
@@ -5150,7 +5185,49 @@ Deno.serve(async (req) => {
         last_step_at: job.last_step_at,
         last_heartbeat_at: job.last_heartbeat_at,
         can_run_next: job.status === "running" && !job.is_processing && !job.awaiting_approval,
+        recovery_needed: detectFrozen(job),
       });
+    }
+
+    // ═══════════════════════════════════════
+    // ACTION: recover — self-chain freeze recovery
+    // ═══════════════════════════════════════
+    if (action === "recover") {
+      if (!jobId) return respond({ error: "jobId required" }, 400);
+      const { data: job } = await supabase.from("auto_run_jobs").select("*").eq("id", jobId).maybeSingle();
+      if (!job) return respond({ error: "Job not found" }, 404);
+
+      if (!detectFrozen(job)) {
+        console.log("[auto-run] recover called but job is not frozen", { jobId, status: job.status, is_processing: job.is_processing });
+        return respondWithJob(supabase, jobId, "none");
+      }
+
+      console.warn("[auto-run][IEL] freeze_recovery_triggered", JSON.stringify({
+        job_id: jobId,
+        last_step_at: job.last_step_at,
+        status: job.status,
+        is_processing: job.is_processing,
+        awaiting_approval: job.awaiting_approval,
+        pending_decisions_count: Array.isArray(job.pending_decisions) ? job.pending_decisions.length : 0,
+      }));
+
+      // Fire self-chain to trigger run-next (same pattern as lines ~12519-12533)
+      const selfUrl = `${supabaseUrl}/functions/v1/auto-run`;
+      const chainPromise = fetch(selfUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ action: "run-next", jobId }),
+      }).then((r: Response) => {
+        if (!r.ok) console.error("[auto-run] recover self-chain HTTP error", { status: r.status, jobId });
+        else console.log("[auto-run] recover self-chain success", { jobId, status: r.status });
+      }).catch((e: any) => console.error("[auto-run] recover self-chain fetch failed", { jobId, error: e?.message }));
+
+      waitUntilSafe(chainPromise);
+
+      return respondWithJob(supabase, jobId, "run-next");
     }
 
     // ═══════════════════════════════════════

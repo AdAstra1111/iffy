@@ -54,6 +54,35 @@ Frontend polls job → calls POST /auto-run { action: "run-next" }
 
 **`respondWithJob(supabase, jobId, "run-next")` returns an HTTP response to its caller — it does NOT invoke run-next itself.** If called inside a fire-and-forget bgTask chain, the response is discarded and the pipeline freezes. Always self-chain with `{ action: "run-next", jobId }` from bgTask.
 
+### Self-Chain Freeze Recovery Protocol
+
+**Root cause:** When the Deno isolate terminates in fire-and-forget mode (`waitUntilSafe` returns false at line ~12533), the self-chain fetch never completes, leaving the job in `status=running, is_processing=false` with no way to advance.
+
+**Freeze signature:**
+- `status = "running"` AND
+- `is_processing = false` (no active processing lock) AND
+- `awaiting_approval = false` AND
+- `pending_decisions` empty/null AND
+- `last_step_at` stale (>30 seconds old)
+
+**Detection: `detectFrozen(job)`** — utility function at `auto-run/index.ts` returning `boolean`. No schema changes needed (reuses existing `last_step_at` field).
+
+**Recovery flow:**
+1. **Frontend** polls status → response includes `recovery_needed: boolean` computed from `detectFrozen()`
+2. **Frontend** fires `POST /auto-run { action: "recover", jobId }` to the edge function
+3. **Server** validates freeze via `detectFrozen()`, fires self-chain `{ action: "run-next", jobId }` (same pattern as bgTask self-chain)
+4. **Frontend** auto-starts `runLoop` to poll the recovered job
+
+**Auto-start on mount:** The `useAutoRun` hook's mount effect now auto-starts `runLoop` whenever a running job is detected (not just recovery cases) — ensures continuous polling after navigation back to the development page.
+
+**Schema impact:** None. No new columns, no migrations.
+
+**Safety:** The recover action is idempotent — `run-next` internally acquires a processing lock, so concurrent recovers are safe. If the job is already running normally, `detectFrozen()` returns `false` and the handler returns without firing the self-chain.
+
+**Key files:**
+- `supabase/functions/auto-run/index.ts` — `detectFrozen()` helper, `recover` action handler, `recovery_needed` in status response
+- `src/hooks/useAutoRun.ts` — mounts detect `recovery_needed` + auto-start `runLoop` for running jobs
+
 ### Authoritative Version Invariant
 
 Every document query must use:
