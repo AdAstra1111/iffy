@@ -744,24 +744,18 @@ ${docTextForScoring}`;
       parsed.high_impact_notes = highResult.now;
       parsed.polish_notes = polishResult.now;
 
-      // ── Convergence failsafe: detect note churn (character bible) ──
-      const { demotedKeys } = await detectNoteChurn(supabase, documentId, versionId, effectiveDeliverable, parsed);
-      if (demotedKeys.length > 0) {
-        console.log(`[dev-engine-v2][convergence] Churn demoted ${demotedKeys.length} blockers to polish: [${demotedKeys.join(", ")}]`);
-      }
-
       // ── LONG-TERM FIX: Semantic note_key deduplication ──
       // When generating a new note, compare its semantic content against existing
       // unresolved development_notes for the same document. If a match is found,
       // reuse the existing key instead of creating a new one (fixes note_key mutation).
       if (effectiveDeliverable === "character_bible") {
         try {
-          // Fetch all existing unresolved notes for this document
+          // Fetch all existing unresolved OR recently resolved notes for this document
           const { data: existingNotes } = await supabase
             .from("development_notes")
             .select("note_key, description, severity")
             .eq("document_id", documentId)
-            .eq("resolved", false)
+            .or("resolved.eq.false,resolved_at.gt.now-2hours")
             .limit(50);
           if (existingNotes && existingNotes.length > 0) {
             // Simple word-overlap similarity function

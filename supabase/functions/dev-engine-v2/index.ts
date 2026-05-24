@@ -472,109 +472,7 @@ NARRATIVE ENERGY CONTRACT (AUTO-DERIVED after load error — concept_brief genre
 HARD ENFORCEMENT: ${NEC_HARD_ENFORCEMENT}`;
   }
 }
-// ── Convergence failsafes (Character Bible ANALYZE) ──
 /**
- * detectNoteChurn — Demote blockers appearing 3+ consecutive ANALYZE iterations.
- * Queries development_runs for the most recent ANALYZE runs for this doc/version.
- * If a note_key appears in blocking_issues for 3+ consecutive runs, moves it from
- * blocking_issues to polish_notes (signals the LLM is churning on the same issue).
- * Also tracks category-level churn: if notes of the same category keep appearing
- * with different note_keys each run (e.g. voice_distinctiveness targeting
- * different characters per iteration), demotes them via category-level matching.
- */ async function detectNoteChurn(supabase, documentId, versionId, effectiveDeliverable, parsed) {
-  if (effectiveDeliverable !== "character_bible") return {
-    demotedKeys: []
-  };
-  try {
-    const { data: recentRuns } = await supabase.from("development_runs").select("output_json, created_at").eq("version_id", versionId).eq("run_type", "ANALYZE").order("created_at", {
-      ascending: false
-    }).limit(5);
-    if (!recentRuns || recentRuns.length < 3) return {
-      demotedKeys: []
-    };
-    // ── Level 1: Exact note_key churn ──
-    // Tracks a specific note_key appearing in blocking_issues across consecutive runs.
-    const churnCount = {};
-    // ── Level 2: Category-level churn ──
-    // Tracks whether notes of a given category appear in blocking_issues across
-    // consecutive runs, even if the note_key changes each time (e.g. voice_distinctiveness
-    // targeting different characters per iteration). This catches the "note key mutation"
-    // pattern where the same fundamental issue is re-raised under different note_keys.
-    const categoryChurnCount = {};
-    for (const run of recentRuns){
-      const blockers = run.output_json?.blocking_issues || [];
-      const seenKeys = new Set();
-      const seenCategories = new Set();
-      for (const b of blockers){
-        const nk = b.note_key || b.id;
-        if (nk) seenKeys.add(nk);
-        if (b.category) seenCategories.add(b.category);
-      }
-      // Track exact note_key churn
-      for (const nk of seenKeys){
-        churnCount[nk] = (churnCount[nk] || 0) + 1;
-      }
-      // Reset keys not seen this run
-      for (const nk of Object.keys(churnCount)){
-        if (!seenKeys.has(nk)) {
-          churnCount[nk] = 0;
-        }
-      }
-      // Track category-level churn
-      for (const cat of seenCategories){
-        categoryChurnCount[cat] = (categoryChurnCount[cat] || 0) + 1;
-      }
-      // Reset categories not seen this run
-      for (const cat of Object.keys(categoryChurnCount)){
-        if (!seenCategories.has(cat)) {
-          categoryChurnCount[cat] = 0;
-        }
-      }
-    }
-    const demotedKeys = [];
-    const currentBlockers = parsed.blocking_issues || [];
-    const remaining = [];
-    for (const b of currentBlockers){
-      const nk = b.note_key || b.id;
-      const cat = b.category;
-      // Check exact note_key churn first
-      if (nk && (churnCount[nk] || 0) >= 3) {
-        demotedKeys.push(nk);
-        // Move to polish_notes
-        if (!Array.isArray(parsed.polish_notes)) parsed.polish_notes = [];
-        parsed.polish_notes.push({
-          ...b,
-          severity: "polish",
-          churn_demoted: true
-        });
-        console.log(`[dev-engine-v2][convergence] Churn demoted blocker ${nk} — appeared ${churnCount[nk]}+ consecutive runs`);
-      } else if (cat && (categoryChurnCount[cat] || 0) >= 3) {
-        // Category-level churn: same category appearing 3+ consecutive runs
-        // with different note_keys (note key mutation pattern)
-        demotedKeys.push(nk || cat);
-        if (!Array.isArray(parsed.polish_notes)) parsed.polish_notes = [];
-        parsed.polish_notes.push({
-          ...b,
-          severity: "polish",
-          churn_demoted: true,
-          churn_category: cat
-        });
-        console.log(`[dev-engine-v2][convergence] Churn demoted blocker by category "${cat}" — appeared ${categoryChurnCount[cat]}+ consecutive runs (note_key mutation pattern)`);
-      } else {
-        remaining.push(b);
-      }
-    }
-    parsed.blocking_issues = remaining;
-    return {
-      demotedKeys
-    };
-  } catch (e) {
-    console.warn("[dev-engine-v2][convergence] detectNoteChurn error (non-fatal):", e);
-    return {
-      demotedKeys: []
-    };
-  }
-}
 /**
  * checkDevRunIterationCap — Force-converge after MAX_DEVELOPMENT_RUN_LOOPS ANALYZE iterations.
  * If the count of ANALYZE runs for this doc/version >= MAX_DEVELOPMENT_RUN_LOOPS,
@@ -7213,19 +7111,14 @@ ${docTextForScoring}`;
       parsed.blocking_issues = blockersResult.now;
       parsed.high_impact_notes = highResult.now;
       parsed.polish_notes = polishResult.now;
-      // ── Convergence failsafe: detect note churn (character bible) ──
-      const { demotedKeys } = await detectNoteChurn(supabase, documentId, versionId, effectiveDeliverable, parsed);
-      if (demotedKeys.length > 0) {
-        console.log(`[dev-engine-v2][convergence] Churn demoted ${demotedKeys.length} blockers to polish: [${demotedKeys.join(", ")}]`);
-      }
       // ── LONG-TERM FIX: Semantic note_key deduplication ──
       // When generating a new note, compare its semantic content against existing
       // unresolved development_notes for the same document. If a match is found,
       // reuse the existing key instead of creating a new one (fixes note_key mutation).
       if (effectiveDeliverable === "character_bible") {
         try {
-          // Fetch all existing unresolved notes for this document
-          const { data: existingNotes } = await supabase.from("development_notes").select("note_key, description, severity").eq("document_id", documentId).eq("resolved", false).limit(50);
+          // Fetch all existing unresolved OR recently resolved notes for this document
+          const { data: existingNotes } = await supabase.from("development_notes").select("note_key, description, severity").eq("document_id", documentId).or("resolved.eq.false,resolved_at.gt.now-2hours").limit(50);
           if (existingNotes && existingNotes.length > 0) {
             // Simple word-overlap similarity function
             const wordOverlap = (a, b)=>{
