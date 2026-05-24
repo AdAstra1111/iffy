@@ -25,7 +25,6 @@ function makeAdminClient() {
 }
 
 async function fetchSceneData(admin: any, projectId: string) {
-  // Try scene enrichment + scene graph first (feature film pipeline)
   const { data: enrichments } = await admin
     .from("scene_enrichment")
     .select("scene_id, scene_slugline, tension_level, emotional_tone, narrative_momentum, narrative_beat")
@@ -33,14 +32,12 @@ async function fetchSceneData(admin: any, projectId: string) {
     .order("tension_level", { ascending: false })
     .limit(80);
 
-  // Get scene graph versions for content
   const { data: sceneVersions } = await admin
     .from("scene_graph_versions")
     .select("scene_id, slugline, summary, content")
     .eq("project_id", projectId)
     .limit(80);
 
-  // If we have scene enrichment data, use it (feature film path)
   if (enrichments && enrichments.length > 0) {
     const versionMap = new Map((sceneVersions || []).map((s: any) => [s.scene_id, s]));
     const scenes = enrichments.map((e: any) => ({
@@ -51,7 +48,6 @@ async function fetchSceneData(admin: any, projectId: string) {
     return { scenes };
   }
 
-  // Fallback: vertical drama — get vertical_episode_beats document content
   const { data: vebDocs } = await admin
     .from("project_documents")
     .select("id, latest_version_id")
@@ -66,23 +62,40 @@ async function fetchSceneData(admin: any, projectId: string) {
       .single();
 
     if (version?.plaintext) {
-      // Parse beat entries from the document — each ##-prefixed section is a beat
-      const beatSections = version.plaintext.split(/^##\s+/m).filter(Boolean);
-      const scenes = beatSections.map((section: string, i: number) => {
-        const lines = section.split("\n").filter(Boolean);
-        const slugline = lines[0]?.trim() || `Beat ${i + 1}`;
-        const content = lines.slice(1).join("\n").trim();
-        return {
-          scene_id: `veb_beat_${i}`,
-          slugline,
-          content,
-          summary: content.substring(0, 300),
-          tension_level: 5,
-          emotional_tone: "",
-          narrative_momentum: "medium",
-          narrative_beat: slugline,
-        };
-      });
+      const episodeRegex = /^##\s*EPISODE\s+(\d+)[:\s]+(.+)$/gm;
+      const episodes: Array<{ num: number; title: string; content: string }> = [];
+      let match: RegExpExecArray | null;
+      let currentEpisode: { num: number; title: string; startIdx: number } | null = null;
+
+      while ((match = episodeRegex.exec(version.plaintext)) !== null) {
+        if (currentEpisode) {
+          episodes.push({
+            num: currentEpisode.num,
+            title: currentEpisode.title,
+            content: version.plaintext.slice(currentEpisode.startIdx, match.index).trim(),
+          });
+        }
+        currentEpisode = { num: parseInt(match[1], 10), title: match[2].trim(), startIdx: match.index };
+      }
+      if (currentEpisode) {
+        episodes.push({
+          num: currentEpisode.num,
+          title: currentEpisode.title,
+          content: version.plaintext.slice(currentEpisode.startIdx).trim(),
+        });
+      }
+
+      const scenes = episodes.map((ep) => ({
+        scene_id: `veb_episode_${ep.num}`,
+        slugline: ep.title,
+        content: ep.content,
+        summary: ep.content.substring(0, 300),
+        tension_level: 5,
+        emotional_tone: "",
+        narrative_momentum: "medium",
+        narrative_beat: ep.title,
+        episode_number: ep.num,
+      }));
       return { scenes };
     }
   }
@@ -100,27 +113,24 @@ async function handleExtract(projectId: string) {
     return { error: "no_scenes", message: "No scene enrichment data found. Run scene enrichment first." };
   }
 
-  // Filter to high-momentum / high-tension scenes
   const candidateScenes = scenes
     .filter((s: any) => s.narrative_momentum === "high" || s.narrative_momentum === "peak" || (s.tension_level && s.tension_level >= 7))
     .slice(0, 30);
 
   if (candidateScenes.length < 3) {
-    // Fall back to top tension scenes
     candidateScenes.splice(0, candidateScenes.length, ...scenes.slice(0, 20));
   }
 
-  // Check existing beat atoms
   const { data: existingAtoms } = await admin
     .from("atoms").select("canonical_name")
     .eq("project_id", projectId).eq("atom_type", "narrativebeat");
 
   const existingNames = new Set((existingAtoms || []).map((a: any) => a.canonical_name.toUpperCase()));
 
-  // LLM identifies key beats
-  const sceneContexts = candidateScenes.map((s: any, i: number) =>
-    `[Beat ${i + 1}] ${s.slugline}: tension=${s.tension_level} momentum=${s.narrative_momentum} | ${(s.summary || s.content || "").substring(0, 200)}`
-  ).join("\n\n");
+  const sceneContexts = candidateScenes.map((s: any, i: number) => {
+    const epCtx = s.episode_number ? ` [Ep ${s.episode_number}: ${s.slugline}]` : "";
+    return `[Beat ${i + 1}]${epCtx} ${s.slugline}: tension=${s.tension_level} momentum=${s.narrative_momentum} | ${(s.summary || s.content || "").substring(0, 200)}`;
+  }).join("\n\n");
 
   const extractPrompt = `You are a story beat analyst. Identify the most important experiential beats in this film — the specific moments that deliver emotional impact, revelation, or tonal shift.
 
@@ -130,9 +140,7 @@ Return a JSON array of beat names (3-10 beats). Each beat should be a short, des
 
 Example: ["The Betrayal Reveal", "Desert Chase Sequence", "Underground Interrogation", "The Dead Drop"]
 
-SCENE DATA:
-${sceneContexts}
-
+SCENE DATA:\n${sceneContexts}\n
 Respond with ONLY a JSON array of beat name strings. No explanation.`;
 
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -242,12 +250,10 @@ async function handleGenerate(projectId: string) {
   const atomIds = pendingAtoms.map((a: any) => a.id);
   await admin.from("atoms").update({ generation_status: "running", updated_at: new Date().toISOString() }).in("id", atomIds);
 
-  // @ts-ignore
   EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
         try {
-          // Find the most relevant scene context for this beat
           const relevantScenes = scenes
             .filter((s: any) => {
               const summary = (s.summary || "").toLowerCase();
@@ -263,9 +269,7 @@ async function handleGenerate(projectId: string) {
 
           const prompt = `You are a story beat analyst. Generate rich attributes for the narrative beat: "${atom.canonical_name}".
 
-This beat appears in the context of these scenes:
-${sceneContext}
-
+This beat appears in the context of these scenes:\n${sceneContext}\n
 Output ONLY a valid JSON object (no markdown, no commentary) with ALL fields:
 - beatType (string: revelation | action_climax | emotional_turn | tonal_shift | setup)
 - sceneReference (string: the slugline or scene_id where this beat occurs, if identifiable)
@@ -283,18 +287,18 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL fields:
 - confidence (number 0.0-1.0)
 - readinessBadge (string: "foundation" | "rich" | "verified")`;
 
-          const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+          const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
             method: "POST",
             headers: { Authorization: `Bearer ${openrouterKey}`, "Content-Type": "application/json", "HTTP-Referer": "https://iffy-analysis.vercel.app", "X-Title": "IFFY NarrativeBeat Atomiser" },
             body: JSON.stringify({ model: "minimax/minimax-m2.7", messages: [{ role: "user", content: prompt }], temperature: 0.7, max_tokens: 1500 }),
           });
 
-          if (!response.ok) {
+          if (!resp.ok) {
             await admin.from("atoms").update({ generation_status: "failed", updated_at: new Date().toISOString() }).eq("id", atom.id);
             continue;
           }
 
-          const aiData = await response.json();
+          const aiData = await resp.json();
           let attrs: Record<string, any> = {};
           try {
             const cleaned = (aiData.choices?.[0]?.message?.content || "").replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
@@ -311,7 +315,7 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL fields:
             attributes: finalAttributes, updated_at: new Date().toISOString(),
           }).eq("id", atom.id);
 
-          console.log(`✓ Generated narrativebeat: ${atom.canonical_name}`);
+          console.log(`Generated narrativebeat: ${atom.canonical_name}`);
         } catch (err) {
           console.error(`Error for narrativebeat ${atom.id}:`, err);
           await admin.from("atoms").update({ generation_status: "failed", updated_at: new Date().toISOString() }).eq("id", atom.id);

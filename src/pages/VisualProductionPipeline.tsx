@@ -106,13 +106,31 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
         .from('project_characters')
         .select('id')
         .eq('project_id', projectId);
-      const totalChars = chars?.length || 0;
+      let totalChars = chars?.length || 0;
 
       const { data: cast } = await (supabase as any)
         .from('project_ai_cast')
         .select('character_key, ai_actor_id')
         .eq('project_id', projectId);
-      const lockedCount = cast?.length || 0;
+      let lockedCount = cast?.length || 0;
+
+      // ── VERTICAL DRAMA FALLBACK: if no project_characters, check character atoms ──
+      if (totalChars === 0) {
+        const { data: charAtoms } = await (supabase as any)
+          .from('atoms')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('atom_type', 'character');
+        totalChars = charAtoms?.length || 0;
+        // Character atoms with completed generation count as "locked"
+        const { data: completedAtoms } = await (supabase as any)
+          .from('atoms')
+          .select('id')
+          .eq('project_id', projectId)
+          .eq('atom_type', 'character')
+          .in('generation_status', ['completed', 'complete']);
+        lockedCount = completedAtoms?.length || 0;
+      }
 
       // Check actor dataset completeness
       let allComplete = lockedCount > 0 && lockedCount >= totalChars;
@@ -142,12 +160,19 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
     queryKey: ['pipeline-pd-state', projectId, topLocationCount],
     queryFn: async () => {
       if (!projectId) return { total: 0, locked: 0, created: 0, allLocked: false };
-      const { data: sets } = await (supabase as any)
-        .from('visual_sets')
-        .select('id, domain, status, target_name')
-        .eq('project_id', projectId)
-        .like('domain', 'production_design_%')
-        .neq('status', 'archived');
+      let sets: any[] = [];
+      try {
+        const { data } = await (supabase as any)
+          .from('visual_sets')
+          .select('id, domain, status, target_name')
+          .eq('project_id', projectId)
+          .like('domain', 'production_design_%')
+          .neq('status', 'archived');
+        sets = data || [];
+      } catch (err) {
+        // visual_sets table may not exist (e.g. vertical drama projects)
+        console.warn('[pipeline] visual_sets query failed — table may not exist:', err);
+      }
 
       // Canonical required families: N locations + N atmospheres + 1 texture + 1 motif
       const totalFamilies = topLocationCount * 2 + 2;
@@ -173,6 +198,26 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
       return { total: totalFamilies, locked, created, allLocked: locked >= totalFamilies && totalFamilies > 0 };
     },
     enabled: !!projectId,
+    staleTime: 30_000,
+  });
+
+  // ── VERTICAL DRAMA FALLBACK: if PD has no visual_sets, check location atoms ──
+  // This lets the pipeline show Production Design as in_progress when locations exist as atoms
+  const pdFallbackQuery = useQuery({
+    queryKey: ['pipeline-pd-fallback', projectId],
+    queryFn: async () => {
+      if (!projectId) return { hasLocationAtoms: false, locationAtomCount: 0 };
+      const { data: locAtoms } = await (supabase as any)
+        .from('atoms')
+        .select('id')
+        .eq('project_id', projectId)
+        .eq('atom_type', 'location');
+      return {
+        hasLocationAtoms: (locAtoms?.length || 0) > 0,
+        locationAtomCount: locAtoms?.length || 0,
+      };
+    },
+    enabled: !!projectId && (pdQuery.data?.created ?? 0) === 0,
     staleTime: 30_000,
   });
 
@@ -254,8 +299,8 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
 
   return useMemo(() => ({
     hasCanon: !!canon && Object.keys(canon).length > 0,
-    hasLocations: (locations?.length || 0) > 0,
-    locationCount: locations?.length || 0,
+    hasLocations: (locations?.length || 0) > 0 || (pdFallbackQuery.data?.hasLocationAtoms ?? false),
+    locationCount: locations?.length || pdFallbackQuery.data?.locationAtomCount || 0,
     hasVisualStyle: !!styleProfile,
     visualStyleComplete: styleProfile?.is_complete ?? false,
     totalCharacters: castQuery.data?.total ?? 0,

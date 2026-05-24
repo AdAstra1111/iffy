@@ -48,7 +48,7 @@ function AttrRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export function GenreAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: GenreAtomGridProps) {
+export function GenreAtomGrid({ atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: GenreAtomGridProps) {
   const [selected, setSelected] = useState<GenreAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;

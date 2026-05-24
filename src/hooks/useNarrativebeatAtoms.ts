@@ -19,6 +19,7 @@ export interface NarrativebeatAtomAttributes {
   setPieceRequirement: string; beatTags: string[]; marketingRelevance: boolean;
   productionCriticality: string;
   confidence: number; readinessBadge: 'foundation' | 'rich' | 'verified'; generationStatus: string;
+  episodeNumber?: number | null;
 }
 interface UseNarrativebeatAtomsOptions { projectId: string; enabled?: boolean; }
 interface UseNarrativebeatAtomsReturn {

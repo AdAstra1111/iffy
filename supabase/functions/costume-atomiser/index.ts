@@ -23,6 +23,14 @@ const corsHeaders = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Costume-related keywords used to detect clothing references in script text
+const COSTUME_KEYWORDS = [
+  "wears", "wearing", "wear", "dressed in", "dressed as", "puts on", "put on",
+  "clad in", "clothed in", "donning", "donned", "sports", "sporting",
+  "in a", "in an", "in his", "in her", "in their",
+  "outfitted in", "attired in", "adorned in",
+];
+
 function makeAdminClient() {
   return createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -63,72 +71,175 @@ function makeStubAttributes(charName: string, charId: string) {
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+/**
+ * Extract costume references from script text.
+ * Looks for patterns like "wears a [clothing]", "dressed in [clothing]", etc.
+ * Returns array of { character, costume, excerpt } objects.
+ */
+function extractCostumeRefs(text: string): { character: string; costume: string; excerpt: string }[] {
+  const results: { character: string; costume: string; excerpt: string }[] = [];
+  const lines = text.split('\n');
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lower = line.toLowerCase();
+    
+    // Try each keyword
+    for (const kw of COSTUME_KEYWORDS) {
+      const idx = lower.indexOf(kw);
+      if (idx === -1) continue;
+      
+      // Extract the clothing description: text after the keyword until punctuation or end
+      const after = line.substring(idx + kw.length).trim();
+      const endMatch = after.match(/^(.+?)[.;:!?]/);
+      const costumeText = endMatch ? endMatch[1].trim() : after;
+      if (!costumeText || costumeText.length < 3 || costumeText.length > 100) continue;
+      
+      // Try to identify the character — look at previous lines for an ALL-CAPS name
+      let character = "Unknown";
+      for (let j = i - 1; j >= Math.max(0, i - 5); j--) {
+        const prevLine = lines[j].trim();
+        if (/^[A-Z][A-Z\s.]{2,30}$/.test(prevLine) && !prevLine.includes('INT.') && !prevLine.includes('EXT.')) {
+          character = prevLine.replace(/\./g, '').trim();
+          break;
+        }
+      }
+      
+      // Avoid duplicates (same character + similar costume)
+      const key = `${character}:${costumeText.substring(0, 20)}`;
+      if (results.some(r => `${r.character}:${r.costume.substring(0, 20)}` === key)) continue;
+      
+      results.push({
+        character,
+        costume: costumeText,
+        excerpt: line.trim().substring(0, 200),
+      });
+    }
+  }
+  
+  return results;
+}
+
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
-
-  // 1. Check that completed character atoms exist
-  const { data: charAtoms, error: charErr } = await admin
-    .from("atoms")
-    .select("id, entity_id, canonical_name, attributes, confidence")
+  
+  // 1. Get script content — try scene_graph_versions first, then season_script
+  let allText = "";
+  
+  const { data: sceneVersions } = await admin
+    .from("scene_graph_versions")
+    .select("content")
     .eq("project_id", projectId)
-    .eq("atom_type", "character")
-    .in("generation_status", ["completed", "complete"]);
-
-  if (charErr) throw new Error(`Failed to load character atoms: ${charErr.message}`);
-
-  if (!charAtoms || charAtoms.length === 0) {
-    return {
-      error: "character_atoms_not_ready",
-      message: "Generate character atoms first",
-    };
+    .limit(500);
+  
+  if (sceneVersions && sceneVersions.length > 0) {
+    allText = sceneVersions.map((sv: any) => sv.content || "").join("\n");
+    console.log(`[costume-atomiser] Scanning ${sceneVersions.length} scenes for costume refs`);
+  } else {
+    // Fallback: try season_script (vertical drama)
+    const { data: ssDocs } = await admin
+      .from("project_documents")
+      .select("id, latest_version_id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "season_script");
+    
+    if (ssDocs && ssDocs.length > 0 && ssDocs[0].latest_version_id) {
+      const { data: version } = await admin
+        .from("project_document_versions")
+        .select("plaintext")
+        .eq("id", ssDocs[0].latest_version_id)
+        .single();
+      if (version?.plaintext) {
+        allText = version.plaintext;
+        console.log(`[costume-atomiser] Scanning season_script for costume refs`);
+      }
+    }
   }
-
-  console.log(`Found ${charAtoms.length} completed character atoms`);
-
-  // 2. Get existing costume atoms to avoid duplicates
+  
+  if (!allText || allText.length < 100) {
+    return { created: 0, message: "No script content found. Upload a script first." };
+  }
+  
+  // 2. Extract costume references
+  const refs = extractCostumeRefs(allText);
+  console.log(`[costume-atomiser] Found ${refs.length} costume references in script`);
+  
+  if (refs.length === 0) {
+    return { created: 0, message: "No explicit costume references found in script. Costumes will be handled by AI actor system." };
+  }
+  
+  // 3. Get existing costume atoms to avoid duplicates
   const { data: existingCostumes } = await admin
     .from("atoms")
-    .select("entity_id")
+    .select("canonical_name")
     .eq("project_id", projectId)
     .eq("atom_type", "costume");
-
-  const existingEntityIds = new Set<string>(
-    (existingCostumes || []).map((a) => a.entity_id).filter(Boolean)
-  );
-
-  // 3. Build costume stubs for each character atom
-  const toInsert: any[] = [];
+  
+  const existingNames = new Set((existingCostumes || []).map((a: any) => a.canonical_name.toUpperCase()));
+  
+  // 4. Build costume atoms — one per reference  
   const now = new Date().toISOString();
-
-  for (const charAtom of charAtoms) {
-    // Skip if costume atom already exists for this character
-    if (existingEntityIds.has(charAtom.entity_id)) {
-      console.log(`Skipping existing costume atom for: ${charAtom.canonical_name}`);
-      continue;
-    }
-
-    const charName = (charAtom.attributes as any)?.canonicalName || charAtom.canonical_name;
-
+  const toInsert: any[] = [];
+  let canonicalNames = new Set<string>();
+  
+  for (const ref of refs) {
+    // Create a canonical name like "Elara — Chef Whites" or "Liam — Lab Coat"
+    const costumeName = ref.costume.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    const canonicalName = `${ref.character} — ${costumeName}`;
+    
+    if (existingNames.has(canonicalName.toUpperCase())) continue;
+    if (canonicalNames.has(canonicalName)) continue; // dedupe within this batch
+    canonicalNames.add(canonicalName);
+    
     toInsert.push({
       project_id: projectId,
       atom_type: "costume",
-      entity_id: charAtom.entity_id,
-      canonical_name: `${charName} — Primary Costume`,
-      priority: 50,
+      entity_id: null,
+      canonical_name: canonicalName,
+      priority: 60,
       confidence: 0,
       readiness_state: "stub",
       generation_status: "pending",
-      attributes: makeStubAttributes(charName, charAtom.entity_id),
+      attributes: {
+        characterName: ref.character,
+        characterId: null,
+        primaryOutfit: costumeName,
+        sourceExcerpt: ref.excerpt,
+        sourceChar: ref.character,
+        eraAlignment: "",
+        silhouette: "",
+        dominantColors: [],
+        fabricAndTexture: [],
+        keyPieces: [],
+        characterSignal: "",
+        condition: "",
+        distinctiveElements: [],
+        fitAndMovement: "",
+        associatedLocations: [],
+        associatedCharacters: [],
+        wardrobeEvolution: [],
+        alternateOutfits: [],
+        productionComplexity: "moderate",
+        wardrobeRequirements: [],
+        specialConsiderations: [],
+        wigOrHairSystem: "",
+        makeupRequirements: [],
+        referenceImageTerms: [],
+        costumeBudgetEstimate: "",
+        confidence: 0,
+        readinessBadge: "foundation",
+        generationStatus: "pending",
+      },
       created_at: now,
       updated_at: now,
     });
   }
-
+  
   if (toInsert.length === 0) {
-    return { created: 0, message: "All costume atoms already exist" };
+    return { created: 0, message: "All costume references already have atoms" };
   }
-
-  // 4. Insert in batches of 50
+  
+  // 5. Insert in batches
   let totalCreated = 0;
   for (let i = 0; i < toInsert.length; i += 50) {
     const batch = toInsert.slice(i, i + 50);
@@ -136,16 +247,15 @@ async function handleExtract(projectId: string) {
       .from("atoms")
       .insert(batch)
       .select("id");
-
     if (insertErr) {
       console.error("Insert batch error:", insertErr);
       throw new Error(`Failed to insert costume atom batch: ${insertErr.message}`);
     }
     totalCreated += inserted?.length || 0;
   }
-
-  console.log(`Created ${totalCreated} costume atom stubs`);
-  return { created: totalCreated };
+  
+  console.log(`Created ${totalCreated} costume atoms from script references`);
+  return { created: totalCreated, message: `${totalCreated} costume canon atoms extracted from script` };
 }
 
 async function handleStatus(projectId: string) {
@@ -211,8 +321,12 @@ async function handleGenerate(projectId: string) {
     (async () => {
       for (const atom of pendingAtoms) {
         try {
-          const charName = (atom.attributes as any)?.characterName || atom.canonical_name.replace(" — Primary Costume", "");
-          console.log(`Generating costume atom: ${charName}`);
+          const charName = (atom.attributes as any)?.sourceChar || 
+            (atom.attributes as any)?.characterName || 
+            atom.canonical_name.split(' — ')[0] || 
+            atom.canonical_name.replace(" — Primary Costume", "");
+          const costumeName = (atom.attributes as any)?.primaryOutfit || atom.canonical_name.split(' — ').slice(1).join(' — ') || "Costume";
+          console.log(`Generating costume atom: ${costumeName} for ${charName}`);
 
           // Get associated character atom for physical description
           let characterAtomDescription = "";
@@ -327,10 +441,7 @@ async function handleGenerate(projectId: string) {
             }
           }
 
-          const prompt = `You are a costume designer and character visual analyst. Generate a production-ready costume atom for the primary outfit of the following character.
-
-CHARACTER: ${charName}
-CHARACTER PHYSICAL PROFILE:
+          const prompt = `You are a costume designer and character visual analyst. Generate a production-ready costume atom for the following specific costume.\n\nCHARACTER: ${charName}\nSPECIFIC COSTUME: ${costumeName}\nCHARACTER PHYSICAL PROFILE:
 ${characterAtomDescription || "No physical profile available — infer from character name and story context."}
 CHARACTER ARC: ${characterArcSummary || "Unknown"}
 SCENE COUNT: ${sceneCount}

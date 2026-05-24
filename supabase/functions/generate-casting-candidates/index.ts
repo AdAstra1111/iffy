@@ -600,7 +600,7 @@ async function generateImage(
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: "google/gemini-3.1-flash-image-preview",
+          model: "google/gemini-3-pro-image-preview",
           messages: [{ role: "user", content: prompt }],
           modalities: ["image", "text"],
         }),
@@ -911,7 +911,7 @@ Deno.serve(async (req) => {
               casting_note: variation.casting_note,
               mood: variation.mood,
               character_dna_used: !!character.dna,
-              model: "google/gemini-3.1-flash-image-preview",
+              model: "google/gemini-3-pro-image-preview",
               hard_constraints: mergedConstraints,
               exploration_mode: explorationMode,
               refinements: refinements || null,

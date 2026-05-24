@@ -411,8 +411,8 @@ function parseBeatSheet(plaintext: string): Act[] {
       ptBeatLines = [];
     }
 
-    // Always start with a default act — beats may exist without act headers
-    ptCurrentAct = { name: 'ACT 1', beats: [] };
+    // Lazy init: create default act only when first beat encountered
+    ptCurrentAct = null;
 
     for (const line of ptLines) {
       const trimmed = line.trim();
@@ -429,6 +429,7 @@ function parseBeatSheet(plaintext: string): Act[] {
       const ptBeatMatch = trimmed.match(/^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/i);
       if (ptBeatMatch) {
         ptFlushBeat();
+        if (!ptCurrentAct) ptCurrentAct = { name: 'ACT 1', beats: [] };
         ptBeatMeta = { id: ptBeatMatch[1], name: ptBeatMatch[2].trim() };
         ptBeatLines = [line];
         continue;
@@ -438,7 +439,7 @@ function parseBeatSheet(plaintext: string): Act[] {
       }
     }
     ptFlushBeat();
-    ptActs.push(ptCurrentAct);
+    if (ptCurrentAct) ptActs.push(ptCurrentAct);
 
     if (ptActs.length > 0) {
       const totalBeats = ptActs.reduce((s, a) => s + a.beats.length, 0);
@@ -488,8 +489,8 @@ function parseBeatSheet(plaintext: string): Act[] {
     currentBeatMeta = {};
   }
 
-  // Always start with a default act — beats may exist without act headers
-  currentAct = { name: 'ACT 1', beats: [] };
+  // Lazy init: create default act only when first beat encountered
+  currentAct = null;
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -507,6 +508,7 @@ function parseBeatSheet(plaintext: string): Act[] {
     const beatMatch = trimmed.match(/^#{1,3}\s+Beat\s+(\d+)[:\s]+\s*(.+)/i);
     if (beatMatch) {
       flushBeat(); // flush previous beat before starting new one
+      if (!currentAct) currentAct = { name: 'ACT 1', beats: [] };
       currentBeatMeta = { id: beatMatch[1], name: beatMatch[2].trim() };
       currentBeatLines = [line];
       continue;
@@ -519,7 +521,7 @@ function parseBeatSheet(plaintext: string): Act[] {
   }
 
   flushBeat();
-  acts.push(currentAct);
+  if (currentAct) acts.push(currentAct);
   return acts;
 }
 

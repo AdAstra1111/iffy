@@ -24,10 +24,10 @@ function TimeAgo({ date }: { date: Date }) {
   useEffect(() => { const i = setInterval(() => setLabel(`${Math.floor((Date.now() - date.getTime()) / 60000)}m ago`), 30000); return () => clearInterval(i); }, [date]);
   return <span className="text-xs text-muted-foreground">{label}</span>;
 }
-interface ToneAtomGridProps { atoms: ToneAtom[]; isLoading: boolean; isRefreshing: boolean; lastUpdated: Date | null; error: string | null; onExtract: () => Promise<any>; onGenerate: () => Promise<any>; onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>; }
+interface ToneAtomGridProps { atoms: ToneAtom[]; isLoading: boolean; isRefreshing: boolean; isExtracting: boolean; isGenerating: boolean; lastUpdated: Date | null; error: string | null; onExtract: () => Promise<any>; onGenerate: () => Promise<any>; onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>; }
 function AttrRow({ label, value }: { label: string; value: React.ReactNode }) { if (!value) return null; return <div className="grid grid-cols-[140px_1fr] gap-2 py-2 border-b border-border/50 last:border-0"><dt className="text-xs text-muted-foreground font-medium">{label}</dt><dd className="text-sm">{value}</dd></div>; }
 
-export function ToneAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ToneAtomGridProps) {
+export function ToneAtomGrid({ atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ToneAtomGridProps) {
   const [selected, setSelected] = useState<ToneAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;

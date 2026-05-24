@@ -91,7 +91,7 @@ interface ThemeAtomGridProps {
   onResetFailed: () => Promise<any>; onRefresh: () => Promise<void>;
 }
 
-export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ThemeAtomGridProps) {
+export function ThemeAtomGrid({ atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, onExtract, onGenerate, onResetFailed, onRefresh }: ThemeAtomGridProps) {
   const [selected, setSelected] = useState<ThemeAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const completedCount = atoms.filter((a) => a.generation_status === 'completed' || a.generation_status === 'complete').length;

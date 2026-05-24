@@ -215,6 +215,84 @@ export async function executeRequirements(
           ...targetReq.promptContext,
         };
 
+        // ── ATOM ENRICHMENT: enrich prompt context with atomiser data ──
+        try {
+          const charName = targetReq.promptContext.characterName;
+          if (charName && projectId) {
+            const { data: charAtoms } = await supabase
+              .from('atoms')
+              .select('canonical_name, attributes')
+              .eq('project_id', projectId)
+              .eq('atom_type', 'character')
+              .eq('generation_status', 'complete')
+              .eq('readiness_state', 'generated')
+              .ilike('canonical_name', charName);
+
+            if (charAtoms?.length) {
+              const attrs = charAtoms[0].attributes as any;
+              const parts: string[] = [];
+              if (attrs.physical_description) parts.push(attrs.physical_description);
+              if (attrs.age_estimate) parts.push(`Age ${attrs.age_estimate}`);
+              if (attrs.build) parts.push(`Build ${attrs.build}`);
+              if (attrs.height_estimate) parts.push(`Height ${attrs.height_estimate}`);
+              if (attrs.skin_tone) parts.push(`Skin ${attrs.skin_tone}`);
+              if (attrs.hair) parts.push(`Hair ${attrs.hair}`);
+              if (attrs.eyes) parts.push(`Eyes ${attrs.eyes}`);
+              if (attrs.distinctive_features) parts.push(`Distinctive ${attrs.distinctive_features}`);
+              if (parts.length > 0) {
+                promptCtx.characterTraits = parts.join(', ');
+              }
+            }
+
+            // Costume atoms for this character
+            const { data: cstAtoms } = await supabase
+              .from('atoms')
+              .select('canonical_name, attributes')
+              .eq('project_id', projectId)
+              .eq('atom_type', 'costume')
+              .eq('generation_status', 'complete')
+              .eq('readiness_state', 'generated')
+              .ilike('canonical_name', charName);
+
+            if (cstAtoms?.length) {
+              const attrs = cstAtoms[0].attributes as any;
+              const parts: string[] = [];
+              if (attrs.wardrobeDescription) parts.push(attrs.wardrobeDescription);
+              if (attrs.primaryColors?.length) parts.push(`Colors: ${attrs.primaryColors.join(', ')}`);
+              if (attrs.fabrics?.length) parts.push(`Fabrics: ${attrs.fabrics.join(', ')}`);
+              if (attrs.style) parts.push(`Style: ${attrs.style}`);
+              if (attrs.keyAccessories?.length) parts.push(`Accessories: ${attrs.keyAccessories.join(', ')}`);
+              if (parts.length > 0) promptCtx.costumeNotes = parts.join('. ');
+            }
+          }
+
+          // Location atoms
+          const locName = promptCtx.locationName;
+          if (locName && projectId) {
+            const { data: locAtoms } = await supabase
+              .from('atoms')
+              .select('canonical_name, attributes')
+              .eq('project_id', projectId)
+              .eq('atom_type', 'location')
+              .eq('generation_status', 'complete')
+              .eq('readiness_state', 'generated')
+              .ilike('canonical_name', locName);
+
+            if (locAtoms?.length) {
+              const attrs = locAtoms[0].attributes as any;
+              const parts: string[] = [];
+              if (attrs.settingType) parts.push(`Setting: ${attrs.settingType}`);
+              if (attrs.architectureStyle) parts.push(`Architecture: ${attrs.architectureStyle}`);
+              if (attrs.era) parts.push(`Era: ${attrs.era}`);
+              if (attrs.lightingCharacter) parts.push(`Lighting: ${attrs.lightingCharacter}`);
+              if (attrs.atmosphericMood?.length) parts.push(`Mood: ${attrs.atmosphericMood.join(', ')}`);
+              if (parts.length > 0) promptCtx.locationDescription = parts.join('. ');
+            }
+          }
+        } catch (atomErr) {
+          console.warn('[requirementExecutor] Atom enrichment failed (non-fatal):', atomErr);
+        }
+
         const template = resolvePromptTemplate(targetReq.subjectType as any, targetReq.shotType);
         let { prompt } = buildPromptFromTemplate(template, promptCtx);
 

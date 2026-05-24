@@ -185,7 +185,7 @@ async function handleGenerate(sb: any, apiKey: string, projectId: string, atomId
     .select("*")
     .eq("project_id", projectId)
     .eq("atom_type", "character")
-    .eq("readiness_state", "canon_linked");
+    .in("readiness_state", ["canon_linked", "canon_listed"]);
 
   // When atomIds are explicitly provided, generate those regardless of status
   // (allows retrying failed atoms)

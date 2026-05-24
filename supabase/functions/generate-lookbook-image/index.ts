@@ -83,6 +83,7 @@ interface SectionContext {
   /** Atom-enriched visual data from atomiser pipeline */
   characterAtomBlock?: string;
   locationAtomBlock?: string;
+  costumeAtomBlock?: string;
   atomBindingStatus?: string;
   missingAtomRefs?: string[];
   /** Shot plan context from pipeline orchestrator */
@@ -792,6 +793,59 @@ async function enrichWithLocationAtoms(
     atomBlock: blocks.join('\n\n'),
     bound: matchedAtoms.length,
     total: locationNames.length,
+    missingNames,
+  };
+}
+
+async function enrichWithCostumeAtoms(
+  sb: any,
+  projectId: string,
+  characterNames: string[],
+): Promise<{ atomBlock: string; bound: number; total: number; missingNames: string[] }> {
+  if (!characterNames?.length) return { atomBlock: '', bound: 0, total: 0, missingNames: [] };
+
+  const lowerNames = characterNames.map(n => n.toLowerCase());
+
+  const { data: atoms, error } = await sb
+    .from("atoms")
+    .select("canonical_name, attributes")
+    .eq("project_id", projectId)
+    .eq("atom_type", "costume")
+    .eq("generation_status", "complete")
+    .eq("readiness_state", "generated");
+
+  if (error || !atoms?.length) {
+    console.warn(`[lookbook-image] enrichWithCostumeAtoms: no atoms found or query error`, error?.message);
+    return { atomBlock: '', bound: 0, total: characterNames.length, missingNames: characterNames };
+  }
+
+  const matchedAtoms = atoms.filter(a => lowerNames.includes((a.canonical_name || '').toLowerCase()));
+  const matchedNames = new Set(matchedAtoms.map(a => (a.canonical_name || '').toLowerCase()));
+  const missingNames = characterNames.filter(n => !matchedNames.has(n.toLowerCase()));
+
+  if (!matchedAtoms.length) return { atomBlock: '', bound: 0, total: characterNames.length, missingNames };
+
+  const blocks: string[] = [];
+  for (const atom of matchedAtoms) {
+    const attrs = (atom.attributes || {}) as Record<string, any>;
+    const lines: string[] = [];
+    lines.push(`[COSTUME ATOM — ${atom.canonical_name}]`);
+    if (attrs.wardrobeDescription) lines.push(`Wardrobe: ${attrs.wardrobeDescription}`);
+    if (attrs.primaryColors?.length) lines.push(`Colors: ${attrs.primaryColors.join(', ')}`);
+    if (attrs.fabrics?.length) lines.push(`Fabrics: ${attrs.fabrics.join(', ')}`);
+    if (attrs.era) lines.push(`Era: ${attrs.era}`);
+    if (attrs.style) lines.push(`Style: ${attrs.style}`);
+    if (attrs.silhouette) lines.push(`Silhouette: ${attrs.silhouette}`);
+    if (attrs.keyAccessories?.length) lines.push(`Accessories: ${attrs.keyAccessories.join(', ')}`);
+    if (attrs.stateChanges?.length) lines.push(`State Changes: ${attrs.stateChanges.join(', ')}`);
+    if (attrs.productionNotes) lines.push(`Production Notes: ${attrs.productionNotes}`);
+    blocks.push(lines.join('\n'));
+  }
+
+  return {
+    atomBlock: blocks.join('\n\n'),
+    bound: matchedAtoms.length,
+    total: characterNames.length,
     missingNames,
   };
 }
@@ -1759,6 +1813,7 @@ serve(async (req) => {
     // character physical descriptions and location architecture data
     let characterAtomBlock = '';
     let locationAtomBlock = '';
+    let costumeAtomBlock = '';
     let atomBindingStatus: string | undefined;
     let missingAtomRefs: string[] = [];
     let charAtomsBound = 0;
@@ -1786,9 +1841,16 @@ serve(async (req) => {
       }
     }
 
+    // Costume atom enrichment — same pattern, queries costume atoms for wardrobe data
+    if (SECTION_BINDING_RELEVANCE[section]?.characters && ctx.boundCharacterNames?.length) {
+      const cstResult = await enrichWithCostumeAtoms(supabase, project_id, ctx.boundCharacterNames);
+      costumeAtomBlock = cstResult.atomBlock;
+    }
+
     atomBindingStatus = missingAtomRefs.length === 0 ? 'all_bound' : 'partial';
     ctx.characterAtomBlock = characterAtomBlock || undefined;
     ctx.locationAtomBlock = locationAtomBlock || undefined;
+    ctx.costumeAtomBlock = costumeAtomBlock || undefined;
     ctx.atomBindingStatus = atomBindingStatus;
     ctx.missingAtomRefs = missingAtomRefs.length > 0 ? missingAtomRefs : undefined;
     console.log(`[lookbook-image] atom enrichment: charBlock=${characterAtomBlock.length > 0} locBlock=${locationAtomBlock.length > 0} status=${atomBindingStatus} missing=${missingAtomRefs.length}`);

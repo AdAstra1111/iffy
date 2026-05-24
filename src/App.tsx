@@ -265,8 +265,9 @@ const AnimatedRoutes = () => {
           <Route path="*" element={<NotFound />} />
         </Routes>
         </Suspense>
-    );
-  };
+    </>
+  );
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
