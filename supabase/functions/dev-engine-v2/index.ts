@@ -7087,6 +7087,23 @@ ${docTextForScoring}`;
           deferred: deferredNotes
         };
       }
+      // ── Fingerprint helpers for resolved-note matching ──
+      function normalizeText(s: string): string {
+        return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+      }
+      function djb2(str: string): string {
+        let hash = 5381;
+        for (let i = 0; i < str.length; i++) { hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0; }
+        return hash.toString(36);
+      }
+      function generateFingerprint(n: any): string {
+        const key = n.note_key || n.id || '';
+        const severity = n.severity || '';
+        const desc = normalizeText(n.description || n.note || '');
+        if (key) return `${key}::${severity}::${djb2(desc)}`;
+        const cat = n.category || 'unknown';
+        return `${cat}::${severity}::${djb2(desc.slice(0, 60))}`;
+      }
       // ── Exclude already-resolved notes from analysis output ──
       let resolvedNoteIds = new Set();
       if (projectId) {
@@ -7102,7 +7119,7 @@ ${docTextForScoring}`;
         }
       }
       // Filter out resolved notes before timing filter so they don't appear as open blockers
-      const resolvedFilter = (notes)=>(notes || []).filter((n)=>resolvedNoteIds.has(generateFingerprint(n)));
+      const resolvedFilter = (notes)=>(notes || []).filter((n)=>!resolvedNoteIds.has(generateFingerprint(n)));
       const blockersResult = filterAndTimingNotes(resolvedFilter(parsed.blocking_issues));
       const highResult = filterAndTimingNotes(resolvedFilter(parsed.high_impact_notes));
       const polishResult = filterAndTimingNotes(resolvedFilter(parsed.polish_notes));

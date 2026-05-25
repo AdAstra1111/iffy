@@ -717,13 +717,12 @@ ${docTextForScoring}`;
         try {
           const { data: resolved } = await supabase
             .from("resolved_notes")
-            .select("note_id, note_key")
+            .select("note_fingerprint")
             .eq("project_id", projectId)
             .eq("status", "active");
           if (resolved) {
             for (const r of resolved) {
-              if (r.note_id) resolvedNoteIds.add(r.note_id);
-              if (r.note_key) resolvedNoteIds.add(r.note_key);
+              if (r.note_fingerprint) resolvedNoteIds.add(r.note_fingerprint);
             }
           }
         } catch (e) {
@@ -733,7 +732,7 @@ ${docTextForScoring}`;
 
       // Filter out resolved notes before timing filter so they don't appear as open blockers
       const resolvedFilter = (notes: any[]) =>
-        (notes || []).filter((n: any) => !resolvedNoteIds.has(n.id) && !resolvedNoteIds.has(n.note_key) && !resolvedNoteIds.has(n.note_id));
+        (notes || []).filter((n: any) => !resolvedNoteIds.has(generateFingerprint(n)));
 
       const blockersResult = filterAndTimingNotes(resolvedFilter(parsed.blocking_issues));
       const highResult = filterAndTimingNotes(resolvedFilter(parsed.high_impact_notes));

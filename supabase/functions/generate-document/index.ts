@@ -201,6 +201,45 @@ async function resolveBeatsFromBeatSheet(
   }
 }
 
+interface ResolvedScene {
+  number: number;
+  heading: string;
+}
+
+async function resolveScenesFromFeatureScript(
+  supabase: any,
+  projectId: string,
+): Promise<ResolvedScene[] | null> {
+  try {
+    const { data: scenes } = await supabase
+      .from("scene_graph_scenes")
+      .select(`
+        key,
+        scene_graph_versions!inner(slugline),
+        scene_graph_order!inner(order_key, is_active)
+      `)
+      .eq("project_id", projectId)
+      .is("deprecated_at", null)
+      .eq("scene_graph_order.is_active", true)
+      .order("scene_graph_order(order_key)", { ascending: true });
+
+    if (!scenes || scenes.length < 1) return null;
+
+    const result: ResolvedScene[] = scenes.map((scene: any, i: number) => ({
+      number: i + 1,
+      heading: scene.scene_graph_versions?.[0]?.slugline ||
+               scene.scene_graph_order?.[0]?.order_key?.toString() ||
+               `Scene ${scene.key}`,
+    }));
+
+    console.log(`[generate-document] resolveScenesFromFeatureScript: resolved ${result.length} scenes for project ${projectId}`);
+    return result;
+  } catch (err) {
+    console.error(`[generate-document] resolveScenesFromFeatureScript failed:`, err?.message || err);
+    return null;
+  }
+}
+
 // ── Per-doc context cap ──
 const MAX_PER_DOC_CHARS = 12000;
 
@@ -1891,25 +1930,14 @@ ${existingCBContent.slice(0, 30000)}`;
       // as episodic beats — return immediately, write content in background.
       console.log(`[generate-document] Large-risk doc type "${docType}" — starting background chunked generation`);
 
-      // ── PATCH A: Resolve scene count for production_draft scene_indexed strategy ──
-      let resolvedSceneCount: number | null = null;
+      // ── PATCH A: Resolve scenes for production_draft beat_sequential strategy ──
+      let resolvedScenes: ResolvedScene[] | null = null;
       if (docType === "production_draft") {
-        try {
-          const { count } = await supabase
-            .from("scene_graph_scenes")
-            .select("id", { count: "exact", head: true })
-            .eq("project_id", projectId)
-            .is("deprecated_at", null);
-          if (count && count > 0) {
-            resolvedSceneCount = count;
-            console.log(`[generate-document] production_draft: resolved ${resolvedSceneCount} active scenes for scene_indexed strategy`);
-          } else {
-            console.info(`[generate-document] production_draft: no active scenes found — using default 50 for scene_indexed strategy`);
-            resolvedSceneCount = 50;
-          }
-        } catch (scErr: any) {
-          console.warn(`[generate-document] production_draft: scene count query failed (${scErr?.message}) — using default 50`);
-          resolvedSceneCount = 50;
+        resolvedScenes = await resolveScenesFromFeatureScript(supabase, projectId);
+        if (resolvedScenes && resolvedScenes.length > 0) {
+          console.log(`[generate-document] production_draft: resolved ${resolvedScenes.length} scenes for beat_sequential strategy`);
+        } else {
+          console.warn(`[generate-document] production_draft: no scenes resolved — will throw at chunkPlanFor`);
         }
       }
 
@@ -1984,11 +2012,9 @@ ${existingCBContent.slice(0, 30000)}`;
         const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
         const resumePlan = chunkPlanFor(docType, {
           episodeCount: resolvedQuals?.season_episode_count,
-          sceneCount: resolvedSceneCount,
-          batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
+          scenes: resolvedScenes,
           beats,
         });
-
         const resumeDocId = resumeVer.document_id || chunkDocRecord!.id;
         console.log(`[generate-document] Resume mode: ${docType} versionId=${resumeVersionId} chunks=${resumePlan.totalChunks}`);
 

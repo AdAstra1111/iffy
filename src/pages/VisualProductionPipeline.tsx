@@ -9,6 +9,8 @@ import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { useVisualCoherence } from '@/hooks/useVisualCoherence';
 import { useVisualGovernance } from '@/hooks/useVisualGovernance';
 import type { GovernanceAwareStage } from '@/lib/visual/visualGovernanceTypes';
+import { computeRecommendedAction, VISUAL_GOVERNANCE_ACTIONS } from '@/lib/visual/visualGovernanceActions';
+import type { ActionRecommendation } from '@/lib/visual/visualGovernanceActions';
 import { VisualCoherencePanel } from '@/components/visual/VisualCoherencePanel';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useParams, Link } from 'react-router-dom';
@@ -525,7 +527,7 @@ function ProvenanceDisplay({ provenance }: { provenance?: StageProvenance }) {
 }
 
 // ── Visual Governance: Stale-risk display component ──
-function StaleRiskDisplay({ staleRisk }: { staleRisk?: StaleRisk }) {
+function StaleRiskDisplay({ staleRisk, recommendedAction }: { staleRisk?: StaleRisk; recommendedAction?: ActionRecommendation }) {
   if (!staleRisk || !staleRisk.isStale) return null;
   return (
     <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5">
@@ -567,6 +569,32 @@ function StaleRiskDisplay({ staleRisk }: { staleRisk?: StaleRisk }) {
           </div>
         );
       })}
+      {/* Recommended action */}
+      {recommendedAction && (
+        <div className="mt-2 pt-2 border-t border-amber-500/10 pl-1 space-y-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[9px] font-medium text-foreground/70">Recommended action:</span>
+            <span className={`text-[9px] font-mono px-1 py-0.5 rounded ${
+              recommendedAction.isSafe
+                ? 'text-blue-600 bg-blue-500/10'
+                : 'text-amber-700 dark:text-amber-300 bg-amber-500/10'
+            }`}>
+              {recommendedAction.action}
+            </span>
+            {!recommendedAction.eligible && recommendedAction.blockedReason && (
+              <span className="text-[8px] text-muted-foreground/60" title={recommendedAction.blockedReason}>
+                ⚠ blocked
+              </span>
+            )}
+          </div>
+          <p className="text-[9px] text-muted-foreground/70 pl-1">{recommendedAction.reason}</p>
+          {recommendedAction.affectedDownstreamStages.length > 0 && (
+            <p className="text-[8px] text-muted-foreground/60 pl-1">
+              Affects downstream: {recommendedAction.affectedDownstreamStages.join(', ')}
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2259,6 +2287,22 @@ export default function VisualProductionPipeline() {
               {pipelineError}
             </span>
           )}
+          {/* Visual Governance: refresh button — safe, read-only */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1 text-[10px] h-6 px-2"
+            onClick={refreshGovernance}
+            disabled={governanceLoading}
+            title="Re-evaluate governance state (read-only — no generation)"
+          >
+            {governanceLoading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Shield className="h-3 w-3" />
+            )}
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
           <Button
             variant="default"
             size="sm"
@@ -2332,6 +2376,19 @@ export default function VisualProductionPipeline() {
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
             }>
+              {/* Visual Governance: stale risk + recommended action */}
+              {(() => {
+                const action = computeRecommendedAction({
+                  stage_id: activeState.stage,
+                  status: activeState.status,
+                  eligibility: activeState.eligibility,
+                  staleRisk: activeState.staleRisk,
+                  provenance: activeState.provenance,
+                });
+                return (
+                  <StaleRiskDisplay staleRisk={activeState.staleRisk} recommendedAction={action} />
+                );
+              })()}
               {activeState.status === 'blocked' && activeStage !== 'cast' && activeStage !== 'hero_frames' && activeStage !== 'production_design' && activeStage !== 'lookbook' ? (
                 <div className="p-4 md:p-6">
                   <BlockedPanel state={activeState} />

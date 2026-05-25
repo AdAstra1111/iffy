@@ -209,6 +209,25 @@ export function chunkPlanFor(
 
   if (strategy === "beat_sequential") {
     // feature_script: one chunk per beat from the beat sheet
+    if (docType === "production_draft") {
+      // production_draft: one chunk per scene from scene_graph
+      const scenes = context.scenes;
+      if (!scenes || scenes.length < 1) {
+        throw new Error(
+          `[largeRiskRouter] beat_sequential doc type "${docType}" requires scenes > 0, got ${scenes?.length ?? 0}`
+        );
+      }
+
+      const chunks: ChunkPlanEntry[] = scenes.map((scene, i) => ({
+        chunkIndex: i,
+        chunkKey: `scene_${String(scene.number).padStart(3, "0")}`,
+        label: `Scene ${scene.number}: ${scene.heading}`,
+      }));
+
+      return { strategy, chunks, totalChunks: chunks.length, docType };
+    }
+
+    // feature_script: one chunk per beat from the beat sheet
     const beats = context.beats;
     if (!beats || beats.length < 1) {
       throw new Error(
