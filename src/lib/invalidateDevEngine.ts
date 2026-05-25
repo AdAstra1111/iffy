@@ -3,12 +3,10 @@
  * Development Engine.  Call this after EVERY action that touches notes,
  * issues, versions, or documents so every panel in the system stays in sync.
  *
- * Rules:
- *  - Always invalidate docs + runs (broad keys) so list views refresh.
- *  - When docId is known, also invalidate the narrow per-doc keys.
- *  - When versionId is known, also invalidate the narrow per-version keys.
- *  - "deep" mode additionally invalidates project-issues, resolved-notes,
- *    and canon-audit keys — use for apply-fix / patch / resolve actions.
+ * Uses PREFIX-BASED invalidation to automatically cover all dev-v2-* and
+ * project-* query keys, plus specific treatment/script-scoped keys.
+ * This eliminates the manual whitelist problem where new query keys were
+ * added to components but forgotten here, leaving panels stale.
  */
 
 import type { QueryClient } from '@tanstack/react-query';
@@ -32,51 +30,70 @@ export function invalidateDevEngine(
     deep = true,
   }: InvalidateOptions,
 ) {
-  // ── Always: broad doc + run keys ──────────────────────────────────────────
-  qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-  qc.invalidateQueries({ queryKey: ['dev-v2-versions'] });
-  qc.invalidateQueries({ queryKey: ['dev-v2-runs'] });
-  qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs'] });
-  qc.invalidateQueries({ queryKey: ['dev-v2-convergence'] });
-  qc.invalidateQueries({ queryKey: ['dev-v2-approved', projectId] });
+  // ── Always: ALL dev-v2-* keys via predicate (catches docs, versions, runs,
+  //   convergence, drift, documents, approved — everything with dev-v2 prefix) ──
+  // This automatically covers: dev-v2-docs, dev-v2-versions, dev-v2-runs,
+  // dev-v2-doc-runs, dev-v2-convergence, dev-v2-approved, dev-v2-drift,
+  // dev-v2-documents, treatment-rewrite-acts, treatment-acts, etc.
+  qc.invalidateQueries({
+    predicate: (query) => {
+      const key0 = query.queryKey[0];
+      return typeof key0 === 'string' && key0.startsWith('dev-v2-');
+    },
+  });
+
+  // Seed pack versions (doesn't follow dev-v2- prefix)
   qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
 
   // ── Per-document keys ──────────────────────────────────────────────────────
   if (docId) {
-    qc.invalidateQueries({ queryKey: ['dev-v2-versions', docId] });
     qc.invalidateQueries({ queryKey: ['document-versions', docId] });
-    qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', docId] });
-    qc.invalidateQueries({ queryKey: ['dev-v2-convergence', docId] });
+    // Treatment/rewrite/script-scoped keys
+    qc.invalidateQueries({ queryKey: ['treatment-rewrite-acts', docId] });
+    qc.invalidateQueries({ queryKey: ['treatment-acts', docId] });
+    qc.invalidateQueries({ queryKey: ['treatment-acts-blueprint', docId] });
+    qc.invalidateQueries({ queryKey: ['wr-changesets', docId] });
   }
 
   // ── Per-version keys ───────────────────────────────────────────────────────
   if (versionId) {
-    qc.invalidateQueries({ queryKey: ['dev-v2-runs', versionId] });
-    qc.invalidateQueries({ queryKey: ['dev-v2-drift', versionId] });
+    qc.invalidateQueries({ queryKey: ['doc-chunks', docId, versionId] });
+    qc.invalidateQueries({ queryKey: ['sectioned-doc-chunks', versionId] });
+    qc.invalidateQueries({ queryKey: ['season-script-chunks', versionId] });
   }
 
   if (!deep) return;
 
-  // ── Deep: persistent issues + resolved notes + canon + series ─────────────
+  // ── Deep: project-level keys ──────────────────────────────────────────────
   if (projectId) {
-    qc.invalidateQueries({ queryKey: ['project-issues', projectId] });
+    // Invalidate ALL project-* prefix keys (project-issues, project-documents,
+    // project-shares, project-runtime-settings, etc.)
+    qc.invalidateQueries({
+      predicate: (query) => {
+        const key0 = query.queryKey[0];
+        return typeof key0 === 'string' && key0.startsWith('project-');
+      },
+    });
+    // Other project-scoped keys (non-standard prefixes)
     qc.invalidateQueries({ queryKey: ['resolved-notes', projectId] });
+    qc.invalidateQueries({ queryKey: ['series-episodes', projectId] });
+    qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
+    qc.invalidateQueries({ queryKey: ['document-package', projectId] });
+    qc.invalidateQueries({ queryKey: ['package-status', projectId] });
+    qc.invalidateQueries({ queryKey: ['dev-engine-project', projectId] });
+    qc.invalidateQueries({ queryKey: ['project-images', projectId] });
+    qc.invalidateQueries({ queryKey: ['project-shares', projectId] });
+    qc.invalidateQueries({ queryKey: ['name-review-suggestions', projectId] });
+    qc.invalidateQueries({ queryKey: ['canonical-entities', projectId] });
+    qc.invalidateQueries({ queryKey: ['universe-manifest', projectId] });
+    qc.invalidateQueries({ queryKey: ['all-auto-run-jobs'] });
     // Canon audit (Series Writer)
     if (episodeNumber != null) {
       qc.invalidateQueries({ queryKey: ['canon-audit-run', projectId, episodeNumber] });
       qc.invalidateQueries({ queryKey: ['canon-audit-issues', projectId, episodeNumber] });
     } else {
-      // Invalidate all episode canon caches for this project
       qc.invalidateQueries({ queryKey: ['canon-audit-run', projectId] });
       qc.invalidateQueries({ queryKey: ['canon-audit-issues', projectId] });
     }
-    // Series episodes (script pointer updates after fix)
-    qc.invalidateQueries({ queryKey: ['series-episodes', projectId] });
-    // Document package / active folder
-    qc.invalidateQueries({ queryKey: ['active-folder', projectId] });
-    qc.invalidateQueries({ queryKey: ['document-package', projectId] });
-    // FIX: useDocumentPackage hook uses ['package-status', ...] not ['document-package', ...]
-    // Without this invalidation, latestVersionMap is stale after any version creation
-    qc.invalidateQueries({ queryKey: ['package-status', projectId] });
   }
 }
