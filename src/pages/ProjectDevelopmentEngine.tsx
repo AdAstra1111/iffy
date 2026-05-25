@@ -2448,7 +2448,7 @@ export default function ProjectDevelopmentEngine() {
                     selectedDeliverableType={selectedDeliverableType}
                     hasUnresolvedDrift={hasUnresolvedMajorDrift}
                     analyzePending={analyze.isPending}
-                    rewritePending={rewrite.isPending || rewritePipeline.status !== 'idle' || sceneRewrite.mode === 'processing' || sceneRewrite.mode === 'enqueuing'}
+                    rewritePending={rewrite.isPending || (rewritePipeline.status !== 'idle' && rewritePipeline.status !== 'error') || sceneRewrite.mode === 'processing' || sceneRewrite.mode === 'enqueuing'}
                     convertPending={convert.isPending}
                     generateNotesPending={generateNotes.isPending}
                     verticalDramaGating={verticalDramaGating}
