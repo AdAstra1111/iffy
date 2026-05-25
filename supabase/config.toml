@@ -110,7 +110,6 @@ verify_jwt = false
 
 [functions.dev-engine-v2]
 verify_jwt = false
-timeout_seconds = 180
 
 [functions.create-project-from-pitch-idea]
 verify_jwt = false
