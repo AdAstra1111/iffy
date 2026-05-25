@@ -1066,7 +1066,11 @@ export default function ProjectDevelopmentEngine() {
   const handleRunEngine = () => {
     // Guard: do not trigger analysis while the document is still generating in the background.
     // The backend will reject the call and the error ("Document is still generating") is confusing.
-    if ((selectedVersion as any)?.meta_json?.bg_generating === true) {
+    // Check if bg_generating is stale (stuck > 60s) — treat as cleared to unblock review
+    const bgGen = (selectedVersion as any)?.meta_json?.bg_generating;
+    const versionCreated = (selectedVersion as any)?.created_at || (selectedVersion as any)?.updated_at;
+    const isStaleBg = bgGen === true && versionCreated && (Date.now() - new Date(versionCreated).getTime() > 60000);
+    if (bgGen === true && !isStaleBg) {
       toast.info('Document is still generating — analysis will be available once generation completes.');
       return;
     }
@@ -2973,7 +2977,7 @@ export default function ProjectDevelopmentEngine() {
                     selectedNotes={selectedNotes}
                     setSelectedNotes={setSelectedNotes}
                     onApplyRewrite={handleRewriteWithBlockerCheck}
-                    isRewriting={rewrite.isPending || rewritePipeline.status !== 'idle'}
+                    isRewriting={rewrite.isPending || (rewritePipeline.status !== 'idle' && rewritePipeline.status !== 'error' && rewritePipeline.status !== 'complete')}
                     isLoading={isLoading}
                     resolutionSummary={resolutionSummary}
                     stabilityStatus={stabilityStatus}

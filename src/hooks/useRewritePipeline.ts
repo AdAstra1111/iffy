@@ -543,6 +543,8 @@ export function useRewritePipeline(projectId: string | undefined) {
     setActUnits([]);
     stopSmoothing();
     durationsRef.current = [];
+    runningRef.current = false;
+    startGuardRef.current = false;
   }, [stopSmoothing]);
 
   const actualPercent = state.totalChunks > 0 ? Math.floor((state.currentChunk / state.totalChunks) * 100) : 0;
