@@ -40,6 +40,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { VisualRepairIntentsPanel } from '@/components/visual/VisualRepairIntentsPanel';
 import { VisualExecutionHistoryPanel } from '@/components/visual/VisualExecutionHistoryPanel';
+import { HeroFramePreflightPanel } from '@/components/visual/HeroFramePreflightPanel';
 import { useHeroFrameAutoCuration } from '@/hooks/useHeroFrameAutoCuration';
 import { isHeroFrameIdentityValid } from '@/lib/images/heroFrameIdentityFilter';
 import { isCharacterImageEligible, filterEligibleImages } from '@/lib/images/characterImageEligibility';
@@ -2415,6 +2416,9 @@ export default function VisualProductionPipeline() {
                 ) : (
                   <div className="p-4 md:p-6">
                     <HeroFramesPanel projectId={projectId} inputs={inputs} />
+                    <div className="mt-4">
+                      <HeroFramePreflightPanel projectId={projectId} activeStage={activeStage} />
+                    </div>
                   </div>
                 )
               ) : activeStage === 'production_design' ? (

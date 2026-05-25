@@ -386,6 +386,19 @@ serve(async (req) => {
           case "REGENERATE_CANDIDATES": {
             // Guards: stage_id must be 'poster'
             if (intent.stage_id !== "poster") {
+              // Check hero-frame preflight for hero_frames stage
+              if (intent.stage_id === "hero_frames") {
+                return jsonRes(
+                  {
+                    error: "Hero-frame executor is not enabled yet",
+                    code: "EXECUTOR_NOT_ENABLED",
+                    recommended_action: intent.recommended_action,
+                    stage_id: intent.stage_id,
+                    note: "Hero-frame execution preflight exists (P9) but executor is not enabled — see hero-frame-preflight edge function",
+                  },
+                  400,
+                );
+              }
               return jsonRes(
                 {
                   error: "Execution not yet enabled for this action on this stage",

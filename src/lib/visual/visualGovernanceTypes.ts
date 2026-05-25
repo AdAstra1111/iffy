@@ -88,6 +88,62 @@ export interface GovernanceAwareStage {
  * 
  * If no snapshot exists for a stage, the live-computed value is used as-is.
  */
+/** Preflight blocker codes for hero-frame execution readiness. */
+export const PREFLIGHT_BLOCKER_CODES = {
+  MISSING_SCENE_INDEX: 'MISSING_SCENE_INDEX',
+  MISSING_CAST_BINDINGS: 'MISSING_CAST_BINDINGS',
+  MISSING_LOCATION_BINDINGS: 'MISSING_LOCATION_BINDINGS',
+  MISSING_VISUAL_STYLE: 'MISSING_VISUAL_STYLE',
+  MISSING_CANON_HASH: 'MISSING_CANON_HASH',
+  STALE_UPSTREAM_STAGE: 'STALE_UPSTREAM_STAGE',
+  LOCKED_REVIEW_REQUIRED: 'LOCKED_REVIEW_REQUIRED',
+} as const;
+
+export type PreflightBlockerCode = typeof PREFLIGHT_BLOCKER_CODES[keyof typeof PREFLIGHT_BLOCKER_CODES];
+
+/** Human-readable labels for each blocker code. */
+export const PREFLIGHT_BLOCKER_LABELS: Record<PreflightBlockerCode, string> = {
+  MISSING_SCENE_INDEX: 'Scene Index Missing',
+  MISSING_CAST_BINDINGS: 'Cast Bindings Missing',
+  MISSING_LOCATION_BINDINGS: 'Location Bindings Missing',
+  MISSING_VISUAL_STYLE: 'Visual Style Missing',
+  MISSING_CANON_HASH: 'Canon Hash Missing',
+  STALE_UPSTREAM_STAGE: 'Upstream Stage Stale',
+  LOCKED_REVIEW_REQUIRED: 'Locked Review Required',
+};
+
+/** Detailed explanation for each blocker code. */
+export const PREFLIGHT_BLOCKER_DETAILS: Record<PreflightBlockerCode, string> = {
+  MISSING_SCENE_INDEX: 'Scene index must be populated with at least one scene entry.',
+  MISSING_CAST_BINDINGS: 'All characters must have cast bindings (character_visual_dna + project_ai_cast).',
+  MISSING_LOCATION_BINDINGS: 'All scene locations must have canon_locations entries.',
+  MISSING_VISUAL_STYLE: 'Visual style profile must exist and be complete.',
+  MISSING_CANON_HASH: 'Canon must exist with content (project_canon.canon_json).',
+  STALE_UPSTREAM_STAGE: 'An upstream input (canon, cast, or production design) has newer data than existing hero frames.',
+  LOCKED_REVIEW_REQUIRED: 'A locked review or governance block prevents execution.',
+};
+
+/** Requirements that each blocker code corresponds to. */
+export interface PreflightRequirementResult {
+  code: PreflightBlockerCode;
+  passed: boolean;
+  detail: string;
+}
+
+/** Full preflight evaluation result for hero-frame execution readiness. */
+export interface HeroFramePreflightResult {
+  project_id: string;
+  evaluated_at: string;
+  all_requirements_pass: boolean;
+  requirements: PreflightRequirementResult[];
+  canon_hash: string | null;
+  scene_count: number;
+  character_count: number;
+  location_count: number;
+  cast_bound_count: number;
+  location_bound_count: number;
+}
+
 export function mergeGovernanceSnapshot(
   liveStages: GovernanceAwareStage[],
   snapshot: GovernanceSnapshotRow[] | null,
