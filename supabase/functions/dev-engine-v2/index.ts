@@ -1839,7 +1839,31 @@ A character bible with deep, specific characters and clear arcs should score CI:
 Missing depth items for major characters are blockers. Vague or generic character descriptions cannot score above CI:70.`,
   beat_sheet: `Evaluate as a BEAT SHEET. Score beat progression, dramatic escalation, turning points, structural completeness. Do NOT evaluate prose quality or dialogue.`,
   script: `Evaluate as a SCRIPT/SCREENPLAY. Score dialogue craft, scene dynamics, pacing, character voice, visual storytelling, structural integrity.`,
-  production_draft: `Evaluate as a PRODUCTION DRAFT. Score production readiness, clarity for department heads, scene feasibility, schedule implications. Also evaluate script quality.`,
+  production_draft: `Evaluate as a PRODUCTION DRAFT. This is a PRODUCTION-PLANNING document — its job is to give department heads (director, DP, production designer, AD, sound, VFX, costume, locations) everything they need to plan and execute each scene.
+
+Score on:
+
+(1) PRODUCTION READINESS — Are scene blocks, action lines, and sluglines specific enough for each department to plan their work without ambiguity? Is scene-level detail sufficient for budgeting, scheduling, and resource allocation?
+
+(2) SCENE FEASIBILITY — Is every scene executable within the project's declared budget and format? Are there exigency problems — VFX, stunts, specialty locations, crowd work, or specialty units that need advance planning?
+
+(3) CLARITY FOR DEPARTMENT HEADS — Are action descriptions clear and unambiguous? Are camera directions, shot notes, prop cues, SFX/VFX markers, and scene-specific production notes explicit enough for each department to execute from? Can a production designer, costume designer, and sound designer all extract their requirements without confusion?
+
+(4) SCHEDULE IMPLICATIONS — Are scene lengths, location counts, cast requirements, and time-of-day changes flagged where they impact scheduling? Are complex setups identified?
+
+(5) CONTINUITY — Are scene-to-scene transitions clear? Are character wardrobe, prop, and location consistency checks evident? Are there continuity errors across scenes?
+
+(6) FORMAT COMPLIANCE — Are sluglines correctly formatted? Are scene numbers present? Is the document in standard screenplay format suitable for production use (proper margins, character cues, action blocks)?
+
+(7) PRODUCTION CUES — Are essential production annotations present (SFX, VFX, practical effects, stunt notes, special equipment requirements) without over-annotating routine action?
+
+CRITICAL SCOPE RULES:
+- Do NOT evaluate dialogue quality, scene dynamics, pacing, character voice, or visual storytelling. A production draft is a production-planning document — not a creative script evaluation.
+- Extended action lines, camera directions, shot notes, prop/SFX cues are REQUIRED content for department heads. Do NOT flag them as exposition.
+- Missing production detail (unclear action, missing slugline, ambiguous prop requirement) is a HIGHER priority flag than creative polish.
+- Flag creative writing quality issues only if they make the PRODUCTION INTENT ambiguous.
+
+A production draft with complete department-level specificity, clear scene feasibility, and proper format should score CI:70-80 (format clarity and completeness) and GP:80+ (production readiness). Missing production-critical details are blockers.`,
   deck: `Evaluate as a DECK/PITCH DOCUMENT. Score clarity of vision, market positioning, visual storytelling strategy, talent strategy. Do NOT invent characters or scenes. Do NOT use INT./EXT. scene headings.`,
   documentary_outline: `Evaluate as a DOCUMENTARY OUTLINE. Score narrative structure, subject access, thematic coherence, editorial approach. Do NOT invent characters, fabricate scenes, or generate INT./EXT. sluglines. Use [PLACEHOLDER] for missing information.`,
   format_rules: `Evaluate as FORMAT RULES. This is a STRUCTURAL / PRODUCTION document — GP (Green Potential / production feasibility and commercial viability) should be weighted alongside CI, which reflects rule clarity and internal consistency rather than narrative craft. Score on: (1) Episode duration compliance — are min/max durations specified and consistent with canonical qualifications? (2) Episode count alignment — does the rule set match the project's season_episode_count? (3) Structural episode template — is there a clear hook duration, act count, cliffhanger position, and beat density specification? (4) Platform / distribution specs — are format constraints tied to a specific delivery platform or exhibition context? (5) Production constraints — location limits, cast size per episode, shot complexity. (6) Vertical drama specifics (if applicable) — scroll-optimised pacing, mobile-first shot framing, in-episode hook rules. GP should reflect how well the format rules enable efficient, commercially viable production. SCOPE GUARD: Format Rules MUST NOT contain season arc, character descriptions, episode story content, or market data. Flag any out-of-scope content as a BLOCKER. Do NOT penalise format_rules for lacking narrative depth — they are intentionally non-narrative.`,
