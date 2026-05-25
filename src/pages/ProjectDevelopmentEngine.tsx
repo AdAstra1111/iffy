@@ -1450,12 +1450,10 @@ export default function ProjectDevelopmentEngine() {
       if ((selectedDoc?.doc_type === 'treatment' || selectedDoc?.doc_type === 'long_treatment') && selectedDocId && selectedVersionId) {
         flushSync(() => setTreatmentRewritePending(true));
         const vid = selectedVersionId;
-        const taAction = selectedDoc.doc_type === 'long_treatment' ? 'long_treatment' : 'treatment';
-        
         try {
           const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
             body: {
-              action: taAction,
+              action: 'rewrite',
               projectId,
               documentId: selectedDocId,
               versionId: vid,
@@ -2758,7 +2756,7 @@ export default function ProjectDevelopmentEngine() {
                             )}
 
                             {/* Act Blueprint view — treatment-specific */}
-                            {docViewMode === 'blueprint' && selectedDoc?.id && (selectedDoc.doc_type === 'treatment' || selectedDoc.doc_type === 'long_treatment') ? (
+                            {!treatmentRewritePending && docViewMode === 'blueprint' && selectedDoc?.id && (selectedDoc.doc_type === 'treatment' || selectedDoc.doc_type === 'long_treatment') ? (
                               <TreatmentActBlueprintPanel
                                 documentId={selectedDoc.id}
                                 versionId={selectedVersionId ?? undefined}
