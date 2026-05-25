@@ -2121,7 +2121,7 @@ ${existingCBContent.slice(0, 30000)}`;
       const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
       const plan = chunkPlanFor(docType, {
         episodeCount: resolvedQuals?.season_episode_count,
-        sceneCount: resolvedSceneCount,
+        scenes: resolvedScenes,
         batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
         beats,
       });

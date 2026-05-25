@@ -31,7 +31,7 @@ fi
 echo ""
 
 echo "3. Deploying edge functions..."
-FUNCTIONS="dev-engine-v2 auto-run devseed-autopilot devseed-orchestrator generate-seed-pack generate-document promote-to-devseed derive-seed-docs canon-decisions scheduled-refresh-trends refresh-trends canonicalize-scene-substrate compute-obligation-topology enrich-visual-dna-from-atoms pipeline-orchestrator project-incentive-insights research-incentives packaging-intelligence generate-lookbook-image generate-hero-frames generate-poster evaluate-visual-governance"
+FUNCTIONS="dev-engine-v2 auto-run devseed-autopilot devseed-orchestrator generate-seed-pack generate-document promote-to-devseed derive-seed-docs canon-decisions scheduled-refresh-trends refresh-trends canonicalize-scene-substrate compute-obligation-topology enrich-visual-dna-from-atoms pipeline-orchestrator project-incentive-insights research-incentives packaging-intelligence generate-lookbook-image generate-hero-frames generate-poster evaluate-visual-governance repair-visual-intents"
 for fn in $FUNCTIONS; do
   if [ -f "supabase/functions/$fn/index.ts" ]; then
     echo "  -> $fn"

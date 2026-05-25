@@ -17506,6 +17506,75 @@ export type Database = {
         ]
       }
 
+      project_visual_repair_intents: {
+        Row: {
+          approval_state: string
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string
+          downstream_stages: string[] | null
+          executed_at: string | null
+          execution_state: string
+          id: string
+          intent_detail: string | null
+          intent_label: string | null
+          project_id: string
+          provenance_snapshot: Json | null
+          recommended_action: string
+          rejection_reason: string | null
+          stage_id: string
+          stale_reason_codes: string[]
+        }
+        Insert: {
+          approval_state?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by: string
+          downstream_stages?: string[] | null
+          executed_at?: string | null
+          execution_state?: string
+          id?: string
+          intent_detail?: string | null
+          intent_label?: string | null
+          project_id: string
+          provenance_snapshot?: Json | null
+          recommended_action: string
+          rejection_reason?: string | null
+          stage_id: string
+          stale_reason_codes?: string[]
+        }
+        Update: {
+          approval_state?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string
+          downstream_stages?: string[] | null
+          executed_at?: string | null
+          execution_state?: string
+          id?: string
+          intent_detail?: string | null
+          intent_label?: string | null
+          project_id?: string
+          provenance_snapshot?: Json | null
+          recommended_action?: string
+          rejection_reason?: string | null
+          stage_id?: string
+          stale_reason_codes?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_repair_intents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
       project_waterfall_rules: {
         Row: {
           cap_amount: string

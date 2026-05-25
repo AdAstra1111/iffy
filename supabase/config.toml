@@ -301,3 +301,6 @@ verify_jwt = false
 
 [functions.evaluate-visual-governance]
 verify_jwt = false
+
+[functions.repair-visual-intents]
+verify_jwt = false

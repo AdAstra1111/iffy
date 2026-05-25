@@ -38,6 +38,7 @@ import { ConceptBriefPanel } from '@/components/visual/ConceptBriefPanel';
 import { useWorldValidationMode } from '@/hooks/useWorldValidationMode';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { VisualRepairIntentsPanel } from '@/components/visual/VisualRepairIntentsPanel';
 import { useHeroFrameAutoCuration } from '@/hooks/useHeroFrameAutoCuration';
 import { isHeroFrameIdentityValid } from '@/lib/images/heroFrameIdentityFilter';
 import { isCharacterImageEligible, filterEligibleImages } from '@/lib/images/characterImageEligibility';
@@ -2461,6 +2462,14 @@ export default function VisualProductionPipeline() {
                 <div className="p-4 md:p-6">
                   <BlockedPanel state={activeState} />
                 </div>
+              )}
+              {/* Visual Repair Intents — only when stage has stale risk */}
+              {activeState.staleRisk?.isStale && (
+                <VisualRepairIntentsPanel
+                  projectId={projectId}
+                  stageId={activeStage}
+                  selectedStageState={activeState}
+                />
               )}
             </Suspense>
             </VisualPipelineErrorBoundary>
