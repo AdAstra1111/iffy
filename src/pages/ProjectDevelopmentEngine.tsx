@@ -402,7 +402,7 @@ export default function ProjectDevelopmentEngine() {
       onSettled: () => {},
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVersion, selectedVersionId, selectedDocId, generateOptionsMutation]);
+  }, [selectedVersionId, selectedDocId, generateOptionsMutation]);
 
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
   const versionHasContent = ((selectedVersion?.plaintext || '').trim().length > 100);
