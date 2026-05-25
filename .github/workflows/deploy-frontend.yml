@@ -1,8 +1,7 @@
-# DEPRECATED — Use deploy.yml (unified workflow) instead.
-# This file is kept for backward compatibility (workflow_dispatch only).
-# Remove this file after deploy.yml has been proven stable.
+# Deploy Frontend to Vercel
+# Runs tests first, then deploys on push to main.
 
-name: Deploy Frontend to Vercel
+name: Deploy Frontend
 
 on:
   workflow_dispatch:
