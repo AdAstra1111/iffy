@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IFFY — Presentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F4F2F0;
+    --bg-dark: #0B0E17;
+    --fg: #20273A;
+    --gold: #A67C38;
+    --gold-light: rgba(166, 124, 56, 0.08);
+    --gold-glow: rgba(166, 124, 56, 0.15);
+    --muted: #6E7380;
+    --border: rgba(32, 39, 58, 0.08);
+    --card: rgba(255, 255, 255, 0.6);
+    --font-serif: 'Fraunces', Georgia, serif;
+    --font-sans: 'DM Sans', -apple-system, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .slide {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 80px 10%;
+    max-width: 1100px;
+    margin: 0 auto;
+    position: relative;
+  }
+  .slide.dark { background: var(--bg-dark); color: rgba(244,242,240,0.9); }
+  .slide.dark h2, .slide.dark h4 { color: rgba(244,242,240,0.95); }
+  .slide.dark .subtitle { color: rgba(244,242,240,0.6); }
+  .slide.dark .system-card { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06); }
+  .slide.dark .system-card h4 { color: rgba(244,242,240,0.95); }
+  .slide.dark .system-card p { color: rgba(244,242,240,0.7); }
+  .slide.dark table { color: rgba(244,242,240,0.85); }
+  .slide.dark td { border-color: rgba(255,255,255,0.06); }
+  @media print {
+    .slide { min-height: 100vh; page-break-after: always; padding: 60px 8%; }
+    .slide.dark { background: #0B0E17 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .gold { color: #A67C38 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+  h1 {
+    font-family: var(--font-serif);
+    font-size: clamp(2.8rem, 6vw, 4.5rem);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.4em;
+  }
+  h1 em { font-style: italic; font-weight: 400; color: var(--gold); }
+  h2 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.8rem, 3.5vw, 2.8rem);
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.6em;
+  }
+  h3 {
+    font-family: var(--font-serif);
+    font-size: clamp(1.3rem, 2vw, 1.6rem);
+    font-weight: 500;
+    margin-bottom: 0.5em;
+    color: var(--gold);
+  }
+  p { font-size: clamp(1rem, 1.4vw, 1.15rem); margin-bottom: 1em; opacity: 0.85; }
+  .subtitle { font-size: clamp(1.1rem, 1.6vw, 1.3rem); opacity: 0.7; margin-bottom: 1.5em; }
+  .gold { color: var(--gold); }
+  .muted { color: var(--muted); }
+  .tag {
+    display: inline-block;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--gold);
+    border: 1px solid var(--gold-glow);
+    background: var(--gold-light);
+    padding: 4px 12px;
+    border-radius: 4px;
+    margin-bottom: 1.5em;
+  }
+  .divider {
+    width: 40px; height: 2px; background: var(--gold); margin: 1.2em 0 1.5em 0;
+  }
+  .system-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 24px;
+    margin: 2em 0;
+  }
+  .system-card {
+    background: var(--card);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    transition: border-color 0.3s;
+  }
+  .system-card h4 {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.3em;
+  }
+  .system-card .phil {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 0.8em;
+  }
+  .system-card p { font-size: 0.9rem; opacity: 0.75; margin-bottom: 0; }
+  .quote {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: clamp(1.1rem, 1.8vw, 1.4rem);
+    color: var(--gold);
+    padding: 1.5em 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin: 1.5em 0;
+    line-height: 1.5;
+  }
+  .table-wrap { overflow-x: auto; margin: 1.5em 0; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th {
+    text-align: left; font-weight: 600; font-size: 12px;
+    letter-spacing: 1px; text-transform: uppercase;
+    color: var(--gold); padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 16px; border-bottom: 1px solid var(--border); opacity: 0.8; }
+  tr:last-child td { border-bottom: none; }
+  .hero {
+    text-align: center;
+    padding: 120px 10% 80px;
+    background: var(--bg-dark);
+    color: rgba(244,242,240,0.95);
+  }
+  .hero .tag { margin-bottom: 2em; }
+  .hero h1 { font-size: clamp(3rem, 7vw, 5rem); color: rgba(244,242,240,0.95); }
+  .hero .subtitle { font-size: clamp(1.2rem, 2vw, 1.5rem); max-width: 700px; margin: 0 auto 2em; color: rgba(244,242,240,0.6); }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 1.5em 0; }
+  @media (max-width: 768px) {
+    .slide { padding: 60px 6%; }
+    .two-col { grid-template-columns: 1fr; gap: 24px; }
+    .system-grid { grid-template-columns: 1fr; }
+  }
+  .bullet-list { list-style: none; padding: 0; }
+  .bullet-list li {
+    padding: 0.5em 0; padding-left: 1.5em; position: relative;
+    font-size: clamp(0.95rem, 1.3vw, 1.05rem); opacity: 0.85;
+  }
+  .bullet-list li::before {
+    content: ''; position: absolute; left: 0; top: 0.9em;
+    width: 6px; height: 6px; background: var(--gold); border-radius: 50%; opacity: 0.5;
+  }
+  .pipeline-row {
+    display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0;
+  }
+  .pipeline-stage {
+    font-family: var(--font-sans); font-size: 10px; font-weight: 500;
+    padding: 5px 10px; border-radius: 4px; letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .pipeline-stage.film { background: rgba(166,124,56,0.12); color: var(--gold); border: 1px solid rgba(166,124,56,0.2); }
+  .pipeline-stage.vd { background: rgba(60,160,220,0.12); color: #3CA0DC; border: 1px solid rgba(60,160,220,0.2); }
+  .pipeline-stage.series { background: rgba(160,100,200,0.12); color: #A064C8; border: 1px solid rgba(160,100,200,0.2); }
+  .pipeline-title { font-size: 12px; font-weight: 600; letter-spacing: 0.5px; margin-top: 14px; margin-bottom: 4px; }
+  .shot-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 1em 0; }
+  .shot-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+    font-size: 0.85rem;
+  }
+  .shot-card .num { font-size: 11px; font-weight: 600; color: var(--gold); font-family: var(--font-sans); letter-spacing: 1px; }
+  .shot-card .type { font-weight: 600; margin: 4px 0; }
+  .shot-card .desc { font-size: 0.8rem; opacity: 0.7; }
+  .shot-card .meta { font-size: 10px; color: var(--muted); margin-top: 6px; }
+  .finance-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 1em 0; }
+  .finance-item { border-bottom: 1px solid var(--border); padding: 8px 0; display: flex; justify-content: space-between; font-size: 0.9rem; }
+  .finance-item .label { opacity: 0.7; }
+  .finance-item .value { font-weight: 600; }
+  .finance-item .value.pos { color: #22A67E; }
+  .finance-item .value.neg { color: #D9534F; }
+  .nav-bar {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 16px 10%;
+    background: rgba(244,242,240,0.85);
+    backdrop-filter: blur(12px); border-bottom: 1px solid var(--border);
+    z-index: 100; display: flex; justify-content: space-between; align-items: center;
+  }
+  .nav-bar .logo { font-family: var(--font-serif); font-weight: 600; font-size: 1.1rem; }
+  .nav-bar a { font-size: 13px; color: var(--muted); text-decoration: none; margin-left: 20px; transition: color 0.2s; }
+  .nav-bar a:hover { color: var(--gold); }
+</style>
+</head>
+<body>
+
+<nav class="nav-bar">
+  <div class="logo"><span class="gold">IFFY</span></div>
+  <div>
+    <a href="#slide1">Intro</a>
+    <a href="#slide2">What</a>
+    <a href="#slide4">Pipeline</a>
+    <a href="#slide8">Systems</a>
+    <a href="#slide12">Why Me</a>
+    <a href="#slide14">Ask</a>
+  </div>
+</nav>
+
+<!-- SLIDE 1: HERO -->
+<section class="slide hero" id="slide1">
+  <span class="tag">The Story Begins</span>
+  <h1>IFFY</h1>
+  <p class="subtitle">The production operating system for AI filmmaking —<br>that doesn't just make AI characters.<br>It makes well-written ones.</p>
+  <div style="margin-top:2em;">
+    <span style="display:inline-block;font-size:13px;letter-spacing:1px;border:1px solid rgba(166,124,56,0.3);color:var(--gold);padding:6px 16px;border-radius:6px;margin:0 6px;">Stanislavski</span>
+    <span style="display:inline-block;font-size:13px;letter-spacing:1px;border:1px solid rgba(166,124,56,0.3);color:var(--gold);padding:6px 16px;border-radius:6px;margin:0 6px;">Meisner</span>
+    <span style="display:inline-block;font-size:13px;letter-spacing:1px;border:1px solid rgba(166,124,56,0.3);color:var(--gold);padding:6px 16px;border-radius:6px;margin:0 6px;">Consciousness</span>
+  </div>
+</section>
+
+<!-- SLIDE 2: ONE IDEA EVERY DOCUMENT -->
+<section class="slide" id="slide2">
+  <span class="tag">How It Works</span>
+  <h2>One Idea.<br><span class="gold">Every Document.</span></h2>
+  <p class="subtitle">A single story concept generates every document a production needs — from market positioning through to production schedule and budget.</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:2em 0;">
+    <div class="system-card" style="text-align:center;padding:18px;"><h4 style="font-size:0.9rem;">Story Structure</h4></div>
+    <div class="system-card" style="text-align:center;padding:18px;"><h4 style="font-size:0.9rem;">Character Arc</h4></div>
+    <div class="system-card" style="text-align:center;padding:18px;"><h4 style="font-size:0.9rem;">Market Fit</h4></div>
+    <div class="system-card" style="text-align:center;padding:18px;"><h4 style="font-size:0.9rem;">Budget Model</h4></div>
+    <div class="system-card" style="text-align:center;padding:18px;"><h4 style="font-size:0.9rem;">Production Plan</h4></div>
+    <div class="system-card" style="text-align:center;padding:18px;border-color:var(--gold-glow);"><h4 style="font-size:0.9rem;color:var(--gold);">Canon Lock</h4></div>
+  </div>
+  <div class="quote" style="font-size:1rem;">"From idea to episode script, schedule, shot list and storyboard — in one run."</div>
+</section>
+
+<!-- SLIDE 3: WHAT EXISTS -->
+<section class="slide">
+  <span class="tag">Now</span>
+  <h2>What IFFY already is</h2>
+  <p class="subtitle">Ten capability layers, one connected system. Live and running today.</p>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Layer</th><th>What it does</th><th style="text-align:center">Status</th></tr>
+    <tr><td>Market Intelligence</td><td>Trend scanning, comp analysis, incentive detection</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Idea Development</td><td>Pitch → concept → market positioning</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Writing & Narrative</td><td>Full document ladder, auto-run, 13-dimension atomisation</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Analysis & Quality</td><td>CI/GP scoring, convergence detection, drift monitoring</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Visual Production</td><td>AI casting, wardrobe, production design, hero frames, lookbook</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Post-Production</td><td>Trailer pipeline, storyboard, animatic, audio, export</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Business & Finance</td><td>Budgeting, incentives, packaging, financing, sales</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Production Management</td><td>Shot lists, schedule, resource planning</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Intelligence & Ops</td><td>Actor validation, nightly integrity, corpus management</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+    <tr><td>Integration & APIs</td><td>229 edge functions, OpenRouter, FAL, Stripe</td><td style="text-align:center;color:var(--gold)">●</td></tr>
+  </table>
+  </div>
+  <p style="margin-top:1em;font-size:0.9rem;"><strong>This is not a prototype. It is running. It generates real content.</strong></p>
+</section>
+
+<!-- SLIDE 4: THE PROBLEM + INSIGHT -->
+<section class="slide" id="slide4">
+  <span class="tag">The Problem</span>
+  <h2>There are two problems in AI filmmaking.</h2>
+  <div class="two-col" style="margin-top:1.5em;">
+    <div class="system-card">
+      <h4>Problem 1: AI video</h4>
+      <p>Almost good enough. But a great-looking video of a bad scene is still a bad scene.</p>
+    </div>
+    <div class="system-card">
+      <h4>Problem 2: AI can't write</h4>
+      <p>It doesn't understand story structure, character psychology, or subtext. It hallucinates plot holes.</p>
+    </div>
+  </div>
+  <p style="margin-top:1em;"><strong>IFFY solves both.</strong></p>
+
+  <div class="divider"></div>
+
+  <span class="tag">The Insight</span>
+  <h2>Hallucination isn't the bug.<br>It's the thing that makes characters human.</h2>
+  <p>Human beings hallucinate themselves — partially invented backstories, constantly rewritten. That internal fiction is the source of subtext. A character without it isn't a person.</p>
+  <p><strong>We use hallucination to create psychological depth that no script outline can specify.</strong></p>
+</section>
+
+<!-- SLIDE 5: DUAL PIPELINE -->
+<section class="slide dark" id="slide5">
+  <span class="tag" style="border-color:rgba(166,124,56,0.3);background:rgba(166,124,56,0.08);">Pipelines</span>
+  <h2>Every format. One engine.</h2>
+  <p class="subtitle">IFFY adapts to how stories are built — feature film, vertical drama, TV series, or limited series — each with its own canonical stage ladder.</p>
+
+  <div class="pipeline-title" style="color:var(--gold);">Feature Film</div>
+  <div class="pipeline-row">
+    <span class="pipeline-stage film">Idea</span>
+    <span class="pipeline-stage film">Concept Brief</span>
+    <span class="pipeline-stage film">Market Sheet</span>
+    <span class="pipeline-stage film">Treatment</span>
+    <span class="pipeline-stage film">Character Bible</span>
+    <span class="pipeline-stage film">Beat Sheet</span>
+    <span class="pipeline-stage film">Script</span>
+  </div>
+
+  <div class="pipeline-title" style="color:#3CA0DC;">Vertical Drama</div>
+  <div class="pipeline-row">
+    <span class="pipeline-stage vd">Idea</span>
+    <span class="pipeline-stage vd">Concept Brief</span>
+    <span class="pipeline-stage vd">Market Sheet</span>
+    <span class="pipeline-stage vd">Character Bible</span>
+    <span class="pipeline-stage vd">Season Arc</span>
+    <span class="pipeline-stage vd">Episode Grid</span>
+    <span class="pipeline-stage vd">Season Script</span>
+  </div>
+
+  <div class="pipeline-title" style="color:#A064C8;">TV Series</div>
+  <div class="pipeline-row">
+    <span class="pipeline-stage series">Idea</span>
+    <span class="pipeline-stage series">Concept Brief</span>
+    <span class="pipeline-stage series">Treatment</span>
+    <span class="pipeline-stage series">Character Bible</span>
+    <span class="pipeline-stage series">Beat Sheet</span>
+    <span class="pipeline-stage series">Episode Script</span>
+    <span class="pipeline-stage series">Season Script</span>
+  </div>
+
+  <p style="margin-top:1.5em;font-size:0.9rem;opacity:0.6;">Each pipeline shares the same canonical truth layer. Documents flow through the same engine. Only the stage definitions change.</p>
+</section>
+
+<!-- SLIDE 6: SHOT LIST DEMO (from tour) -->
+<section class="slide" id="slide6">
+  <span class="tag">From Script to Screen</span>
+  <h2>One scene. Five shots. Generated.</h2>
+  <p class="subtitle">IFFY reads the script and produces production-ready shot lists with lens, movement, and framing data.</p>
+
+  <div style="background:var(--bg-dark);border-radius:12px;padding:16px;margin:1em 0;">
+    <p style="font-family:monospace;font-size:11px;color:var(--gold);margin-bottom:8px;">INT. HEATHBROOK ACADEMY — CORRIDOR — DAY</p>
+    <div class="shot-list">
+      <div class="shot-card" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06);">
+        <div class="num">SHOT 1</div>
+        <div class="type">Wide / Establishing</div>
+        <div class="desc">Billy walks the crowded corridor. Students part around him.</div>
+        <div class="meta">24mm · Static · ELS</div>
+      </div>
+      <div class="shot-card" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06);">
+        <div class="num">SHOT 2</div>
+        <div class="type">Medium Two-Shot</div>
+        <div class="desc">Archie and Amelia exchange a look. Unspoken.</div>
+        <div class="meta">50mm · Push in · MS</div>
+      </div>
+      <div class="shot-card" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06);">
+        <div class="num">SHOT 3</div>
+        <div class="type">Close-Up — Archie</div>
+        <div class="desc">Archie's expression shifts — recognition, dread, jealousy.</div>
+        <div class="meta">85mm · Static · CU</div>
+      </div>
+      <div class="shot-card" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06);">
+        <div class="num">SHOT 4</div>
+        <div class="type">OTS — Billy to Amelia</div>
+        <div class="desc">Over Archie's shoulder: Billy flashes the smile.</div>
+        <div class="meta">85mm · Rack focus · OTS</div>
+      </div>
+      <div class="shot-card" style="background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.06);">
+        <div class="num">SHOT 5</div>
+        <div class="type">Tracking</div>
+        <div class="desc">Camera follows Archie as he turns away.</div>
+        <div class="meta">35mm · Lateral track · MWS</div>
+      </div>
+    </div>
+  </div>
+  <p style="font-size:0.85rem;opacity:0.6;">Reference: "How to Date Billy Walsh" — Paradox House / Amazon Prime, 2024</p>
+</section>
+
+<!-- SLIDE 7: FINANCIAL PROJECTIONS (from tour) -->
+<section class="slide dark" id="slide7">
+  <span class="tag" style="border-color:rgba(166,124,56,0.3);background:rgba(166,124,56,0.08);">Finance</span>
+  <h2>Budget. Incentives. Profit.</h2>
+  <p class="subtitle">IFFY doesn't just write stories. It builds the business case — budget models, tax credit matching, territory analysis, and recoupment projections.</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:1.5em 0;">
+    <div>
+      <p style="font-size:0.9rem;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Budget</p>
+      <div class="finance-item"><span class="label">Total Budget</span><span class="value">$4,829,790</span></div>
+      <div class="finance-item"><span class="label">Above the Line</span><span class="value">$1,825,000</span></div>
+      <div class="finance-item"><span class="label">Below the Line</span><span class="value">$2,701,790</span></div>
+      <div class="finance-item"><span class="label">Post-Production</span><span class="value">$303,000</span></div>
+    </div>
+    <div>
+      <p style="font-size:0.9rem;color:var(--gold);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;">Incentives</p>
+      <div class="finance-item"><span class="label">UK Tax Credit</span><span class="value pos">$1,014,256</span></div>
+      <div class="finance-item"><span class="label">Georgia (USA)</span><span class="value pos">$675,000</span></div>
+      <div class="finance-item"><span class="label">Net Premium</span><span class="value pos">$1,483,740</span></div>
+      <div class="finance-item"><span class="label">Payback Period</span><span class="value">14 months</span></div>
+    </div>
+  </div>
+
+  <p style="margin-top:1em;font-size:0.9rem;opacity:0.6;">Market intelligence feeds into financial projections. Canon consistency ensures budget assumptions stay valid through production.</p>
+</section>
+
+<!-- SLIDE 8: THREE SYSTEMS -->
+<section class="slide" id="slide8">
+  <span class="tag">The Architecture</span>
+  <h2>Three systems. One truth layer.</h2>
+  <p class="subtitle">Built on Stanislavski, Meisner, and consciousness architecture.</p>
+
+  <div class="system-grid">
+    <div class="system-card">
+      <h4>Holographic Canon</h4>
+      <div class="phil">Stanislavski</div>
+      <p>The deterministic spine of every story. Everything that must be true. No hallucination allowed. <strong>Structurally sound.</strong></p>
+    </div>
+    <div class="system-card">
+      <h4>SHADOW</h4>
+      <div class="phil">Meisner</div>
+      <p>Generative backstory layer. Reverse-engineers behaviour into psychological history. Never spoken, always felt. <strong>Psychologically deep.</strong></p>
+    </div>
+    <div class="system-card">
+      <h4>PULSE</h4>
+      <div class="phil">Consciousness</div>
+      <p>Neural feedback measuring audience belief in real time. The writing envelope defined by human response. <strong>Emotionally resonant.</strong></p>
+    </div>
+  </div>
+
+  <div class="quote" style="font-size:0.9rem;padding:1em 0;">
+    Story → SHADOW reverse-engineers into backstory → Educates dialogue → PULSE measures audience belief → Canon ensures coherence → SHADOW updates → Repeat.
+  </div>
+</section>
+
+<!-- SLIDE 9: WHAT WE'RE BUILDING -->
+<section class="slide dark" id="slide9">
+  <span class="tag" style="border-color:rgba(166,124,56,0.3);background:rgba(166,124,56,0.08);">Next</span>
+  <h2>What we are implementing now</h2>
+  <p class="subtitle">The current engine creates structurally sound stories. The next layer creates psychologically deep characters.</p>
+
+  <div class="system-grid">
+    <div class="system-card">
+      <h4>SHADOW</h4>
+      <p>A generative backstory system. The character's invented inner life, evolving as they grow. Dialogue emerges from psychological truth, not plot mechanics.</p>
+    </div>
+    <div class="system-card">
+      <h4>PULSE</h4>
+      <p>Neural feedback that calibrates writing to real audience response. The audience decides what's real — PULSE tells us when we've found it.</p>
+    </div>
+    <div class="system-card">
+      <h4>Integration</h4>
+      <p>Both layers wired into the existing Holographic Canon. Three systems producing writing that is structurally sound, psychologically deep, and emotionally resonant.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 10: COMPETITIVE MOAT -->
+<section class="slide" id="slide10">
+  <span class="tag">The Moat</span>
+  <h2>IFFY is not a tool. It's a studio operating system.</h2>
+
+  <div class="table-wrap">
+  <table>
+    <tr><th>Competitor focus</th><th>IFFY covers</th></tr>
+    <tr><td>"We generate video"</td><td>Video + story + characters + production design</td></tr>
+    <tr><td>"We write scripts"</td><td>Scripts + atomisation + visual canon + business case</td></tr>
+    <tr><td>"We cast actors"</td><td>Casting + wardrobe + identity + performance direction</td></tr>
+    <tr><td>"We make trailers"</td><td>Trailer + storyboard + audio + continuity scoring</td></tr>
+  </table>
+  </div>
+
+  <p style="margin-top:1.5em;">The moat is that every capability shares the same truth layer — the Holographic Canon. Every part of the machine agrees on who the character is, what the world looks like, and how the story works.</p>
+  <p><strong>No other system has this.</strong></p>
+</section>
+
+<!-- SLIDE 11: LIVE DEMO -->
+<section class="slide dark" id="slide11">
+  <span class="tag" style="border-color:rgba(166,124,56,0.3);background:rgba(166,124,56,0.08);">Live Demo</span>
+  <h2>Watch IFFY Work</h2>
+  <p class="subtitle">From idea to episode script, schedule, shot list and storyboard — in one run.</p>
+
+  <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.06);border-radius:12px;overflow:hidden;margin:1.5em 0;">
+    <div style="display:flex;gap:8px;padding:12px 16px;border-bottom:1px solid rgba(255,255,255,0.06);background:rgba(255,255,255,0.02);">
+      <div style="width:10px;height:10px;border-radius:50%;background:rgba(255,80,80,0.4);"></div>
+      <div style="width:10px;height:10px;border-radius:50%;background:rgba(255,200,80,0.4);"></div>
+      <div style="width:10px;height:10px;border-radius:50%;background:rgba(80,200,80,0.4);"></div>
+      <span style="margin-left:12px;font-size:10px;font-family:monospace;opacity:0.4;">IFFY · Auto-Run</span>
+    </div>
+    <div style="padding:20px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <p style="font-size:9px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">Idea Input</p>
+          <p style="font-size:11px;font-family:monospace;opacity:0.7;">A young geisha in 1920s Kyoto…</p>
+        </div>
+        <div>
+          <p style="font-size:9px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">Scores</p>
+          <p style="font-size:11px;font-family:monospace;opacity:0.7;">CI: 78 · GP: 82</p>
+        </div>
+        <div>
+          <p style="font-size:9px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">Pipeline Progress</p>
+          <p style="font-size:11px;font-family:monospace;opacity:0.7;">Idea → Concept Brief → Character Bible → Season Arc → Scripts</p>
+        </div>
+        <div>
+          <p style="font-size:9px;font-family:monospace;letter-spacing:2px;text-transform:uppercase;color:var(--gold);margin-bottom:4px;">Output</p>
+          <p style="font-size:11px;font-family:monospace;opacity:0.7;">3 locations · 4 scenes · 3 shots · 2 storyboard panels</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:0.9rem;opacity:0.6;text-align:center;">From idea to production-ready — in one run.</p>
+</section>
+
+<!-- SLIDE 12: WHY ME -->
+<section class="slide" id="slide12">
+  <span class="tag">Why Me</span>
+  <h2>There are three people you need to build IFFY.<br>I've been all three my whole life.</h2>
+
+  <div class="system-grid">
+    <div class="system-card">
+      <h4>The Engineer</h4>
+      <p>229 edge functions. 94 pages. 281 hooks. 13 atomisers. Full visual pipeline. Auto-run orchestrator. It is live. It generates real content.</p>
+    </div>
+    <div class="system-card">
+      <h4>The Storyteller</h4>
+      <p>A script I wrote was produced by Martin Scorsese. I ran Paradox House — working with Amazon, Netflix, MGM, Universal. I know what good writing is because I've done it at the highest level.</p>
+    </div>
+    <div class="system-card">
+      <h4>The Philosopher</h4>
+      <p>I've been obsessed with consciousness my entire life. When AI arrived, that question became an engineering problem — and I was the only person with all three tools to solve it.</p>
+    </div>
+  </div>
+
+  <div style="margin-top:1em;padding:1.2em;background:var(--card);border:1px solid var(--border);border-radius:8px;">
+    <p style="font-style:italic;font-size:0.95rem;margin-bottom:0;">"My father was a physicist at Cambridge. One of the early pioneers of holography. I called it the Holographic Canon before I realised why. He worked on physical holograms. I work on narrative ones."</p>
+  </div>
+</section>
+
+<!-- SLIDE 13: STUDIO CONTROL (from Section6StudioControl) -->
+<section class="slide dark" id="slide13">
+  <span class="tag" style="border-color:rgba(166,124,56,0.3);background:rgba(166,124,56,0.08);">Control</span>
+  <h2>You own the work.</h2>
+  <p class="subtitle">Every document, every version, every decision is tracked, governed, and locked to your identity. IFFY is not a service that generates content you can't control — it's an operating system that generates content you own.</p>
+
+  <div class="system-grid">
+    <div class="system-card">
+      <h4>Version Control</h4>
+      <p>Every document has full version history with provenance tracking. Every change is attributed. Every decision is logged.</p>
+    </div>
+    <div class="system-card">
+      <h4>Canon Governance</h4>
+      <p>The Holographic Canon ensures every output stays consistent. Drift detection alerts you when something doesn't align.</p>
+    </div>
+    <div class="system-card">
+      <h4>Export & Package</h4>
+      <p>Take your content anywhere. PDF, Final Draft, CSV — or full project packages ready for distribution platforms.</p>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 14: INVESTOR CONFIDENCE (from tour) -->
+<section class="slide" id="slide14">
+  <span class="tag">Confidence</span>
+  <h2>Investor-grade projections from day one.</h2>
+  <p class="subtitle">Market intelligence + budget modelling + incentive matching + territory analysis. All generated from the same canon as the script.</p>
+
+  <div class="two-col" style="margin-top:1em;">
+    <div>
+      <p style="font-size:0.9rem;font-weight:600;">What's Inside</p>
+      <ul class="bullet-list">
+        <li>Market gap analysis from live trend data</li>
+        <li>Comparable title fingerprinting</li>
+        <li>Tax credit optimisation per territory</li>
+        <li>Budget scenario modelling</li>
+        <li>Recoupment projections with confidence bands</li>
+        <li>Packaging intelligence for sales</li>
+      </ul>
+    </div>
+    <div>
+      <p style="font-size:0.9rem;font-weight:600;">Why It's Different</p>
+      <ul class="bullet-list">
+        <li>Every assumption is linked to the canon — change the story and the budget updates</li>
+        <li>Market intelligence feeds the writing, not just the business case</li>
+        <li>Same truth layer from first idea through to final delivery</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- SLIDE 15: THE ASK -->
+<section class="slide hero" id="slide15" style="text-align:center;">
+  <span class="tag" style="margin:0 auto 1.5em;">The Ask</span>
+  <h1 style="margin-bottom:0.3em;">The video generation race</h1>
+  <h1 style="margin-bottom:0.5em;">is almost over.</h1>
+  <h1>The writing race</h1>
+  <h1 style="margin-bottom:1em;">is just beginning.</h1>
+  <p class="subtitle" style="max-width:600px;margin:0 auto 2em;">We're not asking you to fund a video generator. We're asking you to be the first partner in defining what well-written AI content looks like — before someone else does.</p>
+  <div class="quote" style="text-align:left;max-width:700px;margin:0 auto;font-size:1.1rem;">
+    "Stanislavski gives them history. Meisner gives them spontaneity. PULSE tells us if it's working. Put them together and a character stops being a puppet and starts being a person."
+  </div>
+  <p style="margin-top:2em;font-size:1.1rem;color:var(--gold);font-weight:500;">Everyone else is making AI video.<br>We're the ones making sure there's something worth watching.</p>
+</section>
+
+</body>
+</html>
