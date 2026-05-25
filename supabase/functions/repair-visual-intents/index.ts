@@ -336,9 +336,135 @@ serve(async (req) => {
             }
           }
 
+          case "REGENERATE_CANDIDATES": {
+            // Guards: stage_id must be 'poster'
+            if (intent.stage_id !== "poster") {
+              return jsonRes(
+                {
+                  error: "Execution not yet enabled for this action on this stage",
+                  code: "EXECUTOR_NOT_ENABLED",
+                  recommended_action: intent.recommended_action,
+                  stage_id: intent.stage_id,
+                },
+                400,
+              );
+            }
+
+            // Guards: stale reason must include HERO_FRAMES_NEWER_THAN_POSTER or VISUAL_STYLE_OUTDATED
+            const allowedReasons = ["HERO_FRAMES_NEWER_THAN_POSTER", "VISUAL_STYLE_OUTDATED"];
+            const hasAllowedReason = (intent.stale_reason_codes ?? []).some(
+              (code: string) => allowedReasons.includes(code),
+            );
+            if (!hasAllowedReason) {
+              return jsonRes(
+                {
+                  error: "Stale reason does not qualify for poster regeneration",
+                  code: "EXECUTOR_NOT_ENABLED",
+                  current_reasons: intent.stale_reason_codes,
+                  allowed_reasons: allowedReasons,
+                },
+                400,
+              );
+            }
+
+            const posterUrl = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-poster`;
+            const posterPayload = { project_id: intent.project_id };
+
+            let posterResult: any;
+            let posterOk = false;
+
+            try {
+              const posterRes = await fetch(posterUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                },
+                body: JSON.stringify(posterPayload),
+              });
+              posterResult = await posterRes.json();
+              posterOk = posterRes.ok;
+            } catch (fetchErr) {
+              posterResult = { error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr) };
+              posterOk = false;
+            }
+
+            // Extract poster candidate ids if available
+            const posterCandidateIds: string[] = [];
+            if (posterOk && posterResult) {
+              // generate-poster can return different shapes
+              if (Array.isArray(posterResult)) {
+                for (const p of posterResult) {
+                  if (p.id) posterCandidateIds.push(p.id);
+                }
+              } else if (posterResult.data && Array.isArray(posterResult.data)) {
+                for (const p of posterResult.data) {
+                  if (p.id) posterCandidateIds.push(p.id);
+                }
+              } else if (posterResult.id) {
+                posterCandidateIds.push(posterResult.id);
+              } else if (posterResult.poster?.id) {
+                posterCandidateIds.push(posterResult.poster.id);
+              }
+            }
+
+            // After poster generation, refresh governance
+            let governanceResult: any = null;
+            try {
+              const evalUrl = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/evaluate-visual-governance`;
+              const evalRes = await fetch(evalUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                },
+                body: JSON.stringify({ projectId: intent.project_id }),
+              });
+              governanceResult = evalRes.ok ? await evalRes.json() : { error: "Governance refresh failed" };
+            } catch (govErr) {
+              governanceResult = { error: govErr instanceof Error ? govErr.message : String(govErr) };
+            }
+
+            const now = new Date().toISOString();
+            const executionResult = {
+              invoked_function: "generate-poster",
+              input_snapshot: posterPayload,
+              output_summary: {
+                success: posterOk,
+                candidate_count: posterCandidateIds.length,
+                poster_candidate_ids: posterCandidateIds,
+              },
+              governance_refresh: {
+                status: governanceResult?.error ? "failed" : "completed",
+                evaluated_at: governanceResult?.evaluated_at ?? now,
+                stages_count: governanceResult?.stages?.length ?? 0,
+              },
+              error: posterOk ? undefined : (posterResult?.error ?? "Unknown error"),
+            };
+
+            const updateData: Record<string, unknown> = {
+              execution_state: posterOk ? "completed" : "failed",
+              executed_at: now,
+              execution_result_json: executionResult,
+            };
+
+            const { data: updated, error: updateError } = await supabase
+              .from("project_visual_repair_intents")
+              .update(updateData)
+              .eq("id", intentId)
+              .select("*")
+              .maybeSingle();
+
+            if (updateError) {
+              return jsonRes({ error: updateError.message }, 500);
+            }
+
+            return jsonRes({ intent: updated });
+          }
+
           default:
-            // REFRESH_GOVERNANCE is the only supported action for execution
-            // All generation actions are explicitly blocked
+            // REFRESH_GOVERNANCE and REGENERATE_CANDIDATES are the only supported actions for execution
+            // All other generation actions are explicitly blocked
             return jsonRes(
               {
                 error: "Execution not yet enabled for this action",

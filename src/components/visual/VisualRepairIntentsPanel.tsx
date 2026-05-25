@@ -391,14 +391,19 @@ export function VisualRepairIntentsPanel({
                 )}
                 {/* Execute button — only for approved + queued/ready intents */}
                 {intent.approval_state === 'approved' && (intent.execution_state === 'queued' || intent.execution_state === 'ready') && (
-                  intent.recommended_action === 'REFRESH_GOVERNANCE' ? (
+                  intent.recommended_action === 'REFRESH_GOVERNANCE' || (
+                    intent.recommended_action === 'REGENERATE_CANDIDATES' &&
+                    intent.stage_id === 'poster'
+                  ) ? (
                     <Button
                       variant="default"
                       size="sm"
                       className="h-6 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white"
                       onClick={() => handleExecute(intent.id, intent.recommended_action)}
                       disabled={actionLoading === intent.id}
-                      title="Execute is safe — re-evaluates governance state only"
+                      title={intent.recommended_action === 'REFRESH_GOVERNANCE'
+                        ? "Execute is safe — re-evaluates governance state only"
+                        : "Execute poster regeneration — triggers image generation"}
                     >
                       {actionLoading === intent.id ? (
                         <Loader2 className="h-2.5 w-2.5 animate-spin" />

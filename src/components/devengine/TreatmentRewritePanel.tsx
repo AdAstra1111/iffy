@@ -96,6 +96,7 @@ interface TreatmentRewritePanelProps {
   projectId: string;
   documentId: string;
   versionId: string;
+  docType: string;
   approvedNotes: any[];
   protectItems: string[];
   onComplete?: (newVersionId: string) => void;
@@ -256,6 +257,7 @@ export default function TreatmentRewritePanel({
   projectId,
   documentId,
   versionId,
+  docType,
   approvedNotes,
   protectItems,
   onComplete,
@@ -324,12 +326,10 @@ export default function TreatmentRewritePanel({
     setPipelineError(null);
 
     try {
-      const action = 'rewrite';
-
       const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
         body: {
-          action,
-          deliverableType: 'treatment',
+          action: docType,
+          deliverableType: docType,
           projectId,
           documentId,
           versionId,
@@ -340,7 +340,7 @@ export default function TreatmentRewritePanel({
 
       if (invokeError) throw invokeError;
 
-      if (result?.success) {
+      if (result?.generating === true) {
         setPipelineProgress({ done: 4, total: 4, status: 'complete' });
         toast.success('Treatment rewrite completed');
         qc.invalidateQueries({ queryKey: ['treatment-rewrite-acts', documentId] });

@@ -21,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 
 const ENG_PATH = '/Users/laralane/code/iffy/src/pages/ProjectDevelopmentEngine.tsx';
+const PANEL_PATH = '/Users/laralane/code/iffy/src/components/devengine/TreatmentRewritePanel.tsx';
 
 // ════════════════════════════════════════════════════════════════════════════════
 // FIX 1: taAction → 'rewrite' — wrong action name
@@ -49,52 +50,55 @@ describe('Fix 1 — Wrong action name (taAction → rewrite)', () => {
     expect(codeLines.length).toBe(0);
   });
 
-  it('dev-engine-v2 invoke action is "rewrite" (not taAction, treatment, or long_treatment)', async () => {
-    const lines = await getLines();
-    const invokeLine = lines.find(l =>
-      l.includes("action:") && l.includes("rewrite")
-    );
-    expect(invokeLine).toBeDefined();
-    expect(invokeLine).toContain("action: 'rewrite'");
-    // Verify it's not taAction, 'treatment', or 'long_treatment'
-    expect(invokeLine).not.toContain('taAction');
-    expect(invokeLine).not.toContain("action: 'treatment'");
-    expect(invokeLine).not.toContain("action: 'long_treatment'");
+  it('TreatmentRewritePanel invoke uses action/deliverableType from docType prop (not hardcoded)', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(PANEL_PATH, 'utf-8');
+    // The invoke body must reference the docType prop for both action and deliverableType
+    expect(src).toContain('action: docType');
+    expect(src).toContain('deliverableType: docType');
+    // No hardcoded action strings in the invoke body
+    expect(src).not.toContain("action: 'rewrite'");
+    expect(src).not.toContain("action: 'treatment'");
+    expect(src).not.toContain("action: 'long_treatment'");
+    // No hardcoded deliverableType strings
+    expect(src).not.toContain("deliverableType: 'treatment'");
+    expect(src).not.toContain("deliverableType: 'long_treatment'");
   });
 
-  it('invoke body contains all required fields for per-act pipeline', async () => {
-    const lines = await getLines();
-    // Find the invoke block — lines after the invoke line with action: 'rewrite'
-    const invokeIdx = lines.findIndex(l =>
-      l.includes("action:") && l.includes("rewrite")
-    );
+  it('invoke body in TreatmentRewritePanel contains all required fields for per-act pipeline', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(PANEL_PATH, 'utf-8');
+    // Find the invoke block
+    const invokeIdx = src.indexOf('functions.invoke(\'dev-engine-v2\'');
     expect(invokeIdx).toBeGreaterThanOrEqual(0);
-
-    // Collect the invoke body — from '{' after body: to the closing '}),'
-    const bodyStart = lines.slice(invokeIdx - 1, invokeIdx + 1).join('\n');
-    expect(bodyStart).toContain('action:');
-
-    // Must have all required fields in the invoke body
-    const aroundInvoke = lines.slice(invokeIdx - 2, invokeIdx + 8).join('\n');
-    expect(aroundInvoke).toContain('projectId');
-    expect(aroundInvoke).toContain('documentId');
-    expect(aroundInvoke).toContain('versionId');
-    expect(aroundInvoke).toContain('approvedNotes');
-    expect(aroundInvoke).toContain('protectItems');
+    // Check the body contains all required fields
+    const invokeBlock = src.slice(invokeIdx, invokeIdx + 800);
+    expect(invokeBlock).toContain('projectId');
+    expect(invokeBlock).toContain('documentId');
+    expect(invokeBlock).toContain('versionId');
+    expect(invokeBlock).toContain('approvedNotes');
+    expect(invokeBlock).toContain('protectItems');
+    expect(invokeBlock).toContain('docType');
   });
 
-  it('no action "treatment" or "long_treatment" string is used in invoke body', async () => {
-    const lines = await getLines();
-    const invokeIdx = lines.findIndex(l =>
-      l.includes("action:") && l.includes("rewrite")
-    );
-    expect(invokeIdx).toBeGreaterThanOrEqual(0);
+  it('response handler in TreatmentRewritePanel checks generating === true (not result?.success)', async () => {
+    const fs = await import('fs');
+    const src = fs.readFileSync(PANEL_PATH, 'utf-8');
+    // Must check result?.generating === true
+    expect(src).toContain('result?.generating === true');
+    // Must NOT use result?.success
+    expect(src).not.toContain('if (result?.success)');
+  });
 
-    // Check the invoke block for any other action values
-    const invokeBlock = lines.slice(invokeIdx - 1, invokeIdx + 7).join('\n');
-    // Should only have one action: declaration — the 'rewrite' one
-    expect(invokeBlock).not.toContain("'treatment'");
-    expect(invokeBlock).not.toContain("'long_treatment'");
+  it('docType prop is passed to TreatmentRewritePanel from parent', async () => {
+    const lines = (await import('fs')).readFileSync(ENG_PATH, 'utf-8').split('\n');
+    const panelRenderIdx = lines.findIndex((l: string, i: number) =>
+      l.includes('<TreatmentRewritePanel') && !lines[i - 1]?.includes('import')
+    );
+    expect(panelRenderIdx).toBeGreaterThanOrEqual(0);
+    // Check the lines following the render tag for docType prop
+    const renderBlock = lines.slice(panelRenderIdx, panelRenderIdx + 10).join('\n');
+    expect(renderBlock).toContain('docType={selectedDoc?.doc_type}');
   });
 
   // ── Invariant: variable declaration removed ───────────────────────────────

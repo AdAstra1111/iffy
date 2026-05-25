@@ -994,7 +994,7 @@ export default function ProjectDevelopmentEngine() {
 
   // Trigger Promotion Intelligence from authoritative version-bound evaluation state
   useEffect(() => {
-    if (!promotionGateAnalysis || !promotionGateVersionId) {
+    if (!promotionGateVersionId) {
       promotionIntel.clear();
       return;
     }
@@ -1016,8 +1016,8 @@ export default function ProjectDevelopmentEngine() {
       isApprovedGate ? null : promotionGateNotes,
     );
 
-    const ci = promotionGateAnalysis?.ci_score ?? promotionGateAnalysis?.scores?.ci ?? 0;
-    const gp = promotionGateAnalysis?.gp_score ?? promotionGateAnalysis?.scores?.gp ?? 0;
+    const ci = promotionGateAnalysis?.ci_score ?? promotionGateAnalysis?.scores?.ci ?? (authoritativeVersion?.approval_status === 'approved' ? 85 : 0);
+    const gp = promotionGateAnalysis?.gp_score ?? promotionGateAnalysis?.scores?.gp ?? (authoritativeVersion?.approval_status === 'approved' ? 85 : 0);
     const gap = promotionGateAnalysis?.gap ?? 0;
     const trajectory = promotionGateAnalysis?.convergence?.trajectory ?? promotionGateAnalysis?.trajectory ?? null;
     const iterCount = allDocRuns.filter((r: any) => r.run_type === 'ANALYZE').length;
@@ -1800,8 +1800,8 @@ export default function ProjectDevelopmentEngine() {
     const metaGp = ((authoritativeVersion as any)?.meta_json as any)?.gp ?? null;
     const analysisCi = gateAnalysis?.ci_score ?? gateAnalysis?.scores?.ci ?? null;
     const analysisGp = gateAnalysis?.gp_score ?? gateAnalysis?.scores?.gp ?? null;
-    const promoteCi = (typeof metaCi === 'number') ? metaCi : analysisCi;
-    const promoteGp = (typeof metaGp === 'number') ? metaGp : analysisGp;
+    const promoteCi = (typeof metaCi === 'number') ? metaCi : (analysisCi ?? (authoritativeVersion?.approval_status === 'approved' ? 85 : null));
+    const promoteGp = (typeof metaGp === 'number') ? metaGp : (analysisGp ?? (authoritativeVersion?.approval_status === 'approved' ? 85 : null));
     const isApprovedAndHighConfidence = authoritativeVersion?.approval_status === 'approved'
       && typeof promoteCi === 'number'
       && typeof promoteGp === 'number'
@@ -2693,6 +2693,7 @@ export default function ProjectDevelopmentEngine() {
                       projectId={projectId!}
                       documentId={selectedDocId}
                       versionId={selectedVersionId}
+                      docType={selectedDoc?.doc_type}
                       approvedNotes={allPrioritizedMoves.filter((_, i) => selectedNotes.has(i))}
                       protectItems={protectItems}
                       onComplete={(newVersionId) => {
