@@ -11471,7 +11471,7 @@ INSTRUCTIONS:
           project_id: projectId,
           document_id: documentId,
           version_id: newVersion?.id,
-          user_id: effUserId,
+          user_id: effUserId1,
           run_type: "STORY_OUTLINE_REWRITE",
           output_json: {
             total_entries: totalEntries,
@@ -12011,7 +12011,7 @@ INSTRUCTIONS:
           project_id: projectId,
           document_id: documentId,
           version_id: newVersion?.id,
-          user_id: effUserId,
+          user_id: effUserId1,
           run_type: "BEAT_SHEET_REWRITE",
           output_json: {
             total_sections: rewrittenSections.length,
@@ -12240,7 +12240,7 @@ INSTRUCTIONS:
               arc_state_deltas: arcDeltas ? arcDeltas : null,
               status: "done",
               revised_at: new Date().toISOString(),
-              revised_by: effUserId
+              revised_by: effUserId1
             }).eq("treatment_id", documentId).eq("act_key", actKey);
             if (updateResult.error) console.error("[treatment-per-act] content update FAILED:", updateResult.error);
             // Accumulate for next act's preceding context
@@ -12296,7 +12296,7 @@ INSTRUCTIONS:
           project_id: projectId,
           document_id: documentId,
           version_id: newVersion?.id,
-          user_id: effUserId,
+          user_id: effUserId1,
           run_type: "TREATMENT_REWRITE",
           output_json: {
             pipeline: "per_act_v1",
@@ -12530,7 +12530,7 @@ INSTRUCTIONS:
         project_id: projectId,
         document_id: documentId,
         version_id: newVersion?.id,
-        user_id: effUserId,
+        user_id: effUserId1,
         run_type: "TREATMENT_REWRITE",
         output_json: {
           total_sections: rewrittenSections.length,

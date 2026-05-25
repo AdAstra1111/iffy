@@ -59,7 +59,7 @@ const InteractiveDemo = lazy(() => import("./pages/InteractiveDemo"));
 const ExecutiveDemo = lazy(() => import("./pages/ExecutiveDemo"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const CoverageLab = lazy(() => import("./pages/CoverageLab"));
-const PitchIdeas = lazy(() => import("./pages/PitchIdeas"));
+import PitchIdeas from "./pages/PitchIdeas";
 const CalibrationLab = lazy(() => import("./pages/CalibrationLab"));
 const PitchDeckViewer = lazy(() => import("./pages/PitchDeckViewer"));
 const FeatureScript = lazy(() => import("./pages/FeatureScript"));
