@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import { SafeRouteBoundary } from "@/components/SafeRouteBoundary";
 import { CommandPalette } from "@/components/CommandPalette";
 import { ScrollToTop } from "@/components/ScrollToTop";
 import { AuthProvider } from "@/hooks/useAuth";
@@ -170,12 +171,12 @@ const AnimatedRoutes = () => {
           <Route path="/projects/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
           <Route path="/projects/:id" element={<ProtectedRoute><ProjectShell><ProjectDetail /></ProjectShell></ProtectedRoute>} />
           <Route path="/__errors__" element={<ErrorsPage />} />
-          <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
-          <Route path="/trends/story" element={<ProtectedRoute><StoryTrends /></ProtectedRoute>} />
-          <Route path="/trends/cast" element={<ProtectedRoute><CastTrends /></ProtectedRoute>} />
-          <Route path="/trends/governance" element={<ProtectedRoute><TrendGovernance /></ProtectedRoute>} />
-          <Route path="/trends/explorer" element={<ProtectedRoute><TrendsExplorer /></ProtectedRoute>} />
-          <Route path="/trends/coverage" element={<ProtectedRoute><TrendsCoverage /></ProtectedRoute>} />
+          <Route path="/trends" element={<SafeRouteBoundary><ProtectedRoute><Trends /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends/story" element={<SafeRouteBoundary><ProtectedRoute><StoryTrends /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends/cast" element={<SafeRouteBoundary><ProtectedRoute><CastTrends /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends/governance" element={<SafeRouteBoundary><ProtectedRoute><TrendGovernance /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends/explorer" element={<SafeRouteBoundary><ProtectedRoute><TrendsExplorer /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends/coverage" element={<SafeRouteBoundary><ProtectedRoute><TrendsCoverage /></ProtectedRoute></SafeRouteBoundary>} />
           <Route path="/incentives" element={<ProtectedRoute><IncentiveFinder /></ProtectedRoute>} />
           <Route path="/incentives/copro" element={<ProtectedRoute><CoproPlanner /></ProtectedRoute>} />
           <Route path="/incentives/stack" element={<ProtectedRoute><StackCashflow /></ProtectedRoute>} />

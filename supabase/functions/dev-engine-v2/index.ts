@@ -11808,11 +11808,13 @@ INSTRUCTIONS:
           break;
         }
       }
+      // Resolve effective user ID BEFORE the resume check — it's used by both
+      // the new-version and resume paths (line ~12051, 12280, 12336)
+      const { data: effUserProj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
+      const effUserId1 = user?.id || effUserProj?.user_id || null;
       let newVersion = null;
       if (!isResumingProse) {
         const newVersionNumber = (version.version_number || 1) + 1;
-        const { data: proj } = await supabase.from("projects").select("user_id").eq("id", projectId).maybeSingle();
-        const effUserId1 = user?.id || proj?.user_id || null;
         const insertRes = await supabase.from("project_document_versions").upsert({
           document_id: documentId,
           version_number: newVersionNumber,
