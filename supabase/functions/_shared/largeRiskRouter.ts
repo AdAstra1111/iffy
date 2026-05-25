@@ -55,11 +55,11 @@ const SECTIONED_DOC_TYPES = new Set([
 ]);
 
 const SCENE_INDEXED_DOC_TYPES = new Set([
-  "production_draft",
 ]);
 
 const BEAT_SEQUENTIAL_DOC_TYPES = new Set([
   "feature_script",
+  "production_draft",
 ]);
 
 const ALL_LARGE_RISK = new Set([
@@ -149,6 +149,7 @@ export function chunkPlanFor(
     sceneCount?: number | null;
     batchSize?: number;
     beats?: Array<{number: number; title: string}> | null;
+    scenes?: Array<{number: number; heading: string}> | null;
   } = {}
 ): ChunkPlan {
   const strategy = strategyFor(docType);

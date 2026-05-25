@@ -50,6 +50,16 @@ export interface StaleRiskTimestamps {
   lookbookGeneratedAt?: string;
 }
 
+/** Reason code and metadata for a hash-based stale detection event. */
+export interface StageStaleReason {
+  code: string;
+  label: string;
+  detail: string;
+  severity: 'low' | 'medium' | 'high';
+  sourceTimestamp?: string;
+  affectedDownstreamStages?: string[];
+}
+
 export interface PipelineInputs {
   /** Does the project have canon_json with content? */
   hasCanon: boolean;
@@ -156,6 +166,17 @@ const STAGE_META: Record<PipelineStage, { label: string; description: string }> 
   concept_brief: { label: 'Concept Brief', description: 'Executive concept brief — curated investor-ready visual package' },
   lookbook: { label: 'Explore / Lab', description: 'Exploratory visual identity assembly (internal use)' },
 };
+
+/** Reason codes for hash-based stale detection mapped from timestamp comparisons. */
+export const STALE_REASON_CODES = {
+  CANON_NEWER_THAN_STAGE: 'CANON_NEWER_THAN_STAGE',
+  DOC_VERSION_CHANGED: 'DOC_VERSION_CHANGED',
+  CAST_NEWER_THAN_HERO_FRAMES: 'CAST_NEWER_THAN_HERO_FRAMES',
+  PD_NEWER_THAN_LOOKBOOK: 'PD_NEWER_THAN_LOOKBOOK',
+  HERO_FRAMES_NEWER_THAN_POSTER: 'HERO_FRAMES_NEWER_THAN_POSTER',
+  VISUAL_STYLE_OUTDATED: 'VISUAL_STYLE_OUTDATED',
+  SOURCE_SNAPSHOT_CHANGED: 'SOURCE_SNAPSHOT_CHANGED',
+} as const;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -342,6 +363,165 @@ export function computeStaleRiskForStage(
   return { isStale: reasons.length > 0, reasons };
 }
 
+// ── Hash-based stale detection ──────────────────────────────────────────────
+
+/**
+ * Compute stage-specific stale reasons based on source-snapshot hash change.
+ * Returns a map of stage_id → StageStaleReason[].
+ *
+ * Only returns reasons when the hash has changed (prevHash !== currentHash).
+ * Maps timestamp comparisons to specific stale reason codes per stage.
+ */
+export function computeStageSpecificStaleReasons(
+  prevHash: string | null,
+  currentHash: string,
+  ts: StaleRiskTimestamps,
+): Record<string, StageStaleReason[]> {
+  const reasons: Record<string, StageStaleReason[]> = {};
+
+  // No hash change means no new stale risk from input changes
+  if (!prevHash || prevHash === currentHash) {
+    return reasons;
+  }
+
+  const sourceDocTime = ts.sourceDocUpdatedAt ? new Date(ts.sourceDocUpdatedAt).getTime() : 0;
+  const canonTime = ts.canonUpdatedAt ? new Date(ts.canonUpdatedAt).getTime() : 0;
+  const styleTime = ts.visualStyleUpdatedAt ? new Date(ts.visualStyleUpdatedAt).getTime() : 0;
+  const castTime = ts.castUpdatedAt ? new Date(ts.castUpdatedAt).getTime() : 0;
+  const pdTime = ts.pdUpdatedAt ? new Date(ts.pdUpdatedAt).getTime() : 0;
+  const hfTime = ts.heroFrameGeneratedAt ? new Date(ts.heroFrameGeneratedAt).getTime() : 0;
+  const posterTime = ts.posterGeneratedAt ? new Date(ts.posterGeneratedAt).getTime() : 0;
+
+  // sourceDocUpdatedAt > canonUpdatedAt → DOC_VERSION_CHANGED → source_truth
+  if (sourceDocTime > 0 && canonTime > 0 && sourceDocTime > canonTime) {
+    reasons['source_truth'] = [
+      {
+        code: STALE_REASON_CODES.DOC_VERSION_CHANGED,
+        label: 'Document version changed',
+        detail: 'Source documents have been updated since canon was last refreshed.',
+        severity: 'high',
+        sourceTimestamp: ts.sourceDocUpdatedAt,
+        affectedDownstreamStages: ['visual_canon', 'cast', 'hero_frames'],
+      },
+    ];
+  }
+
+  // canonUpdatedAt > visualStyleUpdatedAt → CANON_NEWER_THAN_STAGE (visual_canon)
+  //                                   → VISUAL_STYLE_OUTDATED (visual_language)
+  if (canonTime > 0 && styleTime > 0 && canonTime > styleTime) {
+    reasons['visual_canon'] = [
+      {
+        code: STALE_REASON_CODES.CANON_NEWER_THAN_STAGE,
+        label: 'Canon updated',
+        detail: 'Canon was updated after the visual style profile was defined.',
+        severity: 'medium',
+        sourceTimestamp: ts.canonUpdatedAt,
+        affectedDownstreamStages: ['cast', 'hero_frames'],
+      },
+    ];
+    reasons['visual_language'] = [
+      {
+        code: STALE_REASON_CODES.VISUAL_STYLE_OUTDATED,
+        label: 'Visual style outdated',
+        detail: 'Canon updated after visual language was approved.',
+        severity: 'medium',
+        sourceTimestamp: ts.canonUpdatedAt,
+        affectedDownstreamStages: [],
+      },
+    ];
+  }
+
+  // canonUpdatedAt > castUpdatedAt → CANON_NEWER_THAN_STAGE → cast
+  if (canonTime > 0 && castTime > 0 && canonTime > castTime) {
+    reasons['cast'] = [
+      {
+        code: STALE_REASON_CODES.CANON_NEWER_THAN_STAGE,
+        label: 'Canon updated',
+        detail: 'Canon was updated after cast assignments were made.',
+        severity: 'high',
+        sourceTimestamp: ts.canonUpdatedAt,
+        affectedDownstreamStages: ['hero_frames', 'production_design', 'lookbook'],
+      },
+    ];
+  }
+
+  // castUpdatedAt > heroFrameGeneratedAt → CAST_NEWER_THAN_HERO_FRAMES → hero_frames
+  if (castTime > 0 && hfTime > 0 && castTime > hfTime) {
+    reasons['hero_frames'] = [
+      {
+        code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
+        label: 'Cast updated',
+        detail: 'Cast was updated after hero frames were generated.',
+        severity: 'medium',
+        sourceTimestamp: ts.castUpdatedAt,
+        affectedDownstreamStages: ['poster', 'visual_language', 'concept_brief'],
+      },
+    ];
+  }
+
+  // castUpdatedAt > pdUpdatedAt → PD_NEWER_THAN_LOOKBOOK → production_design, lookbook
+  if (castTime > 0 && pdTime > 0 && castTime > pdTime) {
+    reasons['production_design'] = [
+      {
+        code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+        label: 'Production Design outdated',
+        detail: 'Cast was updated after Production Design sets were created.',
+        severity: 'high',
+        sourceTimestamp: ts.castUpdatedAt,
+        affectedDownstreamStages: ['hero_frames', 'lookbook'],
+      },
+    ];
+    reasons['lookbook'] = [
+      {
+        code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+        label: 'Production Design outdated',
+        detail: 'Cast was updated after lookbook was assembled.',
+        severity: 'high',
+        sourceTimestamp: ts.castUpdatedAt,
+        affectedDownstreamStages: [],
+      },
+    ];
+  }
+
+  // heroFrameGeneratedAt > posterGeneratedAt → HERO_FRAMES_NEWER_THAN_POSTER → poster
+  if (hfTime > 0 && posterTime > 0 && hfTime > posterTime) {
+    reasons['poster'] = [
+      {
+        code: STALE_REASON_CODES.HERO_FRAMES_NEWER_THAN_POSTER,
+        label: 'Hero frames updated',
+        detail: 'Hero frames were generated after poster candidates.',
+        severity: 'medium',
+        sourceTimestamp: ts.heroFrameGeneratedAt,
+        affectedDownstreamStages: ['concept_brief'],
+      },
+    ];
+  }
+
+  // Fallback: if hash changed but no timestamp condition matched,
+  // mark all stages with SOURCE_SNAPSHOT_CHANGED
+  if (Object.keys(reasons).length === 0) {
+    const allStageIds = [
+      'source_truth', 'visual_canon', 'cast', 'hero_frames',
+      'production_design', 'visual_language', 'poster',
+      'concept_brief', 'lookbook',
+    ];
+    for (const stageId of allStageIds) {
+      reasons[stageId] = [
+        {
+          code: STALE_REASON_CODES.SOURCE_SNAPSHOT_CHANGED,
+          label: 'Source snapshot changed',
+          detail: 'The source data snapshot hash has changed since the last evaluation.',
+          severity: 'medium',
+          sourceTimestamp: undefined,
+          affectedDownstreamStages: [],
+        },
+      ];
+    }
+  }
+
+  return reasons;
+}
+
 // ── Provenance computation ───────────────────────────────────────────────────
 
 /**
@@ -423,7 +603,10 @@ export function computeProvenanceForStage(
  * StageGovernance[] suitable for persistence into the
  * project_visual_stage_governance table.
  */
-export function resolveStageGovernance(inputs: PipelineInputs): StageGovernance[] {
+export async function resolveStageGovernance(
+  inputs: PipelineInputs,
+  previousHash?: string | null,
+): Promise<StageGovernance[]> {
   const stages: StageGovernance[] = [];
 
   // ── 1. SOURCE TRUTH ──
@@ -617,6 +800,13 @@ export function resolveStageGovernance(inputs: PipelineInputs): StageGovernance[
 
   // ── Visual Governance enrichment ──
   const completedStages = getCompletedStages(stages);
+  
+  // Compute current hash for hash-based stale detection
+  const currentHash = await computeSourceSnapshotHash(inputs);
+  const hashBasedStaleReasons = previousHash !== undefined
+    ? computeStageSpecificStaleReasons(previousHash, currentHash, inputs.staleRiskTimestamps ?? {})
+    : {};
+
   for (const s of stages) {
     // Eligibility: prerequisite gate check
     const stageKey = s.stage_id as PipelineStage;
@@ -636,6 +826,22 @@ export function resolveStageGovernance(inputs: PipelineInputs): StageGovernance[
     // Stale-risk: timestamp-based detection
     if (inputs.staleRiskTimestamps) {
       s.stale_risk = computeStaleRiskForStage(stageKey, inputs.staleRiskTimestamps);
+    }
+
+    // Stale-risk: hash-based detection (additive — merges into timestamp-based)
+    const stageHashReasons = hashBasedStaleReasons[s.stage_id];
+    if (stageHashReasons && stageHashReasons.length > 0) {
+      if (!s.stale_risk) {
+        s.stale_risk = { isStale: true, reasons: [] };
+      }
+      for (const hr of stageHashReasons) {
+        s.stale_risk.reasons.push({
+          label: hr.label,
+          detail: hr.detail,
+          severity: hr.severity,
+        });
+      }
+      s.stale_risk.isStale = true;
     }
 
     // Provenance: source doc/table, version, generated asset

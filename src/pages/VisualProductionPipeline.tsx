@@ -533,14 +533,40 @@ function StaleRiskDisplay({ staleRisk }: { staleRisk?: StaleRisk }) {
         <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
         <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Stale Risk Detected</span>
       </div>
-      {staleRisk.reasons.map((r, i) => (
-        <p key={i} className="text-[10px] text-muted-foreground pl-5">
-          <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${
-            r.severity === 'high' ? 'bg-red-500' : r.severity === 'medium' ? 'bg-amber-500' : 'bg-yellow-400'
-          }`} />
-          {r.detail}
-        </p>
-      ))}
+      {staleRisk.reasons.map((r, i) => {
+        const reasonAny = r as any;
+        const code = reasonAny.code;
+        const sourceTs = reasonAny.sourceTimestamp;
+        const downstream = reasonAny.affectedDownstreamStages;
+        return (
+          <div key={i} className="pl-5 space-y-0.5">
+            <div className="flex items-start gap-1.5">
+              <span className={`inline-block w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${
+                r.severity === 'high' ? 'bg-red-500' : r.severity === 'medium' ? 'bg-amber-500' : 'bg-yellow-400'
+              }`} />
+              <p className="text-[10px] text-muted-foreground">{r.detail}</p>
+            </div>
+            {/* Stale reason code tags — hash-based detection */}
+            {code && (
+              <div className="flex flex-wrap gap-1 ml-2.5">
+                <span className="text-[9px] font-mono text-amber-600 bg-amber-500/10 px-1 py-0.5 rounded inline-block w-fit">
+                  {code}
+                </span>
+                {sourceTs && (
+                  <span className="text-[8px] text-muted-foreground/60" title={`Source changed: ${sourceTs}`}>
+                    {new Date(sourceTs).toLocaleDateString()}
+                  </span>
+                )}
+                {downstream?.length > 0 && (
+                  <span className="text-[8px] text-muted-foreground/60">
+                    Downstream: {downstream.join(', ')}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

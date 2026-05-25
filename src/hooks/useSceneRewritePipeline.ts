@@ -115,7 +115,7 @@ async function callEngine(action: string, extra: Record<string, any> = {}, timeo
   if (!session) throw new Error('Not authenticated');
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(new DOMException('Engine request timed out (' + timeoutMs + 'ms)', 'AbortError')), timeoutMs);
 
   const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
     method: 'POST',

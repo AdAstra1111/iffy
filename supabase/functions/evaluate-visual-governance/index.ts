@@ -311,7 +311,15 @@ serve(async (req) => {
     };
 
     // ── Resolve governance ──
-    const governance = resolveStageGovernance(inputs);
+    // Fetch previous governance state for hash comparison
+    const { data: prevRows } = await supabase
+      .from('project_visual_stage_governance')
+      .select('source_snapshot_hash')
+      .eq('project_id', projectId)
+      .limit(1);
+    const previousHash = (prevRows as any[])?.[0]?.source_snapshot_hash ?? null;
+
+    const governance = await resolveStageGovernance(inputs, previousHash);
 
     // ── Compute source snapshot hash ──
     const sourceSnapshotHash = await computeSourceSnapshotHash(inputs);

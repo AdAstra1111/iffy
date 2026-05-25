@@ -7,6 +7,29 @@
 
 import type { PipelineStage, StageStatus, StageEligibility, StaleRisk, StageProvenance } from './pipelineStatusResolver';
 
+/** Stale reason code constants matching server-side STALE_REASON_CODES. */
+export const STALE_REASON_CODES = {
+  CANON_NEWER_THAN_STAGE: 'CANON_NEWER_THAN_STAGE',
+  DOC_VERSION_CHANGED: 'DOC_VERSION_CHANGED',
+  CAST_NEWER_THAN_HERO_FRAMES: 'CAST_NEWER_THAN_HERO_FRAMES',
+  PD_NEWER_THAN_LOOKBOOK: 'PD_NEWER_THAN_LOOKBOOK',
+  HERO_FRAMES_NEWER_THAN_POSTER: 'HERO_FRAMES_NEWER_THAN_POSTER',
+  VISUAL_STYLE_OUTDATED: 'VISUAL_STYLE_OUTDATED',
+  SOURCE_SNAPSHOT_CHANGED: 'SOURCE_SNAPSHOT_CHANGED',
+} as const;
+
+export type StaleReasonCode = typeof STALE_REASON_CODES[keyof typeof STALE_REASON_CODES];
+
+/** Extended stale risk reason with hash-based reason code. */
+export interface GovernanceStaleReason {
+  label: string;
+  detail: string;
+  severity: 'low' | 'medium' | 'high';
+  code?: StaleReasonCode;
+  sourceTimestamp?: string;
+  affectedDownstreamStages?: string[];
+}
+
 /** A single governance snapshot row for one visual stage. */
 export interface GovernanceSnapshotRow {
   id: string;
@@ -21,7 +44,7 @@ export interface GovernanceSnapshotRow {
   };
   stale_risk: {
     isStale: boolean;
-    reasons: { label: string; detail: string; severity: 'low' | 'medium' | 'high' }[];
+    reasons: GovernanceStaleReason[];
   } | null;
   blocker_codes: string[] | null;
   provenance_json: {
