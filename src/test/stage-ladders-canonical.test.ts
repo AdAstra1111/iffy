@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import LADDERS_JSON from '../../supabase/_shared/stage-ladders.json';
 import { BASE_DOC_TYPES, normalizeDocType, formatToLane, LANE_DOC_LADDERS, isOutputDocType, getOutputDocTypesForLane, BANNED_LEGACY_KEYS } from '@/config/documentLadders';
+import { LADDER_EVALUATION_TYPES } from '@/lib/evaluationContractRegistry';
 import { VERTICAL_DRAMA_PIPELINE_ORDER, DELIVERABLE_PIPELINE_ORDER, SERIES_PIPELINE_ORDER, VERTICAL_DRAMA_DOC_ORDER } from '@/lib/dev-os-config';
 import { getDocFlowConfig } from '@/lib/docFlowMap';
 
@@ -246,5 +247,35 @@ describe('Output doc / ladder separation — regression guard', () => {
     const ladder = LANE_DOC_LADDERS['vertical_drama'];
     expect(ladder).not.toContain('vertical_market_sheet');
     expect(isOutputDocType('vertical_market_sheet', 'vertical_drama')).toBe(true);
+  });
+});
+
+// ── LADDER_EVALUATION_TYPES drift guard ───────────────────────────
+// Ensures every unique stage in FORMAT_LADDERS is represented in
+// LADDER_EVALUATION_TYPES. Prevents silent omissions when adding
+// new ladder stages.
+describe('LADDER_EVALUATION_TYPES drift guard', () => {
+  it('Every unique FORMAT_LADDERS stage is in LADDER_EVALUATION_TYPES', () => {
+    const uniqueLadderStages = new Set<string>();
+    for (const [_fmt, ladder] of Object.entries(FORMAT_LADDERS)) {
+      for (const stage of ladder) {
+        uniqueLadderStages.add(stage);
+      }
+    }
+
+    const missing: string[] = [];
+    for (const stage of uniqueLadderStages) {
+      if (!LADDER_EVALUATION_TYPES.has(stage)) {
+        missing.push(stage);
+      }
+    }
+
+    if (missing.length > 0) {
+      throw new Error(
+        'Stages in FORMAT_LADDERS missing from LADDER_EVALUATION_TYPES:\n' +
+        missing.map(s => `  - "${s}"`).join('\n') +
+        '\nAdd these to LADDER_EVALUATION_TYPES in evaluationContractRegistry.ts'
+      );
+    }
   });
 });

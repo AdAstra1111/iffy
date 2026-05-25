@@ -1455,6 +1455,7 @@ export const EVALUATION_CONTRACTS: Record<string, EvaluationContract> = {
   episode_grid:                    EPISODE_GRID_CONTRACT,
   vertical_episode_beats:          VERTICAL_EPISODE_BEATS_CONTRACT,
   season_script:                   SEASON_SCRIPT_CONTRACT,
+  season_master_script:            SEASON_MASTER_SCRIPT_CONTRACT,
   documentary_outline:             DOCUMENTARY_OUTLINE_CONTRACT,
 
   // ── Output / additional document types ──
@@ -1463,7 +1464,6 @@ export const EVALUATION_CONTRACTS: Record<string, EvaluationContract> = {
   deck:                            DECK_CONTRACT,
   visual_project_bible:            VISUAL_PROJECT_BIBLE_CONTRACT,
   topline_narrative:               TOPLINE_NARRATIVE_CONTRACT,
-  season_master_script:            SEASON_MASTER_SCRIPT_CONTRACT,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1473,7 +1473,7 @@ export const EVALUATION_CONTRACTS: Record<string, EvaluationContract> = {
 /**
  * Set of all canonical doc types that participate in the evaluation pipeline.
  *
- * Derived from the source-of-truth ladder definitions in documentLadders.ts.
+ * Covers both ladder stages and output/additional doc types that require contracts.
  * These are the types that MUST have contracts — evaluation fails closed otherwise.
  */
 export const LADDER_EVALUATION_TYPES: ReadonlySet<string> = new Set([
@@ -1492,6 +1492,7 @@ export const LADDER_EVALUATION_TYPES: ReadonlySet<string> = new Set([
   'episode_grid',
   'vertical_episode_beats',
   'season_script',
+  'season_master_script',
   'documentary_outline',
 ]);
 
