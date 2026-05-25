@@ -384,31 +384,220 @@ serve(async (req) => {
           }
 
           case "REGENERATE_CANDIDATES": {
-            // Guards: stage_id must be 'poster'
-            if (intent.stage_id !== "poster") {
-              // Check hero-frame preflight for hero_frames stage
-              if (intent.stage_id === "hero_frames") {
+            // ── Route based on stage_id ──
+            if (intent.stage_id === "hero_frames") {
+              // ── Hero Frame Execution ──
+              // Guard: stale reason must include CANON_NEWER_THAN_STAGE or CAST_NEWER_THAN_HERO_FRAMES
+              const hfAllowedReasons = ["CANON_NEWER_THAN_STAGE", "CAST_NEWER_THAN_HERO_FRAMES"];
+              const hasHfReason = (intent.stale_reason_codes ?? []).some(
+                (code: string) => hfAllowedReasons.includes(code),
+              );
+              if (!hasHfReason) {
                 return jsonRes(
                   {
-                    error: "Hero-frame executor is not enabled yet",
+                    error: "Stale reason does not qualify for hero-frame regeneration",
                     code: "EXECUTOR_NOT_ENABLED",
-                    recommended_action: intent.recommended_action,
-                    stage_id: intent.stage_id,
-                    note: "Hero-frame execution preflight exists (P9) but executor is not enabled — see hero-frame-preflight edge function",
+                    current_reasons: intent.stale_reason_codes,
+                    allowed_reasons: hfAllowedReasons,
                   },
                   400,
                 );
               }
-              return jsonRes(
-                {
-                  error: "Execution not yet enabled for this action on this stage",
-                  code: "EXECUTOR_NOT_ENABLED",
-                  recommended_action: intent.recommended_action,
-                  stage_id: intent.stage_id,
+
+              // Guard: preflight must pass
+              const preflightUrl =
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/hero-frame-preflight`;
+              const preflightRes = await fetch(preflightUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
                 },
-                400,
+                body: JSON.stringify({ projectId: intent.project_id }),
+              });
+              const preflightResult = await preflightRes.json();
+
+              if (!preflightRes.ok || !preflightResult.all_requirements_pass) {
+                const failedReqs = (preflightResult.requirements ?? [])
+                  .filter((r: any) => !r.passed)
+                  .map((r: any) => r.code);
+                return jsonRes(
+                  {
+                    error: "Hero-frame preflight failed",
+                    code: "PREFLIGHT_FAILED",
+                    failed_requirements: failedReqs,
+                    preflight_result: preflightResult,
+                  },
+                  400,
+                );
+              }
+
+              // Execute generate-hero-frames
+              const hfUrl =
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-hero-frames`;
+              const hfPayload = { project_id: intent.project_id };
+
+              let hfResult: any;
+              let hfOk = false;
+
+              try {
+                const hfRes = await fetch(hfUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                  },
+                  body: JSON.stringify(hfPayload),
+                });
+                hfResult = await hfRes.json();
+                hfOk = hfRes.ok;
+              } catch (fetchErr) {
+                hfResult = {
+                  error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+                };
+                hfOk = false;
+              }
+
+              // Extract generated hero frame image IDs
+              const heroFrameImageIds: string[] = [];
+              if (hfOk && hfResult?.results && Array.isArray(hfResult.results)) {
+                for (const r of hfResult.results) {
+                  if (r.image_id) heroFrameImageIds.push(r.image_id);
+                }
+              }
+
+              // After hero frame generation, refresh governance
+              let governanceResult: any = null;
+              try {
+                const evalUrl =
+                  `${Deno.env.get("SUPABASE_URL")!}/functions/v1/evaluate-visual-governance`;
+                const evalRes = await fetch(evalUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                  },
+                  body: JSON.stringify({ projectId: intent.project_id }),
+                });
+                governanceResult = evalRes.ok
+                  ? await evalRes.json()
+                  : { error: "Governance refresh failed" };
+              } catch (govErr) {
+                governanceResult = {
+                  error: govErr instanceof Error ? govErr.message : String(govErr),
+                };
+              }
+
+              const now = new Date().toISOString();
+              const executionResult = {
+                invoked_function: "generate-hero-frames",
+                input_snapshot: hfPayload,
+                output_summary: {
+                  success: hfOk,
+                  frame_count: heroFrameImageIds.length,
+                  hero_frame_image_ids: heroFrameImageIds,
+                  meta: hfResult?.meta ?? null,
+                },
+                governance_refresh: {
+                  status: governanceResult?.error ? "failed" : "completed",
+                  evaluated_at: governanceResult?.evaluated_at ?? now,
+                  stages_count: governanceResult?.stages?.length ?? 0,
+                },
+                error: hfOk ? undefined : (hfResult?.error ?? "Unknown error"),
+              };
+
+              // Capture execution provenance (append-only)
+              const execNum = await supabase.rpc("next_execution_number", {
+                p_project_id: intent.project_id,
+              });
+              const { data: prevExecs } = await supabase
+                .from("project_visual_execution_provenance")
+                .select("id, generated_asset_ids")
+                .eq("project_id", intent.project_id)
+                .eq("stage_id", intent.stage_id)
+                .eq("is_superseded", false);
+              const prevExecIds = (prevExecs ?? []).map((r: any) => r.id);
+              let previousAssetIds: string[] = [];
+              for (const p of prevExecs ?? []) {
+                if (p.generated_asset_ids)
+                  previousAssetIds.push(...p.generated_asset_ids);
+              }
+
+              const genInputStr = JSON.stringify(hfPayload);
+              const genInputEncoder = new TextEncoder();
+              const genInputHash = await crypto.subtle.digest(
+                "SHA-256",
+                genInputEncoder.encode(genInputStr),
               );
+              const genInputHashHex = Array.from(new Uint8Array(genInputHash))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+
+              const provenanceRow = {
+                project_id: intent.project_id,
+                repair_intent_id: intent.id,
+                execution_number: execNum.data ?? 1,
+                stage_id: intent.stage_id,
+                recommended_action: intent.recommended_action,
+                execution_state: hfOk ? "completed" : "failed",
+                governance_snapshot_hash:
+                  governanceResult?.source_snapshot_hash ?? null,
+                stale_reason_snapshot: intent.stale_reason_codes ?? null,
+                generation_input_hash: genInputHashHex,
+                generated_asset_ids:
+                  heroFrameImageIds.length > 0 ? heroFrameImageIds : null,
+                previous_asset_ids:
+                  previousAssetIds.length > 0 ? previousAssetIds : null,
+                previous_execution_id:
+                  prevExecIds.length > 0
+                    ? prevExecIds[prevExecIds.length - 1]
+                    : null,
+                is_superseded: false,
+                result_summary: hfOk
+                  ? {
+                      frame_count: heroFrameImageIds.length,
+                      hero_frame_image_ids: heroFrameImageIds,
+                    }
+                  : null,
+                error_message: hfOk
+                  ? null
+                  : (executionResult.error ?? "Unknown error"),
+                executed_at: now,
+              };
+
+              const { error: provError } = await supabase
+                .from("project_visual_execution_provenance")
+                .insert(provenanceRow);
+
+              if (prevExecIds.length > 0) {
+                await supabase
+                  .from("project_visual_execution_provenance")
+                  .update({ is_superseded: true, superseded_at: now })
+                  .in("id", prevExecIds);
+              }
+
+              const updateData: Record<string, unknown> = {
+                execution_state: hfOk ? "completed" : "failed",
+                executed_at: now,
+                execution_result_json: executionResult,
+              };
+
+              const { data: updated, error: updateError } = await supabase
+                .from("project_visual_repair_intents")
+                .update(updateData)
+                .eq("id", intentId)
+                .select("*")
+                .maybeSingle();
+
+              if (updateError) {
+                return jsonRes({ error: updateError.message }, 500);
+              }
+
+              return jsonRes({ intent: updated });
             }
+
+            // ── Poster Execution (existing) ──
+            if (intent.stage_id !== "poster") {
 
             // Guards: stale reason must include HERO_FRAMES_NEWER_THAN_POSTER or VISUAL_STYLE_OUTDATED
             const allowedReasons = ["HERO_FRAMES_NEWER_THAN_POSTER", "VISUAL_STYLE_OUTDATED"];
