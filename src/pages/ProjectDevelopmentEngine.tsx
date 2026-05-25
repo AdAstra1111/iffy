@@ -387,6 +387,10 @@ export default function ProjectDevelopmentEngine() {
     });
   }, [pendingAutoTrigger, selectedDocId, selectedVersionId, generateOptionsMutation]);
 
+  const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
+  const versionHasContent = ((selectedVersion?.plaintext || '').trim().length > 100);
+  const isStuckGenerating = isBgGenerating && versionHasContent;
+
   // Direct options trigger for post-operation versions (bypasses analysis chain)
   // Set via pendingOptionsTriggerRef alongside postOperationVersionId at every
   // rewrite/convert completion point. Waits for selectedVersion to be current
@@ -404,9 +408,6 @@ export default function ProjectDevelopmentEngine() {
     });
   }, [selectedVersionId, selectedDocId, generateOptionsMutation, isBgGenerating]);
 
-  const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
-  const versionHasContent = ((selectedVersion?.plaintext || '').trim().length > 100);
-  const isStuckGenerating = isBgGenerating && versionHasContent;
   const isSeasonScript = selectedDoc?.doc_type === 'season_script';
 
   // Structured viewer support
