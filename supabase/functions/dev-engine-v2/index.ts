@@ -8840,8 +8840,8 @@ ANALYSIS SUMMARY:\n${analysis?.executive_snapshot || analysis?.verdict || "No an
 
 NOTES REQUIRING DECISIONS:\n${JSON.stringify(notesForPrompt)}
 
-MATERIAL:\n${version.plaintext}`;
-      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 12000).catch((err)=>{
+MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
+      const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, optionsSystem, userPrompt, 0.3, 6000).catch((err)=>{
         console.error("[dev-engine-v2] options: callAI failed:", err?.message);
         throw new Error(`AI call failed: ${err?.message || "Unknown AI error"}`);
       });
@@ -12190,207 +12190,214 @@ INSTRUCTIONS:
           }));
         await supabase.from("treatment_acts").insert(pendingRows);
         console.log("[treatment-per-act] inserted 4 pending treatment_acts rows for treatment_id=" + documentId);
-        const priorActResults = [];
-        const _gwPerAct = resolveGateway();
-        const perActApiKey = _gwPerAct.apiKey;
-        if (!perActApiKey) throw new Error("No AI gateway key configured");
-        for (const { actKey, actNumber } of ACT_SEQUENCE){
-          console.log("[treatment-per-act] starting act=" + actKey + " (" + actNumber + "/4)");
-          // ── RESUME CHECK: skip acts already completed in a previous run ──
-          if (isResumingProse) {
-            const { data: resumeChunk } = await supabase.from("project_document_chunks").select("status, content, char_count").eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1).maybeSingle();
-            if (resumeChunk && resumeChunk.status === "done" && resumeChunk.content) {
-              console.log("[treatment-per-act] act=" + actKey + " — resumed from existing chunk (" + resumeChunk.char_count + " chars)");
-              // Load content from existing treatment_acts row too
-              const { data: resumeAct } = await supabase.from("treatment_acts").select("*").eq("treatment_id", documentId).eq("act_key", actKey).maybeSingle();
-              const existingContent = resumeChunk.content;
-              const existingDeltas = resumeAct?.arc_state_deltas || null;
+        // ── PHASE 2: Background pipeline ──
+        const runPerActPipeline = async () => {
+          const priorActResults = [];
+          const _gwPerAct = resolveGateway();
+          const perActApiKey = _gwPerAct.apiKey;
+          if (!perActApiKey) throw new Error("No AI gateway key configured");
+          for (const { actKey, actNumber } of ACT_SEQUENCE){
+            console.log("[treatment-per-act] starting act=" + actKey + " (" + actNumber + "/4)");
+            // ── RESUME CHECK: skip acts already completed in a previous run ──
+            if (isResumingProse) {
+              const { data: resumeChunk } = await supabase.from("project_document_chunks").select("status, content, char_count").eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1).maybeSingle();
+              if (resumeChunk && resumeChunk.status === "done" && resumeChunk.content) {
+                console.log("[treatment-per-act] act=" + actKey + " — resumed from existing chunk (" + resumeChunk.char_count + " chars)");
+                // Load content from existing treatment_acts row too
+                const { data: resumeAct } = await supabase.from("treatment_acts").select("*").eq("treatment_id", documentId).eq("act_key", actKey).maybeSingle();
+                const existingContent = resumeChunk.content;
+                const existingDeltas = resumeAct?.arc_state_deltas || null;
+                priorActResults.push({
+                  actKey,
+                  actNumber,
+                  label: actKey,
+                  content: existingContent,
+                  arcStateDeltas: existingDeltas
+                });
+                continue;
+              }
+            }
+            // Mark row as rewriting
+            const markResult = await supabase.from("treatment_acts").update({
+              status: "rewriting"
+            }).eq("treatment_id", documentId).eq("act_key", actKey);
+            if (markResult.error) console.error("[treatment-per-act] mark rewriting FAILED:", markResult.error);
+            else console.log("[treatment-per-act] marked rewriting OK, rows:", markResult.data);
+            // Build act blueprint (deterministic — no LLM)
+            const blueprint = buildActBlueprint(actKey, actNumber, approvedNotes || [], canonJson, priorActResults);
+            // Persist blueprint to treatment_acts row (visible in UI before rewrite begins)
+            await supabase.from("treatment_acts").update({
+              act_blueprint: {
+                actKey: blueprint.actKey,
+                actNumber: blueprint.actNumber,
+                label: blueprint.label,
+                functionDescription: blueprint.functionDescription,
+                canonConstraints: blueprint.canonConstraints,
+                targetingNotes: blueprint.targetingNotes,
+                hasPrecedingContext: blueprint.precedingContext !== null
+              }
+            }).eq("treatment_id", documentId).eq("act_key", actKey);
+            // Build per-act system prompt:
+            //   base + act blueprint block + arc-state delta instruction
+            const blueprintBlock = renderActBlueprintBlock(blueprint);
+            const arcDeltaInstruction = buildArcStateDeltaSystemInstruction();
+            const actSystemPrompt = [
+              systemPromptBase,
+              blueprintBlock,
+              arcDeltaInstruction
+            ].join("\n\n");
+            // Find existing content for this act from current version (if any) to use as EXISTING text
+            const existingActContent = flatSections.find((s)=>{
+              const sk = (s.sk || "").toLowerCase();
+              const lbl = (s.label || "").toLowerCase();
+              if (actKey === "act_1_setup") return sk.includes("act_1") || lbl.includes("act 1") || lbl.includes("setup");
+              if (actKey === "act_2a_rising_action") return sk.includes("act_2a") || lbl.includes("act 2a") || lbl.includes("rising");
+              if (actKey === "act_2b_complications") return sk.includes("act_2b") || lbl.includes("act 2b") || lbl.includes("complication");
+              if (actKey === "act_3_climax_resolution") return sk.includes("act_3") || lbl.includes("act 3") || lbl.includes("climax") || lbl.includes("resolution");
+              return false;
+            });
+            // Build user prompt for this act
+            const actLabel = blueprint.label;
+            const actFunctionDesc = blueprint.functionDescription;
+            let actUserPrompt = "REWRITE THIS ACT: " + actLabel.toUpperCase() + "\n";
+            actUserPrompt += "FUNCTION: " + actFunctionDesc + "\n\n";
+            if (existingActContent) {
+              actUserPrompt += "EXISTING CONTENT TO REWRITE:\n" + (existingActContent.header ? existingActContent.header + "\n" : "") + existingActContent.content + "\n\n";
+            }
+            actUserPrompt += "Write vivid present-tense prose. Full scenes, atmosphere, character interiority. Start with a ## section header: ## " + actLabel + ". No INT./EXT. sluglines.\n";
+            actUserPrompt += "IMPORTANT: After the act prose, output the arc-state delta JSON as instructed in the system prompt.";
+            try {
+              const rawResponse = await callAI(perActApiKey, BALANCED_MODEL, actSystemPrompt, actUserPrompt, 0.35, 6000);
+              console.log("[treatment-per-act] LLM response for " + actKey + ":", (rawResponse || "").substring(0, 200));
+              const parsed = parseActRewriteResponse(rawResponse || "");
+              const actContent = parsed.actContent || "## " + actLabel + "\n\n[Generation failed — original content preserved]";
+              const arcDeltas = parsed.arcStateDeltas;
+              console.log("[treatment-per-act] act=" + actKey + " chars=" + actContent.length + " delta_ok=" + parsed.deltaParseSuccess);
+              if (!parsed.deltaParseSuccess) {
+                console.warn("[treatment-per-act] arc-state delta parse failed for " + actKey + ": " + parsed.deltaParseError);
+              }
+              const updateResult = await supabase.from("treatment_acts").update({
+                content: actContent,
+                arc_state_deltas: arcDeltas ? arcDeltas : null,
+                status: "done",
+                revised_at: new Date().toISOString(),
+                revised_by: effUserId1
+              }).eq("treatment_id", documentId).eq("act_key", actKey);
+              if (updateResult.error) console.error("[treatment-per-act] content update FAILED:", updateResult.error);
+              // Accumulate for next act's preceding context
+              priorActResults.push({
+                actKey,
+                actNumber,
+                label: actLabel,
+                content: actContent,
+                arcStateDeltas: arcDeltas
+              });
+              // Persist chunk result for crash-resumability
+              await supabase.from("project_document_chunks").update({
+                status: "done",
+                content: actContent,
+                char_count: actContent.length
+              }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
+            } catch (actErr) {
+              console.error("[treatment-per-act] act=" + actKey + " FAILED: " + String(actErr?.message || actErr));
+              await supabase.from("treatment_acts").update({
+                status: "failed",
+                error_message: String(actErr?.message || actErr).slice(0, 500)
+              }).eq("treatment_id", documentId).eq("act_key", actKey);
+              // Use existing content as fallback so assembly can proceed
+              const fallbackContent = existingActContent ? (existingActContent.header ? existingActContent.header + "\n\n" : "") + existingActContent.content : "## " + actKey + "\n\n[Act rewrite failed]";
               priorActResults.push({
                 actKey,
                 actNumber,
                 label: actKey,
-                content: existingContent,
-                arcStateDeltas: existingDeltas
+                content: fallbackContent,
+                arcStateDeltas: null
               });
-              continue;
+              // Persist chunk failure for crash-resumability
+              await supabase.from("project_document_chunks").update({
+                status: "failed",
+                error: String(actErr?.message || actErr).slice(0, 500)
+              }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
             }
           }
-          // Mark row as rewriting
-          const markResult = await supabase.from("treatment_acts").update({
-            status: "rewriting"
-          }).eq("treatment_id", documentId).eq("act_key", actKey);
-          if (markResult.error) console.error("[treatment-per-act] mark rewriting FAILED:", markResult.error);
-          else console.log("[treatment-per-act] marked rewriting OK, rows:", markResult.data);
-          // Build act blueprint (deterministic — no LLM)
-          const blueprint = buildActBlueprint(actKey, actNumber, approvedNotes || [], canonJson, priorActResults);
-          // Persist blueprint to treatment_acts row (visible in UI before rewrite begins)
-          await supabase.from("treatment_acts").update({
-            act_blueprint: {
-              actKey: blueprint.actKey,
-              actNumber: blueprint.actNumber,
-              label: blueprint.label,
-              functionDescription: blueprint.functionDescription,
-              canonConstraints: blueprint.canonConstraints,
-              targetingNotes: blueprint.targetingNotes,
-              hasPrecedingContext: blueprint.precedingContext !== null
+          // Assemble full treatment from per-act results
+          const treatmentAssembledText = priorActResults.map((a)=>a.content).join("\n\n");
+          console.log("[treatment-per-act] assembled treatment: " + treatmentAssembledText.length + " chars from " + priorActResults.length + " acts");
+          const taUpdateResult = await supabase.from("project_document_versions").update({
+            plaintext: treatmentAssembledText,
+            meta_json: {
+              run_type: "TREATMENT_REWRITE",
+              pipeline: "per_act_v1",
+              acts_count: priorActResults.length,
+              notes_applied: approvedNotes?.length || 0
             }
-          }).eq("treatment_id", documentId).eq("act_key", actKey);
-          // Build per-act system prompt:
-          //   base + act blueprint block + arc-state delta instruction
-          const blueprintBlock = renderActBlueprintBlock(blueprint);
-          const arcDeltaInstruction = buildArcStateDeltaSystemInstruction();
-          const actSystemPrompt = [
-            systemPromptBase,
-            blueprintBlock,
-            arcDeltaInstruction
-          ].join("\n\n");
-          // Find existing content for this act from current version (if any) to use as EXISTING text
-          const existingActContent = flatSections.find((s)=>{
-            const sk = (s.sk || "").toLowerCase();
-            const lbl = (s.label || "").toLowerCase();
-            if (actKey === "act_1_setup") return sk.includes("act_1") || lbl.includes("act 1") || lbl.includes("setup");
-            if (actKey === "act_2a_rising_action") return sk.includes("act_2a") || lbl.includes("act 2a") || lbl.includes("rising");
-            if (actKey === "act_2b_complications") return sk.includes("act_2b") || lbl.includes("act 2b") || lbl.includes("complication");
-            if (actKey === "act_3_climax_resolution") return sk.includes("act_3") || lbl.includes("act 3") || lbl.includes("climax") || lbl.includes("resolution");
-            return false;
-          });
-          // Build user prompt for this act
-          const actLabel = blueprint.label;
-          const actFunctionDesc = blueprint.functionDescription;
-          let actUserPrompt = "REWRITE THIS ACT: " + actLabel.toUpperCase() + "\n";
-          actUserPrompt += "FUNCTION: " + actFunctionDesc + "\n\n";
-          if (existingActContent) {
-            actUserPrompt += "EXISTING CONTENT TO REWRITE:\n" + (existingActContent.header ? existingActContent.header + "\n" : "") + existingActContent.content + "\n\n";
-          }
-          actUserPrompt += "Write vivid present-tense prose. Full scenes, atmosphere, character interiority. Start with a ## section header: ## " + actLabel + ". No INT./EXT. sluglines.\n";
-          actUserPrompt += "IMPORTANT: After the act prose, output the arc-state delta JSON as instructed in the system prompt.";
-          try {
-            const rawResponse = await callAI(perActApiKey, BALANCED_MODEL, actSystemPrompt, actUserPrompt, 0.35, 6000);
-            console.log("[treatment-per-act] LLM response for " + actKey + ":", (rawResponse || "").substring(0, 200));
-            const parsed = parseActRewriteResponse(rawResponse || "");
-            const actContent = parsed.actContent || "## " + actLabel + "\n\n[Generation failed — original content preserved]";
-            const arcDeltas = parsed.arcStateDeltas;
-            console.log("[treatment-per-act] act=" + actKey + " chars=" + actContent.length + " delta_ok=" + parsed.deltaParseSuccess);
-            if (!parsed.deltaParseSuccess) {
-              console.warn("[treatment-per-act] arc-state delta parse failed for " + actKey + ": " + parsed.deltaParseError);
-            }
-            const updateResult = await supabase.from("treatment_acts").update({
-              content: actContent,
-              arc_state_deltas: arcDeltas ? arcDeltas : null,
-              status: "done",
-              revised_at: new Date().toISOString(),
-              revised_by: effUserId1
-            }).eq("treatment_id", documentId).eq("act_key", actKey);
-            if (updateResult.error) console.error("[treatment-per-act] content update FAILED:", updateResult.error);
-            // Accumulate for next act's preceding context
-            priorActResults.push({
-              actKey,
-              actNumber,
-              label: actLabel,
-              content: actContent,
-              arcStateDeltas: arcDeltas
-            });
-            // Persist chunk result for crash-resumability
-            await supabase.from("project_document_chunks").update({
-              status: "done",
-              content: actContent,
-              char_count: actContent.length
-            }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
-          } catch (actErr) {
-            console.error("[treatment-per-act] act=" + actKey + " FAILED: " + String(actErr?.message || actErr));
-            await supabase.from("treatment_acts").update({
-              status: "failed",
-              error_message: String(actErr?.message || actErr).slice(0, 500)
-            }).eq("treatment_id", documentId).eq("act_key", actKey);
-            // Use existing content as fallback so assembly can proceed
-            const fallbackContent = existingActContent ? (existingActContent.header ? existingActContent.header + "\n\n" : "") + existingActContent.content : "## " + actKey + "\n\n[Act rewrite failed]";
-            priorActResults.push({
-              actKey,
-              actNumber,
-              label: actKey,
-              content: fallbackContent,
-              arcStateDeltas: null
-            });
-            // Persist chunk failure for crash-resumability
-            await supabase.from("project_document_chunks").update({
-              status: "failed",
-              error: String(actErr?.message || actErr).slice(0, 500)
-            }).eq("version_id", newVersion.id).eq("chunk_index", actNumber - 1);
-          }
-        }
-        // Assemble full treatment from per-act results
-        const treatmentAssembledText = priorActResults.map((a)=>a.content).join("\n\n");
-        console.log("[treatment-per-act] assembled treatment: " + treatmentAssembledText.length + " chars from " + priorActResults.length + " acts");
-        const taUpdateResult = await supabase.from("project_document_versions").update({
-          plaintext: treatmentAssembledText,
-          meta_json: {
+          }).eq("id", newVersion.id);
+          if (taUpdateResult.error) console.error("[treatment-per-act] UPDATE FAILED:", taUpdateResult.error);
+          await supabase.from("development_runs").insert({
+            project_id: projectId,
+            document_id: documentId,
+            version_id: newVersion?.id,
+            user_id: effUserId1,
             run_type: "TREATMENT_REWRITE",
-            pipeline: "per_act_v1",
-            acts_count: priorActResults.length,
-            notes_applied: approvedNotes?.length || 0
-          }
-        }).eq("id", newVersion.id);
-        if (taUpdateResult.error) console.error("[treatment-per-act] UPDATE FAILED:", taUpdateResult.error);
-        await supabase.from("development_runs").insert({
-          project_id: projectId,
-          document_id: documentId,
-          version_id: newVersion?.id,
-          user_id: effUserId1,
-          run_type: "TREATMENT_REWRITE",
-          output_json: {
-            pipeline: "per_act_v1",
-            acts_count: priorActResults.length,
-            notes_applied: approvedNotes?.length || 0
-          }
-        });
-        // FIX 1: Update latest_version_id
-        await supabase.from("project_documents").update({
-          latest_version_id: newVersion.id
-        }).eq("id", documentId);
-        // FIX 2: Mark approved notes resolved
-        if (approvedNotes && approvedNotes.length > 0) {
-          const taApprovedNoteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
-          if (taApprovedNoteKeys.length > 0) {
-            try {
-              await supabase.from("development_notes").update({
-                resolved: true,
-                resolved_in_version: newVersion.id
-              }).eq("document_id", documentId).eq("resolved", false).in("note_key", taApprovedNoteKeys);
-            } catch (err) {
-              console.warn("[treatment-per-act] note resolution failed:", err?.message);
+            output_json: {
+              pipeline: "per_act_v1",
+              acts_count: priorActResults.length,
+              notes_applied: approvedNotes?.length || 0
+            }
+          });
+          // FIX 1: Update latest_version_id
+          await supabase.from("project_documents").update({
+            latest_version_id: newVersion.id
+          }).eq("id", documentId);
+          // FIX 2: Mark approved notes resolved
+          if (approvedNotes && approvedNotes.length > 0) {
+            const taApprovedNoteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
+            if (taApprovedNoteKeys.length > 0) {
+              try {
+                await supabase.from("development_notes").update({
+                  resolved: true,
+                  resolved_in_version: newVersion.id
+                }).eq("document_id", documentId).eq("resolved", false).in("note_key", taApprovedNoteKeys);
+              } catch (err) {
+                console.warn("[treatment-per-act] note resolution failed:", err?.message);
+              }
             }
           }
-        }
-        const failedActs = priorActResults.filter((a)=>{
-          // Check if treatment_acts row ended up failed
-          return false; // we pushed fallback — check via status field query if needed
-        });
-        // Trigger async convergence scoring in background (same pattern as rewrite-assemble)
+          const failedActs = priorActResults.filter((a)=>{
+            // Check if treatment_acts row ended up failed
+            return false; // we pushed fallback — check via status field query if needed
+          });
+          // Trigger async convergence scoring in background (same pattern as rewrite-assemble)
+          if (typeof globalThis.EdgeRuntime !== "undefined") {
+            globalThis.EdgeRuntime.waitUntil(fetch(`${supabaseUrl}/functions/v1/convergence-dispatch`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${supabaseServiceKey}`
+              },
+              body: JSON.stringify({
+                version_id: newVersion.id,
+                project_id: projectId,
+                deliverable_type: doc.doc_type || "treatment",
+                development_behavior: "market",
+                format: project1?.format || "film"
+              })
+            }).catch(function(e) {
+              console.error("[dev-engine-v2][per-act] convergence-dispatch failed: " + String(e));
+            }));
+          }
+        };
         if (typeof globalThis.EdgeRuntime !== "undefined") {
-          globalThis.EdgeRuntime.waitUntil(fetch(`${supabaseUrl}/functions/v1/convergence-dispatch`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${supabaseServiceKey}`
-            },
-            body: JSON.stringify({
-              version_id: newVersion.id,
-              project_id: projectId,
-              deliverable_type: doc.doc_type || "treatment",
-              development_behavior: "market",
-              format: project1?.format || "film"
-            })
-          }).catch(function(e) {
-            console.error("[dev-engine-v2][per-act] convergence-dispatch failed: " + String(e));
+          globalThis.EdgeRuntime.waitUntil(runPerActPipeline().catch(function(e) {
+            console.error("[treatment-per-act] background pipeline failed: " + String(e?.message || e));
           }));
+        } else {
+          await runPerActPipeline();
         }
         return new Response(JSON.stringify({
-          success: true,
+          generating: true,
           versionId: newVersion.id,
-          pipeline: "per_act_v1",
-          actsCount: priorActResults.length,
-          actLabels: priorActResults.map((a)=>a.label),
-          notesApplied: approvedNotes?.length || 0
+          pipeline: "per_act_v1"
         }), {
           headers: {
             ...corsHeaders,

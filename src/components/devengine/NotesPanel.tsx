@@ -191,7 +191,7 @@ function NoteStateActions({ note, projectId, currentDocType, onStatusChange }: {
   const fingerprint = note.note_fingerprint;
   if (!fingerprint || !projectId) return null;
 
-  const DOC_TYPES = ['concept_brief', 'market_sheet', 'blueprint', 'character_bible', 'beat_sheet', 'script', 'episode_grid', 'season_arc'];
+  const DOC_TYPES = ['concept_brief', 'market_sheet', 'character_bible', 'beat_sheet', 'script', 'episode_grid', 'season_arc'];
 
   async function callStatusUpdate(status: string, reason?: string, deferTo?: string) {
     setActing(true);

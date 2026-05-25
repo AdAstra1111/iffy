@@ -15,7 +15,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DELIVERABLE_LABELS } from '@/lib/dev-os-config';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { getDocFlowConfig } from '@/lib/docFlowMap';
-import { formatToLane, isOutputDocType } from '@/config/documentLadders';
+import { formatToLane, isOutputDocType, BANNED_LEGACY_KEYS } from '@/config/documentLadders';
 import { getLadderForFormat } from '@/lib/stages/registry';
 import { isSeriesFormat } from '@/lib/format-helpers';
 
@@ -252,6 +252,8 @@ export function DocumentSidebar({
               const effectiveLane = lane || 'unspecified';
 
               const isDocAllowed = (docType: string, doc?: any) => {
+                // NEVER show banned legacy doc types (blueprint, architecture, draft, coverage)
+                if (BANNED_LEGACY_KEYS.has(docType)) return false;
                 // Film projects: never show TV-only doc types
                 const isFilmProject = !!(format && (format === 'film' || format === 'feature'));
                 if (isFilmProject && TV_ONLY_DOC_TYPES.has(docType)) return false;

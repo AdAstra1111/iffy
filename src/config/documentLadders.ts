@@ -138,6 +138,20 @@ export const LANE_DOC_LADDERS: Record<LaneKey, string[]> = {
  * NOTE: "blueprint" and "architecture" are legacy labels — they are NOT
  * canonical doc types. They alias to "treatment" and "story_outline".
  */
+
+/**
+ * Legacy document type keys that are BANNED from appearing as ladder stages
+ * or selectable document types anywhere in the UI. These keys existed in earlier
+ * IFFY versions and must be normalized to their canonical equivalents before
+ * any rendering or filtering decision.
+ */
+export const BANNED_LEGACY_KEYS = new Set([
+  'blueprint',
+  'architecture',
+  'draft',
+  'coverage',
+]);
+
 export const DOC_LABEL_ALIASES: Record<string, string> = {
   // Legacy structural labels → official canonical keys
   blueprint:               'treatment',

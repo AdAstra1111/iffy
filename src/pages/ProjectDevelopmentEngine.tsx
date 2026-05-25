@@ -218,6 +218,7 @@ export default function ProjectDevelopmentEngine() {
       if (!resp.ok) throw new Error(result.error || 'Options generation failed');
       return result;
     },
+    retry: false,
     onSuccess: () => {
       invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
     },
@@ -401,8 +402,7 @@ export default function ProjectDevelopmentEngine() {
     generateOptionsMutation.mutate(undefined, {
       onSettled: () => {},
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedVersionId, selectedDocId, generateOptionsMutation]);
+  }, [selectedVersionId, selectedDocId, generateOptionsMutation, isBgGenerating]);
 
   const isBgGenerating = (selectedVersion as any)?.meta_json?.bg_generating === true;
   const versionHasContent = ((selectedVersion?.plaintext || '').trim().length > 100);
@@ -718,7 +718,18 @@ export default function ProjectDevelopmentEngine() {
   const lastAutoReviewedVersionId = useRef<string | null>(null);
   const lastAutoReviewedContentLen = useRef<number>(-1);
   const autoReviewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const treatmentPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+
+  // Cleanup treatment poll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (treatmentPollRef.current) {
+        clearInterval(treatmentPollRef.current);
+        treatmentPollRef.current = null;
+      }
+    };
+  }, []);
   useEffect(() => {
     if (!autoReviewEnabled) return;
     if (!selectedVersionId || !selectedVersion) return;
@@ -1459,10 +1470,43 @@ export default function ProjectDevelopmentEngine() {
             qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
             setTreatmentRewritePending(false);
           } else if (result?.generating === true) {
-            // Background generation started — keep treatmentRewritePending true
-            // so TreatmentActsProgress stays visible. It polls chunks until done.
+            // Background generation started — poll treatment_acts until all 4 are done
             toast.success('Treatment rewrite started in background');
             afterRewrite();
+            // Poll treatment_acts every 3s until all acts reach terminal state
+            const pollActs = async () => {
+              try {
+                const { data: acts } = await supabase
+                  .from('treatment_acts')
+                  .select('act_number, status, error_message')
+                  .eq('treatment_id', selectedDocId)
+                  .order('act_number');
+                if (acts && acts.length === 4) {
+                  const allTerminal = acts.every(a => a.status === 'done' || a.status === 'failed');
+                  if (allTerminal) {
+                    if (treatmentPollRef.current) {
+                      clearInterval(treatmentPollRef.current);
+                      treatmentPollRef.current = null;
+                    }
+                    setTreatmentRewritePending(false);
+                    qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+                    qc.invalidateQueries({ queryKey: ['treatment-rewrite-acts', selectedDocId] });
+                    qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
+                    const hasFailures = acts.some(a => a.status === 'failed');
+                    if (hasFailures) {
+                      toast.error('Some acts failed during treatment rewrite');
+                    } else {
+                      toast.success('Treatment rewrite completed');
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('[treatment] poll error:', e);
+              }
+            };
+            // Quick first check after 500ms, then every 3s
+            setTimeout(() => pollActs(), 500);
+            treatmentPollRef.current = setInterval(pollActs, 3000);
           } else {
             throw new Error(result?.error || 'Treatment rewrite returned unknown response');
           }

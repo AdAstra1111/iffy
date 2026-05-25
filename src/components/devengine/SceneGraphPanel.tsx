@@ -815,7 +815,7 @@ function CoherencePanel({ findings, lastRunAt, onRun, onClose, onQueueRepair, is
           <p className="text-[9px] text-muted-foreground">Last run: {new Date(lastRunAt).toLocaleString()}</p>
         )}
         <div className="flex gap-1 flex-wrap">
-          {['all', 'canon_conflict', 'character_conflict', 'format_conflict', 'blueprint_conflict'].map(t => (
+          {['all', 'canon_conflict', 'character_conflict', 'format_conflict', 'treatment_conflict'].map(t => (
             <Button key={t} size="sm" variant={filterType === t ? 'default' : 'outline'}
               className="h-5 text-[8px] px-1.5" onClick={() => setFilterType(t)}>
               {t === 'all' ? 'All' : t.replace('_', ' ').replace('conflict', '').trim()}

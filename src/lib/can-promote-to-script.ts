@@ -34,8 +34,6 @@ export const NON_SCRIPT_DOC_TYPES = new Set([
   'logline',
   'one_pager',
   'treatment',
-  'blueprint',
-  'architecture',
   'beat_sheet',
   'production_draft',
   'deck',
@@ -96,8 +94,7 @@ export const ALL_DOC_TYPE_LABELS: Record<string, string> = {
   one_pager: 'One-Pager',
   treatment: 'Treatment',
   story_outline: 'Story Outline',
-  blueprint: 'Season Blueprint',
-  architecture: 'Series Architecture',
+  // blueprint/architecture are legacy — see BANNED_LEGACY_KEYS
   beat_sheet: 'Beat Sheet',
   production_draft: 'Production Draft',
   deck: 'Deck',
@@ -141,8 +138,7 @@ export const ALL_DOC_TYPE_LABELS: Record<string, string> = {
  */
 const NON_SERIES_FORMATS = new Set(['film', 'feature', 'short', 'documentary', 'hybrid-documentary', 'short-film']);
 const FILM_DOC_LABEL_OVERRIDES: Record<string, string> = {
-  blueprint: 'Blueprint',
-  architecture: 'Architecture',
+  // blueprint/architecture are legacy — see BANNED_LEGACY_KEYS
   beat_sheet: 'Beat Sheet',
   season_arc: 'Story Arc',
 };

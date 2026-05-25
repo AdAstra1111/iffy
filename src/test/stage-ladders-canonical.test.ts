@@ -7,16 +7,26 @@
  */
 import { describe, it, expect } from 'vitest';
 import LADDERS_JSON from '../../supabase/_shared/stage-ladders.json';
-import { BASE_DOC_TYPES, normalizeDocType, formatToLane, LANE_DOC_LADDERS, isOutputDocType, getOutputDocTypesForLane } from '@/config/documentLadders';
+import { BASE_DOC_TYPES, normalizeDocType, formatToLane, LANE_DOC_LADDERS, isOutputDocType, getOutputDocTypesForLane, BANNED_LEGACY_KEYS } from '@/config/documentLadders';
 import { VERTICAL_DRAMA_PIPELINE_ORDER, DELIVERABLE_PIPELINE_ORDER, SERIES_PIPELINE_ORDER, VERTICAL_DRAMA_DOC_ORDER } from '@/lib/dev-os-config';
 import { getDocFlowConfig } from '@/lib/docFlowMap';
 
 const FORMAT_LADDERS: Record<string, string[]> = LADDERS_JSON.FORMAT_LADDERS as Record<string, string[]>;
 const DOC_TYPE_ALIASES: Record<string, string> = LADDERS_JSON.DOC_TYPE_ALIASES as Record<string, string>;
 
-const BANNED_LEGACY_KEYS = ['blueprint', 'architecture', 'draft', 'coverage'];
+// BANNED_LEGACY_KEYS is now imported from '@/config/documentLadders' — this local copy kept as documentation
+const BANNED_LEGACY_KEYS_LOCAL = ['blueprint', 'architecture', 'draft', 'coverage'];
 
 describe('Stage ladders canonical key guard', () => {
+  it('BANNED_LEGACY_KEYS is exported from documentLadders', () => {
+    expect(BANNED_LEGACY_KEYS).toBeDefined();
+    expect(BANNED_LEGACY_KEYS.size).toBe(4);
+    expect(BANNED_LEGACY_KEYS.has('blueprint')).toBe(true);
+    expect(BANNED_LEGACY_KEYS.has('architecture')).toBe(true);
+    expect(BANNED_LEGACY_KEYS.has('draft')).toBe(true);
+    expect(BANNED_LEGACY_KEYS.has('coverage')).toBe(true);
+  });
+
   it('No FORMAT_LADDERS entry contains banned legacy keys', () => {
     for (const [fmt, ladder] of Object.entries(FORMAT_LADDERS)) {
       for (const banned of BANNED_LEGACY_KEYS) {

@@ -160,6 +160,7 @@ const AnimatedRoutes = () => {
   return (
     <>
       <Suspense fallback={<PageFallback />}>
+        <SafeRouteBoundary>
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -171,12 +172,12 @@ const AnimatedRoutes = () => {
           <Route path="/projects/new" element={<ProtectedRoute><NewProject /></ProtectedRoute>} />
           <Route path="/projects/:id" element={<ProtectedRoute><ProjectShell><ProjectDetail /></ProjectShell></ProtectedRoute>} />
           <Route path="/__errors__" element={<ErrorsPage />} />
-          <Route path="/trends" element={<SafeRouteBoundary><ProtectedRoute><Trends /></ProtectedRoute></SafeRouteBoundary>} />
-          <Route path="/trends/story" element={<SafeRouteBoundary><ProtectedRoute><StoryTrends /></ProtectedRoute></SafeRouteBoundary>} />
-          <Route path="/trends/cast" element={<SafeRouteBoundary><ProtectedRoute><CastTrends /></ProtectedRoute></SafeRouteBoundary>} />
-          <Route path="/trends/governance" element={<SafeRouteBoundary><ProtectedRoute><TrendGovernance /></ProtectedRoute></SafeRouteBoundary>} />
-          <Route path="/trends/explorer" element={<SafeRouteBoundary><ProtectedRoute><TrendsExplorer /></ProtectedRoute></SafeRouteBoundary>} />
-          <Route path="/trends/coverage" element={<SafeRouteBoundary><ProtectedRoute><TrendsCoverage /></ProtectedRoute></SafeRouteBoundary>} />
+          <Route path="/trends" element={<ProtectedRoute><Trends /></ProtectedRoute>} />
+          <Route path="/trends/story" element={<ProtectedRoute><StoryTrends /></ProtectedRoute>} />
+          <Route path="/trends/cast" element={<ProtectedRoute><CastTrends /></ProtectedRoute>} />
+          <Route path="/trends/governance" element={<ProtectedRoute><TrendGovernance /></ProtectedRoute>} />
+          <Route path="/trends/explorer" element={<ProtectedRoute><TrendsExplorer /></ProtectedRoute>} />
+          <Route path="/trends/coverage" element={<ProtectedRoute><TrendsCoverage /></ProtectedRoute>} />
           <Route path="/incentives" element={<ProtectedRoute><IncentiveFinder /></ProtectedRoute>} />
           <Route path="/incentives/copro" element={<ProtectedRoute><CoproPlanner /></ProtectedRoute>} />
           <Route path="/incentives/stack" element={<ProtectedRoute><StackCashflow /></ProtectedRoute>} />
@@ -208,10 +209,6 @@ const AnimatedRoutes = () => {
           <Route path="/actor-marketplace" element={<ProtectedRoute><ActorMarketplace /></ProtectedRoute>} />
           <Route path="/calibration-lab" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
           <Route path="/demo" element={<DemoPortal />} />
-          <Route path="/demo/guided" element={<GuidedDemo />} />
-          <Route path="/demo/cinematic" element={<CinematicDemo />} />
-          <Route path="/demo/interactive" element={<InteractiveDemo />} />
-          <Route path="/demo/executive" element={<ExecutiveDemo />} />
           <Route path="/demo/run" element={<ProtectedRoute><DemoDashboard /></ProtectedRoute>} />
           <Route path="/investor" element={<ProtectedRoute><InvestorPresentation /></ProtectedRoute>} />
           <Route path="/development-engine" element={<ProtectedRoute><DevelopmentEngine /></ProtectedRoute>} />
@@ -224,7 +221,6 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/storyboards" element={<ProtectedRoute><StoryboardsPage /></ProtectedRoute>} />
           <Route path="/projects/:id/visual-references" element={<ProtectedRoute><VisualReferencesPage /></ProtectedRoute>} />
           <Route path="/projects/:id/script-intake" element={<ProtectedRoute><ScriptIntakePage /></ProtectedRoute>} />
-          {/* /ai-trailer removed — redirects to canonical trailer */}
           <Route path="/projects/:id/ai-trailer" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
           <Route path="/projects/:id/visual-units" element={<ProtectedRoute><VisualUnits /></ProtectedRoute>} />
           <Route path="/projects/:id/storyboard-pipeline" element={<ProtectedRoute><StoryboardPipeline /></ProtectedRoute>} />
@@ -232,10 +228,7 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/trailer-clips" element={<ProtectedRoute><TrailerRedirect tab="clips" /></ProtectedRoute>} />
           <Route path="/projects/:id/trailer-assemble" element={<ProtectedRoute><TrailerRedirect tab="assemble" /></ProtectedRoute>} />
           <Route path="/projects/:id/visual-dev" element={<ProtectedRoute><VisualDevHub /></ProtectedRoute>} />
-          {/* Legacy visual-dev/trailer/* → canonical trailer route */}
           <Route path="/projects/:id/visual-dev/trailer/*" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
-
-          {/* ── Week 1 refactor: new ProjectShell workspace routes ── */}
           <Route path="/projects/:id/script" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/canon" element={<ProtectedRoute><ProjectShell><CanonPlaceholder /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/trailer" element={<ProtectedRoute><ProjectShell><TrailerHub /></ProjectShell></ProtectedRoute>} />
@@ -254,18 +247,16 @@ const AnimatedRoutes = () => {
           <Route path="/showcase" element={<ProtectedRoute><Showcase /></ProtectedRoute>} />
           <Route path="/narrative-dna" element={<ProtectedRoute><NarrativeDna /></ProtectedRoute>} />
           <Route path="/narrative-engines" element={<ProtectedRoute><NarrativeEngines /></ProtectedRoute>} />
-
           <Route path="/processing" element={<Processing />} />
-          {/* Quick/Deep review: preserve projectId context when present */}
           <Route path="/quick-review" element={<ReviewRedirect />} />
           <Route path="/deep-review" element={<ReviewRedirect />} />
           <Route path="/invite" element={<AcceptInvite />} />
           <Route path="/share/pack/:token" element={<SharePackView />} />
-          
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-        </Suspense>
+        </SafeRouteBoundary>
+      </Suspense>
     </>
   );
 };
