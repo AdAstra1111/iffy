@@ -17452,6 +17452,60 @@ export type Database = {
           },
         ]
       }
+      project_visual_stage_governance: {
+        Row: {
+          blocker_codes: string[] | null
+          computed_status: string
+          created_at: string
+          eligibility_state: Json
+          id: string
+          last_evaluated_at: string
+          project_id: string
+          provenance_json: Json | null
+          source_snapshot_hash: string
+          stage_id: string
+          stale_risk: Json | null
+          updated_at: string
+        }
+        Insert: {
+          blocker_codes?: string[] | null
+          computed_status: string
+          created_at?: string
+          eligibility_state?: Json
+          id?: string
+          last_evaluated_at?: string
+          project_id: string
+          provenance_json?: Json | null
+          source_snapshot_hash: string
+          stage_id: string
+          stale_risk?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          blocker_codes?: string[] | null
+          computed_status?: string
+          created_at?: string
+          eligibility_state?: Json
+          id?: string
+          last_evaluated_at?: string
+          project_id?: string
+          provenance_json?: Json | null
+          source_snapshot_hash?: string
+          stage_id?: string
+          stale_risk?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_stage_governance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
       project_waterfall_rules: {
         Row: {
           cap_amount: string

@@ -1,22 +1,12 @@
 /**
- * pipelineStatusResolver — Canonical stage status resolver for the Visual Production Pipeline.
+ * governanceResolver — Standalone server-side (Deno) resolver for Visual Pipeline Governance.
  *
- * Computes stage readiness from existing Supabase truth:
- * - cast truth (project_ai_cast, ai_actors, anchor coverage/coherence)
- * - hero frames (project_images with asset_group='hero_frame')
- * - visual sets (visual_sets, visual_set_slots)
- * - visual style profile (project_visual_style)
- * - canon (project_canon)
+ * Mirrors the exact logic from src/lib/visual/pipelineStatusResolver.ts
+ * with no frontend imports. Self-contained for edge function use.
  *
- * No new tables. No duplicated logic. Pure derivation.
- *
- * Extended with Visual Governance Read Model:
- * - eligibility (prerequisite check via visualEligibilityRegistry)
- * - staleRisk (timestamp-based staleness detection for all stages)
- * - provenance (source doc/table, version, generated asset per stage)
+ * Computes stage status, eligibility, stale-risk, and provenance from
+ * PipelineInputs, then returns a StageGovernance[] for persistence.
  */
-
-import { isStageEligible, VISUAL_STAGE_PREREQUISITES } from './visualEligibilityRegistry';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,77 +29,6 @@ export type StageStatus =
   | 'locked'
   | 'stale'
   | 'blocked';
-
-// ── Visual Governance Read Model types ──
-
-/** Eligibility: whether a stage's prerequisites are satisfied (read-only gate). */
-export interface StageEligibility {
-  eligible: boolean;
-  reason?: string;
-}
-
-/** A single stale-risk reason with severity. */
-export interface StaleRiskReason {
-  label: string;
-  detail: string;
-  severity: 'low' | 'medium' | 'high';
-}
-
-/** Stale-risk assessment for a single stage. */
-export interface StaleRisk {
-  isStale: boolean;
-  reasons: StaleRiskReason[];
-}
-
-/** Provenance: where stage data originates. */
-export interface StageProvenance {
-  sourceType: string;
-  sourceDetail?: string;
-  generatedAsset?: string;
-  functionName?: string;
-}
-
-export interface StageState {
-  stage: PipelineStage;
-  status: StageStatus;
-  label: string;
-  description: string;
-  progress?: string;
-  blockers?: string[];
-  staleReasons?: string[];
-  /** Visual Governance: read-only eligibility gate. */
-  eligibility?: StageEligibility;
-  /** Visual Governance: stale-risk detection (all stages). */
-  staleRisk?: StaleRisk;
-  /** Visual Governance: provenance tracking per stage. */
-  provenance?: StageProvenance;
-}
-
-export const PIPELINE_STAGES: PipelineStage[] = [
-  'source_truth',
-  'visual_canon',
-  'cast',
-  'production_design',
-  'hero_frames',
-  'visual_language',
-  'poster',
-  'concept_brief',
-  'lookbook',
-];
-
-export const STAGE_META: Record<PipelineStage, { label: string; description: string }> = {
-  source_truth: { label: 'Source Truth', description: 'Narrative, world rules, and story canon' },
-  visual_canon: { label: 'Visual Canon', description: 'Visual style, tone, and design language' },
-  cast: { label: 'Cast', description: 'Character casting and identity anchoring' },
-  hero_frames: { label: 'Hero Frames', description: 'Cinematic anchor stills — downstream of Production Design' },
-  production_design: { label: 'Production Design', description: 'Environment, atmosphere, and surface language — upstream of Hero Frames' },
-  visual_language: { label: 'Visual Language', description: 'Lighting, composition, and tone direction' },
-  poster: { label: 'Poster', description: 'Top commercially viable poster candidates from governed imagery' },
-  concept_brief: { label: 'Concept Brief', description: 'Executive concept brief — curated investor-ready visual package' },
-  lookbook: { label: 'Explore / Lab', description: 'Exploratory visual identity assembly (internal use)' },
-};
-
-// ── Input data shapes (from existing hooks) ──
 
 /** Timestamps used for stale-risk computation per stage. */
 export interface StaleRiskTimestamps {
@@ -176,24 +95,102 @@ export interface PipelineInputs {
   staleRiskTimestamps?: StaleRiskTimestamps;
 }
 
-// ── Visual Governance helpers ────────────────────────────────────────────────
+/** Governance row shape matching the project_visual_stage_governance table. */
+export interface StageGovernance {
+  stage_id: string;
+  computed_status: string;
+  eligibility_state: {
+    eligible: boolean;
+    reason?: string;
+    completed_prereqs: string[];
+    blocked_prereqs: string[];
+  };
+  stale_risk: {
+    isStale: boolean;
+    reasons: { label: string; detail: string; severity: string }[];
+  } | null;
+  blocker_codes: string[] | null;
+  provenance_json: {
+    sourceType: string;
+    sourceDetail?: string;
+    generatedAsset?: string;
+    functionName?: string;
+  } | null;
+}
+
+// ── Stage order and metadata ─────────────────────────────────────────────────
+
+export const VISUAL_STAGE_ORDER: readonly PipelineStage[] = [
+  'source_truth',
+  'visual_canon',
+  'cast',
+  'hero_frames',
+  'production_design',
+  'visual_language',
+  'poster',
+  'concept_brief',
+  'lookbook',
+] as const;
+
+/** Prerequisites: a stage requires these earlier stages to be complete (for eligibility gate). */
+export const VISUAL_STAGE_PREREQUISITES: Record<PipelineStage, PipelineStage[]> = {
+  source_truth: [],
+  visual_canon: ['source_truth'],
+  cast: ['source_truth', 'visual_canon'],
+  hero_frames: ['source_truth', 'visual_canon', 'cast'],
+  production_design: ['source_truth', 'visual_canon', 'cast'],
+  visual_language: ['source_truth', 'visual_canon', 'cast', 'hero_frames'],
+  poster: ['source_truth', 'visual_canon', 'cast', 'hero_frames'],
+  concept_brief: ['source_truth', 'visual_canon', 'cast', 'hero_frames'],
+  lookbook: ['source_truth', 'visual_canon', 'cast', 'hero_frames', 'production_design'],
+};
+
+const STAGE_META: Record<PipelineStage, { label: string; description: string }> = {
+  source_truth: { label: 'Source Truth', description: 'Narrative, world rules, and story canon' },
+  visual_canon: { label: 'Visual Canon', description: 'Visual style, tone, and design language' },
+  cast: { label: 'Cast', description: 'Character casting and identity anchoring' },
+  hero_frames: { label: 'Hero Frames', description: 'Cinematic anchor stills — downstream of Production Design' },
+  production_design: { label: 'Production Design', description: 'Environment, atmosphere, and surface language — upstream of Hero Frames' },
+  visual_language: { label: 'Visual Language', description: 'Lighting, composition, and tone direction' },
+  poster: { label: 'Poster', description: 'Top commercially viable poster candidates from governed imagery' },
+  concept_brief: { label: 'Concept Brief', description: 'Executive concept brief — curated investor-ready visual package' },
+  lookbook: { label: 'Explore / Lab', description: 'Exploratory visual identity assembly (internal use)' },
+};
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Returns the set of completed stage names from the resolved StageState array.
+ * Returns the set of completed stage names from the resolved StageGovernance array.
  * A stage is "completed" if its status is 'approved' or 'locked'.
  */
-export function getCompletedStages(stages: StageState[]): Set<string> {
+export function getCompletedStages(stages: StageGovernance[]): Set<string> {
   return new Set(
     stages
-      .filter((s) => s.status === 'approved' || s.status === 'locked')
-      .map((s) => s.stage),
+      .filter((s) => s.computed_status === 'approved' || s.computed_status === 'locked')
+      .map((s) => s.stage_id),
   );
 }
 
 /**
+ * Returns true if the given stage is eligible (all prerequisites met).
+ * Fail-closed: unknown stages return false.
+ */
+export function isStageEligible(
+  stage: string | null | undefined,
+  completedStages: Set<string>,
+): boolean {
+  if (!stage) return false;
+  const prereqs = VISUAL_STAGE_PREREQUISITES[stage as PipelineStage];
+  if (!prereqs) return false;
+  return prereqs.every((p) => completedStages.has(p));
+}
+
+// ── Stale-risk computation ───────────────────────────────────────────────────
+
+/**
  * Compute stale-risk for a single stage based on timestamp comparisons.
  *
- * Rules:
+ * Rules (mirrors frontend computeStaleRiskForStage):
  * - source_truth: stale if source docs are newer than canon
  * - visual_canon: stale if canon is newer than visual style
  * - cast: stale if canon is newer than cast assignments
@@ -206,8 +203,8 @@ export function getCompletedStages(stages: StageState[]): Set<string> {
 export function computeStaleRiskForStage(
   stage: PipelineStage,
   ts: StaleRiskTimestamps,
-): StaleRisk | undefined {
-  const reasons: StaleRiskReason[] = [];
+): { isStale: boolean; reasons: { label: string; detail: string; severity: string }[] } | null {
+  const reasons: { label: string; detail: string; severity: string }[] = [];
 
   const canonTime = ts.canonUpdatedAt ? new Date(ts.canonUpdatedAt).getTime() : 0;
   const sourceDocTime = ts.sourceDocUpdatedAt ? new Date(ts.sourceDocUpdatedAt).getTime() : 0;
@@ -310,6 +307,17 @@ export function computeStaleRiskForStage(
       }
       break;
 
+    case 'concept_brief':
+      // Concept brief stale risk follows same pattern as poster: check if hero frames updated after brief
+      if (hfTime > 0 && posterTime > 0 && hfTime > posterTime) {
+        reasons.push({
+          label: 'Hero frames updated',
+          detail: 'Hero frames were generated after concept brief was created.',
+          severity: 'medium',
+        });
+      }
+      break;
+
     case 'lookbook':
       if (castTime > 0 && lbTime > 0 && castTime > lbTime) {
         reasons.push({
@@ -328,11 +336,13 @@ export function computeStaleRiskForStage(
       break;
 
     default:
-      return undefined;
+      return null;
   }
 
   return { isStale: reasons.length > 0, reasons };
 }
+
+// ── Provenance computation ───────────────────────────────────────────────────
 
 /**
  * Compute provenance metadata for a stage based on pipeline inputs.
@@ -341,7 +351,7 @@ export function computeStaleRiskForStage(
 export function computeProvenanceForStage(
   stage: PipelineStage,
   inputs: PipelineInputs,
-): StageProvenance {
+): { sourceType: string; sourceDetail?: string; generatedAsset?: string; functionName?: string } | null {
   switch (stage) {
     case 'source_truth':
       return {
@@ -404,25 +414,32 @@ export function computeProvenanceForStage(
   }
 }
 
-// ── Resolver ─────────────────────────────────────────────────────────────────
+// ── Main resolver ────────────────────────────────────────────────────────────
 
-export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
-  const stages: StageState[] = [];
+/**
+ * Resolve governance state for all visual pipeline stages.
+ *
+ * Mirrors resolvePipelineStages() from the frontend, but returns
+ * StageGovernance[] suitable for persistence into the
+ * project_visual_stage_governance table.
+ */
+export function resolveStageGovernance(inputs: PipelineInputs): StageGovernance[] {
+  const stages: StageGovernance[] = [];
 
-  // 1. SOURCE TRUTH
+  // ── 1. SOURCE TRUTH ──
   const sourceTruthStatus: StageStatus = inputs.hasCanon
     ? (inputs.hasLocations ? 'locked' : 'in_progress')
     : 'not_started';
   stages.push({
-    stage: 'source_truth',
-    ...STAGE_META.source_truth,
-    status: sourceTruthStatus,
-    progress: inputs.hasCanon
-      ? `Canon loaded${inputs.hasLocations ? ` · ${inputs.locationCount} locations` : ''}`
-      : undefined,
+    stage_id: 'source_truth',
+    computed_status: sourceTruthStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: null,
+    provenance_json: null,
   });
 
-  // 2. VISUAL CANON
+  // ── 2. VISUAL CANON ──
   const visualCanonStatus: StageStatus = inputs.visualStyleComplete
     ? 'approved'
     : inputs.hasVisualStyle
@@ -431,14 +448,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     ? 'not_started'
     : 'blocked';
   stages.push({
-    stage: 'visual_canon',
-    ...STAGE_META.visual_canon,
-    status: visualCanonStatus,
-    progress: inputs.visualStyleComplete ? 'Visual style complete' : inputs.hasVisualStyle ? 'Partial — fields remaining' : undefined,
-    blockers: !inputs.hasCanon ? ['Requires source truth'] : undefined,
+    stage_id: 'visual_canon',
+    computed_status: visualCanonStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: !inputs.hasCanon ? ['Requires source truth'] : null,
+    provenance_json: null,
   });
 
-  // 3. CAST
+  // ── 3. CAST ──
   let castStatus: StageStatus;
   const castBlockers: string[] = [];
   if (!inputs.hasCanon) {
@@ -454,16 +472,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     castStatus = 'not_started';
   }
   stages.push({
-    stage: 'cast',
-    ...STAGE_META.cast,
-    status: castStatus,
-    progress: inputs.totalCharacters > 0
-      ? `${inputs.lockedCharacters}/${inputs.totalCharacters} locked`
-      : undefined,
-    blockers: castBlockers.length > 0 ? castBlockers : undefined,
+    stage_id: 'cast',
+    computed_status: castStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: castBlockers.length > 0 ? castBlockers : null,
+    provenance_json: null,
   });
 
-  // 4. PRODUCTION DESIGN — gated on cast (upstream of hero frames)
+  // ── 4. PRODUCTION DESIGN — gated on cast ──
   let pdStatus: StageStatus;
   const pdBlockers: string[] = [];
   if (!inputs.castComplete) {
@@ -477,16 +494,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     pdStatus = 'not_started';
   }
   stages.push({
-    stage: 'production_design',
-    ...STAGE_META.production_design,
-    status: pdStatus,
-    progress: inputs.pdTotalFamilies > 0
-      ? `${inputs.pdLockedFamilies}/${inputs.pdTotalFamilies} families locked`
-      : undefined,
-    blockers: pdBlockers.length > 0 ? pdBlockers : undefined,
+    stage_id: 'production_design',
+    computed_status: pdStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: pdBlockers.length > 0 ? pdBlockers : null,
+    provenance_json: null,
   });
 
-  // 5. HERO FRAMES — gated on Production Design locked
+  // ── 5. HERO FRAMES — gated on Production Design locked ──
   let hfStatus: StageStatus;
   const hfBlockers: string[] = [];
   if (!inputs.castComplete) {
@@ -506,16 +522,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     hfStatus = 'not_started';
   }
   stages.push({
-    stage: 'hero_frames',
-    ...STAGE_META.hero_frames,
-    status: hfStatus,
-    progress: inputs.heroFrameTotal > 0
-      ? `${inputs.heroFrameApproved}/${inputs.heroFrameTotal} approved${inputs.heroFramePrimaryApproved ? ' · Primary locked' : ''}`
-      : undefined,
-    blockers: hfBlockers.length > 0 ? hfBlockers : undefined,
+    stage_id: 'hero_frames',
+    computed_status: hfStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: hfBlockers.length > 0 ? hfBlockers : null,
+    provenance_json: null,
   });
 
-  // 6. VISUAL LANGUAGE
+  // ── 6. VISUAL LANGUAGE ──
   let vlStatus: StageStatus;
   const vlBlockers: string[] = [];
   if (!inputs.pdAllLocked) {
@@ -529,14 +544,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     vlStatus = 'not_started';
   }
   stages.push({
-    stage: 'visual_language',
-    ...STAGE_META.visual_language,
-    status: vlStatus,
-    progress: inputs.visualLanguageApproved ? 'Direction approved' : undefined,
-    blockers: vlBlockers.length > 0 ? vlBlockers : undefined,
+    stage_id: 'visual_language',
+    computed_status: vlStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: vlBlockers.length > 0 ? vlBlockers : null,
+    provenance_json: null,
   });
 
-  // 7. POSTER
+  // ── 7. POSTER ──
   let posterStatus: StageStatus;
   const posterBlockers: string[] = [];
   if (!inputs.heroFramePrimaryApproved) {
@@ -548,16 +564,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     posterStatus = 'not_started';
   }
   stages.push({
-    stage: 'poster',
-    ...STAGE_META.poster,
-    status: posterStatus,
-    progress: (inputs.posterCandidateCount ?? 0) > 0
-      ? `${inputs.posterCandidateCount} candidate${(inputs.posterCandidateCount ?? 0) !== 1 ? 's' : ''} selected`
-      : undefined,
-    blockers: posterBlockers.length > 0 ? posterBlockers : undefined,
+    stage_id: 'poster',
+    computed_status: posterStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: posterBlockers.length > 0 ? posterBlockers : null,
+    provenance_json: null,
   });
 
-  // 8. CONCEPT BRIEF
+  // ── 8. CONCEPT BRIEF ──
   let cbStatus: StageStatus;
   const cbBlockers: string[] = [];
   if (!inputs.heroFramePrimaryApproved) {
@@ -569,16 +584,15 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     cbStatus = 'not_started';
   }
   stages.push({
-    stage: 'concept_brief',
-    ...STAGE_META.concept_brief,
-    status: cbStatus,
-    progress: (inputs.conceptBriefVersion ?? 0) > 0
-      ? `Version ${inputs.conceptBriefVersion}`
-      : undefined,
-    blockers: cbBlockers.length > 0 ? cbBlockers : undefined,
+    stage_id: 'concept_brief',
+    computed_status: cbStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: cbBlockers.length > 0 ? cbBlockers : null,
+    provenance_json: null,
   });
 
-  // 9. LOOKBOOK (Explore / Lab — siloed from primary pipeline)
+  // ── 9. LOOKBOOK (Explore / Lab — siloed from primary pipeline) ──
   let lbStatus: StageStatus;
   const lbBlockers: string[] = [];
   if (!inputs.castComplete || !inputs.pdAllLocked) {
@@ -593,45 +607,99 @@ export function resolvePipelineStages(inputs: PipelineInputs): StageState[] {
     lbStatus = 'not_started';
   }
   stages.push({
-    stage: 'lookbook',
-    ...STAGE_META.lookbook,
-    status: lbStatus,
-    progress: inputs.lookbookExists ? (inputs.lookbookStale ? 'Stale — rebuild recommended' : 'Built') : undefined,
-    blockers: lbBlockers.length > 0 ? lbBlockers : undefined,
-    staleReasons: inputs.lookbookStaleReasons,
+    stage_id: 'lookbook',
+    computed_status: lbStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: lbBlockers.length > 0 ? lbBlockers : null,
+    provenance_json: null,
   });
 
-  // ── Visual Governance enrichment (read-only) ──
+  // ── Visual Governance enrichment ──
   const completedStages = getCompletedStages(stages);
   for (const s of stages) {
     // Eligibility: prerequisite gate check
-    s.eligibility = {
-      eligible: isStageEligible(s.stage, completedStages),
-      reason: isStageEligible(s.stage, completedStages)
+    const stageKey = s.stage_id as PipelineStage;
+    const prereqs = VISUAL_STAGE_PREREQUISITES[stageKey] ?? [];
+    const eligible = isStageEligible(s.stage_id, completedStages);
+    const completedPrereqs = prereqs.filter((p) => completedStages.has(p));
+    const blockedPrereqs = prereqs.filter((p) => !completedStages.has(p));
+    s.eligibility_state = {
+      eligible,
+      reason: eligible
         ? undefined
-        : `Requires: ${(VISUAL_STAGE_PREREQUISITES as any)[s.stage]?.join(', ') ?? 'prerequisites not met'}`,
+        : `Requires: ${prereqs.join(', ')}`,
+      completed_prereqs: completedPrereqs,
+      blocked_prereqs: blockedPrereqs,
     };
 
-    // Stale-risk: timestamp-based detection for all visual stages
+    // Stale-risk: timestamp-based detection
     if (inputs.staleRiskTimestamps) {
-      s.staleRisk = computeStaleRiskForStage(s.stage, inputs.staleRiskTimestamps) ?? undefined;
+      s.stale_risk = computeStaleRiskForStage(stageKey, inputs.staleRiskTimestamps);
     }
 
     // Provenance: source doc/table, version, generated asset
-    s.provenance = computeProvenanceForStage(s.stage, inputs);
+    s.provenance_json = computeProvenanceForStage(stageKey, inputs);
   }
 
   return stages;
 }
 
 /**
- * Get the first actionable stage (the one the user should focus on).
+ * Compute a deterministic SHA256 hex digest of all pipeline input values.
+ * This enables change detection: if the hash changes between evaluations,
+ * the governance state needs updating.
+ *
+ * Joins all boolean/count/timestamp values into a canonical string, then
+ * SHA256-hashes it.
  */
-export function getActiveStage(stages: StageState[]): PipelineStage {
-  for (const s of stages) {
-    if (s.status === 'not_started' || s.status === 'in_progress' || s.status === 'ready_for_review' || s.status === 'stale') {
-      return s.stage;
-    }
-  }
-  return 'poster'; // Default to poster rather than lookbook (lookbook is exploratory)
+export async function computeSourceSnapshotHash(inputs: PipelineInputs): Promise<string> {
+  const canonicalParts: string[] = [
+    // Booleans (sorted alphabetically by key)
+    `castComplete:${inputs.castComplete}`,
+    `hasCanon:${inputs.hasCanon}`,
+    `hasLocations:${inputs.hasLocations}`,
+    `hasVisualStyle:${inputs.hasVisualStyle}`,
+    `heroFramePrimaryApproved:${inputs.heroFramePrimaryApproved}`,
+    `lookbookExists:${inputs.lookbookExists}`,
+    `lookbookStale:${inputs.lookbookStale}`,
+    `pdAllLocked:${inputs.pdAllLocked}`,
+    `visualLanguageApproved:${inputs.visualLanguageApproved}`,
+    `visualStyleComplete:${inputs.visualStyleComplete}`,
+
+    // Counts
+    `conceptBriefVersion:${inputs.conceptBriefVersion ?? 0}`,
+    `heroFrameApproved:${inputs.heroFrameApproved}`,
+    `heroFrameTotal:${inputs.heroFrameTotal}`,
+    `locationCount:${inputs.locationCount}`,
+    `lockedCharacters:${inputs.lockedCharacters}`,
+    `pdCreatedFamilies:${inputs.pdCreatedFamilies}`,
+    `pdLockedFamilies:${inputs.pdLockedFamilies}`,
+    `pdTotalFamilies:${inputs.pdTotalFamilies}`,
+    `posterCandidateCount:${inputs.posterCandidateCount ?? 0}`,
+    `totalCharacters:${inputs.totalCharacters}`,
+
+    // Stale-risk timestamps (if present)
+    `sourceDocUpdatedAt:${inputs.staleRiskTimestamps?.sourceDocUpdatedAt ?? ''}`,
+    `canonUpdatedAt:${inputs.staleRiskTimestamps?.canonUpdatedAt ?? ''}`,
+    `visualStyleUpdatedAt:${inputs.staleRiskTimestamps?.visualStyleUpdatedAt ?? ''}`,
+    `castUpdatedAt:${inputs.staleRiskTimestamps?.castUpdatedAt ?? ''}`,
+    `pdUpdatedAt:${inputs.staleRiskTimestamps?.pdUpdatedAt ?? ''}`,
+    `heroFrameGeneratedAt:${inputs.staleRiskTimestamps?.heroFrameGeneratedAt ?? ''}`,
+    `posterGeneratedAt:${inputs.staleRiskTimestamps?.posterGeneratedAt ?? ''}`,
+    `lookbookGeneratedAt:${inputs.staleRiskTimestamps?.lookbookGeneratedAt ?? ''}`,
+  ];
+
+  const canonicalString = canonicalParts.join('|');
+
+  // Encode to Uint8Array for SHA-256
+  const encoder = new TextEncoder();
+  const data = encoder.encode(canonicalString);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
+  // Convert to hex string
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+
+  return hashHex;
 }

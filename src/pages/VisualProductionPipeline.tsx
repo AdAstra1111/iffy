@@ -7,6 +7,8 @@
  */
 import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import { useVisualCoherence } from '@/hooks/useVisualCoherence';
+import { useVisualGovernance } from '@/hooks/useVisualGovernance';
+import type { GovernanceAwareStage } from '@/lib/visual/visualGovernanceTypes';
 import { VisualCoherencePanel } from '@/components/visual/VisualCoherencePanel';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useParams, Link } from 'react-router-dom';
@@ -46,8 +48,14 @@ import {
   type StageState,
   type StageStatus,
   type PipelineInputs,
+  type StaleRiskTimestamps,
+  type StageProvenance,
+  type StaleRisk,
+  type StageEligibility,
+  computeProvenanceForStage,
 } from '@/lib/visual/pipelineStatusResolver';
 import { invokeHeroFrameChunkWithRetry } from '@/lib/visual/heroFrameChunkRunner';
+import { VisualPipelineErrorBoundary } from '@/components/VisualPipelineErrorBoundary';
 
 // Lazy-load stage content panels to keep bundle light
 const CastingPipelineContent = lazy(() => import('./CastingPipeline'));
@@ -297,6 +305,91 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
     staleTime: 30_000,
   });
 
+  // Stale-risk timestamps — parallel queries from multiple tables
+  const staleRiskQuery = useQuery({
+    queryKey: ['pipeline-stale-risk-ts', projectId],
+    queryFn: async () => {
+      if (!projectId) return {} as StaleRiskTimestamps;
+      const [
+        { data: sourceDoc },
+        { data: canonRow },
+        { data: styleRow },
+        { data: castRows },
+        { data: hfRow },
+        { data: pdRow },
+        { data: lbRow },
+        { data: posterRow },
+      ] = await Promise.all([
+        (supabase as any)
+          .from('project_documents')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (supabase as any)
+          .from('project_canon')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .maybeSingle(),
+        (supabase as any)
+          .from('project_visual_style')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .maybeSingle(),
+        (supabase as any)
+          .from('project_ai_cast')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (supabase as any)
+          .from('project_images')
+          .select('created_at')
+          .eq('project_id', projectId)
+          .eq('asset_group', 'hero_frame')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (supabase as any)
+          .from('visual_sets')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .like('domain', 'production_design_%')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (supabase as any)
+          .from('lookbook_sections')
+          .select('updated_at')
+          .eq('project_id', projectId)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        (supabase as any)
+          .from('poster_candidates')
+          .select('created_at')
+          .eq('project_id', projectId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      return {
+        sourceDocUpdatedAt: sourceDoc?.updated_at ?? undefined,
+        canonUpdatedAt: canonRow?.updated_at ?? undefined,
+        visualStyleUpdatedAt: styleRow?.updated_at ?? undefined,
+        castUpdatedAt: castRows?.updated_at ?? undefined,
+        heroFrameGeneratedAt: hfRow?.created_at ?? undefined,
+        pdUpdatedAt: pdRow?.updated_at ?? undefined,
+        lookbookGeneratedAt: lbRow?.updated_at ?? undefined,
+        posterGeneratedAt: posterRow?.created_at ?? undefined,
+      };
+    },
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+
   return useMemo(() => ({
     hasCanon: !!canon && Object.keys(canon).length > 0,
     hasLocations: (locations?.length || 0) > 0 || (pdFallbackQuery.data?.hasLocationAtoms ?? false),
@@ -318,7 +411,8 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
     lookbookStale: lbQuery.data?.stale ?? false,
     posterCandidateCount: posterQuery.data?.count ?? 0,
     conceptBriefVersion: cbQuery.data?.version ?? 0,
-  }), [canon, locations, styleProfile, castQuery.data, hfQuery.data, pdQuery.data, lbQuery.data, posterQuery.data, cbQuery.data]);
+    staleRiskTimestamps: staleRiskQuery.data ?? undefined,
+  }), [canon, locations, styleProfile, castQuery.data, hfQuery.data, pdQuery.data, lbQuery.data, posterQuery.data, cbQuery.data, staleRiskQuery.data]);
 }
 
 // ── Stage Rail Item ──
@@ -335,6 +429,8 @@ function StageRailItem({
   const Icon = STAGE_ICONS[state.stage];
   const StatusIcon = style.icon;
   const isBlocked = state.status === 'blocked';
+  const eligibility = state.eligibility;
+  const staleRisk = state.staleRisk;
 
   return (
     <button
@@ -368,9 +464,84 @@ function StageRailItem({
         {state.blockers && state.blockers.length > 0 && (
           <p className="text-[10px] text-destructive/70 truncate mt-0.5">{state.blockers[0]}</p>
         )}
+        {/* Visual Governance: eligibility badge */}
+        {eligibility && !eligibility.eligible && state.status !== 'blocked' && (
+          <p className="text-[10px] text-amber-600/70 truncate mt-0.5">
+            ⚠ {eligibility.reason?.slice(0, 40) || 'Prerequisites not met'}
+          </p>
+        )}
       </div>
-      <ChevronRight className={`h-3 w-3 shrink-0 ${isActive ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+      <div className="flex flex-col items-end gap-1 shrink-0">
+        {/* Visual Governance: stale-risk indicator */}
+        {staleRisk?.isStale && (
+          <span className="inline-flex items-center gap-0.5 text-[9px] text-amber-600 bg-amber-500/10 rounded px-1 py-0.5 border border-amber-500/20">
+            <AlertTriangle className="h-2.5 w-2.5" />
+            stale
+          </span>
+        )}
+        {/* Visual Governance: eligibility icon */}
+        {eligibility && (
+          eligibility.eligible ? (
+            <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-green-500/10 text-green-600" title="Eligible">
+              <Check className="h-2.5 w-2.5" />
+            </span>
+          ) : (
+            <span className="inline-flex items-center justify-center h-3.5 w-3.5 rounded-full bg-red-500/10 text-red-500" title={eligibility.reason || 'Blocked'}>
+              <X className="h-2.5 w-2.5" />
+            </span>
+          )
+        )}
+        <ChevronRight className={`h-3 w-3 ${isActive ? 'text-foreground' : 'text-muted-foreground/40'}`} />
+      </div>
     </button>
+  );
+}
+
+// ── Visual Governance: Provenance display component ──
+function ProvenanceDisplay({ provenance }: { provenance?: StageProvenance }) {
+  if (!provenance) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2">
+      <span className="inline-flex items-center text-[8px] rounded bg-muted/30 text-muted-foreground px-1.5 py-0.5 border border-border/20">
+        <span className="font-medium text-foreground/60 mr-1">Source:</span>{provenance.sourceType}
+      </span>
+      {provenance.sourceDetail && (
+        <span className="inline-flex items-center text-[8px] rounded bg-muted/30 text-muted-foreground px-1.5 py-0.5 border border-border/20">
+          <span className="font-medium text-foreground/60 mr-1">Detail:</span>{provenance.sourceDetail}
+        </span>
+      )}
+      {provenance.generatedAsset && (
+        <span className="inline-flex items-center text-[8px] rounded bg-muted/30 text-muted-foreground px-1.5 py-0.5 border border-border/20">
+          <span className="font-medium text-foreground/60 mr-1">Asset:</span>{provenance.generatedAsset}
+        </span>
+      )}
+      {provenance.functionName && (
+        <span className="inline-flex items-center text-[8px] rounded bg-muted/30 text-muted-foreground px-1.5 py-0.5 border border-border/20">
+          <span className="font-medium text-foreground/60 mr-1">Fn:</span>{provenance.functionName}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ── Visual Governance: Stale-risk display component ──
+function StaleRiskDisplay({ staleRisk }: { staleRisk?: StaleRisk }) {
+  if (!staleRisk || !staleRisk.isStale) return null;
+  return (
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] p-3 space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />
+        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Stale Risk Detected</span>
+      </div>
+      {staleRisk.reasons.map((r, i) => (
+        <p key={i} className="text-[10px] text-muted-foreground pl-5">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${
+            r.severity === 'high' ? 'bg-red-500' : r.severity === 'medium' ? 'bg-amber-500' : 'bg-yellow-400'
+          }`} />
+          {r.detail}
+        </p>
+      ))}
+    </div>
   );
 }
 
@@ -414,9 +585,10 @@ function WorldValidationModePanel({ projectId }: { projectId: string }) {
 }
 
 // ── Visual Canon Panel ──
-function VisualCanonPanel({ projectId }: { projectId: string }) {
+function VisualCanonPanel({ projectId, inputs }: { projectId: string; inputs: PipelineInputs }) {
   const { canon } = useProjectCanon(projectId);
   const { profile, loading } = useVisualStyleProfile(projectId);
+  const provenance = useMemo(() => computeProvenanceForStage('visual_canon', inputs), [inputs]);
 
   return (
     <div className="space-y-6">
@@ -506,13 +678,23 @@ function VisualCanonPanel({ projectId }: { projectId: string }) {
       <div className="rounded-lg border border-border/30 bg-card/30 p-4">
         <SceneDemoGeneratorPanel projectId={projectId} />
       </div>
+
+      {/* Visual Governance: Provenance */}
+      <div className="rounded-lg border border-border/20 bg-muted/10 p-3">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Info className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Governance</span>
+        </div>
+        <ProvenanceDisplay provenance={provenance} />
+      </div>
     </div>
   );
 }
 
 // ── Visual Language Panel ──
-function VisualLanguagePanel({ projectId }: { projectId: string }) {
+function VisualLanguagePanel({ projectId, inputs }: { projectId: string; inputs: PipelineInputs }) {
   const { profile } = useVisualStyleProfile(projectId);
+  const provenance = useMemo(() => computeProvenanceForStage('visual_language', inputs), [inputs]);
 
   return (
     <div className="space-y-4">
@@ -576,6 +758,15 @@ function VisualLanguagePanel({ projectId }: { projectId: string }) {
             Visual language will be derived from your Visual Canon and Production Design outputs.
           </p>
         )}
+      </div>
+
+      {/* Visual Governance: Provenance */}
+      <div className="rounded-lg border border-border/20 bg-muted/10 p-3">
+        <div className="flex items-center gap-1.5 mb-1">
+          <Info className="h-3 w-3 text-muted-foreground" />
+          <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Governance</span>
+        </div>
+        <ProvenanceDisplay provenance={provenance} />
       </div>
     </div>
   );
@@ -1953,7 +2144,14 @@ export default function VisualProductionPipeline() {
   const { id: projectId } = useParams<{ id: string }>();
   const inputs = usePipelineInputs(projectId);
   const { result: vcsResult, loading: vcsLoading, diagnostics: vcsDiagnostics } = useVisualCoherence(projectId, inputs);
-  const stages = useMemo(() => resolvePipelineStages(inputs), [inputs]);
+  const {
+    stages,
+    dataSource: governanceSource,
+    lastEvaluatedAt,
+    evaluate: refreshGovernance,
+    isEvaluating: governanceLoading,
+    error: governanceError,
+  } = useVisualGovernance({ projectId, inputs, enabled: !!projectId });
   const suggestedStage = useMemo(() => getActiveStage(stages), [stages]);
   const [activeStage, setActiveStage] = useState<PipelineStage>(suggestedStage);
 
@@ -1993,6 +2191,7 @@ export default function VisualProductionPipeline() {
   }
 
   return (
+    <VisualPipelineErrorBoundary stageLabel="Visual Production Pipeline">
     <div className="h-full flex flex-col">
       {/* Top bar */}
       <div className="border-b border-border/30 bg-card/20 px-4 py-3 flex items-center gap-3">
@@ -2010,6 +2209,25 @@ export default function VisualProductionPipeline() {
           <Badge variant="outline" className="text-[10px] tabular-nums">
             {completedCount}/{totalCount} stages complete
           </Badge>
+          {/* Governance source indicator — shows whether UI is using persisted snapshot or live compute */}
+          {governanceSource === 'persisted_snapshot' && (
+            <Badge variant="secondary" className="text-[9px] gap-1 h-4 px-1.5 bg-blue-500/10 text-blue-600 border-blue-500/20">
+              <span className="w-1 h-1 rounded-full bg-blue-500" />
+              Snapshot
+            </Badge>
+          )}
+          {governanceSource === 'live_computed' && !governanceLoading && (
+            <Badge variant="outline" className="text-[9px] gap-1 h-4 px-1.5 text-muted-foreground/60 border-border/20">
+              <span className="w-1 h-1 rounded-full bg-muted-foreground/40" />
+              Live
+            </Badge>
+          )}
+          {governanceLoading && (
+            <Badge variant="outline" className="text-[9px] gap-1 h-4 px-1.5 text-amber-500">
+              <Loader2 className="h-2.5 w-2.5 animate-spin" />
+              Loading
+            </Badge>
+          )}
           {pipelineError && (
             <span className="text-[10px] text-destructive max-w-[120px] truncate" title={pipelineError}>
               {pipelineError}
@@ -2082,7 +2300,8 @@ export default function VisualProductionPipeline() {
         {/* Content panel — CENTER */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto">
-            <Suspense fallback={
+            <VisualPipelineErrorBoundary stageLabel="Content Panel">
+              <Suspense fallback={
               <div className="flex items-center justify-center py-20">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
@@ -2097,7 +2316,7 @@ export default function VisualProductionPipeline() {
                 </div>
               ) : activeStage === 'visual_canon' ? (
                 <div className="p-4 md:p-6">
-                  <VisualCanonPanel projectId={projectId} />
+                  <VisualCanonPanel projectId={projectId} inputs={inputs} />
                 </div>
               ) : activeStage === 'cast' ? (
                 activeState.status === 'blocked' ? (
@@ -2121,7 +2340,7 @@ export default function VisualProductionPipeline() {
                 )
               ) : activeStage === 'visual_language' ? (
                 <div className="p-4 md:p-6">
-                  <VisualLanguagePanel projectId={projectId} />
+                  <VisualLanguagePanel projectId={projectId} inputs={inputs} />
                 </div>
               ) : activeStage === 'poster' ? (
                 activeState.status === 'blocked' ? (
@@ -2161,9 +2380,11 @@ export default function VisualProductionPipeline() {
                 </div>
               )}
             </Suspense>
+            </VisualPipelineErrorBoundary>
           </div>
         </div>
       </div>
     </div>
+    </VisualPipelineErrorBoundary>
   );
 }

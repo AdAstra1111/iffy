@@ -24,6 +24,7 @@ import { ReviewStudio } from '@/components/images/ReviewStudio';
 import { StoryIngestionPanel } from '@/components/project/StoryIngestionPanel';
 import { VisualStyleAuthorityPanel, VisualStyleChip } from '@/components/images/VisualStyleAuthorityPanel';
 import { supabase } from '@/integrations/supabase/client';
+import { VisualPipelineErrorBoundary } from '@/components/VisualPipelineErrorBoundary';
 
 const PRODUCTION_TOOLS = [
   {
@@ -123,31 +124,66 @@ export default function VisualDevHub() {
   const { id: projectId } = useParams<{ id: string }>();
   const [characters, setCharacters] = useState<string[]>([]);
   const [locations, setLocations] = useState<string[]>([]);
+  const [loadingCanon, setLoadingCanon] = useState(true);
+
+  // Guard: no projectId in route
+  if (!projectId) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center space-y-2">
+          <p className="text-sm text-muted-foreground">No project selected.</p>
+        </div>
+      </div>
+    );
+  }
 
   // Load canon data for Change Studio targets
   useEffect(() => {
     if (!projectId) return;
     (async () => {
-      const { data } = await (supabase as any)
-        .from('project_canon')
-        .select('canon_json')
-        .eq('project_id', projectId)
-        .maybeSingle();
-      if (data?.canon_json) {
-        const canon = data.canon_json;
-        if (Array.isArray(canon.characters)) {
-          setCharacters(canon.characters.map((c: any) =>
-            typeof c === 'string' ? c : (c.name || c.character_name || '')).filter(Boolean));
+      try {
+        const { data } = await (supabase as any)
+          .from('project_canon')
+          .select('canon_json')
+          .eq('project_id', projectId)
+          .maybeSingle();
+        if (data?.canon_json) {
+          const canon = data.canon_json;
+          if (Array.isArray(canon.characters)) {
+            setCharacters(canon.characters.map((c: any) =>
+              typeof c === 'string' ? c : (c.name || c.character_name || '')).filter(Boolean));
+          }
+          if (Array.isArray(canon.locations)) {
+            setLocations(canon.locations.map((l: any) =>
+              typeof l === 'string' ? l : (l.name || l.location_name || '')).filter(Boolean));
+          }
         }
-        if (Array.isArray(canon.locations)) {
-          setLocations(canon.locations.map((l: any) =>
-            typeof l === 'string' ? l : (l.name || l.location_name || '')).filter(Boolean));
-        }
+      } finally {
+        setLoadingCanon(false);
       }
     })();
   }, [projectId]);
 
+  // ═══ Loading skeleton while canon data loads ═══
+  if (loadingCanon) {
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="max-w-[1200px] mx-auto px-4 py-20 space-y-6 animate-pulse">
+          <div className="h-5 w-48 bg-muted rounded" />
+          <div className="h-3 w-64 bg-muted/60 rounded" />
+          <div className="h-32 bg-muted/40 rounded-lg" />
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div className="h-28 bg-muted/40 rounded-lg" />
+            <div className="h-28 bg-muted/40 rounded-lg" />
+            <div className="h-28 bg-muted/40 rounded-lg" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
+    <VisualPipelineErrorBoundary stageLabel="Visual Production Hub">
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
@@ -163,9 +199,18 @@ export default function VisualDevHub() {
               Cast photos, character identity, world references, visual canon management.
             </p>
           </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="text-[10px] flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              Eligibility: Read-only
+            </Badge>
+            <Badge variant="outline" className="text-[10px] flex items-center gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Stale risk: Monitored
+            </Badge>
+          </div>
         </div>
       </header>
-
         <main className="max-w-[1200px] mx-auto px-4 py-6 space-y-4">
         {/* ── Workflow guidance ── */}
         <div className="rounded-lg border border-border/50 bg-muted/20 px-4 py-2.5 flex items-center gap-3">
@@ -289,6 +334,7 @@ export default function VisualDevHub() {
           </WorkSection>
 
           {/* ═══ Production Tools ═══ */}
+          {/* ═══ Production Tools ═══ */}
           <div className="pt-4 border-t border-border/30">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3 px-1">
               Production Tools
@@ -325,5 +371,6 @@ export default function VisualDevHub() {
         </motion.div>
       </main>
     </div>
+    </VisualPipelineErrorBoundary>
   );
 }

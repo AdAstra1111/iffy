@@ -289,3 +289,15 @@ verify_jwt = false
 
 [functions.promote-to-devseed]
 verify_jwt = false
+
+[functions.generate-lookbook-image]
+verify_jwt = false
+
+[functions.generate-hero-frames]
+verify_jwt = false
+
+[functions.generate-poster]
+verify_jwt = false
+
+[functions.evaluate-visual-governance]
+verify_jwt = false
