@@ -111,12 +111,10 @@ describe('Fix 1 — Wrong action name (taAction → rewrite)', () => {
 
   // ── Edge case: comment accuracy ──────────────────────────────────────────
 
-  it('comment at line ~1448 references old action names (acknowledged stale — non-blocking)', async () => {
+  it('comment at line ~1448 references per-act pipeline route (updated)', async () => {
     const lines = await getLines();
     const commentLine = lines[1447]; // 0-indexed: line 1448 in 1-indexed
-    expect(commentLine).toContain('triggered by action');
-    // This is a known stale comment — code runs correctly regardless
-    // The comment describes what the backend does internally, not what the frontend sends
+    expect(commentLine).toContain('Treatment docs');
   });
 });
 
