@@ -9555,7 +9555,7 @@ ${section.body}
 INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this section: "${section.name}".
 - Apply ONLY the approved notes that reference ${section.sectionType === 'relationship_dynamics' ? 'relationship dynamics' : 'ensemble dynamics'}.
-- Preserve the section header exactly as provided.
+- Do NOT include the section header in your output — it is already present in the document.
 - Output STRUCTURED FIELD FORMAT, not natural prose. Each field on its own line with the field name in CAPS followed by colon.
 ${section.sectionType === 'relationship_dynamics' ? '- Fields: DEFAULT MODE, A NEEDS FROM B, B NEEDS FROM A, POWER LEVERAGE (format: A leverage ↔ B leverage), FRICTION AXIS, BREAK CONDITION, RECOVERY PATTERN, SCENE TYPES GENERATED [free text] (category), ARC TURNING POINT [place, Act]' : '- Fields: GROUP DEFAULT, FACTION MAP, FRACTURE POINT, RECOVERY PATTERN, GLUE CHARACTER, FRICTION PAIR, TONAL BALANCE (character role), ENSEMBLE SCENE STRUCTURE'}
 - Each RELATIONSHIP block covers ONE named pair. Use "Character A ↔ Character B" as the block heading inside the section.
@@ -9582,6 +9582,12 @@ ${section.sectionType === 'relationship_dynamics' ? '- Fields: DEFAULT MODE, A N
                       }
                       // Clean: strip any JSON fences or wrapper markdown
                       sectionContent = sectionContent.replace(/^```(?:json)?\s*/i, "").replace(/\n?```\s*$/, "").trim();
+                      // Strip embedded section header from LLM output (same as character headerRegex cleanup)
+                      // The prompt tells the LLM to "Preserve the section header" which causes it to
+                      // include ## ENSEMBLE NOTES / ## RELATIONSHIP DYNAMICS in rewritten_text.
+                      // Strip it here to prevent duplication on subsequent rewrite rounds.
+                      const nonCharHeaderRegex = new RegExp("^##\\s+" + section.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i");
+                      sectionContent = sectionContent.replace(nonCharHeaderRegex, "").trim();
                       // Assemble: original header + new body
                       assembledSections.push(`${section.header}\n\n${sectionContent}`);
                     } catch (sectionErr) {
