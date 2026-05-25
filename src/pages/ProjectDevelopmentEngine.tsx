@@ -1457,11 +1457,18 @@ export default function ProjectDevelopmentEngine() {
             toast.success('Treatment rewritten — per-act pipeline completed');
             afterRewrite();
             qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
+            setTreatmentRewritePending(false);
+          } else if (result?.generating === true) {
+            // Background generation started — keep treatmentRewritePending true
+            // so TreatmentActsProgress stays visible. It polls chunks until done.
+            toast.success('Treatment rewrite started in background');
+            afterRewrite();
+          } else {
+            throw new Error(result?.error || 'Treatment rewrite returned unknown response');
           }
         } catch (err: any) {
           console.error('[treatment] per-act rewrite failed:', err);
           toast.error('Per-act rewrite failed: ' + (err?.message || 'Unknown error'));
-          // Fallback to chunked pipeline if per-act fails
           toast.info('Falling back to sectioned rewrite...');
           const provenance = {
             rewriteModeSelected: 'auto',
@@ -1472,7 +1479,6 @@ export default function ProjectDevelopmentEngine() {
           };
           rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems, provenance);
           afterRewrite();
-        } finally {
           setTreatmentRewritePending(false);
         }
         return;

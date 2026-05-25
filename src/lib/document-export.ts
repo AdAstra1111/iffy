@@ -2,14 +2,16 @@
  * Document export utility — download document text as various file formats.
  */
 import jsPDF from 'jspdf';
+import { exportVersionAsFDX } from './fdx-export';
 
-export type ExportFormat = 'md' | 'txt' | 'pdf' | 'fountain';
+export type ExportFormat = 'md' | 'txt' | 'pdf' | 'fountain' | 'fdx';
 
 const FORMAT_LABELS: Record<ExportFormat, string> = {
   md: 'Markdown (.md)',
   txt: 'Plain Text (.txt)',
   pdf: 'PDF (.pdf)',
   fountain: 'Fountain (.fountain)',
+  fdx: 'Final Draft (.fdx)',
 };
 
 const MIME_TYPES: Record<ExportFormat, string> = {
@@ -17,6 +19,7 @@ const MIME_TYPES: Record<ExportFormat, string> = {
   txt: 'text/plain',
   pdf: 'application/pdf',
   fountain: 'text/plain',
+  fdx: 'application/octet-stream',
 };
 
 export function getExportFormats(): { value: ExportFormat; label: string }[] {
@@ -235,6 +238,9 @@ export function downloadDocument(
       break;
     case 'fountain':
       blob = new Blob([text], { type: MIME_TYPES.fountain });
+      break;
+    case 'fdx':
+      blob = new Blob([exportVersionAsFDX(text, title, 'IFFY')], { type: MIME_TYPES.fdx });
       break;
     case 'md':
       blob = new Blob([text], { type: MIME_TYPES.md });
