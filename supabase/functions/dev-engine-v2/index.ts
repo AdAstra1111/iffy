@@ -9438,6 +9438,21 @@ MATERIAL TO REWRITE:\n${fullText}`;
             console.log(`[dev-engine-v2] rewrite: per-character mode for "${effectiveDeliverable}" (${fullText.length} chars)`);
             // Step 1: Parse character bible into per-character sections
             sections = parseCharacterBibleSections(fullText);
+            // Deduplicate consecutive non-character sections (ENSEMBLE NOTES / RELATIONSHIP DYNAMICS)
+            // that have accumulated from previous rewrite rounds embedding headers in content.
+            const dedupedSections = [];
+            for (const sec of sections) {
+              const prev = dedupedSections[dedupedSections.length - 1];
+              if (prev && prev.sectionType !== 'character' && sec.sectionType !== 'character' && prev.sectionType === sec.sectionType && prev.name === sec.name) {
+                prev.body = prev.body + '\n\n---\n\n' + sec.body;
+                continue;
+              }
+              dedupedSections.push(sec);
+            }
+            if (dedupedSections.length !== sections.length) {
+              console.log(`[dev-engine-v2] rewrite: deduped ${sections.length - dedupedSections.length} duplicate non-character sections`);
+            }
+            sections = dedupedSections;
             if (sections.length > 0) {
               isPerCharRewrite = true;
               // Step 2: Determine which characters are affected by notes
@@ -9541,6 +9556,15 @@ MATERIAL TO REWRITE:\n${fullText}`;
                       ].filter(Boolean).join(" ").toLowerCase();
                       return nonCharKeywords.test(noteText);
                     });
+                    // Sanitize: strip embedded duplicate section headers from body before passing to LLM
+                    // Accumulated from previous rewrite rounds where the LLM included ## ENSEMBLE NOTES
+                    // in its rewritten_text output. Prevents re-embedding on subsequent rounds.
+                    let sanitizedBody = section.body;
+                    const headerPatternsToStrip = ["## ENSEMBLE NOTES", "## RELATIONSHIP DYNAMICS"];
+                    for (const hp of headerPatternsToStrip) {
+                      const hpRegex = new RegExp("^" + hp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "gm");
+                      sanitizedBody = sanitizedBody.replace(hpRegex, "[MERGED SECTION CONTENT]").trim();
+                    }
                     const nonCharUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES (applying to "${section.name}"):\n${JSON.stringify(sectionNotes)}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
@@ -9550,7 +9574,7 @@ TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
 SECTION TO REWRITE: ${section.name}
 
 ORIGINAL CONTENT:
-${section.body}
+${sanitizedBody}
 
 INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this section: "${section.name}".
@@ -9633,7 +9657,14 @@ ${section.sectionType === 'relationship_dynamics' ? '- Fields: DEFAULT MODE, A N
                     ].filter(Boolean).join(" ").toLowerCase();
                     return noteText.includes(section.name.toLowerCase()) || noteText.includes(section.role.toLowerCase());
                   });
-                  const charUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+                    let sanitizedCharBody = section.body;
+                    // Reuse same dedup sanitization for character sections (belt and suspenders)
+                    const charHeaderPatternsToStrip = ["## ENSEMBLE NOTES", "## RELATIONSHIP DYNAMICS"];
+                    for (const hp of charHeaderPatternsToStrip) {
+                      const hpRegex = new RegExp("^" + hp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "gm");
+                      sanitizedCharBody = sanitizedCharBody.replace(hpRegex, "[MERGED SECTION CONTENT]").trim();
+                    }
+                    const charUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES (applying to "${section.name}"):\n${JSON.stringify(charApprovedNotes)}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}${characterFactsBlock}
@@ -9642,7 +9673,7 @@ TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
 CHARACTER TO REWRITE: ${section.name} (${section.role})
 
 ORIGINAL CHARACTER PROFILE:
-${section.body}
+${sanitizedCharBody}
 
 INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
 - Rewrite ONLY this single character profile: "${section.name}".
