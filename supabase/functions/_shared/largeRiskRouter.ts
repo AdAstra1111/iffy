@@ -239,7 +239,7 @@ export function chunkPlanFor(
     }
 
     const sceneCount = context.sceneCount;
-    const batchSize = context.batchSize || 5;
+    const batchSize = context.batchSize || 1;
     const chunks: ChunkPlanEntry[] = [];
     let chunkIndex = 0;
 
