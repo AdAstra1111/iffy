@@ -293,6 +293,53 @@ serve(async (req) => {
             });
             const evalResult = await evalRes.json();
 
+            // Capture execution provenance (append-only)
+            const execNum = await supabase.rpc('next_execution_number', { p_project_id: intent.project_id });
+            // Mark previous executions for this stage as superseded
+            const { data: prevExecs } = await supabase
+              .from('project_visual_execution_provenance')
+              .select('id, generated_asset_ids')
+              .eq('project_id', intent.project_id)
+              .eq('stage_id', intent.stage_id)
+              .eq('is_superseded', false);
+            const prevExecIds = (prevExecs ?? []).map((r: any) => r.id);
+            let previousAssetIds: string[] = [];
+            for (const p of (prevExecs ?? [])) {
+              if (p.generated_asset_ids) previousAssetIds.push(...p.generated_asset_ids);
+            }
+
+            // Insert provenance row
+            const provenanceRow = {
+              project_id: intent.project_id,
+              repair_intent_id: intent.id,
+              execution_number: execNum.data ?? 1,
+              stage_id: intent.stage_id,
+              recommended_action: intent.recommended_action,
+              execution_state: evalRes.ok ? 'completed' : 'failed',
+              governance_snapshot_hash: evalResult?.source_snapshot_hash ?? null,
+              stale_reason_snapshot: intent.stale_reason_codes ?? null,
+              generation_input_hash: null,
+              generated_asset_ids: null,
+              previous_asset_ids: previousAssetIds.length > 0 ? previousAssetIds : null,
+              previous_execution_id: prevExecIds.length > 0 ? prevExecIds[prevExecIds.length - 1] : null,
+              is_superseded: false,
+              result_summary: evalRes.ok ? { stages_count: evalResult?.stages?.length ?? 0, evaluated_at: evalResult?.evaluated_at } : null,
+              error_message: evalRes.ok ? null : JSON.stringify(evalResult),
+              executed_at: now,
+            };
+
+            const { error: provError } = await supabase
+              .from('project_visual_execution_provenance')
+              .insert(provenanceRow);
+
+            // Supersede previous executions for this stage
+            if (prevExecIds.length > 0) {
+              await supabase
+                .from('project_visual_execution_provenance')
+                .update({ is_superseded: true, superseded_at: now })
+                .in('id', prevExecIds);
+            }
+
             if (evalRes.ok) {
               const { data: updated, error: updateError } = await supabase
                 .from("project_visual_repair_intents")
@@ -441,6 +488,57 @@ serve(async (req) => {
               },
               error: posterOk ? undefined : (posterResult?.error ?? "Unknown error"),
             };
+
+            // Capture execution provenance (append-only)
+            const execNum = await supabase.rpc('next_execution_number', { p_project_id: intent.project_id });
+            const { data: prevExecs } = await supabase
+              .from('project_visual_execution_provenance')
+              .select('id, generated_asset_ids')
+              .eq('project_id', intent.project_id)
+              .eq('stage_id', intent.stage_id)
+              .eq('is_superseded', false);
+            const prevExecIds = (prevExecs ?? []).map((r: any) => r.id);
+            let previousAssetIds: string[] = [];
+            for (const p of (prevExecs ?? [])) {
+              if (p.generated_asset_ids) previousAssetIds.push(...p.generated_asset_ids);
+            }
+
+            // Compute generation input hash from the poster payload
+            const genInputStr = JSON.stringify(posterPayload);
+            const genInputEncoder = new TextEncoder();
+            const genInputHash = await crypto.subtle.digest('SHA-256', genInputEncoder.encode(genInputStr));
+            const genInputHashHex = Array.from(new Uint8Array(genInputHash)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+            const provenanceRow = {
+              project_id: intent.project_id,
+              repair_intent_id: intent.id,
+              execution_number: execNum.data ?? 1,
+              stage_id: intent.stage_id,
+              recommended_action: intent.recommended_action,
+              execution_state: posterOk ? 'completed' : 'failed',
+              governance_snapshot_hash: governanceResult?.source_snapshot_hash ?? null,
+              stale_reason_snapshot: intent.stale_reason_codes ?? null,
+              generation_input_hash: genInputHashHex,
+              generated_asset_ids: posterCandidateIds.length > 0 ? posterCandidateIds : null,
+              previous_asset_ids: previousAssetIds.length > 0 ? previousAssetIds : null,
+              previous_execution_id: prevExecIds.length > 0 ? prevExecIds[prevExecIds.length - 1] : null,
+              is_superseded: false,
+              result_summary: posterOk ? { candidate_count: posterCandidateIds.length, poster_candidate_ids: posterCandidateIds } : null,
+              error_message: posterOk ? null : (executionResult.error ?? 'Unknown error'),
+              executed_at: now,
+            };
+
+            const { error: provError } = await supabase
+              .from('project_visual_execution_provenance')
+              .insert(provenanceRow);
+
+            // Supersede previous executions for this stage
+            if (prevExecIds.length > 0) {
+              await supabase
+                .from('project_visual_execution_provenance')
+                .update({ is_superseded: true, superseded_at: now })
+                .in('id', prevExecIds);
+            }
 
             const updateData: Record<string, unknown> = {
               execution_state: posterOk ? "completed" : "failed",

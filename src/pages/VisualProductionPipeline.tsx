@@ -39,6 +39,7 @@ import { useWorldValidationMode } from '@/hooks/useWorldValidationMode';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { VisualRepairIntentsPanel } from '@/components/visual/VisualRepairIntentsPanel';
+import { VisualExecutionHistoryPanel } from '@/components/visual/VisualExecutionHistoryPanel';
 import { useHeroFrameAutoCuration } from '@/hooks/useHeroFrameAutoCuration';
 import { isHeroFrameIdentityValid } from '@/lib/images/heroFrameIdentityFilter';
 import { isCharacterImageEligible, filterEligibleImages } from '@/lib/images/characterImageEligibility';
@@ -2471,6 +2472,11 @@ export default function VisualProductionPipeline() {
                   selectedStageState={activeState}
                 />
               )}
+              {/* Visual Execution History — shows for any stage with history */}
+              <VisualExecutionHistoryPanel
+                projectId={projectId}
+                stageId={activeStage}
+              />
             </Suspense>
             </VisualPipelineErrorBoundary>
           </div>

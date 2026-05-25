@@ -17575,6 +17575,88 @@ export type Database = {
         ]
       }
 
+      project_visual_execution_provenance: {
+        Row: {
+          id: string
+          project_id: string
+          repair_intent_id: string
+          execution_number: number
+          stage_id: string
+          recommended_action: string
+          execution_state: string
+          governance_snapshot_hash: string | null
+          stale_reason_snapshot: Json | null
+          generation_input_hash: string | null
+          generated_asset_ids: string[] | null
+          previous_asset_ids: string[] | null
+          previous_execution_id: string | null
+          is_superseded: boolean
+          superseded_at: string | null
+          result_summary: Json | null
+          error_message: string | null
+          executed_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          project_id: string
+          repair_intent_id: string
+          execution_number: number
+          stage_id: string
+          recommended_action: string
+          execution_state: string
+          governance_snapshot_hash?: string | null
+          stale_reason_snapshot?: Json | null
+          generation_input_hash?: string | null
+          generated_asset_ids?: string[] | null
+          previous_asset_ids?: string[] | null
+          previous_execution_id?: string | null
+          is_superseded?: boolean
+          superseded_at?: string | null
+          result_summary?: Json | null
+          error_message?: string | null
+          executed_at?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          project_id?: string
+          repair_intent_id?: string
+          execution_number?: number
+          stage_id?: string
+          recommended_action?: string
+          execution_state?: string
+          governance_snapshot_hash?: string | null
+          stale_reason_snapshot?: Json | null
+          generation_input_hash?: string | null
+          generated_asset_ids?: string[] | null
+          previous_asset_ids?: string[] | null
+          previous_execution_id?: string | null
+          is_superseded?: boolean
+          superseded_at?: string | null
+          result_summary?: Json | null
+          error_message?: string | null
+          executed_at?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_execution_provenance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_visual_execution_provenance_repair_intent_id_fkey"
+            columns: ["repair_intent_id"]
+            isOneToOne: false
+            referencedRelation: "project_visual_repair_intents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
       project_waterfall_rules: {
         Row: {
           cap_amount: string
