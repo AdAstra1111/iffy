@@ -18,6 +18,13 @@ export interface VisualRepairIntent {
   approved_at: string | null;
   executed_at: string | null;
   rejection_reason: string | null;
+  execution_result_json: {
+    status: string;
+    output?: any;
+    error?: string;
+    evaluated_at?: string;
+    stages_count?: number;
+  } | null;
 }
 
 interface UseVisualRepairIntentsOptions {
@@ -43,6 +50,7 @@ interface UseVisualRepairIntentsResult {
   approveIntent: (intentId: string) => Promise<void>;
   rejectIntent: (intentId: string, reason?: string) => Promise<void>;
   cancelIntent: (intentId: string) => Promise<void>;
+  executeIntent: (intentId: string) => Promise<{ success: boolean; error?: string; blocked?: boolean }>;
   refresh: () => Promise<void>;
 }
 
@@ -150,6 +158,27 @@ export function useVisualRepairIntents({
     }
   }, []);
 
+  const executeIntent = useCallback(async (intentId: string): Promise<{ success: boolean; error?: string }> => {
+    setError(null);
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('repair-visual-intents', {
+        body: { action: 'execute', intentId },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) {
+        return { success: false, error: data.error };
+      }
+      if (data?.intent) {
+        setIntents(prev => prev.map(i => i.id === intentId ? data.intent : i));
+        return { success: true };
+      }
+      return { success: false, error: 'No intent returned' };
+    } catch (err: any) {
+      setError(err.message);
+      return { success: false, error: err.message };
+    }
+  }, []);
+
   return {
     intents,
     intentsByStage,
@@ -159,6 +188,7 @@ export function useVisualRepairIntents({
     approveIntent,
     rejectIntent,
     cancelIntent,
+    executeIntent,
     refresh: fetchIntents,
   };
 }

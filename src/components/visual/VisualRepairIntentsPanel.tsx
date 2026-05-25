@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useVisualRepairIntents, type VisualRepairIntent } from '@/hooks/useVisualRepairIntents';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertCircle, Check, X, Loader2, Shield, Clock, Plus, Eye, FileText } from 'lucide-react';
+import { AlertCircle, Check, X, Loader2, Shield, Clock, Plus, Eye, FileText, Play } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -83,7 +83,7 @@ export function VisualRepairIntentsPanel({
     createIntent,
     approveIntent,
     rejectIntent,
-    cancelIntent,
+    cancelIntent, executeIntent,
     refresh,
   } = useVisualRepairIntents({ projectId, enabled: true });
 
@@ -185,6 +185,26 @@ export function VisualRepairIntentsPanel({
       setActionLoading(null);
     }
   }, [cancelIntent]);
+
+  const handleExecute = useCallback(async (intentId: string, recommendedAction: string) => {
+    setActionLoading(intentId);
+    try {
+      const result = await executeIntent(intentId);
+      if (result.success) {
+        toast.success(`Intent executed: ${recommendedAction}`);
+      } else {
+        if (result.error?.includes('EXECUTOR_NOT_ENABLED')) {
+          toast.error(`Action ${recommendedAction} is not yet enabled for execution`);
+        } else {
+          toast.error(result.error || 'Execution failed');
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Execution failed');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [executeIntent]);
 
   const showCreateButton = selectedStageState?.staleRisk?.isStale;
 
@@ -302,6 +322,33 @@ export function VisualRepairIntentsPanel({
                   <X className="h-2.5 w-2.5" /> {intent.rejection_reason}
                 </p>
               )}
+              
+              {/* Execution result */}
+              {intent.execution_result_json && (
+                <div className="flex items-center gap-1.5 text-[8px] text-muted-foreground/70">
+                  {intent.execution_state === 'completed' ? (
+                    <Check className="h-2.5 w-2.5 text-green-500" />
+                  ) : (
+                    <AlertCircle className="h-2.5 w-2.5 text-red-500" />
+                  )}
+                  <span>{intent.execution_state === 'completed' ? 'Executed' : 'Failed'}</span>
+                  {intent.execution_result_json.evaluated_at && (
+                    <>
+                      <span>·</span>
+                      <span>{new Date(intent.execution_result_json.evaluated_at).toLocaleString()}</span>
+                    </>
+                  )}
+                  {intent.execution_result_json.stages_count !== undefined && (
+                    <>
+                      <span>·</span>
+                      <span>{intent.execution_result_json.stages_count} stages</span>
+                    </>
+                  )}
+                  {intent.execution_result_json.error && (
+                    <span className="text-destructive/70">· error: {intent.execution_result_json.error}</span>
+                  )}
+                </div>
+              )}
 
               {/* Action buttons */}
               <div className="flex items-center gap-1.5 pt-1">
@@ -341,6 +388,37 @@ export function VisualRepairIntentsPanel({
                       Cancel
                     </Button>
                   </>
+                )}
+                {/* Execute button — only for approved + queued/ready intents */}
+                {intent.approval_state === 'approved' && (intent.execution_state === 'queued' || intent.execution_state === 'ready') && (
+                  intent.recommended_action === 'REFRESH_GOVERNANCE' ? (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      className="h-6 text-[10px] gap-1 bg-blue-600 hover:bg-blue-700 text-white"
+                      onClick={() => handleExecute(intent.id, intent.recommended_action)}
+                      disabled={actionLoading === intent.id}
+                      title="Execute is safe — re-evaluates governance state only"
+                    >
+                      {actionLoading === intent.id ? (
+                        <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      ) : (
+                        <Play className="h-2.5 w-2.5" />
+                      )}
+                      Execute
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[10px] gap-1 text-muted-foreground/40 cursor-not-allowed border-dashed"
+                      disabled
+                      title={`EXECUTOR_NOT_ENABLED — ${intent.recommended_action} execution is not yet implemented`}
+                    >
+                      <Shield className="h-2.5 w-2.5 text-muted-foreground/30" />
+                      Execute (disabled)
+                    </Button>
+                  )
                 )}
                 {(intent.approval_state === 'approved' || intent.approval_state === 'pending') && (
                   <Button

@@ -11,6 +11,7 @@
  *   approve — Approve a pending repair intent
  *   reject  — Reject a pending repair intent
  *   cancel  — Cancel a pending or approved (non-executed) repair intent
+ *   execute — Execute an approved repair intent (REFRESH_GOVERNANCE only)
  */
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -230,9 +231,128 @@ serve(async (req) => {
         return jsonRes({ intent: updated });
       }
 
+      // ── EXECUTE ──
+      case "execute": {
+        const { intentId } = body;
+        if (!intentId) {
+          return jsonRes({ error: "intentId is required" }, 400);
+        }
+
+        // Fetch the intent
+        const { data: intent, error: fetchError } = await supabase
+          .from("project_visual_repair_intents")
+          .select("*")
+          .eq("id", intentId)
+          .maybeSingle();
+
+        if (fetchError) {
+          return jsonRes({ error: fetchError.message }, 500);
+        }
+
+        if (!intent) {
+          return jsonRes({ error: "Intent not found" }, 404);
+        }
+
+        // Validate approval state
+        if (intent.approval_state !== "approved") {
+          return jsonRes(
+            {
+              error: "Cannot execute intent that is not approved",
+              current_state: intent.approval_state,
+            },
+            400,
+          );
+        }
+
+        // Validate execution state
+        if (!["queued", "ready"].includes(intent.execution_state)) {
+          return jsonRes(
+            {
+              error: "Intent already executed or blocked",
+              current_execution_state: intent.execution_state,
+            },
+            400,
+          );
+        }
+
+        const now = new Date().toISOString();
+
+        // Route based on recommended_action
+        switch (intent.recommended_action) {
+          case "REFRESH_GOVERNANCE": {
+            // Re-evaluate visual governance (read-only, no generation)
+            const evalUrl =
+              `${Deno.env.get("SUPABASE_URL")!}/functions/v1/evaluate-visual-governance`;
+            const evalRes = await fetch(evalUrl, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+              },
+              body: JSON.stringify({ projectId: intent.project_id }),
+            });
+            const evalResult = await evalRes.json();
+
+            if (evalRes.ok) {
+              const { data: updated, error: updateError } = await supabase
+                .from("project_visual_repair_intents")
+                .update({
+                  execution_state: "completed",
+                  executed_at: now,
+                  execution_result_json: {
+                    ...evalResult,
+                    evaluated_at: now,
+                  },
+                })
+                .eq("id", intentId)
+                .select("*")
+                .maybeSingle();
+
+              if (updateError) {
+                return jsonRes({ error: updateError.message }, 500);
+              }
+
+              return jsonRes({ intent: updated });
+            } else {
+              const { data: updated, error: updateError } = await supabase
+                .from("project_visual_repair_intents")
+                .update({
+                  execution_state: "failed",
+                  executed_at: now,
+                  execution_result_json: {
+                    error: evalResult,
+                    evaluated_at: now,
+                  },
+                })
+                .eq("id", intentId)
+                .select("*")
+                .maybeSingle();
+
+              if (updateError) {
+                return jsonRes({ error: updateError.message }, 500);
+              }
+
+              return jsonRes({ intent: updated });
+            }
+          }
+
+          default:
+            // REFRESH_GOVERNANCE is the only supported action for execution
+            // All generation actions are explicitly blocked
+            return jsonRes(
+              {
+                error: "Execution not yet enabled for this action",
+                code: "EXECUTOR_NOT_ENABLED",
+                recommended_action: intent.recommended_action,
+              },
+              400,
+            );
+        }
+      }
+
       default:
         return jsonRes(
-          { error: `Unknown action: ${action}. Supported: list, create, approve, reject, cancel` },
+          { error: `Unknown action: ${action}. Supported: list, create, approve, reject, cancel, execute` },
           400,
         );
     }
