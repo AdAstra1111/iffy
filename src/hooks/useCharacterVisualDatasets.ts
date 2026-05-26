@@ -18,6 +18,7 @@ import {
   evaluateCharacterFreshness,
 } from '@/lib/visual/characterDatasetCanonHash';
 import { normalizeCharacterKey } from '@/lib/aiCast/normalizeCharacterKey';
+import { VisualDNARow } from '@/lib/visual/buildVisualPromptBlock';
 
 // Re-export for convenience
 export type { CharacterVisualDataset, CharacterDatasetResolutionResult };
@@ -79,7 +80,7 @@ export function useCharacterVisualDatasets(projectId: string | undefined) {
     characterName: string,
     canonCharacter: Record<string, unknown> | null,
     canonJson: Record<string, unknown> | null,
-    dnaRow: { visual_prompt_block?: string; identity_signature?: unknown } | null,
+    dnaRow: VisualDNARow | null,
     actorInputs: string[],
   ) => {
     const dataset = getDatasetForCharacter(characterName);

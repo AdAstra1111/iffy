@@ -122,8 +122,8 @@ export function buildCharacterVisualDataset(
   canonCharacter: Record<string, unknown> | null,
   canonJson: Record<string, unknown> | null,
   dnaRow: {
-    traits_json?: unknown;
-    identity_signature?: unknown;
+    traits_json?: unknown[] | null;
+    identity_signature?: Record<string, unknown> | null;
     biological_sex?: string | null;
     gender_presentation?: string | null;
     age_range?: string | null;

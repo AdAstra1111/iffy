@@ -5,6 +5,8 @@
  * Single canonical hashing function. Do NOT duplicate elsewhere.
  */
 
+import { buildVisualPromptBlock, VisualDNARow } from './buildVisualPromptBlock';
+
 export interface CharacterDatasetHashInputs {
   character: {
     canonical_name: string;
@@ -19,7 +21,7 @@ export interface CharacterDatasetHashInputs {
     tone_style: string;
   };
   dna: {
-    visual_prompt_block: string;
+    derived_prompt_block: string;
     identity_signature: string;
   };
   /** Actor description + negative prompt sorted */
@@ -32,7 +34,7 @@ export interface CharacterDatasetHashInputs {
 export function buildCharacterHashInputs(
   character: { name?: string; role?: string; traits?: string; age?: string; gender?: string } | null,
   canonJson: Record<string, unknown> | null,
-  dnaRow: { visual_prompt_block?: string; identity_signature?: unknown } | null,
+  dnaRow: VisualDNARow | null,
   actorInputs: string[],
 ): CharacterDatasetHashInputs {
   const s = (v: unknown): string => {
@@ -56,7 +58,7 @@ export function buildCharacterHashInputs(
       tone_style: s(canonJson?.tone_style),
     },
     dna: {
-      visual_prompt_block: s(dnaRow?.visual_prompt_block),
+      derived_prompt_block: buildVisualPromptBlock(dnaRow),
       identity_signature: s(dnaRow?.identity_signature),
     },
     actorInputs: [...actorInputs].sort().map(a => a.toLowerCase().trim()),
@@ -86,7 +88,7 @@ export function computeCharacterCanonHash(inputs: CharacterDatasetHashInputs): s
 export function computeCharacterCanonHashFromSources(
   character: { name?: string; role?: string; traits?: string; age?: string; gender?: string } | null,
   canonJson: Record<string, unknown> | null,
-  dnaRow: { visual_prompt_block?: string; identity_signature?: unknown } | null,
+  dnaRow: VisualDNARow | null,
   actorInputs: string[],
 ): string {
   return computeCharacterCanonHash(buildCharacterHashInputs(character, canonJson, dnaRow, actorInputs));
@@ -98,12 +100,8 @@ export function computeCharacterCanonHashFromSources(
 export function evaluateCharacterFreshness(
   storedHash: string | null,
   currentHash: string,
-): { status: 'fresh' | 'stale' | 'unknown'; reason: string | null } {
-  if (!storedHash) {
-    return { status: 'unknown', reason: 'No source hash recorded' };
-  }
-  if (storedHash === currentHash) {
-    return { status: 'fresh', reason: null };
-  }
-  return { status: 'stale', reason: 'Source canon/DNA/actor inputs have changed since dataset was built' };
+): { status: 'fresh' | 'stale' | 'unknown'; reason: string } {
+  if (!storedHash) return { status: 'unknown', reason: 'No stored hash to compare' };
+  if (storedHash === currentHash) return { status: 'fresh', reason: 'Hash matches — dataset is current' };
+  return { status: 'stale', reason: 'Hash mismatch — canonical inputs have changed' };
 }

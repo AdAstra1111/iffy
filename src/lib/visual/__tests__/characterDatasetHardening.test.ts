@@ -15,7 +15,7 @@ import { resolveCharacterDatasetForSlot } from '../characterDatasetRetrievalReso
 describe('characterDatasetCanonHash', () => {
   const baseCharacter = { name: 'Hana', role: 'potter', traits: 'gentle, determined', age: 'young woman', gender: 'female' };
   const baseCanon = { world_description: 'Feudal Japan', setting: 'rural village', tone_style: 'atmospheric drama' };
-  const baseDna = { visual_prompt_block: 'young woman with calloused hands', identity_signature: '{}' };
+  const baseDna = { identity_signature: { gender: 'female' }, age_range: 'young woman', body_type: 'calloused hands' };
 
   it('produces deterministic hash', () => {
     const h1 = computeCharacterCanonHashFromSources(baseCharacter, baseCanon, baseDna, ['tag1', 'tag2']);
@@ -81,7 +81,7 @@ describe('characterDatasetBuilder', () => {
       'Lord Kageyama',
       { name: 'Lord Kageyama', role: 'antagonist daimyo', traits: 'commanding, tall, imposing, scarred' },
       { world_description: 'Feudal Japan', setting: 'mountain castle', tone_style: 'dark drama' },
-      { visual_prompt_block: 'tall imposing man with battle scar across face', traits_json: JSON.stringify([{ label: 'tall' }, { label: 'scarred face' }]) },
+      { identity_signature: { face: 'battle scar across face' }, body_type: 'tall imposing', gender_presentation: 'male', traits_json: JSON.stringify([{ label: 'tall', category: 'build' }, { label: 'scarred face', category: 'face' }]) },
       { id: 'actor-1', description: 'Powerful warlord', negative_prompt: 'feminine, young, soft', tags: ['warrior', 'antagonist'] },
     );
 
