@@ -96,6 +96,7 @@ import { CanonDeltaDialog } from '@/components/devengine/CanonDeltaDialog';
 import { DocumentPackagePanel } from '@/components/devengine/DocumentPackagePanel';
 import { CanonicalEditor } from '@/components/devengine/CanonicalEditor';
 import { ProvenancePanel } from '@/components/devengine/ProvenancePanel';
+import { RewriteTrajectoryObservatory } from '@/components/devengine/RewriteTrajectoryObservatory';
 import { CascadePanel } from '@/components/devengine/CascadePanel';
 import { ConnectivityBanner } from '@/components/devengine/ConnectivityBanner';
 import { useDocumentPackage } from '@/hooks/useDocumentPackage';
@@ -352,6 +353,7 @@ export default function ProjectDevelopmentEngine() {
   const lastPromotionGateVersionRef = useRef<string | null>(null);
   // Graph Mutation Pipeline state
   const [showMutationPanel, setShowMutationPanel] = useState(false);
+  const [observatoryOpen, setObservatoryOpen] = useState(false);
   const mutationRewriteParamsRef = useRef<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
   const mutationHandledRef = useRef(false);
 
@@ -2591,6 +2593,7 @@ export default function ProjectDevelopmentEngine() {
                     activatingVisualProduction={activatingVisual}
                     onGenerateVisualDNA={handleGenerateVisualDNA}
                     generatingVisualDNA={isGeneratingVisualDNA}
+                    onShowObservatory={() => setObservatoryOpen(true)}
                   />
 
                   {/* Visual Production Activated — unlocked surface */}
@@ -3849,6 +3852,16 @@ export default function ProjectDevelopmentEngine() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Rewrite Trajectory Observatory Dialog */}
+      {projectId && selectedDocId && (
+        <RewriteTrajectoryObservatory
+          open={observatoryOpen}
+          onOpenChange={setObservatoryOpen}
+          documentId={selectedDocId}
+          projectId={projectId}
+        />
+      )}
 
       {/* Floating Writers' Room button */}
       <Button

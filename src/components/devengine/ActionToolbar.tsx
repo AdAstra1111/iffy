@@ -92,6 +92,8 @@ interface ActionToolbarProps {
   onGenerateVisualDNA?: () => void;
   /** Generate Visual DNA from Canon: pending */
   generatingVisualDNA?: boolean;
+  /** Rewrite Trajectory Observatory */
+  onShowObservatory?: () => void;
 }
 
 export function ActionToolbar({
@@ -124,6 +126,7 @@ export function ActionToolbar({
   activatingVisualProduction = false,
   onGenerateVisualDNA,
   generatingVisualDNA = false,
+  onShowObservatory,
 }: ActionToolbarProps) {
   const navigate = useNavigate();
   const anyPending = analyzePending || rewritePending || convertPending || generateNotesPending || beatSheetToScriptPending;
@@ -275,6 +278,15 @@ export function ActionToolbar({
             onClick={() => setShotListOpen(true)}>
             <Camera className="h-3 w-3" />
             Shot List
+          </Button>
+        )}
+
+        {/* Rewrite Trajectory Observatory */}
+        {onShowObservatory && (
+          <Button size="sm" variant="ghost" className="h-8 text-xs gap-1"
+            onClick={onShowObservatory}>
+            <Eye className="h-3 w-3" />
+            Observatory
           </Button>
         )}
 
