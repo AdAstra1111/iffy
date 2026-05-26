@@ -386,6 +386,25 @@ serve(async (req) => {
           case "REGENERATE_CANDIDATES": {
             // ── Route based on stage_id ──
             if (intent.stage_id === "hero_frames") {
+              // ── Governance gate: check hero_frames stage before generating ──
+              const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+              const heroGate = await readVisualGovernanceGate(supabase, intent.project_id, "hero_frames");
+              if (heroGate.blocked) {
+                return jsonRes(
+                  {
+                    error: "Hero frame generation blocked by visual governance",
+                    code: "GOVERNANCE_BLOCKED",
+                    stage_id: "hero_frames",
+                    blocker_codes: heroGate.blockers,
+                    computed_status: heroGate.computed_status,
+                  },
+                  403,
+                );
+              }
+              if (heroGate.source === "missing_snapshot") {
+                console.warn(`[repair-visual-intents] Missing governance snapshot for hero_frames/${intent.project_id} — allowing by default`);
+              }
+
               // ── Hero Frame Execution ──
               // Guard: stale reason must include CANON_NEWER_THAN_STAGE or CAST_NEWER_THAN_HERO_FRAMES
               const hfAllowedReasons = ["CANON_NEWER_THAN_STAGE", "CAST_NEWER_THAN_HERO_FRAMES"];
@@ -598,6 +617,25 @@ serve(async (req) => {
 
             // ── Lookbook Execution ──
             if (intent.stage_id === "lookbook") {
+              // ── Governance gate: check lookbook stage before generating ──
+              const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+              const lookbookGate = await readVisualGovernanceGate(supabase, intent.project_id, "lookbook");
+              if (lookbookGate.blocked) {
+                return jsonRes(
+                  {
+                    error: "Lookbook generation blocked by visual governance",
+                    code: "GOVERNANCE_BLOCKED",
+                    stage_id: "lookbook",
+                    blocker_codes: lookbookGate.blockers,
+                    computed_status: lookbookGate.computed_status,
+                  },
+                  403,
+                );
+              }
+              if (lookbookGate.source === "missing_snapshot") {
+                console.warn(`[repair-visual-intents] Missing governance snapshot for lookbook/${intent.project_id} — allowing by default`);
+              }
+
               // Guard: stale reason must include PD_NEWER_THAN_LOOKBOOK or SOURCE_SNAPSHOT_CHANGED
               const lbAllowedReasons = ["PD_NEWER_THAN_LOOKBOOK", "SOURCE_SNAPSHOT_CHANGED"];
               const hasLbReason = (intent.stale_reason_codes ?? []).some(

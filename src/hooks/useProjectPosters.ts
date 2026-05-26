@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { registerPosterAsCanonicalImage } from "@/lib/images/registerPosterAsCanonicalImage";
+import { checkVisualGovernance } from "@/lib/visual/checkVisualGovernance";
 
 export interface ProjectPoster {
   id: string;
@@ -107,6 +108,13 @@ export function useGeneratePoster(projectId: string | undefined) {
     },
     mutationFn: async (opts?: { mode?: string; strategy_key?: string; source_poster_id?: string; edit_prompt?: string; poster_template?: string }) => {
       if (!projectId) throw new Error("No project ID");
+
+      // ── Governance gate: check if poster generation is blocked ──
+      const govCheck = await checkVisualGovernance(projectId, 'poster');
+      if (govCheck.blocked) {
+        throw new Error('Poster generation blocked: ' + govCheck.blockers.join(', '));
+      }
+
       const { data, error } = await supabase.functions.invoke("generate-poster", {
         body: {
           project_id: projectId,

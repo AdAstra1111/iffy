@@ -240,6 +240,35 @@ async function executePhase(
 ): Promise<PhaseResult> {
   const result: PhaseResult = { failedItems: [], generationsUsed: 0, totalCalls: 0, failedCalls: 0 };
 
+  // ── Governance gate: check lookbook stage before any image-generating phase ──
+  const GENERATING_PHASES = new Set([
+    "generate_identity",
+    "generate_references",
+    "generate_world",
+    "generate_key_moments",
+    "generate_visual_language",
+  ]);
+  if (GENERATING_PHASES.has(phase)) {
+    const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+    const lookbookGate = await readVisualGovernanceGate(sb, projectId, "lookbook");
+    if (lookbookGate.blocked) {
+      console.warn(`[pipeline-orchestrator] Lookbook generation blocked by visual governance for phase "${phase}" — blocker_codes: ${JSON.stringify(lookbookGate.blockers)}`);
+      result.failedItems.push({
+        phase,
+        entity: "pipeline",
+        call: "governance_gate",
+        error: "GOVERNANCE_BLOCKED",
+        error_detail: `Lookbook generation blocked. Blocker codes: ${(lookbookGate.blockers ?? []).join(", ")}`,
+        attempts: 0,
+        last_attempt_at: new Date().toISOString(),
+      });
+      return result;
+    }
+    if (lookbookGate.source === "missing_snapshot") {
+      console.warn(`[pipeline-orchestrator] Missing governance snapshot for lookbook/${projectId} — allowing by default`);
+    }
+  }
+
   switch (phase) {
     case "atoms_to_dna":
       return await executeAtomsToDNA(sb, projectId, state);

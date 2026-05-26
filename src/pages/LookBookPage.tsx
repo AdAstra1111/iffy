@@ -41,6 +41,7 @@ import { sectionKeyToEdgeFunctionSection, sectionKeyToAssetGroup } from '@/lib/l
 import { LookbookPipelineProgress } from '@/components/lookbook/LookbookPipelineProgress';
 import { LookbookQASummary } from '@/components/lookbook/LookbookQASummary';
 import { StyleLockPanel } from '@/components/lookbook/StyleLockPanel';
+import { checkVisualGovernance } from '@/lib/visual/checkVisualGovernance';
 
 type LookbookMode = 'workspace' | 'viewer';
 
@@ -334,6 +335,14 @@ export default function LookBookPage() {
     if (!projectId) return;
     setPopulatingSection(sectionKey);
     try {
+      // ── Governance gate: check if lookbook generation is blocked ──
+      const govCheck = await checkVisualGovernance(projectId, 'lookbook');
+      if (govCheck.blocked) {
+        const blockerMsg = 'Lookbook generation blocked: ' + govCheck.blockers.join(', ');
+        toast.error(blockerMsg);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
         body: {
           project_id: projectId,

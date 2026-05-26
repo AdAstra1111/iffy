@@ -61,6 +61,7 @@ import {
   computeProvenanceForStage,
 } from '@/lib/visual/pipelineStatusResolver';
 import { invokeHeroFrameChunkWithRetry } from '@/lib/visual/heroFrameChunkRunner';
+import { checkVisualGovernance } from '@/lib/visual/checkVisualGovernance';
 import { VisualPipelineErrorBoundary } from '@/components/VisualPipelineErrorBoundary';
 
 // Lazy-load stage content panels to keep bundle light
@@ -969,6 +970,27 @@ function HeroFramesPanel({ projectId, inputs }: { projectId: string; inputs: Pip
           next[slotIdx] = { ...next[slotIdx], status: 'generating' };
           return next;
         });
+
+        // ── Governance gate: check if hero_frames generation is blocked ──
+        const govCheck = await checkVisualGovernance(projectId, 'hero_frames');
+        if (govCheck.blocked) {
+          const blockerMsg = 'Hero frame generation blocked: ' + govCheck.blockers.join(', ');
+          console.warn(`[hero-frames] Slot ${slotIdx + 1} skipped — ${blockerMsg}`);
+          setStorySlots(prev => {
+            if (!prev) return prev;
+            const next = [...prev];
+            next[slotIdx] = {
+              ...next[slotIdx],
+              status: 'failed',
+              error: blockerMsg,
+              errorCode: 'GOVERNANCE_BLOCKED',
+              attempts: 0,
+            };
+            return next;
+          });
+          // Continue to next slot — governance blocks this one
+          continue;
+        }
 
         const invokeResult = await invokeHeroFrameChunkWithRetry({
           chunkIndex: slotIdx,
