@@ -44,87 +44,14 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts'
-import { useRewriteTrajectory } from '@/hooks/useRewriteTrajectory'
+import { useRewriteTrajectory, type VersionTimelineEntry, type ConvergencePoint, type BlockerNoteGroup, type EntropyMetric, type RiskIndicator, type MissingDataReport, type RewriteTrajectoryData } from '@/hooks/useRewriteTrajectory'
 
 /* ------------------------------------------------------------------ */
-/*  Data types (re-exported from hook for internal clarity)            */
+/*  Types (imported from hook to stay in sync)                       */
 /* ------------------------------------------------------------------ */
-
-interface VersionTimelineEntry {
-  id: string
-  versionNumber: number
-  label: string | null
-  createdAt: string
-  triggerType: 'ai_rewrite' | 'human_edit'
-  specificity: {
-    entityCount: number
-    nounCount: number
-    avgWordLength: number
-    lexicalDiversity: number
-    specificityScore: number
-  }
-  charCount: number
-}
-
-interface ConvergencePoint {
-  id: string
-  creativeScore: number
-  greenlightScore: number
-  gap: number
-  trajectory: string | null
-  createdAt: string
-  versionId: string
-}
-
-interface BlockerNoteGroup {
-  versionId: string
-  versionNumber: number
-  total: number
-  resolved: number
-  unresolved: number
-  regressed: number
-}
-
-interface EntropyMetric {
-  versionId: string
-  versionNumber: number
-  specificity: {
-    entityCount: number
-    nounCount: number
-    avgWordLength: number
-    lexicalDiversity: number
-    specificityScore: number
-  }
-  changes: {
-    jaccard: number
-    entityOverlap: number
-    nounOverlap: number
-    textLengthDelta: number
-  } | null
-}
-
-interface RiskIndicator {
-  type: string
-  severity: 'low' | 'medium' | 'high'
-  label: string
-  detail: string
-}
-
-interface MissingDataReport {
-  section: string
-  present: boolean
-  count: number
-  note: string
-}
-
-interface RewriteTrajectoryData {
-  versionTimeline: VersionTimelineEntry[]
-  convergenceTrajectory: ConvergencePoint[]
-  blockerEvolution: BlockerNoteGroup[]
-  entropyMetrics: EntropyMetric[]
-  riskIndicators: RiskIndicator[]
-  missingDataReport: MissingDataReport[]
-}
+/*  See: useRewriteTrajectory.ts for VersionTimelineEntry,
+ *  ConvergencePoint, BlockerNoteGroup, EntropyMetric, RiskIndicator,
+ *  MissingDataReport, RewriteTrajectoryData                           */
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                              */
@@ -833,7 +760,7 @@ export function RewriteTrajectoryObservatory({
   documentId,
   projectId,
 }: RewriteTrajectoryObservatoryProps) {
-  const { data, isLoading, error } = useRewriteTrajectory(
+  const { data, isLoading, error, refetch } = useRewriteTrajectory(
     documentId,
     projectId
   )
@@ -864,7 +791,7 @@ export function RewriteTrajectoryObservatory({
 
             {error && !isLoading && (
               <ErrorState
-                onRetry={() => onOpenChange(false)}
+                onRetry={() => refetch()}
               />
             )}
 

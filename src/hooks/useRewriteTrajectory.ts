@@ -118,8 +118,8 @@ function chunk<T>(arr: T[], size: number): T[][] {
 export function useRewriteTrajectory(
   documentId: string | undefined,
   projectId: string | undefined,
-): { data: RewriteTrajectoryData | undefined; isLoading: boolean } {
-  const { data, isLoading } = useQuery<RewriteTrajectoryData>({
+): { data: RewriteTrajectoryData | undefined; isLoading: boolean; error: Error | null; refetch: () => void } {
+  const { data, isLoading, error, refetch } = useQuery<RewriteTrajectoryData>({
     queryKey: ['rewriteTrajectory', documentId, projectId],
     enabled: !!documentId && !!projectId,
     queryFn: async (): Promise<RewriteTrajectoryData> => {
@@ -181,9 +181,9 @@ export function useRewriteTrajectory(
           if (idx > 0) {
             const prev = versionList[idx - 1];
             const pairMetrics = entropy.computeVersionPairMetrics(
-              { plaintext: prev.plaintext ?? '' },
-              { plaintext: v.plaintext ?? '' },
-            );
+                  prev.plaintext ?? '',
+                  v.plaintext ?? '',
+                );
             changes = {
               jaccard: pairMetrics.jaccard,
               entityOverlap: pairMetrics.entityOverlap,
@@ -444,5 +444,5 @@ export function useRewriteTrajectory(
     },
   });
 
-  return { data, isLoading };
+  return { data, isLoading, error, refetch };
 }
