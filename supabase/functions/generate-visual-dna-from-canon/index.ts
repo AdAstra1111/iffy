@@ -299,6 +299,28 @@ async function handleCharacter(
   // ── Build structured identity fields from traits ─────────────────
   const structuredIdentity = buildStructuredIdentityFromTraits(traits, identityStrength);
 
+  // ── Backfill from legacy identity_signature if present ──────────
+  // Recovers data from legacy flat-format or Format D signatures that
+  // the extraction pipeline didn't surface (ethnicity, height, voice, etc.)
+  // NEVER overwrites existing structured values — only fills true nulls.
+  const existingStructured: Record<string, any> = hasExisting
+    ? {
+        biological_sex: existingDNA.biological_sex,
+        gender_presentation: existingDNA.gender_presentation,
+        age_range: existingDNA.age_range,
+        ethnicity: existingDNA.ethnicity,
+        body_type: existingDNA.body_type,
+        height_class: existingDNA.height_class,
+        facial_archetype: existingDNA.facial_archetype,
+        voice_quality: existingDNA.voice_quality,
+        social_class: existingDNA.social_class,
+        role_archetype: existingDNA.role_archetype,
+      }
+    : structuredIdentity; // For new rows, compare against what we just extracted
+  const backfillData = backfillIdentityFromSignature(identitySignature, existingStructured);
+  // Merge: backfill fills gaps, structuredIdentity from traits takes priority
+  const mergedIdentity = { ...backfillData, ...structuredIdentity };
+
   if (!hasExisting) {
     // Insert new row as draft
     const { error: insertError } = await sb
@@ -317,8 +339,8 @@ async function handleCharacter(
         identity_signature: identitySignature,
         identity_strength: identityStrength,
         is_current: true,
-        // Structured identity fields
-        ...structuredIdentity,
+        // Structured identity fields (merged = backfill + extraction)
+        ...mergedIdentity,
       });
 
     if (insertError) {
@@ -356,28 +378,28 @@ async function handleCharacter(
         identity_strength: isApprovedOrStrong ? existingDNA.identity_strength : identityStrength,
         is_current: true,
         // Structured identity fields — populate only if null/empty on existing row
-        biological_sex: existingDNA.biological_sex ?? structuredIdentity.biological_sex ?? undefined,
-        gender_presentation: existingDNA.gender_presentation ?? structuredIdentity.gender_presentation ?? undefined,
-        age_range: existingDNA.age_range ?? structuredIdentity.age_range ?? undefined,
-        ethnicity: existingDNA.ethnicity ?? structuredIdentity.ethnicity ?? undefined,
-        body_type: existingDNA.body_type ?? structuredIdentity.body_type ?? undefined,
-        height_class: existingDNA.height_class ?? structuredIdentity.height_class ?? undefined,
-        facial_archetype: existingDNA.facial_archetype ?? structuredIdentity.facial_archetype ?? undefined,
-        voice_quality: existingDNA.voice_quality ?? structuredIdentity.voice_quality ?? undefined,
+        biological_sex: existingDNA.biological_sex ?? mergedIdentity.biological_sex ?? undefined,
+        gender_presentation: existingDNA.gender_presentation ?? mergedIdentity.gender_presentation ?? undefined,
+        age_range: existingDNA.age_range ?? mergedIdentity.age_range ?? undefined,
+        ethnicity: existingDNA.ethnicity ?? mergedIdentity.ethnicity ?? undefined,
+        body_type: existingDNA.body_type ?? mergedIdentity.body_type ?? undefined,
+        height_class: existingDNA.height_class ?? mergedIdentity.height_class ?? undefined,
+        facial_archetype: existingDNA.facial_archetype ?? mergedIdentity.facial_archetype ?? undefined,
+        voice_quality: existingDNA.voice_quality ?? mergedIdentity.voice_quality ?? undefined,
         wardrobe_signals: existingDNA.wardrobe_signals && Object.keys(existingDNA.wardrobe_signals).length > 0
           ? existingDNA.wardrobe_signals
-          : (structuredIdentity.wardrobe_signals ?? undefined),
-        social_class: existingDNA.social_class ?? structuredIdentity.social_class ?? undefined,
-        role_archetype: existingDNA.role_archetype ?? structuredIdentity.role_archetype ?? undefined,
+          : (mergedIdentity.wardrobe_signals ?? undefined),
+        social_class: existingDNA.social_class ?? mergedIdentity.social_class ?? undefined,
+        role_archetype: existingDNA.role_archetype ?? mergedIdentity.role_archetype ?? undefined,
         identity_evidence: existingDNA.identity_evidence && Object.keys(existingDNA.identity_evidence).length > 0
           ? existingDNA.identity_evidence
-          : (structuredIdentity.identity_evidence ?? undefined),
+          : (mergedIdentity.identity_evidence ?? undefined),
         identity_confidence: existingDNA.identity_confidence && Object.keys(existingDNA.identity_confidence).length > 0
           ? existingDNA.identity_confidence
-          : (structuredIdentity.identity_confidence ?? undefined),
+          : (mergedIdentity.identity_confidence ?? undefined),
         identity_inference_type: existingDNA.identity_inference_type && Object.keys(existingDNA.identity_inference_type).length > 0
           ? existingDNA.identity_inference_type
-          : (structuredIdentity.identity_inference_type ?? undefined),
+          : (mergedIdentity.identity_inference_type ?? undefined),
       })
       .eq("id", existingDNA.id);
 
@@ -1242,12 +1264,9 @@ function mergeIdentitySignatures(
 }
 
 /**
- * buildStructuredIdentityFromTraits — Map extracted visual DNA traits
- * into the new structured identity columns on character_visual_dna.
- *
- * Maps known trait categories to their corresponding columns, preserving
- * confidence and evidence tracking per field. Returns an object that can
- * be spread into an INSERT or merged into an UPDATE.
+ * buildStructuredIdentityFromTraits — Quality-hardened identity extraction
+ * with generic-value rejection, label normalization, inference classification,
+ * non-human entity awareness, and legacy backfill from identity_signature JSON.
  *
  * Category → column mapping:
  *   age        → age_range
@@ -1269,12 +1288,8 @@ function buildStructuredIdentityFromTraits(
   if (!traits || traits.length === 0) return {};
 
   // High-confidence trait matchers for known identity categories
-  const genderLabels = ["male", "female", "non-binary", "masculine", "feminine", "androgynous"];
   const sexLabels = ["male", "female"];
-  const agePatterns = [
-    /^(\d+)[–\-](\d+)$/,         // "25-35" → age range
-    /^(child|teen|young adult|adult|middle[\s-]aged|elderly|senior)$/i,
-  ];
+  const genderLabels = ["male", "female", "non-binary", "masculine", "feminine", "androgynous"];
 
   const result: Record<string, any> = {};
 
@@ -1296,64 +1311,263 @@ function buildStructuredIdentityFromTraits(
   const evidence: Record<string, string[]> = {};
   const inferenceTypes: Record<string, string> = {};
 
+  /**
+   * Known generic labels that are just the category name repeated.
+   * These represent extraction failures where the LLM said "age" instead of
+   * "40s weathered", "eyes" instead of "hazel eyes", etc.
+   */
+  const GENERIC_LABELS = new Set([
+    "age", "ages", "eyes", "appearance", "appearances",
+    "build", "body", "face", "facial", "skin", "hair",
+    "height", "voice", "ethnicity", "social class", "role",
+    "look", "looks", "feature", "features", "type", "style",
+  ]);
+
+  function isGenericLabel(value: string): boolean {
+    const clean = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
+    // Pure generic match
+    if (GENERIC_LABELS.has(clean)) return true;
+    // Single word that is a known generic
+    if (!clean.includes(" ") && GENERIC_LABELS.has(clean)) return true;
+    return false;
+  }
+
+  /**
+   * Normalize a raw identity value by stripping category suffix noise.
+   * E.g.:
+   *   "40s age" → "40s"
+   *   "male gender" → "male"
+   *   "rugged build" → "rugged"
+   *   "tired appearance" → "tired"
+   *   "appears in 30s" → "30s"
+   *   "huge monstrous figure" → "huge monstrous figure" (kept as-is — specific)
+   */
+const CATEGORY_SUFFIXES = [
+    /^(.*?)\s+(age|ages|gender|build|body|figure|appearance|look|looks|type|description|feature|features)\s*$/i,
+    /^(.*?)\s+(years old|year old|years of age)\s*$/i,
+    /^appears?\s+(?:to\s+be\s+)?(?:in\s+)?(?:their\s+)?(.+)$/i,
+    /^(?:a\s+|an\s+)?(.+)$/i,
+  ];
+
+  function normalizeValue(raw: string, category: string): string {
+    if (!raw) return "";
+    let value = raw.trim();
+    if (!value) return "";
+
+    // Reject generic labels outright
+    if (isGenericLabel(value)) return "";
+
+    // Strip descriptive prefixes
+    value = value.replace(/^appears?\s+(?:to\s+be\s+)?(?:in\s+)?(?:their\s+)?/i, "").trim();
+    value = value.replace(/^(?:a\s+|an\s+)/i, "").trim();
+
+    // Strip known category suffixes
+    for (const pattern of CATEGORY_SUFFIXES) {
+      const match = value.match(pattern);
+      if (match && match[1] && match[1].trim()) {
+        const stripped = match[1].trim();
+        const suffix = (match[2] || "").toLowerCase();
+        // Allow stripping when suffix matches category, is a known generic,
+        // or matches one of the descriptive suffixes like "appearance", "looks"
+        const descriptorSuffixes = new Set(["appearance", "look", "looks", "type", "description", "feature", "features"]);
+        if (!suffix || suffix === category.toLowerCase() || descriptorSuffixes.has(suffix)) {
+          value = stripped;
+          break;
+        }
+      }
+    }
+
+    // Collapse whitespace
+    value = value.replace(/\s+/g, " ").trim();
+
+    // Final check: if after stripping we're left with a generic, reject
+    if (isGenericLabel(value)) return "";
+
+    return value;
+  }
+
+  /**
+   * Normalize age range values to canonical bands.
+   * "40s" → "40s", "twenty years old" → "20s", "appears in 30s" → "30s"
+   */
+  function normalizeAgeRange(raw: string): string {
+    if (!raw) return "";
+
+    // Parse "appears in 30s" → "30s"
+    const appearsMatch = raw.match(/appears?\s+(?:to\s+be\s+)?(?:in\s+)?(?:their\s+)?(\d+)s?/i);
+    if (appearsMatch) return appearsMatch[1] + "s";
+
+    // Parse "child" → "child"
+    const knownAgeBands = new Set([
+      "child", "teen", "teenager", "young adult", "adult",
+      "middle-aged", "middle aged", "elderly", "senior",
+      "ancient", "ageless",
+    ]);
+    const clean = raw.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
+    if (knownAgeBands.has(clean)) return clean;
+
+    // Parse "20 years old" → "20s"
+    const yearsOldMatch = raw.match(/(\d+)\s*(?:years?\s*)?old/i);
+    if (yearsOldMatch) {
+      const age = parseInt(yearsOldMatch[1], 10);
+      if (age >= 0 && age <= 12) return "child";
+      if (age >= 13 && age <= 19) return "teen";
+      if (age >= 20 && age <= 29) return "20s";
+      if (age >= 30 && age <= 39) return "30s";
+      if (age >= 40 && age <= 49) return "40s";
+      if (age >= 50 && age <= 59) return "50s";
+      if (age >= 60) return "60s+";
+    }
+
+    // Parse "25-35" age range pattern
+    const rangeMatch = raw.match(/(\d+)\s*[–\-]\s*(\d+)/);
+    if (rangeMatch) {
+      const low = parseInt(rangeMatch[1], 10);
+      const high = parseInt(rangeMatch[2], 10);
+      return `${low}-${high}`;
+    }
+
+    // Parse "40s" shorthand
+    const decadeMatch = raw.match(/(\d+)s/);
+    if (decadeMatch) return decadeMatch[1] + "s";
+
+    // Return normalized value if it passed generic check
+    return raw;
+  }
+
+  /**
+   * Classify whether an identity value was explicitly stated in canon,
+   * strongly implied, inferred from available evidence, or unknown.
+   */
+  function classifyInferenceType(
+    category: string,
+    rawLabel: string,
+    traitConfidence: string,
+  ): string {
+    // High confidence + specific value → explicit canon
+    if (traitConfidence === "high" && rawLabel.length > 3) return "explicit_canon";
+
+    // High confidence + short but meaningful → strongly implied
+    if (traitConfidence === "high") return "strongly_implied";
+
+    // Medium confidence → inferred style
+    if (traitConfidence === "medium") return "inferred_style";
+
+    // Low confidence or missing → unknown
+    return "unknown";
+  }
+
+  /**
+   * Extra-specific rejection: biological_sex should only be "male", "female",
+   * or not set. Normalize "male gender" → "male", "female gender" → "female".
+   */
+  function normalizeBiologicalSex(raw: string): string | undefined {
+    if (!raw) return undefined;
+    const clean = raw.toLowerCase().replace(/[^a-z]/g, "").trim();
+    if (clean === "male" || clean === "female") return clean;
+    if (clean === "malegender" || clean === "malegendered") return "male";
+    if (clean === "femalegender" || clean === "femalegendered") return "female";
+    return undefined; // Reject ambiguous
+  }
+
+  /**
+   * Detect if a character is non-human / mythic / divine entity.
+   * These entities should not be forced into human identity categories.
+   */
+  const NON_HUMAN_MARKERS = [
+    /\b(?:ten|forty|fifty|hundred|thousand)\s+(?:feet?|meters?)\s+tall\b/i,
+    /\b(?:divine|alien|mythical|mythic|supernatural|demonic|angelic|celestial)\b/i,
+    /\b(?:ram[-\s]like|horn|claw|tentacle|wing|hoof|tail|fang)\b/i,
+    /\b(?:colossal|gigantic|massive\s+(?:form|figure|being|creature))\b/i,
+    /\bnon[- ]?human\b/i,
+  ];
+
+  function isNonHumanEntity(traits: any[]): boolean {
+    if (!traits) return false;
+    let nonHumanScore = 0;
+    for (const t of traits) {
+      const combined = `${t.label || ""} ${t.value || ""} ${t.category || ""}`;
+      for (const pattern of NON_HUMAN_MARKERS) {
+        if (pattern.test(combined)) {
+          nonHumanScore++;
+          break;
+        }
+      }
+    }
+    return nonHumanScore >= 2; // Two or more non-human markers
+  }
+
+  const entityIsNonHuman = isNonHumanEntity(traits);
+
+  // Track the highest-confidence evidence per category
+  const updateField = (fieldName: string, fieldValue: string | string[]) => {
+    if (!fieldValue || (Array.isArray(fieldValue) && fieldValue.length === 0)) return;
+    const confScore = traitConfidence === "high" ? 3 : traitConfidence === "medium" ? 2 : 1;
+    const existingScore = (confidence[fieldName] === "high" ? 3 : confidence[fieldName] === "medium" ? 2 : 0);
+
+    if (confScore >= existingScore) {
+      confidence[fieldName] = traitConfidence;
+      evidence[fieldName] = [...(evidence[fieldName] || []), evidenceSource];
+      inferenceTypes[fieldName] = classifyInferenceType(category, label, traitConfidence);
+    }
+  };
+
   for (const trait of traits) {
     const category = (trait.category || "").toLowerCase().trim();
-    const label = (trait.label || "").toLowerCase().trim();
+    const rawLabel = (trait.label || "").trim();
+    const label = rawLabel.toLowerCase().trim();
     const value = (trait.value || trait.label || "").trim();
-    const traitConfidence = (trait.confidence || "low").toLowerCase().trim();
+    let traitConfidence = (trait.confidence || "low").toLowerCase().trim();
     const evidenceSource = trait.evidence_source || trait.source || `extract-visual-dna`;
 
-    // Track the highest-confidence evidence per category
-    const updateField = (fieldName: string, fieldValue: string | string[]) => {
-      if (!fieldValue) return;
-      const confScore = traitConfidence === "high" ? 3 : traitConfidence === "medium" ? 2 : 1;
-      const existingScore = (confidence[fieldName] === "high" ? 3 : confidence[fieldName] === "medium" ? 2 : 0);
+    // Skip if label is generic (just the category name)
+    if (isGenericLabel(label)) continue;
 
-      if (confScore >= existingScore) {
-        confidence[fieldName] = traitConfidence;
-        evidence[fieldName] = [...(evidence[fieldName] || []), evidenceSource];
-        inferenceTypes[fieldName] = `ai_extraction`;
-      }
-    };
+    // Normalize the value
+    const normalized = normalizeValue(value, category);
+    if (!normalized) continue;
 
     switch (category) {
       case "gender": {
-        const cleanLabel = label.replace(/[^a-z\s-]/g, "").trim();
-        const matchedGender = genderLabels.find(g => cleanLabel.includes(g));
-        const matchedSex = sexLabels.find(s => cleanLabel === s);
+        if (entityIsNonHuman) break; // Non-human entities don't get forced sex
 
-        // biological_sex: only set for explicit male/female
+        const cleanLabel = label.replace(/[^a-z\s-]/g, "").trim();
+        const matchedSex = normalizeBiologicalSex(cleanLabel);
+
+        // biological_sex: only for explicit male/female
         if (matchedSex && !biologicalSex) {
           biologicalSex = matchedSex;
           updateField("biological_sex", biologicalSex);
         }
-        // gender_presentation: broader
+
+        // gender_presentation: broader, but only if meaningful
+        const matchedGender = genderLabels.find(g => cleanLabel.includes(g));
         if (matchedGender && !genderPresentation) {
           genderPresentation = matchedGender;
           updateField("gender_presentation", genderPresentation);
+
+          // Infer biological_sex from presentation when not explicit
+          if (!biologicalSex && (matchedGender === "male" || matchedGender === "female")) {
+            biologicalSex = matchedGender;
+            updateField("biological_sex", biologicalSex);
+          }
         }
         break;
       }
 
       case "age": {
         if (ageRange) break; // Already have best value
-        // Try numeric range patterns first
-        if (agePatterns[0].test(value)) {
-          ageRange = value;
+        const normalizedAge = normalizeAgeRange(normalized);
+        if (normalizedAge && !isGenericLabel(normalizedAge)) {
+          ageRange = normalizedAge;
           updateField("age_range", ageRange);
-        } else {
-          const cleanAge = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
-          if (agePatterns[1].test(cleanAge)) {
-            ageRange = cleanAge;
-            updateField("age_range", ageRange);
-          }
         }
         break;
       }
 
       case "build": {
         if (!bodyType) {
-          bodyType = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
+          bodyType = normalized.slice(0, 80);
           updateField("body_type", bodyType);
         }
         break;
@@ -1361,7 +1575,7 @@ function buildStructuredIdentityFromTraits(
 
       case "height": {
         if (!heightClass) {
-          heightClass = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
+          heightClass = normalized.slice(0, 60);
           updateField("height_class", heightClass);
         }
         break;
@@ -1369,7 +1583,7 @@ function buildStructuredIdentityFromTraits(
 
       case "face": {
         if (!facialArchetype) {
-          facialArchetype = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim().slice(0, 100);
+          facialArchetype = normalized.slice(0, 100);
           updateField("facial_archetype", facialArchetype);
         }
         break;
@@ -1377,17 +1591,17 @@ function buildStructuredIdentityFromTraits(
 
       case "voice": {
         if (!voiceQuality) {
-          voiceQuality = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim().slice(0, 60);
+          voiceQuality = normalized.slice(0, 60);
           updateField("voice_quality", voiceQuality);
         }
         break;
       }
 
       case "clothing": {
-        const cleanKey = (trait.label || "").replace(/[^a-zA-Z0-9\s_-]/g, "").trim();
+        const cleanKey = rawLabel.replace(/[^a-zA-Z0-9\s_-]/g, "").trim();
         if (cleanKey && !wardrobeSignals[cleanKey]) {
           wardrobeSignals[cleanKey] = {
-            value,
+            value: normalized,
             source: evidenceSource,
             confidence: traitConfidence,
           };
@@ -1396,25 +1610,27 @@ function buildStructuredIdentityFromTraits(
       }
 
       case "ethnicity": {
-        const cleanEth = value.replace(/[^a-zA-Z\s\/-]/g, "").trim();
-        if (cleanEth && !ethnicity?.includes(cleanEth)) {
-          ethnicity = [...(ethnicity || []), cleanEth];
-          updateField("ethnicity", cleanEth);
+        const cleanEth = normalized.replace(/[^a-zA-Z\s\/-]/g, "").trim();
+        if (cleanEth && cleanEth.length > 2 && !isGenericLabel(cleanEth)) {
+          if (!ethnicity?.includes(cleanEth)) {
+            ethnicity = [...(ethnicity || []), cleanEth];
+            updateField("ethnicity", cleanEth);
+          }
         }
         break;
       }
 
       case "social_class": {
-        if (!socialClass) {
-          socialClass = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim();
+        if (!socialClass && !isGenericLabel(normalized)) {
+          socialClass = normalized.slice(0, 60);
           updateField("social_class", socialClass);
         }
         break;
       }
 
       case "role": {
-        if (!roleArchetype) {
-          roleArchetype = value.toLowerCase().replace(/[^a-z\s-]/g, "").trim().slice(0, 60);
+        if (!roleArchetype && !isGenericLabel(normalized)) {
+          roleArchetype = normalized.slice(0, 60);
           updateField("role_archetype", roleArchetype);
         }
         break;
@@ -1449,10 +1665,149 @@ function buildStructuredIdentityFromTraits(
 
   result.identity_inference_type = {};
   for (const field of Object.keys(confidence)) {
-    result.identity_inference_type[field] = "ai_extraction";
+    if (!result.identity_inference_type[field]) {
+      result.identity_inference_type[field] = inferenceTypes[field] || "ai_extraction";
+    }
   }
 
   return result;
+}
+
+/**
+ * Backfill structured identity fields from legacy identity_signature JSON.
+ * Called when the identity_signature contains evidence not captured by the
+ * AI extraction pipeline (e.g., legacy flat-format signatures with embedded
+ * ethnicity, height, voice data).
+ *
+ * NEVER overwrites an existing non-null value (first-write-wins).
+ */
+function backfillIdentityFromSignature(
+  identitySignature: any,
+  existingStructured: Record<string, any>,
+): Record<string, any> {
+  if (!identitySignature) return {};
+
+  const result: Record<string, any> = {};
+  const sig = identitySignature;
+
+  // Helper: get value if field is null/undefined/existing
+  const needsFill = (field: string) =>
+    existingStructured[field] === null || existingStructured[field] === undefined;
+
+  // Format D: { signature: { age: {...}, gender: {...}, ... } }
+  // Legacy Format B: flat fields directly in the top-level object
+  const inner = sig.signature || sig;
+
+  // Age — check all possible locations
+  if (needsFill("age_range") && !result.age_range) {
+    if (typeof inner.age === "string" && inner.age.length > 2) result.age_range = inner.age;
+    else if (typeof inner.age === "object" && inner.age) {
+      const ageVal = inner.age.value || inner.age.label || "";
+      if (ageVal.length > 2) result.age_range = ageVal;
+    }
+    else if (sig.age && typeof sig.age === "string") result.age_range = sig.age;
+  }
+
+  // Gender/sex — explicit value or label
+  if (needsFill("biological_sex") && !result.biological_sex) {
+    const genderRaw = inner.gender || sig.gender || "";
+    const genderVal = typeof genderRaw === "string" ? genderRaw.toLowerCase() :
+      typeof genderRaw === "object" ? (genderRaw.value || genderRaw.label || "") : "";
+    const clean = genderVal.replace(/[^a-z]/g, "").trim();
+    if (clean === "male" || clean === "female") result.biological_sex = clean;
+  }
+
+  // Ethnicity — from various signature paths
+  if (needsFill("ethnicity") && !result.ethnicity) {
+    const ethRaw = inner.ethnicity || sig.ethnicity || "";
+    if (Array.isArray(ethRaw) && ethRaw.length > 0) {
+      result.ethnicity = ethRaw.filter((e: any) => typeof e === "string" && e.length > 1);
+    } else if (typeof ethRaw === "string" && ethRaw.length > 2) {
+      result.ethnicity = [ethRaw];
+    }
+  }
+
+  // Height — from signature's body sub-object or direct height field
+  if (needsFill("height_class") && !result.height_class) {
+    const bodyHeight = inner.body?.height || inner.body?.height_estimate || sig.height || "";
+    const bodyHeightVal = typeof bodyHeight === "string" ? bodyHeight :
+      typeof bodyHeight === "object" ? (bodyHeight.value || bodyHeight.label || "") : "";
+    if (bodyHeightVal && bodyHeightVal.length > 2) result.height_class = bodyHeightVal;
+  }
+
+  // Body type — from signature's body sub-object or direct build field
+  if (needsFill("body_type") && !result.body_type) {
+    const bodyVal = inner.body?.build || inner.body?.type ||
+      inner.build || sig.build || "";
+    const bodyStr = typeof bodyVal === "string" ? bodyVal :
+      typeof bodyVal === "object" ? (bodyVal.value || bodyVal.label || "") : "";
+    if (bodyStr && bodyStr.length > 2) result.body_type = bodyStr;
+  }
+
+  // Voice — from signature
+  if (needsFill("voice_quality") && !result.voice_quality) {
+    const voiceRaw = inner.voice || sig.voice || "";
+    const voiceVal = typeof voiceRaw === "string" ? voiceRaw :
+      typeof voiceRaw === "object" ? (voiceRaw.value || voiceRaw.label || "") : "";
+    if (voiceVal && voiceVal.length > 2) result.voice_quality = voiceVal;
+  }
+
+  // Social class
+  if (needsFill("social_class") && !result.social_class) {
+    const classRaw = inner.social_class || sig.social_class || "";
+    const classVal = typeof classRaw === "string" ? classRaw :
+      typeof classRaw === "object" ? (classRaw.value || classRaw.label || "") : "";
+    if (classVal && classVal.length > 2) result.social_class = classVal;
+  }
+
+  // Role archetype
+  if (needsFill("role_archetype") && !result.role_archetype) {
+    const roleRaw = inner.role || sig.role || "";
+    const roleVal = typeof roleRaw === "string" ? roleRaw :
+      typeof roleRaw === "object" ? (roleRaw.value || roleRaw.label || "") : "";
+    if (roleVal && roleVal.length > 2) result.role_archetype = roleVal;
+  }
+
+  // Face archetype
+  if (needsFill("facial_archetype") && !result.facial_archetype) {
+    const faceRaw = inner.face || sig.face || "";
+    const faceObj = typeof faceRaw === "object" ? faceRaw : null;
+    if (faceObj) {
+      // Try to extract a meaningful summary from face object
+      const faceParts = [
+        faceObj.shape || faceObj.type || faceObj.archetype || "",
+        faceObj.eyes || "",
+        faceObj.nose || "",
+        faceObj.jaw || "",
+      ].filter(Boolean);
+      if (faceParts.length > 0) {
+        result.facial_archetype = faceParts.join(", ").slice(0, 100);
+      }
+    } else if (typeof faceRaw === "string" && faceRaw.length > 2) {
+      result.facial_archetype = faceRaw;
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Extract identity_signature from any row format (Format B legacy flat,
+ * Format D with evidence_traits, or mixed).
+ */
+function extractIdentitySignature(row: any): any {
+  if (!row) return null;
+  // Prefer the dedicated identity_signature JSONB column
+  if (row.identity_signature) return row.identity_signature;
+  // Fallback: construct from available structured fields
+  const sig: any = {};
+  if (row.age_range) sig.age = row.age_range;
+  if (row.biological_sex) sig.gender = row.biological_sex;
+  if (row.body_type) sig.build = row.body_type;
+  if (row.ethnicity) sig.ethnicity = row.ethnicity;
+  if (row.height_class) sig.height = row.height_class;
+  if (Object.keys(sig).length === 0) return null;
+  return { signature: sig };
 }
 
 function respond(data: any, status: number = 200): Response {

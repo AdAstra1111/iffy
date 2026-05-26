@@ -218,9 +218,16 @@ RULES:
 - NO psychology, motivation, personality, emotions, or narrative function
 - Each trait must cite its evidence source and a brief excerpt
 - Assign confidence: "high" (explicitly stated), "medium" (clearly implied), "low" (weakly suggested)
-- Categories: age, gender, build, face, hair, skin, clothing, posture, marker, other
-- "marker" = scars, tattoos, prosthetics, glasses, birthmarks, disabilities, persistent accessories
-- Keep labels concise (2-8 words)
+|- Categories: age, gender, build, face, hair, skin, clothing, posture, marker, ethnicity, height, voice, social_class, role, other
+|- "marker" = scars, tattoos, prosthetics, glasses, birthmarks, disabilities, persistent accessories
+|- "ethnicity" = cultural/ethnic identity, nationality, or regional appearance
+|- "voice" = vocal quality, accent, speech patterns (timbre, cadence, dialect)
+|- "height" = height class or stature description
+|- "social_class" = implied socioeconomic status from appearance, dress, grooming
+|- "role" = character archetype (protector, seducer, villain, mentor, etc.)
+|- Keep labels concise (2-8 words)
+|- NEVER use a category name as the label value (e.g. "age" is invalid, "eyes" is invalid, "appearance" is invalid — describe what kind of age/eyes/appearance)
+|- Be specific: prefer "40s weathered face" over just "age", "hazel eyes" over just "eyes"
 - Do NOT invent traits not supported by evidence
 - If evidence is ambiguous, use "low" confidence
 
@@ -276,7 +283,7 @@ Return JSON:
     }
 
     // Validate and clean traits
-    const validCategories = new Set(["age", "gender", "build", "face", "hair", "skin", "clothing", "posture", "marker", "other"]);
+    const validCategories = new Set(["age", "gender", "build", "face", "hair", "skin", "clothing", "posture", "marker", "ethnicity", "height", "voice", "social_class", "role", "other"]);
     const validConfidence = new Set(["high", "medium", "low"]);
     const SENSITIVE_CATEGORIES = new Set(["skin", "gender", "age"]);
     
