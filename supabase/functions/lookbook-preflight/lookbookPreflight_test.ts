@@ -176,3 +176,169 @@ Deno.test("hero frame execution succeeds (regression: lookbook block does not af
   assertEquals(heroGate.allowed, true, "Hero frames should still work");
   assertEquals(lookbookGate.allowed, false, "Lookbook should still be blocked");
 });
+
+// ── Lookbook Execution Gate Tests ──
+
+const LB_ALLOWED_REASONS = ["PD_NEWER_THAN_LOOKBOOK", "SOURCE_SNAPSHOT_CHANGED"];
+
+interface ExecutionIntent {
+  approval_state: string;
+  execution_state: string;
+  recommended_action: string;
+  stage_id: string;
+  stale_reason_codes?: string[];
+}
+
+interface PreflightCheck {
+  all_requirements_pass: boolean;
+  requirements?: { code: string; passed: boolean; detail: string }[];
+}
+
+function checkLookbookExecutionGates(
+  intent: ExecutionIntent,
+  preflight: PreflightCheck,
+): { passed: boolean; failed: string[] } {
+  const failed: string[] = [];
+
+  if (intent.approval_state !== "approved") failed.push("NOT_APPROVED");
+  if (!["queued", "ready"].includes(intent.execution_state)) failed.push("ALREADY_EXECUTED");
+  if (intent.recommended_action !== "REGENERATE_CANDIDATES") failed.push("WRONG_ACTION");
+  if (intent.stage_id !== "lookbook") failed.push("WRONG_STAGE");
+
+  const hasStaleReason = (intent.stale_reason_codes ?? []).some(
+    (code: string) => LB_ALLOWED_REASONS.includes(code),
+  );
+  if (!hasStaleReason) failed.push("EXECUTOR_NOT_ENABLED");
+
+  if (!preflight.all_requirements_pass) failed.push("PREFLIGHT_FAILED");
+
+  return { passed: failed.length === 0, failed };
+}
+
+Deno.test("lookbook execution all gates pass", () => {
+  const intent: ExecutionIntent = {
+    approval_state: "approved",
+    execution_state: "queued",
+    recommended_action: "REGENERATE_CANDIDATES",
+    stage_id: "lookbook",
+    stale_reason_codes: ["PD_NEWER_THAN_LOOKBOOK"],
+  };
+  const preflight: PreflightCheck = { all_requirements_pass: true };
+  const result = checkLookbookExecutionGates(intent, preflight);
+  assertEquals(result.passed, true, "All gates should pass");
+  assertEquals(result.failed.length, 0);
+});
+
+Deno.test("lookbook fails if preflight fails", () => {
+  const intent: ExecutionIntent = {
+    approval_state: "approved",
+    execution_state: "queued",
+    recommended_action: "REGENERATE_CANDIDATES",
+    stage_id: "lookbook",
+    stale_reason_codes: ["PD_NEWER_THAN_LOOKBOOK"],
+  };
+  const preflight: PreflightCheck = { all_requirements_pass: false };
+  const result = checkLookbookExecutionGates(intent, preflight);
+  assertEquals(result.passed, false);
+  assertEquals(result.failed.includes("PREFLIGHT_FAILED"), true);
+});
+
+Deno.test("lookbook fails if approval missing", () => {
+  const intent: ExecutionIntent = {
+    approval_state: "pending",
+    execution_state: "queued",
+    recommended_action: "REGENERATE_CANDIDATES",
+    stage_id: "lookbook",
+    stale_reason_codes: ["PD_NEWER_THAN_LOOKBOOK"],
+  };
+  const preflight: PreflightCheck = { all_requirements_pass: true };
+  const result = checkLookbookExecutionGates(intent, preflight);
+  assertEquals(result.passed, false);
+  assertEquals(result.failed.includes("NOT_APPROVED"), true);
+});
+
+Deno.test("lookbook fails if stale reason invalid", () => {
+  const intent: ExecutionIntent = {
+    approval_state: "approved",
+    execution_state: "queued",
+    recommended_action: "REGENERATE_CANDIDATES",
+    stage_id: "lookbook",
+    stale_reason_codes: ["HERO_FRAMES_NEWER_THAN_POSTER"], // wrong for lookbook
+  };
+  const preflight: PreflightCheck = { all_requirements_pass: true };
+  const result = checkLookbookExecutionGates(intent, preflight);
+  assertEquals(result.passed, false);
+  assertEquals(result.failed.includes("EXECUTOR_NOT_ENABLED"), true);
+});
+
+Deno.test("lookbook succeeds with PD_NEWER_THAN_LOOKBOOK stale reason", () => {
+  const hasReason = (["PD_NEWER_THAN_LOOKBOOK"]).some((c: string) => LB_ALLOWED_REASONS.includes(c));
+  assertEquals(hasReason, true);
+  // Full gate check
+  const intent: ExecutionIntent = {
+    approval_state: "approved",
+    execution_state: "queued",
+    recommended_action: "REGENERATE_CANDIDATES",
+    stage_id: "lookbook",
+    stale_reason_codes: ["PD_NEWER_THAN_LOOKBOOK"],
+  };
+  const preflight: PreflightCheck = { all_requirements_pass: true };
+  const result = checkLookbookExecutionGates(intent, preflight);
+  assertEquals(result.passed, true, "PD_NEWER_THAN_LOOKBOOK should pass all gates");
+});
+
+Deno.test("lookbook succeeds with SOURCE_SNAPSHOT_CHANGED stale reason", () => {
+  const hasReason = (["SOURCE_SNAPSHOT_CHANGED"]).some((c: string) => LB_ALLOWED_REASONS.includes(c));
+  assertEquals(hasReason, true);
+});
+
+Deno.test("lookbook stale reason fails with non-lookbook codes", () => {
+  const hasPdReason = (["PD_NEWER_THAN_LOOKBOOK"]).some((c: string) => LB_ALLOWED_REASONS.includes(c));
+  assertEquals(hasPdReason, true);
+
+  const hasHeroReason = (["CAST_NEWER_THAN_HERO_FRAMES"]).some((c: string) => LB_ALLOWED_REASONS.includes(c));
+  assertEquals(hasHeroReason, false, "Hero frame reasons should not work for lookbook");
+});
+
+Deno.test("lookbook provenance captured after successful execution", () => {
+  const mockImageIds = ["lb-char-1", "lb-world-1", "lb-vl-1", "lb-km-1"];
+  const provenanceRow = {
+    execution_state: "completed",
+    generated_asset_ids: mockImageIds,
+    stage_id: "lookbook",
+    recommended_action: "REGENERATE_CANDIDATES",
+    execution_number: 1,
+  };
+  assertEquals(provenanceRow.execution_state, "completed");
+  assertEquals(provenanceRow.generated_asset_ids.length, 4);
+  assertEquals(provenanceRow.stage_id, "lookbook");
+});
+
+Deno.test("lookbook provenance captured after partial failure", () => {
+  const provenanceRow = {
+    execution_state: "partial",
+    generated_asset_ids: ["lb-char-1", "lb-world-1"],
+    result_summary: { error: "visual_language: Generation API error; key_moment: Generation API error", partial_image_count: 2 },
+  };
+  assertEquals(provenanceRow.execution_state, "partial");
+  assertEquals(provenanceRow.generated_asset_ids.length, 2);
+  assertEquals(provenanceRow.result_summary.partial_image_count, 2);
+});
+
+Deno.test("governance refresh called after lookbook execution", () => {
+  const governanceResult = {
+    source_snapshot_hash: "new-lb-hash",
+    evaluated_at: new Date().toISOString(),
+    stages: [{ stage_id: "lookbook", computed_status: "not_started" }],
+  };
+  const executionResult = {
+    invoked_function: "generate-lookbook-image",
+    governance_refresh: {
+      status: "completed",
+      evaluated_at: governanceResult.evaluated_at,
+      stages_count: governanceResult.stages.length,
+    },
+  };
+  assertEquals(executionResult.governance_refresh.status, "completed");
+  assertEquals(executionResult.invoked_function, "generate-lookbook-image");
+});

@@ -596,19 +596,247 @@ serve(async (req) => {
               return jsonRes({ intent: updated });
             }
 
-            // ── Poster Execution (existing) ──
+            // ── Lookbook Execution ──
             if (intent.stage_id === "lookbook") {
-              // Lookbook execution preflight exists but executor is not enabled
-              return jsonRes(
-                {
-                  error: "Lookbook executor is not enabled yet",
-                  code: "EXECUTOR_NOT_ENABLED",
-                  recommended_action: intent.recommended_action,
-                  stage_id: intent.stage_id,
-                  note: "Lookbook execution preflight exists (P11) but executor is not enabled — see lookbook-preflight edge function",
-                },
-                400,
+              // Guard: stale reason must include PD_NEWER_THAN_LOOKBOOK or SOURCE_SNAPSHOT_CHANGED
+              const lbAllowedReasons = ["PD_NEWER_THAN_LOOKBOOK", "SOURCE_SNAPSHOT_CHANGED"];
+              const hasLbReason = (intent.stale_reason_codes ?? []).some(
+                (code: string) => lbAllowedReasons.includes(code),
               );
+              if (!hasLbReason) {
+                return jsonRes(
+                  {
+                    error: "Stale reason does not qualify for lookbook regeneration",
+                    code: "EXECUTOR_NOT_ENABLED",
+                    current_reasons: intent.stale_reason_codes,
+                    allowed_reasons: lbAllowedReasons,
+                  },
+                  400,
+                );
+              }
+
+              // Guard: preflight must pass
+              const preflightUrl =
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/lookbook-preflight`;
+              const preflightRes = await fetch(preflightUrl, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                },
+                body: JSON.stringify({ projectId: intent.project_id }),
+              });
+              const preflightResult = await preflightRes.json();
+
+              if (!preflightRes.ok || !preflightResult.all_requirements_pass) {
+                const failedReqs = (preflightResult.requirements ?? [])
+                  .filter((r: any) => !r.passed)
+                  .map((r: any) => r.code);
+                return jsonRes(
+                  {
+                    error: "Lookbook preflight failed",
+                    code: "PREFLIGHT_FAILED",
+                    failed_requirements: failedReqs,
+                    preflight_result: preflightResult,
+                  },
+                  400,
+                );
+              }
+
+              // Define lookbook sections to regenerate (excluding hero_frames — has own executor)
+              const LOOKBOOK_SECTIONS = [
+                { section: "character", assetGroup: "character" },
+                { section: "world", assetGroup: "world" },
+                { section: "visual_language", assetGroup: "visual_language" },
+                { section: "key_moment", assetGroup: "key_moment" },
+              ];
+
+              const lbUrl =
+                `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-lookbook-image`;
+              const allImageIds: string[] = [];
+              let allOk = true;
+              const sectionResults: Record<string, { ok: boolean; ids: string[]; error?: string }> = {};
+              const errors: string[] = [];
+
+              for (const { section, assetGroup } of LOOKBOOK_SECTIONS) {
+                const payload = {
+                  project_id: intent.project_id,
+                  section,
+                  count: 4,
+                  asset_group: assetGroup,
+                  pack_mode: true,
+                };
+
+                let sectionOk = false;
+                let sectionResult: any;
+                try {
+                  const secRes = await fetch(lbUrl, {
+                    method: "POST",
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                    },
+                    body: JSON.stringify(payload),
+                  });
+                  sectionResult = await secRes.json();
+                  sectionOk = secRes.ok;
+                } catch (fetchErr) {
+                  sectionResult = {
+                    error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
+                  };
+                  sectionOk = false;
+                }
+
+                const imageIds: string[] = [];
+                if (sectionOk && sectionResult?.results && Array.isArray(sectionResult.results)) {
+                  for (const r of sectionResult.results) {
+                    if (r.image_id) imageIds.push(r.image_id);
+                  }
+                }
+                allImageIds.push(...imageIds);
+
+                if (!sectionOk) {
+                  allOk = false;
+                  errors.push(`${section}: ${sectionResult?.error ?? "Unknown error"}`);
+                }
+
+                sectionResults[section] = {
+                  ok: sectionOk,
+                  ids: imageIds,
+                  error: sectionOk ? undefined : (sectionResult?.error ?? "Unknown error"),
+                };
+              }
+
+              // After lookbook generation, refresh governance
+              let governanceResult: any = null;
+              try {
+                const evalUrl =
+                  `${Deno.env.get("SUPABASE_URL")!}/functions/v1/evaluate-visual-governance`;
+                const evalRes = await fetch(evalUrl, {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")!}`,
+                  },
+                  body: JSON.stringify({ projectId: intent.project_id }),
+                });
+                governanceResult = evalRes.ok
+                  ? await evalRes.json()
+                  : { error: "Governance refresh failed" };
+              } catch (govErr) {
+                governanceResult = {
+                  error: govErr instanceof Error ? govErr.message : String(govErr),
+                };
+              }
+
+              const now = new Date().toISOString();
+              const executionResult = {
+                invoked_function: "generate-lookbook-image",
+                input_snapshot: { project_id: intent.project_id, sections: LOOKBOOK_SECTIONS },
+                output_summary: {
+                  success: allOk,
+                  total_image_count: allImageIds.length,
+                  sections: sectionResults,
+                },
+                governance_refresh: {
+                  status: governanceResult?.error ? "failed" : "completed",
+                  evaluated_at: governanceResult?.evaluated_at ?? now,
+                  stages_count: governanceResult?.stages?.length ?? 0,
+                },
+                error: allOk ? undefined : errors.join("; "),
+              };
+
+              // Capture execution provenance (append-only)
+              const execNum = await supabase.rpc("next_execution_number", {
+                p_project_id: intent.project_id,
+              });
+              const { data: prevExecs } = await supabase
+                .from("project_visual_execution_provenance")
+                .select("id, generated_asset_ids")
+                .eq("project_id", intent.project_id)
+                .eq("stage_id", intent.stage_id)
+                .eq("is_superseded", false);
+              const prevExecIds = (prevExecs ?? []).map((r: any) => r.id);
+              let previousAssetIds: string[] = [];
+              for (const p of prevExecs ?? []) {
+                if (p.generated_asset_ids)
+                  previousAssetIds.push(...p.generated_asset_ids);
+              }
+
+              const genInputStr = JSON.stringify({ project_id: intent.project_id, sections: LOOKBOOK_SECTIONS });
+              const genInputEncoder = new TextEncoder();
+              const genInputHash = await crypto.subtle.digest(
+                "SHA-256",
+                genInputEncoder.encode(genInputStr),
+              );
+              const genInputHashHex = Array.from(new Uint8Array(genInputHash))
+                .map((b) => b.toString(16).padStart(2, "0"))
+                .join("");
+
+              const provenanceRow = {
+                project_id: intent.project_id,
+                repair_intent_id: intent.id,
+                execution_number: execNum.data ?? 1,
+                stage_id: intent.stage_id,
+                recommended_action: intent.recommended_action,
+                execution_state: allOk ? "completed" : "failed",
+                governance_snapshot_hash:
+                  governanceResult?.source_snapshot_hash ?? null,
+                stale_reason_snapshot: intent.stale_reason_codes ?? null,
+                generation_input_hash: genInputHashHex,
+                generated_asset_ids:
+                  allImageIds.length > 0 ? allImageIds : null,
+                previous_asset_ids:
+                  previousAssetIds.length > 0 ? previousAssetIds : null,
+                previous_execution_id:
+                  prevExecIds.length > 0
+                    ? prevExecIds[prevExecIds.length - 1]
+                    : null,
+                is_superseded: false,
+                result_summary: allOk
+                  ? {
+                      total_image_count: allImageIds.length,
+                      sections: Object.fromEntries(
+                        Object.entries(sectionResults).map(([k, v]) => [k, { ok: v.ok, count: v.ids.length }]),
+                      ),
+                    }
+                  : { error: errors.join("; "), partial_image_count: allImageIds.length },
+                error_message: allOk
+                  ? null
+                  : (errors.join("; ") || "Unknown error"),
+                executed_at: now,
+              };
+
+              const { error: provError } = await supabase
+                .from("project_visual_execution_provenance")
+                .insert(provenanceRow);
+
+              if (prevExecIds.length > 0) {
+                await supabase
+                  .from("project_visual_execution_provenance")
+                  .update({ is_superseded: true, superseded_at: now })
+                  .in("id", prevExecIds);
+              }
+
+              const execState: string = allOk ? "completed" : (allImageIds.length > 0 ? "partial" : "failed");
+              const updateData: Record<string, unknown> = {
+                execution_state: execState,
+                executed_at: now,
+                execution_result_json: executionResult,
+              };
+
+              const { data: updated, error: updateError } = await supabase
+                .from("project_visual_repair_intents")
+                .update(updateData)
+                .eq("id", intentId)
+                .select("*")
+                .maybeSingle();
+
+              if (updateError) {
+                return jsonRes({ error: updateError.message }, 500);
+              }
+
+              return jsonRes({ intent: updated });
             }
 
             if (intent.stage_id !== "poster") {
