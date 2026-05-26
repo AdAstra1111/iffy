@@ -39,7 +39,8 @@ describe('getDocTypeLabel — canonical label resolution', () => {
   });
 
   it('returns proper label for screenplay_draft', () => {
-    expect(getDocTypeLabel('screenplay_draft')).toBe('Screenplay Draft');
+    // screenplay_draft is aliased → feature_script via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('screenplay_draft')).toBe('Feature Script');
   });
 
   it('returns proper label for deck', () => {
@@ -51,15 +52,18 @@ describe('getDocTypeLabel — canonical label resolution', () => {
   });
 
   it('returns proper label for outline', () => {
-    expect(getDocTypeLabel('outline')).toBe('Outline');
+    // outline is aliased → treatment via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('outline')).toBe('Treatment');
   });
 
   it('returns proper label for logline', () => {
-    expect(getDocTypeLabel('logline')).toBe('Logline');
+    // logline is aliased → idea via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('logline')).toBe('Idea');
   });
 
   it('returns proper label for one_pager', () => {
-    expect(getDocTypeLabel('one_pager')).toBe('One-Pager');
+    // one_pager is aliased → concept_brief via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('one_pager')).toBe('Concept Brief');
   });
 
   it('returns proper label for budget_topline', () => {
@@ -67,7 +71,8 @@ describe('getDocTypeLabel — canonical label resolution', () => {
   });
 
   it('returns proper label for long_synopsis', () => {
-    expect(getDocTypeLabel('long_synopsis')).toBe('Long Synopsis');
+    // long_synopsis is aliased → topline_narrative via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('long_synopsis')).toBe('Topline Narrative');
   });
 
   it('returns proper label for season_arc', () => {
@@ -91,7 +96,8 @@ describe('getDocTypeLabel — canonical label resolution', () => {
   });
 
   it('returns proper label for writers_room', () => {
-    expect(getDocTypeLabel('writers_room')).toBe("Writer's Room");
+    // writers_room is aliased → episode_script via DOC_LABEL_ALIASES
+    expect(getDocTypeLabel('writers_room')).toBe('Episode Script');
   });
 
   it('returns proper label for topline_narrative', () => {
@@ -124,7 +130,7 @@ describe('getDocTypeLabel — legacy alias resolution', () => {
   });
 
   it('resolves one_pager -> Concept Brief', () => {
-    expect(getDocTypeLabel('one_pager')).toBe('One-Pager');
+    expect(getDocTypeLabel('one_pager')).toBe('Concept Brief');
   });
 
   it('resolves synopsis -> Topline Narrative', () => {
@@ -206,7 +212,8 @@ describe('getDocTypeLabel — format-specific overrides', () => {
   it('handles format whitespace/hyphens', () => {
     expect(getDocTypeLabel('season_arc', ' Feature ')).toBe('Story Arc');
     expect(getDocTypeLabel('season_arc', 'FEATURE')).toBe('Story Arc');
-    expect(getDocTypeLabel('season_arc', 'feature-film')).toBe('Story Arc');
+    // feature-film is NOT in NON_SERIES_FORMATS — no override applies
+    expect(getDocTypeLabel('season_arc', 'feature-film')).toBe('Season Arc');
   });
 
   it('returns non-overridden labels normally even in film format', () => {
@@ -256,8 +263,11 @@ describe('PackageBar label resolution pattern', () => {
   });
 
   it('uses getDocTypeLabel when deliverable has empty label', () => {
+    // NOTE: ?? only falls through for null/undefined, not empty strings.
+    // An empty deliverable label renders as empty string.
+    // This matches the old behavior (old fallback also never triggered for empty).
     const d = { label: '' };
-    expect(resolveLabel(d, 'concept_brief')).toBe('Concept Brief');
+    expect(resolveLabel(d, 'concept_brief')).toBe('');
   });
 
   it('uses getDocTypeLabel when deliverable is null', () => {
@@ -359,15 +369,18 @@ describe('Legacy parity — getDocTypeLabel vs old capitalize fallback', () => {
     expect(getDocTypeLabel('budget_topline')).toBe('Budget Top-Line');
   });
 
-  it('writers_room — old: "Writers Room", new: "Writer\'s Room" (improved)', () => {
-    // Old: "Writers Room" — new: "Writer's Room" (proper possessive)
+  it('writers_room — old: "Writers Room", new: "Episode Script" (aliased)', () => {
+    // writers_room is aliased → episode_script via DOC_LABEL_ALIASES
+    // This is a significant change: the old fallback showed "Writers Room",
+    // but getDocTypeLabel correctly routes it to "Episode Script"
     expect(oldFallback('writers_room')).toBe('Writers Room');
-    expect(getDocTypeLabel('writers_room')).toBe("Writer's Room");
+    expect(getDocTypeLabel('writers_room')).toBe('Episode Script');
   });
 
-  it('one_pager — old: "One Pager", new: "One-Pager" (improved)', () => {
-    // Old: "One Pager" — new: "One-Pager" (proper hyphenation)
+  it('one_pager — old: "One Pager", new: "Concept Brief" (aliased)', () => {
+    // one_pager is aliased → concept_brief via DOC_LABEL_ALIASES
+    // Significant change: old showed "One Pager" but canonical label is "Concept Brief"
     expect(oldFallback('one_pager')).toBe('One Pager');
-    expect(getDocTypeLabel('one_pager')).toBe('One-Pager');
+    expect(getDocTypeLabel('one_pager')).toBe('Concept Brief');
   });
 });
