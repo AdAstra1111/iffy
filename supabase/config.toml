@@ -316,3 +316,6 @@ verify_jwt = false
 
 [functions.generate-visual-dna-from-canon]
 verify_jwt = false
+
+[functions.reverse-engineer-script]
+verify_jwt = false
