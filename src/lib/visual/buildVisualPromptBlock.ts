@@ -131,12 +131,30 @@ export function buildVisualPromptBlock(row: VisualDNARow | null | undefined): st
   }
 
   if (faceParts.length > 0) {
-    // Append face info
+    // Append face info — avoid duplicating "features" suffix
     const faceStr = faceParts.join('; ');
     if (parts.length > 0) {
-      parts[parts.length - 1] += ` with ${faceStr} features`;
+      const suffix = faceStr.toLowerCase().endsWith(' features') ? '' : ' features';
+      parts[parts.length - 1] += ` with ${faceStr}${suffix}`;
     } else {
       parts.push(`Character with ${faceStr} features`);
+    }
+  }
+
+  // Legacy body from identity_signature
+  if (!row.body_type && row.identity_signature) {
+    const sig = row.identity_signature as Record<string, unknown>;
+    if (sig.body && typeof sig.body === 'object') {
+      const body = sig.body as Record<string, unknown>;
+      const bodyDesc: string[] = [];
+      for (const val of Object.values(body)) {
+        if (typeof val === 'string' && val.length > 2 && val.length < 80) {
+          bodyDesc.push(val);
+        }
+      }
+      if (bodyDesc.length > 0 && bodyDesc.join(', ').length > 3) {
+        parts.push(bodyDesc.join(', '));
+      }
     }
   }
 
