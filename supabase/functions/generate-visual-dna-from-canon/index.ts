@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
       case "location":
         return await handleLocation(sb, project_id, entity_name!, mode);
       case "entity":
-        return await handleEntity(sb, project_id, entity_name!, entity_type || "character", mode);
+        return await handleEntity(sb, functionBase, project_id, entity_name!, entity_type || "character", mode);
       default:
         return respond({ error: `Unhandled target: ${target}` }, 500);
     }
@@ -800,6 +800,7 @@ async function handleLocation(
 
 async function handleEntity(
   sb: any,
+  functionBase: string,
   projectId: string,
   entityName: string,
   entityType: "character" | "location" | "object",
@@ -807,7 +808,7 @@ async function handleEntity(
 ): Promise<Response> {
   // Route to the correct handler based on entity_type
   if (entityType === "character") {
-    return await handleCharacter(sb, "", projectId, entityName, mode);
+    return await handleCharacter(sb, functionBase, projectId, entityName, mode);
   } else if (entityType === "location") {
     return await handleLocation(sb, projectId, entityName, mode);
   }
