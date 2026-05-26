@@ -10,6 +10,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { ChevronDown, AlertTriangle, FileText, MapPin, Users, ShieldAlert, Search, Loader2, Plus } from 'lucide-react';
 import { useState, useCallback, useMemo, useEffect } from 'react';
 import { isScriptDocType } from '@/lib/script_change';
@@ -427,7 +428,7 @@ export function ChangeReportPanel({ projectId, sourceDocId, sourceDocType }: Cha
               <div className="space-y-0.5">
                 {staleDocs.map((d: any, i: number) => (
                   <div key={i} className="text-[11px] text-amber-600">
-                    ⚠ {d.doc_type.replace(/_/g, ' ')} — {d.reason}
+                    ⚠ {getDocTypeLabel(d.doc_type)} — {d.reason}
                   </div>
                 ))}
               </div>
@@ -516,7 +517,7 @@ export function ChangeReportPanel({ projectId, sourceDocId, sourceDocType }: Cha
                       {rippleResults.map((r, i) => (
                         <div key={i} className="text-[11px] pl-2 border-l-2 border-amber-300 py-0.5">
                           <span className="font-medium">{r.title}</span>
-                          <span className="text-muted-foreground"> ({r.doc_type.replace(/_/g, ' ')})</span>
+                          <span className="text-muted-foreground"> ({getDocTypeLabel(r.doc_type)})</span>
                           <div className="flex flex-wrap gap-1.5 mt-0.5">
                             {r.matches.map((m, j) => (
                               <Badge key={j} variant="outline" className="text-[9px] h-4 px-1 text-amber-600 border-amber-300">

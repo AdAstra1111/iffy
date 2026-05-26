@@ -991,7 +991,7 @@ export function AutoRunMissionControl({
     if (fixedItems.length > 0) {
       toast({
         title: `Regenerated ${fixedItems.length} doc${fixedItems.length > 1 ? 's' : ''}`,
-        description: fixedItems.map(r => r.doc_type.replace(/_/g, ' ')).join(', '),
+        description: fixedItems.map(r => getDocTypeLabel(r.doc_type)).join(', '),
       });
     } else {
       toast({ title: 'No docs regenerated' });
@@ -1639,7 +1639,7 @@ export function AutoRunMissionControl({
                      snapshot.global_best.version_id !== prov.best.version_id && (
                       <div className="text-[8px] text-amber-400/70 mt-1 flex items-center gap-1">
                         <AlertTriangle className="h-2.5 w-2.5" />
-                        Global best (CI:{snapshot.global_best.ci} GP:{snapshot.global_best.gp}) on {snapshot.global_best.doc_type ? snapshot.global_best.doc_type.replace(/_/g, ' ') : 'different stage'}
+                        Global best (CI:{snapshot.global_best.ci} GP:{snapshot.global_best.gp}) on {snapshot.global_best.doc_type ? getDocTypeLabel(snapshot.global_best.doc_type) : 'different stage'}
                       </div>
                     )}
                     {prov.versions_considered_count > 0 && prov.versions_considered_count !== prov.candidates_seen_count && (

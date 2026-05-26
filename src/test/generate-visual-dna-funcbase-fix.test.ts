@@ -400,7 +400,8 @@ describe('FunctionBase invariant — only extract-calling handlers have it', () 
     const source = getSourceText();
     const lines = source.split('\n');
     const fnStart = lines.findIndex((l) => l.includes('async function handleAllCharacters('));
-    const fnBody = lines.slice(fnStart, fnStart + 60).join('\n');
+    // Use fnStart + 100 to capture the full body including handleCharacter call (now at ~line 430 in array)
+    const fnBody = lines.slice(fnStart, fnStart + 100).join('\n');
     expect(fnBody).toContain('functionBase');
     expect(fnBody).toContain('handleCharacter(sb, functionBase');
   });

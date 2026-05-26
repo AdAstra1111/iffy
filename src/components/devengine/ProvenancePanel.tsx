@@ -1,3 +1,4 @@
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { Link2, AlertTriangle, RefreshCw, CheckCircle, ExternalLink, Hash, FileText } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -100,7 +101,7 @@ export function ProvenancePanel({
       <div>
         <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">This Document</p>
         <div className="space-y-0.5 text-muted-foreground">
-          <p>Type: <span className="text-foreground">{docType?.replace(/_/g, ' ')}</span></p>
+          <p>Type: <span className="text-foreground">{getDocTypeLabel(docType)}</span></p>
           {versionNumber != null && <p>Version: <span className="text-foreground">v{versionNumber}</span></p>}
           <p className="flex items-center gap-1">
             Status:
@@ -148,7 +149,7 @@ export function ProvenancePanel({
               {inputs.map(([docType, info]) => (
                 <p key={docType} className="text-muted-foreground flex items-center gap-1">
                   <FileText className="h-3 w-3 shrink-0" />
-                  <span>{docType.replace(/_/g, ' ')}</span>
+                  <span>{getDocTypeLabel(docType)}</span>
                   <span className="text-foreground text-[9px]">v{info.version_number}</span>
                 </p>
               ))}

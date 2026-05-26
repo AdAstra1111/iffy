@@ -1,3 +1,4 @@
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,7 +34,7 @@ export function VisualUnitSourcesPanel({ sources, warnings, isLoading, onRefresh
               <div key={docType} className="flex items-center gap-2 py-1.5 border-b border-border last:border-0">
                 <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-medium truncate">{docType.replace(/_/g, ' ')}</p>
+                  <p className="text-[10px] font-medium truncate">{getDocTypeLabel(docType)}</p>
                   <p className="text-[9px] text-muted-foreground">v{info.version_number}</p>
                 </div>
                 <Badge variant="outline" className="text-[7px] shrink-0">

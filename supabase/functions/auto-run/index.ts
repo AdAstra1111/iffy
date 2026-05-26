@@ -6309,7 +6309,7 @@ Deno.serve(async (req) => {
               const norm = (k as string).toLowerCase().replace(/[-\s]/g, "_");
               const KEY_MAP_LOCAL: Record<string,string> = {
                 concept_brief:"concept_brief",concept:"concept_brief",market_sheet:"market_sheet",market:"market_sheet",
-                deck:"deck",blueprint:"blueprint",series_bible:"blueprint",beat_sheet:"beat_sheet",
+                deck:"deck",blueprint:"treatment",series_bible:"treatment",beat_sheet:"beat_sheet",
                 character_bible:"character_bible",character:"character_bible",episode_grid:"episode_grid",
                 season_arc:"season_arc",documentary_outline:"documentary_outline",script:"feature_script",
                 feature_script:"feature_script",pilot_script:"episode_script",episode_script:"episode_script",

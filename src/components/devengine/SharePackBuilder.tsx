@@ -25,7 +25,7 @@ interface Props {
 }
 
 function getLabel(dt: string): string {
-  return ALL_DOC_TYPE_LABELS[dt] ?? dt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return getDocTypeLabel(dt);
 }
 
 export function SharePackBuilder({ open, onOpenChange, projectId }: Props) {

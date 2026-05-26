@@ -16804,6 +16804,24 @@ Return ONLY valid JSON:
         const sceneRoles = rawRoles.map((r)=>typeof r === "string" ? r : r?.role_key ?? "").filter(Boolean);
         if (sceneRoles.length === 0) {
           noRolesCount++;
+          // Still create a spine link row with null axis and empty roles
+          // so the scene shows up in spineCount even before role classification
+          const order = orderMap.get(scene.id);
+          if (order) {
+            const { error: upsErr } = await supabase.from("scene_spine_links").upsert({
+              project_id: projectId,
+              scene_id: scene.id,
+              order_key: order.order_key,
+              act: order.act ?? null,
+              sequence: order.sequence ?? null,
+              axis_key: null,
+              roles: [],
+              threads: [],
+              arc_steps: [],
+              updated_at: new Date().toISOString()
+            }, { onConflict: "project_id,scene_id" });
+            if (upsErr) console.warn("[scene_graph_sync_spine_links] upsert error (no_roles):", upsErr.message);
+          }
           perScene.push({
             scene_key: scene.scene_key,
             scene_id: scene.id,
@@ -16820,6 +16838,23 @@ Return ONLY valid JSON:
           }
         }
         if (!primaryAxis) {
+          // Still create a spine link row with null axis but preserved roles
+          const order = orderMap.get(scene.id);
+          if (order) {
+            const { error: upsErr } = await supabase.from("scene_spine_links").upsert({
+              project_id: projectId,
+              scene_id: scene.id,
+              order_key: order.order_key,
+              act: order.act ?? null,
+              sequence: order.sequence ?? null,
+              axis_key: null,
+              roles: sceneRoles,
+              threads: [],
+              arc_steps: [],
+              updated_at: new Date().toISOString()
+            }, { onConflict: "project_id,scene_id" });
+            if (upsErr) console.warn("[scene_graph_sync_spine_links] upsert error (no_mapped_axis):", upsErr.message);
+          }
           perScene.push({
             scene_key: scene.scene_key,
             scene_id: scene.id,

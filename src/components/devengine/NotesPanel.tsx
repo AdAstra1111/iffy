@@ -16,6 +16,7 @@ import {
   Pencil, Check, X, Wand2, Shield, Eye, Lock, AlertTriangle, Layers, Pin, Clock, Trash2, RotateCcw,
 } from 'lucide-react';
 import React, { useState, useCallback, useMemo } from 'react';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { supabase } from '@/integrations/supabase/client';
 import { NoteDrawer } from '@/components/notes/NoteDrawer';
 import type { ProjectNote, NoteSuggestedFix } from '@/lib/types/notes';
@@ -743,7 +744,7 @@ function PinnedNoteDecisions({ pinnedNotes, projectId, documentId, versionId, on
                 <Pin className="h-2 w-2 mr-0.5 inline" />Pinned
               </Badge>
               {note.source_doc_type && (
-                <Badge variant="outline" className="text-[8px] px-1 py-0">From: {note.source_doc_type.replace(/_/g, ' ')}</Badge>
+                <Badge variant="outline" className="text-[8px] px-1 py-0">From: {getDocTypeLabel(note.source_doc_type)}</Badge>
               )}
               {note.severity && (
                 <Badge variant="outline" className={`text-[8px] px-1 py-0 ${note.severity === 'blocker' ? 'text-destructive border-destructive/30' : note.severity === 'high' ? 'text-amber-400 border-amber-500/30' : 'text-muted-foreground'}`}>
@@ -1371,7 +1372,7 @@ export function NotesPanel({
                       <div key={note.id} className="rounded border border-border/20 bg-muted/5 p-2 opacity-60 hover:opacity-80 transition-opacity">
                         <div className="flex items-center gap-1 mb-0.5 flex-wrap">
                           <Badge variant="outline" className="text-[8px] px-1 py-0 text-muted-foreground">{note.status === 'resolved' ? 'Resolved' : 'Dismissed'}</Badge>
-                          {note.source_doc_type && <Badge variant="outline" className="text-[8px] px-1 py-0">From: {note.source_doc_type.replace(/_/g, ' ')}</Badge>}
+                          {note.source_doc_type && <Badge variant="outline" className="text-[8px] px-1 py-0">From: {getDocTypeLabel(note.source_doc_type)}</Badge>}
                           {note.category && <Badge variant="outline" className="text-[8px] px-1 py-0">{note.category}</Badge>}
                         </div>
                         <p className="text-[10px] text-foreground">{nj.description || nj.note || note.note_key || 'Note'}</p>

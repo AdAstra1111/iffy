@@ -432,7 +432,7 @@ export function ApprovalSection({
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            {isConceptBrief ? "Approval Gate" : "Reconciliation Status"} — {docType.replace(/_/g, " ")}
+            {isConceptBrief ? "Approval Gate" : "Reconciliation Status"} — {getDocTypeLabel(docType)}
           </DialogTitle>
           <p className="text-[11px] text-muted-foreground">
             {isConceptBrief
@@ -510,7 +510,7 @@ export function ApprovalSection({
                       {flag.producer_note && (
                         <div className="mt-1.5 pt-1.5 border-t border-amber-500/20">
                           <p className="text-[9px] text-muted-foreground">
-                            Triggered by {flag.producer_note.source_doc_type.replace(/_/g, " ")} —{" "}
+                            Triggered by {getDocTypeLabel(flag.producer_note.source_doc_type)} —{" "}
                             {flag.producer_note.decision === "accepted" ? (
                               <span className="text-emerald-400">Accepted</span>
                             ) : (

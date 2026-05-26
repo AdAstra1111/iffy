@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { OUTPUT_DOC_TYPES_BY_LANE, BASE_DOC_TYPES, formatToLane } from '@/config/documentLadders';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 
 interface OutputDocumentsSectionProps {
   projectId: string;
@@ -83,7 +84,7 @@ export function OutputDocumentsSection({
           const meta = BASE_DOC_TYPES[docType];
           const exists = existingDocTypes.includes(docType);
           const isGenerating = generatingDoc === docType;
-          const label = meta?.label || docType.replace(/_/g, ' ');
+          const label = getDocTypeLabel(docType);
           const description = OUTPUT_DOC_DESCRIPTIONS[docType] || meta?.description || '';
 
           return (

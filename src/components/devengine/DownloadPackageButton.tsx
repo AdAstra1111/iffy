@@ -15,6 +15,7 @@ import {
   Download, ChevronDown, Server, Monitor, Loader2, AlertTriangle, FileText,
 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
@@ -204,7 +205,7 @@ export function DownloadPackageButton({ projectId, format, pkg }: Props) {
         const text = plaintextMap.get(deliverable.version_id);
         if (!text) continue;
 
-        const folder = FOLDER_MAP[docType] || `${String(orderIdx).padStart(2, '0')}_${docType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).replace(/\s/g, '_')}`;
+        const folder = FOLDER_MAP[docType] || `${String(orderIdx).padStart(2, '0')}_${getDocTypeLabel(docType).replace(/\s/g, '_')}`;
         const statusSuffix = deliverable.is_approved ? 'APPROVED' : 'DRAFT';
         const shortId = deliverable.version_id.slice(0, 8);
         const fileName = `${projectName} - ${deliverable.label} - v${shortId} - ${statusSuffix}.md`;

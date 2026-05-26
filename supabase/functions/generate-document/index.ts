@@ -84,7 +84,7 @@ const UPSTREAM_DEPS: Record<string, string[]> = {
   // It MUST NOT depend on visual_sets, effective wardrobe resolvers, or any downstream visual output.
   visual_canon_brief: ["concept_brief", "treatment", "story_outline", "character_bible", "beat_sheet", "feature_script"],
   future_seasons_map: ["season_arc", "series_overview"],
-  topline_narrative: ["idea", "idea_brief", "concept_brief", "market_sheet", "vertical_market_sheet", "blueprint"],
+  topline_narrative: ["idea", "idea_brief", "concept_brief", "market_sheet", "vertical_market_sheet", "treatment"],
   budget_topline: ["treatment"],
   finance_plan: ["budget_topline"],
   packaging_targets: ["treatment", "character_bible", "concept_brief", "market_sheet"],
@@ -367,6 +367,23 @@ Deno.serve(async (req) => {
     if (isServiceRole && !actorUserId) {
       actorUserId = project.user_id || null;
     }
+    // ── FORMAT SCRIPT TYPE GUARD ──
+    // Block feature_script generation for formats where canonical script type is season_script or episode_script.
+    const FORMAT_SCRIPT_TYPES_LOCAL: Record<string, string> = {
+      "film": "feature_script", "feature": "feature_script", "short": "feature_script",
+      "animation": "feature_script", "tv-series": "episode_script", "limited-series": "episode_script",
+      "digital-series": "episode_script", "vertical-drama": "season_script", "anim-series": "episode_script",
+      "reality": "episode_script", "documentary": "feature_script", "documentary-series": "feature_script",
+      "hybrid-documentary": "feature_script",
+    };
+    const fmtKey = (project.format || "film").toLowerCase().replace(/_/g, "-");
+    const canonicalScriptType = FORMAT_SCRIPT_TYPES_LOCAL[fmtKey];
+    if (docType === "feature_script" && canonicalScriptType && canonicalScriptType !== "feature_script") {
+      return jsonRes({
+        error: "BLOCKED: feature_script is not valid for " + project.format + " projects. Use " + canonicalScriptType + " instead."
+      }, 400);
+    }
+
 
     // 3) Load upstream documents
     const upstreamTypes = UPSTREAM_DEPS[docType] || [];
