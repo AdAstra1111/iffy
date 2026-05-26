@@ -1813,7 +1813,10 @@ export async function buildCharacterCastingBrief(
   if (dnaCharacterName) {
     const { data: dnaRow } = await (supabase as any)
       .from('character_visual_dna')
-      .select('visual_prompt_block, traits_json')
+      .select(`visual_prompt_block, traits_json,
+        biological_sex, gender_presentation, age_range, ethnicity, body_type,
+        height_class, facial_archetype, voice_quality, wardrobe_signals,
+        social_class, role_archetype`)
       .eq('project_id', projectId)
       .eq('character_name', dnaCharacterName)
       .eq('is_current', true)
@@ -1846,6 +1849,51 @@ export async function buildCharacterCastingBrief(
           }
           // All other DNA categories are ignored for actor criteria
         }
+      }
+
+      // ── Structured identity columns — add as additional prompts ──
+      if (dnaRow.biological_sex) {
+        visualMarkers.push(`Biological sex: ${dnaRow.biological_sex}`);
+        tags.push(dnaRow.biological_sex.toLowerCase());
+      }
+      if (dnaRow.gender_presentation) {
+        visualMarkers.push(`Gender presentation: ${dnaRow.gender_presentation}`);
+      }
+      if (dnaRow.age_range) {
+        visualMarkers.push(`Age: ${dnaRow.age_range}`);
+        tags.push(dnaRow.age_range.toLowerCase());
+      }
+      if (dnaRow.ethnicity && Array.isArray(dnaRow.ethnicity)) {
+        for (const eth of dnaRow.ethnicity) {
+          visualMarkers.push(`Ethnicity: ${eth}`);
+          tags.push(eth.toLowerCase());
+        }
+      }
+      if (dnaRow.body_type) {
+        visualMarkers.push(`Body: ${dnaRow.body_type}`);
+        tags.push(dnaRow.body_type.toLowerCase());
+      }
+      if (dnaRow.height_class) {
+        visualMarkers.push(`Height: ${dnaRow.height_class}`);
+      }
+      if (dnaRow.facial_archetype) {
+        visualMarkers.push(`Face: ${dnaRow.facial_archetype}`);
+      }
+      if (dnaRow.voice_quality) {
+        visualMarkers.push(`Voice: ${dnaRow.voice_quality}`);
+      }
+      if (dnaRow.wardrobe_signals && typeof dnaRow.wardrobe_signals === 'object') {
+        for (const [key, val] of Object.entries(dnaRow.wardrobe_signals)) {
+          if (val && typeof val === 'object') {
+            stylingCues.push(`Wardrobe: ${key} — ${(val as any).value || ''}`);
+          }
+        }
+      }
+      if (dnaRow.social_class) {
+        presenceMarkers.push(`Social class: ${dnaRow.social_class}`);
+      }
+      if (dnaRow.role_archetype) {
+        tags.push(dnaRow.role_archetype.toLowerCase());
       }
     }
   }

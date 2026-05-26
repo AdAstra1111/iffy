@@ -202,7 +202,10 @@ export async function resolveCharacterEvidence(
   // ── 2. character_visual_dna ─────────────────────────────────────────────
   const { data: dnaRows } = await (supabase as any)
     .from('character_visual_dna')
-    .select('character_name, identity_signature, physical_categories, traits_json')
+    .select(`character_name, identity_signature, physical_categories, traits_json,
+      biological_sex, gender_presentation, age_range, ethnicity, body_type,
+      height_class, facial_archetype, voice_quality, wardrobe_signals,
+      social_class, role_archetype, identity_confidence`)
     .eq('project_id', projectId)
     .eq('is_current', true);
 
@@ -217,15 +220,63 @@ export async function resolveCharacterEvidence(
     contributed: !!matchedDna,
   });
 
-  if (matchedDna?.identity_signature) {
+  if (matchedDna) {
+    // Prefer new structured columns, fall back to identity_signature JSON
+    if (!gender) {
+      gender = matchedDna.biological_sex
+        || matchedDna.gender_presentation
+        || (matchedDna.identity_signature?.gender ?? null);
+    }
+    if (!ageRange) {
+      ageRange = matchedDna.age_range
+        || (matchedDna.identity_signature?.age ?? null);
+    }
+    if (!ethnicity) {
+      ethnicity = matchedDna.ethnicity
+        ? (Array.isArray(matchedDna.ethnicity)
+          ? matchedDna.ethnicity.join(', ')
+          : matchedDna.ethnicity)
+        : (matchedDna.identity_signature?.ethnicity ?? null);
+    }
+    if (!bodyType) {
+      bodyType = matchedDna.body_type
+        || (matchedDna.identity_signature?.build ?? null);
+    }
+    if (!height) {
+      height = matchedDna.height_class
+        || (matchedDna.identity_signature?.height ?? null);
+    }
+
+    // Legacy JSON fallback for fields not yet in structured columns
     const sig = matchedDna.identity_signature;
-    if (!gender && sig.gender) gender = sig.gender;
-    if (!ageRange && sig.age) ageRange = sig.age;
-    if (!ethnicity && sig.ethnicity) ethnicity = sig.ethnicity;
-    if (!bodyType && sig.build) bodyType = sig.build;
-    if (!height && sig.height) height = sig.height;
-    if (sig.hair) keyVisualTraits.push(`Hair: ${sig.hair}`);
-    if (sig.face) keyVisualTraits.push(`Face: ${sig.face}`);
+    if (sig) {
+      if (sig.hair) keyVisualTraits.push(`Hair: ${sig.hair}`);
+      if (sig.face) keyVisualTraits.push(`Face: ${sig.face}`);
+    }
+
+    // New structured voice quality
+    if (matchedDna.voice_quality) {
+      keyVisualTraits.push(`Voice: ${matchedDna.voice_quality}`);
+    }
+
+    // New structured facial archetype (if not already from legacy)
+    if (matchedDna.facial_archetype && !keyVisualTraits.some(t => t.startsWith('Face:'))) {
+      keyVisualTraits.push(`Face archetype: ${matchedDna.facial_archetype}`);
+    }
+
+    // Wardrobe signals as visual traits
+    if (matchedDna.wardrobe_signals && typeof matchedDna.wardrobe_signals === 'object') {
+      for (const [key, val] of Object.entries(matchedDna.wardrobe_signals)) {
+        if (val && typeof val === 'object') {
+          keyVisualTraits.push(`Wardrobe: ${key} — ${(val as any).value || ''}`);
+        }
+      }
+    }
+
+    // Role archetype from new columns
+    if (matchedDna.role_archetype && !roleType) {
+      roleType = matchedDna.role_archetype;
+    }
   }
 
   if (matchedDna?.traits_json && Array.isArray(matchedDna.traits_json)) {
