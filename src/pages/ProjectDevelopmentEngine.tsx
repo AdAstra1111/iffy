@@ -1199,18 +1199,52 @@ export default function ProjectDevelopmentEngine() {
     setIsGeneratingVisualDNA(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-visual-dna-from-canon', {
-        body: { project_id: projectId, target: 'all_characters', mode: 'generate_missing' },
+        body: { project_id: projectId, target: 'all', mode: 'generate_missing' },
       });
       if (error) throw new Error(error.message || 'Generation failed');
-      const report = data as { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
-      const parts: string[] = [];
-      if (report.created > 0) parts.push(`${report.created} created`);
-      if (report.updated > 0) parts.push(`${report.updated} updated`);
-      if (report.skipped > 0) parts.push(`${report.skipped} skipped`);
-      if (report.blocked > 0) parts.push(`${report.blocked} blocked`);
-      if (report.low_confidence > 0) parts.push(`${report.low_confidence} low confidence`);
-      if (report.errors && report.errors.length > 0) parts.push(`${report.errors.length} errors`);
-      toast.success(`Visual DNA: ${parts.join(', ') || 'nothing to generate'}`);
+      
+      // Handle both BatchResult (target='all') and flat DNAReport (target='all_characters')
+      if (data.characters !== undefined) {
+        // BatchResult shape — structured from handleBatchAll
+        const batch = data as {
+          characters: { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
+          style: { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
+          locations: { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
+          stale_count?: number;
+          location_names?: string[];
+        };
+        const parts: string[] = [];
+        if (batch.characters.created > 0 || batch.characters.updated > 0) {
+          parts.push(`chars: +${batch.characters.created}/${batch.characters.updated}up`);
+        }
+        if (batch.characters.skipped > 0) parts.push(`chars: ${batch.characters.skipped}skip`);
+        if (batch.style.created > 0 || batch.style.updated > 0) {
+          parts.push(`style: +${batch.style.created}/${batch.style.updated}up`);
+        }
+        if (batch.locations.created > 0 || batch.locations.updated > 0) {
+          parts.push(`locs: +${batch.locations.created}/${batch.locations.updated}up`);
+        }
+        if (batch.stale_count && batch.stale_count > 0) {
+          parts.push(`${batch.stale_count} stale`);
+        }
+        const totalErrors =
+          (batch.characters.errors?.length || 0) +
+          (batch.style.errors?.length || 0) +
+          (batch.locations.errors?.length || 0);
+        if (totalErrors > 0) parts.push(`${totalErrors} errors`);
+        toast.success(`Visual DNA batch: ${parts.join(', ') || 'nothing to generate'}`);
+      } else {
+        // Legacy flat DNAReport shape (for single-type targets)
+        const report = data as { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
+        const parts: string[] = [];
+        if (report.created > 0) parts.push(`${report.created} created`);
+        if (report.updated > 0) parts.push(`${report.updated} updated`);
+        if (report.skipped > 0) parts.push(`${report.skipped} skipped`);
+        if (report.blocked > 0) parts.push(`${report.blocked} blocked`);
+        if (report.low_confidence > 0) parts.push(`${report.low_confidence} low confidence`);
+        if (report.errors && report.errors.length > 0) parts.push(`${report.errors.length} errors`);
+        toast.success(`Visual DNA: ${parts.join(', ') || 'nothing to generate'}`);
+      }
       qc.invalidateQueries({ queryKey: ['character-visual-dna', projectId] });
       qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
     } catch (e: any) {

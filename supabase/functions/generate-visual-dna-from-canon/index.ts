@@ -27,6 +27,7 @@
  */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+import { callLLM, MODELS, resolveGateway } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,7 +37,7 @@ const corsHeaders = {
 
 interface GenerateVisualDNAInput {
   project_id: string;
-  target: "character" | "all_characters" | "project_style" | "location" | "entity";
+  target: "character" | "all_characters" | "project_style" | "location" | "entity" | "all";
   mode: "preview_only" | "generate_missing" | "refresh_stale";
   entity_name?: string;
   entity_type?: "character" | "location" | "object";
@@ -65,6 +66,23 @@ interface DNAReport {
   governance_result?: any;
 }
 
+interface BatchSubReport {
+  created: number;
+  skipped: number;
+  updated: number;
+  blocked: number;
+  low_confidence: number;
+  errors: string[];
+}
+
+interface BatchResult {
+  characters: BatchSubReport;
+  style: BatchSubReport;
+  locations: BatchSubReport;
+  stale_count: number;
+  location_names: string[];
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -81,7 +99,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const validTargets = ["character", "all_characters", "project_style", "location", "entity"];
+    const validTargets = ["character", "all_characters", "project_style", "location", "entity", "all"];
     if (!validTargets.includes(target)) {
       return respond(
         { error: `Invalid target: ${target}. Must be one of: ${validTargets.join(", ")}` },
@@ -114,6 +132,8 @@ Deno.serve(async (req) => {
         return await handleCharacter(sb, functionBase, project_id, entity_name!, mode);
       case "all_characters":
         return await handleAllCharacters(sb, functionBase, project_id, mode);
+      case "all":
+        return await handleBatchAll(sb, functionBase, project_id, mode);
       case "project_style":
         return await handleProjectStyle(sb, project_id, mode);
       case "location":
@@ -164,6 +184,11 @@ async function handleCharacter(
 
   // 2. Mode-specific skip/block logic
   if (mode === "generate_missing" && hasExisting) {
+    report.skipped++;
+    return respond(report);
+  }
+
+  if (isApprovedOrStrong && mode === "refresh_stale") {
     report.skipped++;
     return respond(report);
   }
@@ -347,6 +372,7 @@ async function handleAllCharacters(
   functionBase: string,
   projectId: string,
   mode: string,
+  suppressGovernance: boolean = false,
 ): Promise<Response> {
   const report: DNAReport = {
     project_id: projectId,
@@ -417,7 +443,7 @@ async function handleAllCharacters(
   }
 
   // ── Phase 2: Call evaluate-visual-governance after successful generation ──
-  if (mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
+  if (!suppressGovernance && mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
     try {
       const governanceUrl = `${functionBase}/evaluate-visual-governance`;
       const govResponse = await fetch(governanceUrl, {
@@ -548,6 +574,7 @@ async function handleProjectStyle(
 async function deriveStyleFromCanon(
   sb: any,
   projectId: string,
+  functionBase?: string,
 ): Promise<Record<string, any>> {
   const style: Record<string, any> = {
     period: "",
@@ -670,6 +697,68 @@ async function deriveStyleFromCanon(
           if (camMatch && !style.camera_philosophy) {
             style.camera_philosophy = camMatch[1].trim();
           }
+        }
+      }
+    }
+  }
+
+  // 3. LLM fallback — if 3+ visual fields are still empty and functionBase provided
+  if (functionBase) {
+    const visualFields = [
+      style.period,
+      style.lighting_philosophy,
+      style.camera_philosophy,
+      style.composition_philosophy,
+      style.texture_materiality,
+      style.color_response,
+      style.environment_realism,
+    ];
+    const emptyCount = visualFields.filter((f) => !f || f.trim().length === 0).length;
+
+    if (emptyCount >= 3) {
+      const { data: canon } = await sb
+        .from("project_canon")
+        .select("canon_json")
+        .eq("project_id", projectId)
+        .maybeSingle();
+
+      const canonText = canon?.canon_json
+        ? JSON.stringify(canon.canon_json).slice(0, 4000)
+        : "";
+
+      if (canonText) {
+        try {
+          const gateway = resolveGateway();
+          const result = await callLLM({
+            apiKey: gateway.apiKey,
+            model: MODELS.FAST,
+            system: `You are a visual style analyst. Given project canon information, derive visual style fields. Return ONLY valid JSON with these keys: period, lighting_philosophy, camera_philosophy, composition_philosophy, texture_materiality, color_response, environment_realism, cultural_context. Each value must be a concise string (1-2 sentences max). No markdown, no commentary.`,
+            user: `Project canon:\n\n${canonText}\n\nDerive visual style fields based on this project's world rules and setting.`,
+            temperature: 0.2,
+            maxTokens: 2000,
+            retries: 1,
+          });
+
+          const reply = result.content;
+          // Extract JSON safely
+          let jsonStart = reply.indexOf("{");
+          let jsonEnd = reply.lastIndexOf("}");
+          if (jsonStart >= 0 && jsonEnd > jsonStart) {
+            const jsonStr = reply.slice(jsonStart, jsonEnd + 1);
+            const llmStyle = JSON.parse(jsonStr);
+            // Only fill empty fields — never overwrite regex-derived ones
+            if (!style.period && llmStyle.period) style.period = llmStyle.period;
+            if (!style.lighting_philosophy && llmStyle.lighting_philosophy) style.lighting_philosophy = llmStyle.lighting_philosophy;
+            if (!style.camera_philosophy && llmStyle.camera_philosophy) style.camera_philosophy = llmStyle.camera_philosophy;
+            if (!style.composition_philosophy && llmStyle.composition_philosophy) style.composition_philosophy = llmStyle.composition_philosophy;
+            if (!style.texture_materiality && llmStyle.texture_materiality) style.texture_materiality = llmStyle.texture_materiality;
+            if (!style.color_response && llmStyle.color_response) style.color_response = llmStyle.color_response;
+            if (!style.environment_realism && llmStyle.environment_realism) style.environment_realism = llmStyle.environment_realism;
+            if (!style.cultural_context && llmStyle.cultural_context) style.cultural_context = llmStyle.cultural_context;
+          }
+        } catch (e: any) {
+          console.error("LLM fallback for deriveStyleFromCanon failed:", e.message);
+          // Non-blocking — continue with regex-derived fields
         }
       }
     }
@@ -876,7 +965,181 @@ async function handleEntity(
   return respond(report);
 }
 
+// ─── Batch "all" Handler ───
+
+/**
+ * handleBatchAll — Orchestrate all DNA generation handlers in a single call.
+ * Calls handleAllCharacters (with suppressGovernance=true), handleProjectStyle,
+ * and processes all canon locations. Then calls evaluate-visual-governance once.
+ * Returns aggregated BatchResult.
+ */
+async function handleBatchAll(
+  sb: any,
+  functionBase: string,
+  projectId: string,
+  mode: string,
+): Promise<Response> {
+  const batchResult: BatchResult = {
+    characters: { created: 0, skipped: 0, updated: 0, blocked: 0, low_confidence: 0, errors: [] },
+    style: { created: 0, skipped: 0, updated: 0, blocked: 0, low_confidence: 0, errors: [] },
+    locations: { created: 0, skipped: 0, updated: 0, blocked: 0, low_confidence: 0, errors: [] },
+    stale_count: 0,
+    location_names: [],
+  };
+
+  // 1. Check stale count
+  const staleInfo = await staleRowCount(sb, projectId);
+  batchResult.stale_count = staleInfo.count;
+
+  // 2. Process all characters (suppress governance — we'll call it once at the end)
+  try {
+    const charResponse = await handleAllCharacters(sb, functionBase, projectId, mode, true);
+    const charData = await charResponse.json();
+    batchResult.characters.created = charData.created || 0;
+    batchResult.characters.skipped = charData.skipped || 0;
+    batchResult.characters.updated = charData.updated || 0;
+    batchResult.characters.blocked = charData.blocked || 0;
+    batchResult.characters.low_confidence = charData.low_confidence || 0;
+    if (charData.errors) {
+      batchResult.characters.errors = charData.errors.slice(0, 20);
+    }
+  } catch (e: any) {
+    batchResult.characters.errors.push(`handleAllCharacters threw: ${e.message}`);
+  }
+
+  // 3. Process project style (with LLM fallback via functionBase)
+  try {
+    const styleResponse = await handleProjectStyle(sb, projectId, mode);
+    const styleData = await styleResponse.json();
+    batchResult.style.created = styleData.created || 0;
+    batchResult.style.skipped = styleData.skipped || 0;
+    batchResult.style.updated = styleData.updated || 0;
+    batchResult.style.blocked = styleData.blocked || 0;
+    batchResult.style.low_confidence = styleData.low_confidence || 0;
+    if (styleData.errors) {
+      batchResult.style.errors = styleData.errors.slice(0, 10);
+    }
+  } catch (e: any) {
+    batchResult.style.errors.push(`handleProjectStyle threw: ${e.message}`);
+  }
+
+  // 4. Process all locations from canon
+  const locationNames = await scanCanonLocations(sb, projectId);
+  batchResult.location_names = locationNames;
+
+  for (const locName of locationNames) {
+    try {
+      const locResponse = await handleLocation(sb, projectId, locName, mode);
+      const locData = await locResponse.json();
+      batchResult.locations.created += locData.created || 0;
+      batchResult.locations.skipped += locData.skipped || 0;
+      batchResult.locations.updated += locData.updated || 0;
+      batchResult.locations.blocked += locData.blocked || 0;
+      batchResult.locations.low_confidence += locData.low_confidence || 0;
+      if (locData.errors) {
+        batchResult.locations.errors.push(...locData.errors.slice(0, 5).map((e: string) => `${locName}: ${e}`));
+      }
+    } catch (e: any) {
+      batchResult.locations.errors.push(`${locName}: ${e.message}`);
+    }
+  }
+
+  // 5. Call evaluate-visual-governance once at the end (if any real work was done)
+  const totalCreated =
+    batchResult.characters.created +
+    batchResult.style.created +
+    batchResult.locations.created;
+  const totalUpdated =
+    batchResult.characters.updated +
+    batchResult.style.updated +
+    batchResult.locations.updated;
+
+  let governanceResult: any = null;
+  if (mode !== "preview_only" && (totalCreated > 0 || totalUpdated > 0)) {
+    try {
+      const governanceUrl = `${functionBase}/evaluate-visual-governance`;
+      const govResponse = await fetch(governanceUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
+        },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (govResponse.ok) {
+        governanceResult = await govResponse.json();
+      }
+    } catch (e: any) {
+      // Non-blocking — governance failures don't break the batch
+      console.error("evaluate-visual-governance in handleBatchAll failed:", e.message);
+    }
+  }
+
+  return respond({
+    characters: batchResult.characters,
+    style: batchResult.style,
+    locations: batchResult.locations,
+    stale_count: batchResult.stale_count,
+    location_names: batchResult.location_names,
+    governance_result: governanceResult,
+  });
+}
+
 // ─── Shared Utilities ───
+
+/**
+ * Count how many character_visual_dna rows have created_at older than
+ * the project_canon.updated_at for this project (i.e. stale DNA).
+ */
+async function staleRowCount(sb: any, projectId: string): Promise<{ count: number; total: number }> {
+  const { data: projectCanon } = await sb
+    .from("project_canon")
+    .select("updated_at")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (!projectCanon?.updated_at) return { count: 0, total: 0 };
+
+  const canonUpdated = new Date(projectCanon.updated_at).getTime();
+
+  const { data: dnaRows } = await sb
+    .from("character_visual_dna")
+    .select("created_at")
+    .eq("project_id", projectId)
+    .eq("is_current", true);
+
+  if (!dnaRows || dnaRows.length === 0) return { count: 0, total: 0 };
+
+  let staleCount = 0;
+  for (const row of dnaRows) {
+    const dnaCreated = new Date(row.created_at).getTime();
+    if (dnaCreated < canonUpdated) staleCount++;
+  }
+
+  return { count: staleCount, total: dnaRows.length };
+}
+
+/**
+ * Scan project_canon.canon_json.locations and return an array of location names.
+ */
+async function scanCanonLocations(sb: any, projectId: string): Promise<string[]> {
+  const { data: canon } = await sb
+    .from("project_canon")
+    .select("canon_json")
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (!canon?.canon_json) return [];
+
+  const cj = canon.canon_json as Record<string, any>;
+  const locations = cj.locations || [];
+  if (!Array.isArray(locations)) return [];
+
+  return locations
+    .map((l: any) => (typeof l === "string" ? l : l.name || ""))
+    .filter((n: string) => n.length > 0);
+}
 
 /**
  * Call the existing extract-visual-dna edge function via HTTP.
