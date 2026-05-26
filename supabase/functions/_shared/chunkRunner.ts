@@ -275,10 +275,10 @@ LONG TREATMENT LENGTH — MANDATORY:
     // ── Story Outline ────────────────────────────────────────────────────────
     } else if (docType === "story_outline") {
       const PER_ACT_TARGETS: Record<string, string> = {
-        "act_1_setup":         "5\u20138 JSON entries (approximately 800\u20131,500 words). Each entry: 3-5 sentence description covering dramatic purpose and emotional shift. Covers world establishment through inciting incident to end of Act 1.",
-        "act_2a_complication": "5\u20138 JSON entries (approximately 800\u20131,500 words). Rising action, B story introduction, Fun & Games section, build to Midpoint. Each entry fully described.",
-        "act_2b_crisis":       "5\u20138 JSON entries (approximately 800\u20131,500 words). Post-midpoint complications, All Is Lost, Dark Night of the Soul. Every entry fully described.",
-        "act_3_resolution":    "5\u20138 JSON entries (approximately 600\u20131,200 words). Break Into Three, finale sequence, climax, resolution, final image. Every entry fully described.",
+        "act_1_setup":              "5–8 JSON entries (approximately 800–1,500 words). Each entry: 3-5 sentence description covering dramatic purpose and emotional shift. Covers world establishment through inciting incident to end of Act 1.",
+        "act_2a_rising_action":     "5–8 JSON entries (approximately 800–1,500 words). Rising action, B story introduction, Fun & Games section, build to Midpoint. Each entry fully described.",
+        "act_2b_complications":     "5–8 JSON entries (approximately 800–1,500 words). Post-midpoint complications, All Is Lost, Dark Night of the Soul. Every entry fully described.",
+        "act_3_climax_resolution":  "5–8 JSON entries (approximately 600–1,200 words). Break Into Three, finale sequence, climax, resolution, final image. Every entry fully described.",
       };
       const actTarget = PER_ACT_TARGETS[sectionKey] ?? "5\u20138 JSON entries (approximately 800\u20131,500 words)";
       lengthGuidance = `

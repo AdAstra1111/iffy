@@ -457,11 +457,9 @@ OUTPUT AS VALID JSON ONLY. Use this exact structure:
   ]
 }
 
-Match the act structure from the Treatment. Break EACH act into 5-8 individual moments (each ${""}entry${""} = one moment). Each moment is one {"number", "title", "description"} entry in the "entries" array — every entry follows the exact same flat structure. NO per-act schema variation is permitted. Do NOT add nested objects, custom fields, or per-act structural changes. Write vivid present-tense prose for each description. No INT./EXT. sluglines. No character cues. No dialogue formatting.
+This chunk covers ONE act only. Generate entries for the act specified in the length guidance above. Break the act into 5-8 individual moments (each entry = one moment). Each moment is one {"number", "title", "description"} entry in the "entries" array — every entry follows the exact same flat structure. NO per-act schema variation is permitted. Do NOT add nested objects, custom fields, or per-act structural changes. Write vivid present-tense prose for each description. No INT./EXT. sluglines. No character cues. No dialogue formatting.
 
-Include the LOGLINE (import from concept_brief.logline — copy exactly) in the first entry description. Include the TONE (import from treatment.tone — copy exactly) in the first entry description.
-
-Cover all acts from the treatment — Act 1 through Act 4. Each act should have 5-8 moments. Total ~25-32 entries.`;
+Include the LOGLINE (import from concept_brief.logline — copy exactly) in the first entry description. Include the TONE (import from treatment.tone — copy exactly) in the first entry description.`;
     // ─────────────────────────────────────────────────────────────────────────────
     case "feature_script":
       return `# SCREENPLAY: ${title}
