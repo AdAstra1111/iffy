@@ -460,9 +460,26 @@ export default function ProjectDevelopmentEngine() {
       // blocked by RLS (anon key). Instead call dev-engine-v2 fix_stuck_version which
       // runs as service role and can bypass RLS safely.
 
+      // ── fix_stuck_version cooldown guard ──────────────────────────
+      // Prevent calling fix_stuck_version more than once every 30 seconds
+      // to avoid the runaway loop where stuck bg_generating triggers a
+      // dev-engine-v2 POST on every 4-second poll cycle.
+      const STUCK_FIX_COOLDOWN_MS = 30_000;
+
+      // Module-level variable — persists across renders but per-version
+      const stuckFixTimestamps = (window as any).__stuckFixTimestamps ?? new Map<string, number>();
+      (window as any).__stuckFixTimestamps = stuckFixTimestamps;
+      const lastFixTime = stuckFixTimestamps.get(selectedVersionId) ?? 0;
+      const now = Date.now();
+
       // Case 1: plaintext already in DB but flag stuck
       if (stillGenerating && data.plaintext && data.plaintext.length > 500) {
+        if (now - lastFixTime < STUCK_FIX_COOLDOWN_MS) {
+          // Still in cooldown — skip to avoid runaway POST loop
+          return data;
+        }
         console.log(`[bg-poll] Stuck bg_generating on ${selectedVersionId} — plaintext present, calling fix_stuck_version`);
+        stuckFixTimestamps.set(selectedVersionId, now);
         await (supabase as any).functions.invoke('dev-engine-v2', {
           body: { action: 'fix_stuck_version', versionId: selectedVersionId },
         });
@@ -482,6 +499,10 @@ export default function ProjectDevelopmentEngine() {
           const TERMINAL_STATUSES = new Set(['done', 'failed', 'failed_validation', 'error', 'needs_regen', 'skipped']);
           const allTerminal = chunks.every((c: any) => TERMINAL_STATUSES.has(c.status));
           if (allTerminal) {
+            // Cooldown check — skip if fix_stuck_version was called recently
+            if (now - lastFixTime < STUCK_FIX_COOLDOWN_MS) {
+              return data;
+            }
             const assembled = chunks
               .filter((c: any) => c.content)
               .map((c: any) => c.content)

@@ -80,6 +80,18 @@ const ENGINE_V2_MAX_CONCURRENT = 3;
 let engineV2InFlight = 0;
 const engineV2Queue: (() => void)[] = [];
 
+// Single-flight guard — prevents duplicate in-flight calls for the same
+// (action, documentId, versionId) tuple. When the same request is already
+// in-flight, subsequent attempts are silently blocked with an IEL warning.
+const inFlightCalls = new Map<string, Promise<any>>();
+
+function makeFlightKey(action: string, extra: Record<string, any>): string {
+  // Include projectId to scope per-project
+  const docId = extra.documentId || extra.document_id || '';
+  const verId = extra.versionId || extra.version_id || '';
+  return `${action}:${docId}:${verId}`;
+}
+
 async function acquireEngineV2Slot(): Promise<void> {
   if (engineV2InFlight < ENGINE_V2_MAX_CONCURRENT) { engineV2InFlight++; return; }
   return new Promise<void>(r => engineV2Queue.push(() => { engineV2InFlight++; r(); }));
@@ -91,6 +103,19 @@ function releaseEngineV2Slot(): void {
 }
 
 async function callEngineV2(action: string, extra: Record<string, any> = {}) {
+  // ── Single-flight guard ─────────────────────────────────────────
+  // Prevent duplicate in-flight calls for the same (action, docId, verId)
+  const flightKey = makeFlightKey(action, extra);
+  const existing = inFlightCalls.get(flightKey);
+  if (existing) {
+    console.warn(
+      `[dev-engine-v2][IEL] dev_engine_v2_mutation_blocked_duplicate { action: "${action}", flight_key: "${flightKey}" }`,
+    );
+    return existing;
+  }
+
+  // Create the promise and register it before actual work starts
+  const promise = (async () => {
   await acquireEngineV2Slot();
   try {
     const { data: { session } } = await supabase.auth.getSession();
@@ -148,6 +173,12 @@ async function callEngineV2(action: string, extra: Record<string, any> = {}) {
   } finally {
     releaseEngineV2Slot();
   }
+  })();
+
+  // Register the in-flight promise and remove when done
+  inFlightCalls.set(flightKey, promise);
+  promise.finally(() => inFlightCalls.delete(flightKey)).catch(() => {});
+  return promise;
 }
 
 // ── Hook ──
@@ -328,13 +359,76 @@ export function useDevEngineV2(projectId: string | undefined) {
 
   const latestDrift = driftEvents.length > 0 ? driftEvents[0] : null;
 
-  function invalidateAll(docId?: string | null, versionId?: string | null) {
-    invalidateDevEngine(qc, {
-      projectId,
-      docId: docId ?? selectedDocId,
-      versionId: versionId ?? selectedVersionId,
-      deep: true,
-    });
+  /**
+   * Targeted invalidation for dev-engine-v2 mutations.
+   * Was: blanket predicate-based invalidateDevEngine with deep:true
+   * which triggered ALL dev-v2-* queries to refetch on every mutation.
+   * Now: only invalidates the specific keys affected by each operation,
+   * preventing cascading refetches that can trigger repeat mutations.
+   */
+  function invalidateAll(action?: string, docId?: string | null, versionId?: string | null) {
+    const dId = docId ?? selectedDocId;
+    const vId = versionId ?? selectedVersionId;
+
+    switch (action) {
+      case 'analyze':
+      case 'notes':
+        // Analysis/notes affect runs, convergence — NOT versions or docs
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', projectId, dId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', projectId] });
+        // Do NOT invalidate dev-v2-versions — analysis doesn't change version data
+        break;
+
+      case 'rewrite':
+        // Rewrite creates new versions
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', projectId] });
+        break;
+
+      case 'convert':
+        // Convert creates new documents + versions
+        qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        break;
+
+      case 'create-paste':
+        // Create-paste adds a new document + version
+        qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        break;
+
+      case 'beat-sheet-to-script':
+        qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        break;
+
+      case 'drift-acknowledge':
+      case 'drift-resolve':
+        qc.invalidateQueries({ queryKey: ['dev-v2-drift', projectId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        break;
+
+      case 'delete-version':
+        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        break;
+
+      case 'delete-document':
+        qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
+        break;
+
+      default:
+        // Fallback: minimal invalidation for unclassified actions
+        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        break;
+    }
+
+    // Always invalidate seed-pack if projectId is available
+    qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
   }
 
   // Select document → auto-select latest version
@@ -381,7 +475,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         .single();
       if (error || !newVersion) return null;
       setSelectedVersionId(newVersion.id);
-      invalidateAll();
+      qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       return newVersion.id as string;
     }
     return null;
@@ -397,7 +491,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       if (!vid) throw new Error('No version found — please select a document first');
       return callEngineV2('analyze', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
-    onSuccess: () => { toast.success('Analysis complete'); invalidateAll(); },
+    onSuccess: () => { toast.success('Analysis complete'); invalidateAll('analyze'); },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
@@ -406,7 +500,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       const vid = await resolveVersionId();
       return callEngineV2('notes', { projectId, documentId: selectedDocId, versionId: vid, analysisJson });
     },
-    onSuccess: () => { toast.success('Notes generated'); invalidateAll(); },
+    onSuccess: () => { toast.success('Notes generated'); invalidateAll('notes'); },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
@@ -426,7 +520,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         });
         setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll(selectedDocId, data.newVersion?.id);
+      invalidateAll('rewrite', selectedDocId, data.newVersion?.id);
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -442,7 +536,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         selectDocument(data.newDoc.id);
         if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
+      invalidateAll('convert', data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -469,7 +563,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         selectDocument(data.newDoc.id);
         if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll(data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
+      invalidateAll('beat-sheet-to-script', data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -483,7 +577,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         selectDocument(data.document.id);
         if (data.version) setSelectedVersionId(data.version.id);
       }
-      invalidateAll();
+      invalidateAll('create-paste');
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -503,7 +597,7 @@ export function useDevEngineV2(projectId: string | undefined) {
         const next = remaining[remaining.length - 1] ?? null;
         setSelectedVersionId(next ? next.id : null);
       }
-      invalidateAll();
+      invalidateAll('delete-version');
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -551,7 +645,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     },
     onSuccess: () => {
       toast.success('Document deleted');
-      invalidateAll();
+      invalidateAll('delete-document');
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -560,14 +654,14 @@ export function useDevEngineV2(projectId: string | undefined) {
   const acknowledgeDrift = useMutation({
     mutationFn: async (driftEventId: string) =>
       callEngineV2('drift-acknowledge', { driftEventId }),
-    onSuccess: () => { toast.success('Drift acknowledged'); invalidateAll(); },
+    onSuccess: () => { toast.success('Drift acknowledged'); invalidateAll('drift-acknowledge'); },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
   const resolveDrift = useMutation({
     mutationFn: async (params: { driftEventId: string; resolutionType: 'accept_drift' | 'intentional_pivot' | 'reseed'; versionId?: string }) =>
       callEngineV2('drift-resolve', params),
-    onSuccess: () => { toast.success('Drift resolved'); invalidateAll(); refetchDrift(); },
+    onSuccess: () => { toast.success('Drift resolved'); invalidateAll('drift-resolve'); refetchDrift(); },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
