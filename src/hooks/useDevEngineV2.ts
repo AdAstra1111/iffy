@@ -482,6 +482,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   }
 
   const analyze = useMutation({
+    retry: false,
     mutationFn: async (params: { productionType?: string; strategicPriority?: string; developmentStage?: string; analysisMode?: string; previousVersionId?: string; deliverableType?: DeliverableType; developmentBehavior?: DevelopmentBehavior; format?: string; episodeTargetDurationSeconds?: number; episode_target_duration_min_seconds?: number; episode_target_duration_max_seconds?: number; maxContextChars?: number; includeDocumentIds?: string[] }) => {
       if (!selectedDocId || !documents.find(d => d.id === selectedDocId)) throw new Error('Document not found — please select a valid document');
       // Re-verify document still exists in DB (guards against stale cache after deletion)
@@ -496,6 +497,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const generateNotes = useMutation({
+    retry: false,
     mutationFn: async (analysisJson?: any) => {
       const vid = await resolveVersionId();
       return callEngineV2('notes', { projectId, documentId: selectedDocId, versionId: vid, analysisJson });
@@ -505,6 +507,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const rewrite = useMutation({
+    retry: false,
     mutationFn: async (params: { approvedNotes: any[]; protectItems?: string[]; targetDocType?: string; deliverableType?: string; developmentBehavior?: string; format?: string; selectedOptions?: any[]; globalDirections?: any[] }) => {
       const vid = await resolveVersionId();
       return callEngineV2('rewrite', { projectId, documentId: selectedDocId, versionId: vid, ...params });
@@ -526,6 +529,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const convert = useMutation({
+    retry: false,
     mutationFn: async (params: { targetOutput: string; protectItems?: string[] }) => {
       const vid = await resolveVersionId();
       return callEngineV2('convert', { projectId, documentId: selectedDocId, versionId: vid, ...params });
@@ -542,6 +546,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const beatSheetToScript = useMutation({
+    retry: false,
     mutationFn: async (params: { episodeNumber: number; seasonEpisodeCount?: number }) => {
       const vid = await resolveVersionId();
       if (!vid) throw new Error('No version found — select a document first');
@@ -569,6 +574,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const createPaste = useMutation({
+    retry: false,
     mutationFn: (params: { title: string; docType: string; text: string }) =>
       callEngineV2('create-paste', { projectId, ...params }),
     onSuccess: (data) => {
@@ -583,6 +589,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const deleteVersion = useMutation({
+    retry: false,
     mutationFn: async (versionId: string) => {
       const { data, error } = await (supabase as any).rpc('safe_delete_version', {
         p_version_id: versionId,
@@ -603,6 +610,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const deleteDocument = useMutation({
+    retry: false,
     mutationFn: async (docId: string) => {
       if (selectedDocId === docId) {
         setSelectedDocId(null);
@@ -652,6 +660,7 @@ export function useDevEngineV2(projectId: string | undefined) {
 
   // Drift resolution mutations
   const acknowledgeDrift = useMutation({
+    retry: false,
     mutationFn: async (driftEventId: string) =>
       callEngineV2('drift-acknowledge', { driftEventId }),
     onSuccess: () => { toast.success('Drift acknowledged'); invalidateAll('drift-acknowledge'); },
@@ -659,6 +668,7 @@ export function useDevEngineV2(projectId: string | undefined) {
   });
 
   const resolveDrift = useMutation({
+    retry: false,
     mutationFn: async (params: { driftEventId: string; resolutionType: 'accept_drift' | 'intentional_pivot' | 'reseed'; versionId?: string }) =>
       callEngineV2('drift-resolve', params),
     onSuccess: () => { toast.success('Drift resolved'); invalidateAll('drift-resolve'); refetchDrift(); },

@@ -2839,12 +2839,12 @@ async function callEdgeFunction(
   if (isHtml || (!ct.includes("application/json") && raw.length > 0 && !raw.trimStart().startsWith("{"))) {
     const errorCode = isHtml ? "HTML_RESPONSE" : "NON_JSON_RESPONSE";
     console.error(`[auto-run][IEL] non_json_response_detected { function: "${functionName}", status: ${resp.status}, content_type: "${ct}", error_code: "${errorCode}", body_prefix: "${raw.slice(0, 200)}" }`);
-    const userMsg = resp.status === 502 || resp.status === 504
+    const userMsg = resp.status === 502 || resp.status === 503 || resp.status === 504
       ? `${functionName} timed out (${resp.status}). Will retry.`
       : `${functionName} returned non-JSON (${resp.status}).`;
     throw Object.assign(new Error(userMsg), {
       structured: true, code: errorCode, status: resp.status, body: raw.slice(0, 300),
-      retryable: resp.status === 502 || resp.status === 504,
+      retryable: resp.status === 502 || resp.status === 503 || resp.status === 504,
     });
   }
 

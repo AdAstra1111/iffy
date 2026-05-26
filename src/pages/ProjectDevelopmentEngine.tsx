@@ -1015,6 +1015,9 @@ export default function ProjectDevelopmentEngine() {
     }
   }, [allPrioritizedMoves]);
 
+  // ── Idempotency guard for promotion state recomputation ──
+  const prevPromotionSignatureRef = useRef<string | null>(null);
+
   // Trigger Promotion Intelligence from authoritative version-bound evaluation state
   useEffect(() => {
     if (!promotionGateVersionId) {
@@ -1046,6 +1049,29 @@ export default function ProjectDevelopmentEngine() {
     const iterCount = allDocRuns.filter((r: any) => r.run_type === 'ANALYZE').length;
 
     console.info(`[ui][IEL] promotion_gate_version_bound { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", ci: ${ci}, gp: ${gp}, blockers: ${blockers.length}, high_impact_count: ${highImpact.length} }`);
+
+    // ── Idempotency guard: skip if computed input has not changed ──
+    const promotionSchema = {
+      projectId,
+      jobId: autoRun.job?.id,
+      docType: selectedDeliverableType,
+      authoritativeVersionId: authoritativeVersion?.id,
+      gateVersionId: promotionGateVersionId,
+      ci, gp, gap, trajectory,
+      blockersCount: blockers.length,
+      highImpactCount: highImpact.length,
+      iterationCount: iterCount,
+      projectFormat,
+      existingDocTypesSig: (documents || []).map((d: any) => d.doc_type).sort().join(','),
+      approvedDocTypesSig: (documents || []).filter((d: any) => !!(approvedVersionMap as any)?.[d.id]).map((d: any) => d.doc_type).sort().join(','),
+      seasonEpisodeCount: effectiveSeasonEpisodes ?? '',
+      convergenceStatus: promotionConvergenceStatus,
+    };
+    const signature = JSON.stringify(promotionSchema);
+    if (signature === prevPromotionSignatureRef.current) {
+      return; // Skip — state unchanged
+    }
+    prevPromotionSignatureRef.current = signature;
 
     const result = promotionIntel.computeLocal({
       ci, gp, gap, trajectory,
