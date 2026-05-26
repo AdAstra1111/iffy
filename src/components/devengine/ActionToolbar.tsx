@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Play, ArrowRight, RefreshCw, Loader2, AlertTriangle, Info, Film, ShieldCheck, Camera, Eye, CheckCircle2 } from 'lucide-react';
+import { Play, ArrowRight, RefreshCw, Loader2, AlertTriangle, Info, Film, ShieldCheck, Camera, Eye, CheckCircle2, Sparkles } from 'lucide-react';
 import { DELIVERABLE_LABELS, type DeliverableType, getDeliverableLabel } from '@/lib/dev-os-config';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { NextAction } from '@/lib/next-action';
@@ -88,6 +88,10 @@ interface ActionToolbarProps {
   onActivateVisualProduction?: () => void;
   /** Production activation: pending */
   activatingVisualProduction?: boolean;
+  /** Generate Visual DNA from Canon: handler */
+  onGenerateVisualDNA?: () => void;
+  /** Generate Visual DNA from Canon: pending */
+  generatingVisualDNA?: boolean;
 }
 
 export function ActionToolbar({
@@ -118,6 +122,8 @@ export function ActionToolbar({
   visualProductionLocked = false,
   onActivateVisualProduction,
   activatingVisualProduction = false,
+  onGenerateVisualDNA,
+  generatingVisualDNA = false,
 }: ActionToolbarProps) {
   const navigate = useNavigate();
   const anyPending = analyzePending || rewritePending || convertPending || generateNotesPending || beatSheetToScriptPending;
@@ -269,6 +275,16 @@ export function ActionToolbar({
             onClick={() => setShotListOpen(true)}>
             <Camera className="h-3 w-3" />
             Shot List
+          </Button>
+        )}
+
+        {/* Generate Visual DNA from Canon — project-level */}
+        {onGenerateVisualDNA && (
+          <Button size="sm" className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700"
+            onClick={onGenerateVisualDNA}
+            disabled={generatingVisualDNA || actionsDisabled}>
+            {generatingVisualDNA ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            Generate Visual DNA from Canon
           </Button>
         )}
 

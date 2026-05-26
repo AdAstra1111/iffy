@@ -353,6 +353,47 @@ async function checkUpstreamStaleness(
   return { stale: false, detail: "No upstream staleness detected" };
 }
 
+/**
+ * Check if any existing execution output has been rejected (blocks preflight).
+ * Also check if the latest completed execution has been accepted.
+ * If not reviewed, treat as neutral (not blocking).
+ */
+async function checkReviewState(
+  supabase: ReturnType<typeof createClient>,
+  projectId: string,
+  stageId: string,
+): Promise<{ blocked: boolean; accepted: boolean; detail: string }> {
+  const { data: executions } = await supabase
+    .from("project_visual_execution_provenance")
+    .select("execution_state, review_state, execution_number")
+    .eq("project_id", projectId)
+    .eq("stage_id", stageId)
+    .order("execution_number", { ascending: false })
+    .limit(5);
+
+  if (!executions || !Array.isArray(executions) || executions.length === 0) {
+    return { blocked: false, accepted: false, detail: "No executions to review" };
+  }
+
+  const rejected = executions.find((r: any) => r.review_state === "rejected");
+  if (rejected) {
+    return {
+      blocked: true,
+      accepted: false,
+      detail: `Execution #${rejected.execution_number} was rejected — review must be resolved before regeneration`,
+    };
+  }
+
+  const accepted = executions.find(
+    (r: any) => r.execution_state === "completed" && r.review_state === "accepted",
+  );
+  if (accepted) {
+    return { blocked: false, accepted: true, detail: `Execution #${accepted.execution_number} is accepted` };
+  }
+
+  return { blocked: false, accepted: false, detail: "Executions exist but not yet reviewed" };
+}
+
 async function checkLockedReview(
   supabase: ReturnType<typeof createClient>,
   projectId: string,

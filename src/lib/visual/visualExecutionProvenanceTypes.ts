@@ -31,7 +31,26 @@ export interface ExecutionProvenanceRow {
   error_message: string | null;
   executed_at: string;
   created_at: string;
+
+  /** Review state for quality gate. */
+  review_state: string;
+  /** Optional human-written notes explaining the review decision. */
+  review_notes: string | null;
+  /** Timestamp when reviewed. */
+  reviewed_at: string | null;
+  /** User ID of the reviewer. */
+  reviewed_by: string | null;
 }
+
+/** Valid review states for visual execution outputs. */
+export const REVIEW_STATES = {
+  PENDING_REVIEW: 'pending_review',
+  ACCEPTED: 'accepted',
+  REJECTED: 'rejected',
+  NEEDS_REVISION: 'needs_revision',
+} as const;
+
+export type ReviewState = typeof REVIEW_STATES[keyof typeof REVIEW_STATES];
 
 /** Group executions by stage for timeline display. */
 export interface ExecutionTimelineGroup {

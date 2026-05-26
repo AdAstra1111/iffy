@@ -12,7 +12,8 @@ import {
   type ExecutionProvenanceRow,
 } from '@/lib/visual/visualExecutionProvenanceTypes';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Check, X, Clock, Layers, ArrowRight, AlertCircle } from 'lucide-react';
+import { Loader2, Check, X, Clock, Layers, ArrowRight, AlertCircle, MessageSquare } from 'lucide-react';
+import { VisualExecutionReviewPanel } from './VisualExecutionReviewPanel';
 
 interface Props {
   projectId: string;
@@ -101,6 +102,16 @@ function ExecutionRow({ row }: { row: ExecutionProvenanceRow }) {
         <div className="flex items-center gap-1 text-[7px] text-red-600/60">
           <AlertCircle className="h-2 w-2" />
           <span className="truncate max-w-[300px]">{row.error_message.slice(0, 120)}</span>
+        </div>
+      )}
+
+      {/* Review panel — only for completed/partial executions */}
+      {['completed', 'partial'].includes(row.execution_state) && (
+        <div className="mt-1.5">
+          <VisualExecutionReviewPanel
+            execution={row}
+            onReviewComplete={() => {}}
+          />
         </div>
       )}
     </div>

@@ -751,9 +751,52 @@ ${docTextForScoring}`;
       const resolvedFilter = (notes: any[]) =>
         (notes || []).filter((n: any) => !resolvedNoteIds.has(generateFingerprint(n)));
 
-      const blockersResult = filterAndTimingNotes(resolvedFilter(parsed.blocking_issues));
-      const highResult = filterAndTimingNotes(resolvedFilter(parsed.high_impact_notes));
-      const polishResult = filterAndTimingNotes(resolvedFilter(parsed.polish_notes));
+      // ── STAGE 1A: SHADOW Anchor bypass — filter out notes for do_not_resolve entities ──
+      // If a character or entity has been flagged as do_not_resolve (e.g. Daughter as SHADOW Anchor),
+      // notes targeting that entity are dropped here rather than being persisted and blocking convergence.
+      let doNotResolveKeys = new Set<string>();
+      if (effectiveDeliverable === "character_bible" && projectId && documentId) {
+        try {
+          const { data: dn } = await supabase
+            .from("development_notes")
+            .select("note_key")
+            .eq("project_id", projectId)
+            .eq("document_id", documentId)
+            .eq("do_not_resolve", true);
+          if (dn) {
+            for (const n of dn) doNotResolveKeys.add(n.note_key.toLowerCase());
+            // Also check narrative_entities for do_not_resolve entities
+            const { data: entities } = await supabase
+              .from("narrative_entities")
+              .select("entity_key, canonical_name")
+              .eq("project_id", projectId)
+              .eq("do_not_resolve", true);
+            if (entities) {
+              for (const e of entities) {
+                doNotResolveKeys.add((e.entity_key || "").toLowerCase());
+                doNotResolveKeys.add((e.canonical_name || "").toLowerCase());
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[dev-engine-v2] do_not_resolve query failed:", e);
+        }
+      }
+
+      const dnResolveFilter = (notes: any[]) =>
+        (notes || []).filter((n: any) => {
+          const nk = (n.note_key || n.id || "").toLowerCase();
+          const desc = (n.description || "").toLowerCase();
+          // Check if the note key or description matches a do_not_resolve pattern
+          for (const key of doNotResolveKeys) {
+            if (nk.includes(key) || desc.includes(key)) return false;
+          }
+          return true;
+        });
+
+      const blockersResult = filterAndTimingNotes(dnResolveFilter(resolvedFilter(parsed.blocking_issues)));
+      const highResult = filterAndTimingNotes(dnResolveFilter(resolvedFilter(parsed.high_impact_notes)));
+      const polishResult = filterAndTimingNotes(dnResolveFilter(resolvedFilter(parsed.polish_notes)));
 
       // Keep only NOW notes in the main arrays
       parsed.blocking_issues = blockersResult.now;

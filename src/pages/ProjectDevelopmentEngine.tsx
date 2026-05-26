@@ -1090,6 +1090,7 @@ export default function ProjectDevelopmentEngine() {
   };
 
   const [isGeneratingDocument, setIsGeneratingDocument] = useState(false);
+  const [isGeneratingVisualDNA, setIsGeneratingVisualDNA] = useState(false);
   const [regenerationProgress, setRegenerationProgress] = useState<number | undefined>(undefined);
   const [currentScriptVersionId, setCurrentScriptVersionId] = useState<string | null>(null);
   const [regenerationLabel, setRegenerationLabel] = useState<string>('');
@@ -1190,6 +1191,32 @@ export default function ProjectDevelopmentEngine() {
       // in dev-engine-v2 handles act-by-act population during rewrite.
     } finally {
       setIsGeneratingDocument(false);
+    }
+  };
+
+  const handleGenerateVisualDNA = async () => {
+    if (!isValidUUID(projectId) || isGeneratingVisualDNA) return;
+    setIsGeneratingVisualDNA(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-visual-dna-from-canon', {
+        body: { project_id: projectId, target: 'all_characters', mode: 'generate_missing' },
+      });
+      if (error) throw new Error(error.message || 'Generation failed');
+      const report = data as { created: number; skipped: number; updated: number; blocked: number; low_confidence: number; errors: string[] };
+      const parts: string[] = [];
+      if (report.created > 0) parts.push(`${report.created} created`);
+      if (report.updated > 0) parts.push(`${report.updated} updated`);
+      if (report.skipped > 0) parts.push(`${report.skipped} skipped`);
+      if (report.blocked > 0) parts.push(`${report.blocked} blocked`);
+      if (report.low_confidence > 0) parts.push(`${report.low_confidence} low confidence`);
+      if (report.errors && report.errors.length > 0) parts.push(`${report.errors.length} errors`);
+      toast.success(`Visual DNA: ${parts.join(', ') || 'nothing to generate'}`);
+      qc.invalidateQueries({ queryKey: ['character-visual-dna', projectId] });
+      qc.invalidateQueries({ queryKey: ['dev-v2-documents', projectId] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setIsGeneratingVisualDNA(false);
     }
   };
 
@@ -2528,6 +2555,8 @@ export default function ProjectDevelopmentEngine() {
                     visualProductionLocked={!!productionFlags.visual_locked}
                     onActivateVisualProduction={handleActivateVisualProduction}
                     activatingVisualProduction={activatingVisual}
+                    onGenerateVisualDNA={handleGenerateVisualDNA}
+                    generatingVisualDNA={isGeneratingVisualDNA}
                   />
 
                   {/* Visual Production Activated — unlocked surface */}

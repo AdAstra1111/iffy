@@ -310,3 +310,9 @@ verify_jwt = false
 
 [functions.lookbook-preflight]
 verify_jwt = false
+
+[functions.review-visual-execution]
+verify_jwt = false
+
+[functions.generate-visual-dna-from-canon]
+verify_jwt = false
