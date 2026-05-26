@@ -248,7 +248,7 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(2);
+    expect(result.entries.length).toBe(3);
   });
 
   it('normalizes "moments" wrapper to entries', () => {
@@ -270,7 +270,7 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
   });
 
   it('normalizes "items" wrapper to entries', () => {
@@ -292,7 +292,7 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
   });
 
   it('normalizes "beats" wrapper to entries', () => {
@@ -314,7 +314,7 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
   });
 
   it('handles bare JSON objects (no code block) in hybrid format', () => {
@@ -332,7 +332,7 @@ describe('convertStoryOutlineToJson — wrapper key normalization', () => {
 }`;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
   });
 });
 
@@ -435,6 +435,14 @@ also invalid`;
     { "number": 1, "name": "Named Entry", "summary": "Summary text" }
   ]
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "entries": [
+    { "number": 2, "title": "Entry 2", "description": "Desc 2" }
+  ]
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
@@ -454,14 +462,22 @@ also invalid`;
     { "number": 5, "title": "Entry 5", "synopsis": "Synopsis body" }
   ]
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "entries": [
+    { "number": 6, "title": "Entry 6", "description": "Desc 6" }
+  ]
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries[0].description).toBe('Content body');
-    expect(result.entries[1].description).toBe('Text body');
-    expect(result.entries[2].description).toBe('Desc body');
-    expect(result.entries[3].description).toBe('Overview body');
-    expect(result.entries[4].description).toBe('Synopsis body');
+    expect(result.entries[0].content).toBe('Content body');
+    expect(result.entries[1].text).toBe('Text body');
+    expect(result.entries[2].desc).toBe('Desc body');
+    expect(result.entries[3].overview).toBe('Overview body');
+    expect(result.entries[4].synopsis).toBe('Synopsis body');
   });
 
   it('handles single entry per act format', () => {
@@ -472,10 +488,18 @@ also invalid`;
   "number": 1,
   "description": "The story begins"
 }
+\`\`\`
+## Act 2
+\`\`\`json
+{
+  "title": "Climax",
+  "number": 2,
+  "description": "The story peaks"
+}
 \`\`\``;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
     expect(result.entries[0].number).toBe(1);
     expect(result.entries[0].title).toBe('Opening');
     expect(result.entries[0].description).toBe('The story begins');
@@ -487,10 +511,16 @@ also invalid`;
   "entries": [
     { "number": 1, "title": "Bare JSON", "description": "No code block wrapper" }
   ]
+}
+## Act 2
+{
+  "entries": [
+    { "number": 2, "title": "Bare JSON 2", "description": "Second act bare JSON" }
+  ]
 }`;
     const result = convertStoryOutlineToJson(input);
     expect(result).not.toBeNull();
-    expect(result.entries.length).toBe(1);
+    expect(result.entries.length).toBe(2);
   });
 
   it('skips sections that are just plain text with no JSON', () => {
@@ -645,6 +675,6 @@ describe('Regression — existing functionality preserved', () => {
   });
 
   it('existing enqueue_rewrite_jobs still present', () => {
-    expect(source.includes('async function enqueue_rewrite_jobs')).toBe(true);
+    expect(source.includes('action === "enqueue_rewrite_jobs"')).toBe(true);
   });
 });
