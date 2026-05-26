@@ -14,7 +14,7 @@ import { PackageBar } from '@/components/devengine/PackageBar';
 import { DownloadPackageButton } from '@/components/devengine/DownloadPackageButton';
 import { ShareWithModal } from '@/components/devengine/ShareWithModal';
 import { SharePackBuilder } from '@/components/devengine/SharePackBuilder';
-import { ALL_DOC_TYPE_LABELS, getCanonicalFilename } from '@/lib/can-promote-to-script';
+import { getDocTypeLabel, getCanonicalFilename } from '@/lib/can-promote-to-script';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -25,10 +25,7 @@ interface Props {
 }
 
 function getLabel(docType: string): string {
-  return (
-    ALL_DOC_TYPE_LABELS[docType] ??
-    docType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  return getDocTypeLabel(docType);
 }
 
 /** Individual package item row with download + approved date */

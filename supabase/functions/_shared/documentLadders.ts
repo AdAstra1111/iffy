@@ -172,7 +172,8 @@ export function isDocTypeAllowedInLane(
 }
 
 export function getDocTypeLabel(docTypeKey: string): string {
-  return BASE_DOC_TYPES[docTypeKey]?.label ?? docTypeKey.replace(/_/g, ' ');
+  const resolved = normalizeDocType(docTypeKey);
+  return BASE_DOC_TYPES[resolved]?.label ?? docTypeKey.replace(/_/g, ' ');
 }
 
 // ── Output document canonical set (mirrors OUTPUT_DOC_TYPES_BY_LANE in FE config) ──

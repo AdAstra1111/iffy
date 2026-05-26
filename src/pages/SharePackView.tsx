@@ -12,11 +12,11 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Lock, Download, FileText, AlertTriangle, Briefcase, Eye } from 'lucide-react';
-import { ALL_DOC_TYPE_LABELS } from '@/lib/can-promote-to-script';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { toast } from 'sonner';
 
 function getLabel(dt: string): string {
-  return ALL_DOC_TYPE_LABELS[dt] ?? dt.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return getDocTypeLabel(dt);
 }
 
 export default function SharePackView() {

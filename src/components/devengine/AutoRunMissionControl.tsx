@@ -40,13 +40,13 @@ import type { DeliverableType } from '@/lib/dev-os-config';
 import { AUTO_RUN_EXECUTION_MODE, EXECUTION_MODE_LABEL } from '@/lib/autoRunConfig';
 
 // ── Constants ──
-import { ALL_DOC_TYPE_LABELS } from '@/lib/can-promote-to-script';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { normalizePendingDecisionsForUI } from '@/lib/decisions/normalizeDecisionUI';
 
 /** Deterministic label: canonical registry → snake_case Title Case fallback. Never returns undefined. */
 function docLabel(key: string | null | undefined): string {
   if (!key) return 'Document';
-  return ALL_DOC_TYPE_LABELS[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  return getDocTypeLabel(key);
 }
 // LADDER_OPTIONS and LADDER_LABELS removed — jump-to-stage select now derives from the
 // live `ladder` computed value (getLadderForFormat(projectFormat)) inside the component.

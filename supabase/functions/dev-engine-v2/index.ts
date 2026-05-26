@@ -12365,6 +12365,7 @@ INSTRUCTIONS:
           console.log("[treatment-per-act] assembled treatment: " + treatmentAssembledText.length + " chars from " + priorActResults.length + " acts");
           const taUpdateResult = await supabase.from("project_document_versions").update({
             plaintext: treatmentAssembledText,
+            approval_status: "approved",
             meta_json: {
               run_type: "TREATMENT_REWRITE",
               pipeline: "per_act_v1",

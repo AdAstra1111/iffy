@@ -597,7 +597,31 @@ serve(async (req) => {
             }
 
             // ── Poster Execution (existing) ──
+            if (intent.stage_id === "lookbook") {
+              // Lookbook execution preflight exists but executor is not enabled
+              return jsonRes(
+                {
+                  error: "Lookbook executor is not enabled yet",
+                  code: "EXECUTOR_NOT_ENABLED",
+                  recommended_action: intent.recommended_action,
+                  stage_id: intent.stage_id,
+                  note: "Lookbook execution preflight exists (P11) but executor is not enabled — see lookbook-preflight edge function",
+                },
+                400,
+              );
+            }
+
             if (intent.stage_id !== "poster") {
+              return jsonRes(
+                {
+                  error: "Execution not yet enabled for this action on this stage",
+                  code: "EXECUTOR_NOT_ENABLED",
+                  recommended_action: intent.recommended_action,
+                  stage_id: intent.stage_id,
+                },
+                400,
+              );
+            }
 
             // Guards: stale reason must include HERO_FRAMES_NEWER_THAN_POSTER or VISUAL_STYLE_OUTDATED
             const allowedReasons = ["HERO_FRAMES_NEWER_THAN_POSTER", "VISUAL_STYLE_OUTDATED"];

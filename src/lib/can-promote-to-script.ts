@@ -3,6 +3,8 @@
  * All doc_type classification MUST use these sets. No content-based heuristics.
  */
 
+import { DOC_LABEL_ALIASES } from '@/config/documentLadders';
+
 // ── Canonical doc_type sets ──
 
 export const SCRIPT_DOC_TYPES = new Set([
@@ -205,15 +207,16 @@ export function getDocTypeLabel(docType: string | null | undefined, format?: str
   if (docType === 'universe_manifest') return 'Universe Manifest';
 
   const normalized = normalizeDocTypeKey(docType);
+  const resolved = DOC_LABEL_ALIASES[normalized] ?? normalized;
 
   // Apply format-specific overrides for non-series formats
   const normalizedFormat = (format || '').toLowerCase().trim().replace(/[\s\-]+/g, '_').replace(/_/g, '-');
   if (normalizedFormat && NON_SERIES_FORMATS.has(normalizedFormat)) {
-    const override = FILM_DOC_LABEL_OVERRIDES[normalized];
+    const override = FILM_DOC_LABEL_OVERRIDES[resolved];
     if (override) return override;
   }
 
-  const label = ALL_DOC_TYPE_LABELS[normalized];
+  const label = ALL_DOC_TYPE_LABELS[resolved];
   if (!label) {
     console.warn(`[DocType] Unknown doc_type encountered: "${docType}" (normalized: "${normalized}"). Displaying as "Document".`);
     return 'Document';

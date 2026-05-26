@@ -307,3 +307,6 @@ verify_jwt = false
 
 [functions.hero-frame-preflight]
 verify_jwt = false
+
+[functions.lookbook-preflight]
+verify_jwt = false

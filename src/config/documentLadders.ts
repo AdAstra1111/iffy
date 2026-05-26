@@ -275,9 +275,10 @@ export function isDocTypeAllowedInLane(
   return ladder.includes(normalized);
 }
 
-/** Get the human-readable label for a canonical doc type key. */
+/** Get the human-readable label for a canonical doc type key. Resolves legacy aliases. */
 export function getDocTypeLabel(docTypeKey: string): string {
-  return BASE_DOC_TYPES[docTypeKey]?.label ?? docTypeKey.replace(/_/g, ' ');
+  const resolved = normalizeDocType(docTypeKey);
+  return BASE_DOC_TYPES[resolved]?.label ?? docTypeKey.replace(/_/g, ' ');
 }
 
 /**

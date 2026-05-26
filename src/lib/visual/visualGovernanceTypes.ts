@@ -144,6 +144,66 @@ export interface HeroFramePreflightResult {
   location_bound_count: number;
 }
 
+/** Lookbook preflight blocker codes for lookbook execution readiness. */
+export const LOOKBOOK_PREFLIGHT_BLOCKER_CODES = {
+  MISSING_CANON_HASH: 'MISSING_CANON_HASH',
+  MISSING_VISUAL_CANON: 'MISSING_VISUAL_CANON',
+  MISSING_CAST: 'MISSING_CAST',
+  MISSING_PRODUCTION_DESIGN: 'MISSING_PRODUCTION_DESIGN',
+  MISSING_HERO_FRAMES: 'MISSING_HERO_FRAMES',
+  MISSING_VISUAL_LANGUAGE: 'MISSING_VISUAL_LANGUAGE',
+  MISSING_SCENE_INDEX: 'MISSING_SCENE_INDEX',
+  HIGH_SEVERITY_STALE_RISK: 'HIGH_SEVERITY_STALE_RISK',
+  LOCKED_REVIEW_REQUIRED: 'LOCKED_REVIEW_REQUIRED',
+} as const;
+
+export type LookbookPreflightBlockerCode = typeof LOOKBOOK_PREFLIGHT_BLOCKER_CODES[keyof typeof LOOKBOOK_PREFLIGHT_BLOCKER_CODES];
+
+/** Human-readable labels for each lookbook blocker code. */
+export const LOOKBOOK_PREFLIGHT_BLOCKER_LABELS: Record<LookbookPreflightBlockerCode, string> = {
+  MISSING_CANON_HASH: 'Canon Hash Missing',
+  MISSING_VISUAL_CANON: 'Visual Canon Not Ready',
+  MISSING_CAST: 'Cast Not Ready',
+  MISSING_PRODUCTION_DESIGN: 'Production Design Not Ready',
+  MISSING_HERO_FRAMES: 'Hero Frames Not Ready',
+  MISSING_VISUAL_LANGUAGE: 'Visual Language Not Ready',
+  MISSING_SCENE_INDEX: 'Scene Index Missing',
+  HIGH_SEVERITY_STALE_RISK: 'High-Severity Stale Risk',
+  LOCKED_REVIEW_REQUIRED: 'Locked Review Required',
+};
+
+/** Detailed explanation for each lookbook blocker code. */
+export const LOOKBOOK_PREFLIGHT_BLOCKER_DETAILS: Record<LookbookPreflightBlockerCode, string> = {
+  MISSING_CANON_HASH: 'Canon must exist with content (project_canon.canon_json).',
+  MISSING_VISUAL_CANON: 'Visual canon stage must be approved/locked in governance.',
+  MISSING_CAST: 'Cast stage must be approved/locked in governance.',
+  MISSING_PRODUCTION_DESIGN: 'Production Design stage must be approved/locked in governance.',
+  MISSING_HERO_FRAMES: 'Hero frames must be generated with at least one approved frame.',
+  MISSING_VISUAL_LANGUAGE: 'Visual Language stage must be complete with style profile.',
+  MISSING_SCENE_INDEX: 'Scene index must be populated with at least one scene entry.',
+  HIGH_SEVERITY_STALE_RISK: 'One or more upstream stages have high-severity stale risk.',
+  LOCKED_REVIEW_REQUIRED: 'Governance blockers require review before execution.',
+};
+
+/** Lookbook preflight requirement result. */
+export interface LookbookPreflightRequirement {
+  code: LookbookPreflightBlockerCode;
+  passed: boolean;
+  detail: string;
+}
+
+/** Full lookbook preflight evaluation result. */
+export interface LookbookPreflightResult {
+  project_id: string;
+  evaluated_at: string;
+  all_requirements_pass: boolean;
+  requirements: LookbookPreflightRequirement[];
+  canon_hash: string | null;
+  upstream_stage_statuses: Record<string, string>;
+  scene_count: number;
+  hero_frame_count: number;
+}
+
 export function mergeGovernanceSnapshot(
   liveStages: GovernanceAwareStage[],
   snapshot: GovernanceSnapshotRow[] | null,

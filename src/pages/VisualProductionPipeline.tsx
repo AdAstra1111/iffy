@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { VisualRepairIntentsPanel } from '@/components/visual/VisualRepairIntentsPanel';
 import { VisualExecutionHistoryPanel } from '@/components/visual/VisualExecutionHistoryPanel';
 import { HeroFramePreflightPanel } from '@/components/visual/HeroFramePreflightPanel';
+import { LookbookPreflightPanel } from '@/components/visual/LookbookPreflightPanel';
 import { useHeroFrameAutoCuration } from '@/hooks/useHeroFrameAutoCuration';
 import { isHeroFrameIdentityValid } from '@/lib/images/heroFrameIdentityFilter';
 import { isCharacterImageEligible, filterEligibleImages } from '@/lib/images/characterImageEligibility';
@@ -2461,6 +2462,9 @@ export default function VisualProductionPipeline() {
                     <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
                       <LookBookContent />
                     </Suspense>
+                    <div className="mt-4">
+                      <LookbookPreflightPanel projectId={projectId} activeStage={activeStage} />
+                    </div>
                   </div>
                 )
               ) : (

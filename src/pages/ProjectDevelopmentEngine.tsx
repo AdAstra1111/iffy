@@ -1454,7 +1454,7 @@ export default function ProjectDevelopmentEngine() {
         try {
           const { data: result, error: invokeError } = await supabase.functions.invoke('dev-engine-v2', {
             body: {
-              action: 'rewrite',
+              action: selectedDoc?.doc_type,
               projectId,
               documentId: selectedDocId,
               versionId: vid,

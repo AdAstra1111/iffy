@@ -18,7 +18,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getLadderForFormat } from '@/lib/stages/registry';
-import { ALL_DOC_TYPE_LABELS } from '@/lib/can-promote-to-script';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -61,10 +61,7 @@ export interface ProjectPackage {
 }
 
 function getLabel(docType: string): string {
-  return (
-    ALL_DOC_TYPE_LABELS[docType] ??
-    docType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
-  );
+  return getDocTypeLabel(docType);
 }
 
 /** Extract season number from a document title like "Master Season Script — Season 2" */
