@@ -1914,6 +1914,41 @@ Respond with ONLY JSON.`, 3000);
       payload.current_stage = "done";
       payload.updated_at = new Date().toISOString();
       payload.result = { title: projectTitle, documents_created: ["idea", "concept_brief", marketType, arcType, beatType, "character_bible", outlineType] };
+
+      // ── Post-extraction chain: scene graph + spine links (fire-and-forget) ──
+      // Fires AFTER foundation docs are complete. Non-fatal: docs remain successful
+      // regardless of post-extraction result.
+      const postExtractionPromise = runPostExtractionChain(sb, project_id)
+        .then(async (postResults) => {
+          try {
+            // Read-back current payload to append post-extraction results
+            const { data: currentPayload } = await sb
+              .from("narrative_units")
+              .select("payload_json")
+              .eq("id", jobId)
+              .single();
+            if (currentPayload?.payload_json) {
+              const pj = typeof currentPayload.payload_json === "object"
+                ? currentPayload.payload_json
+                : JSON.parse(currentPayload.payload_json);
+              pj.post_extraction = postResults;
+              await sb.from("narrative_units").update({ payload_json: pj }).eq("id", jobId);
+            }
+          } catch (logErr) {
+            console.warn("[reverse-engineer][post-extraction] failed to record results:", logErr);
+          }
+        })
+        .catch((chainErr) => {
+          console.error("[reverse-engineer][post-extraction] chain error:", chainErr?.message);
+        });
+
+      // Use waitUntil to keep runtime alive for the async chain
+      if (typeof (globalThis as any).EdgeRuntime !== "undefined") {
+        (globalThis as any).EdgeRuntime.waitUntil(postExtractionPromise);
+      } else {
+        // Fallback: fire and forget
+        postExtractionPromise.catch(() => {});
+      }
     }
 
   } catch (err: any) {
@@ -1985,6 +2020,197 @@ Respond with ONLY JSON.`, 3000);
       waitUntilSafe(selfChain);
     }
   }
+}
+
+// ─── Post-extraction chain: scene graph → roles → spine links ───────────────
+// Fired after reverse-engineer foundation docs complete. Non-fatal: errors are
+// recorded but do not affect the "done" status of the reverse-engineer job.
+// Does NOT write scene_spine_links directly — uses existing canonical chain:
+//   canonicalize-scene-substrate → scene_graph_classify_roles_heuristic → scene_graph_sync_spine_links
+async function runPostExtractionChain(
+  sb: any,
+  projectId: string,
+): Promise<{
+  post_extraction_status: string;
+  canonicalize_scene_status: string | null;
+  classify_roles_status: string | null;
+  sync_spine_links_status: string | null;
+  spine_created: boolean;
+  errors: string[];
+}> {
+  const results = {
+    post_extraction_status: "pending",
+    canonicalize_scene_status: null as string | null,
+    classify_roles_status: null as string | null,
+    sync_spine_links_status: null as string | null,
+    spine_created: false,
+    errors: [] as string[],
+  };
+
+  const functionBase = `${SUPABASE_URL}/functions/v1`;
+
+  try {
+    // ── 1. Preflight: project exists ───────────────────────────────────────
+    const { data: project } = await sb
+      .from("projects")
+      .select("id, narrative_spine_json")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    if (!project) {
+      results.errors.push("Project not found");
+      results.post_extraction_status = "failed";
+      return results;
+    }
+
+    // ── 2. Provisional narrative spine (if missing) ─────────────────────────
+    if (!project.narrative_spine_json) {
+      const emptySpine = {
+        story_engine: null,
+        pressure_system: null,
+        central_conflict: null,
+        inciting_incident: null,
+        resolution_type: null,
+        stakes_class: null,
+        protagonist_arc: null,
+        midpoint_reversal: null,
+        tonal_gravity: null,
+        _provenance: "reverse_engineer_post_extraction",
+        _created_at: new Date().toISOString(),
+      };
+      // write-once guard: only set if narrative_spine_json is null
+      const { error: spineErr } = await sb
+        .from("projects")
+        .update({ narrative_spine_json: emptySpine })
+        .eq("id", projectId)
+        .is("narrative_spine_json", null);
+
+      if (spineErr) {
+        console.warn("[reverse-engineer][post-extraction] spine creation error:", spineErr.message);
+      } else {
+        results.spine_created = true;
+        console.log("[reverse-engineer][post-extraction] provisional spine created");
+      }
+    }
+
+    // ── 3. canonicalize-scene-substrate ─────────────────────────────────────
+    try {
+      console.log("[reverse-engineer][post-extraction] calling canonicalize-scene-substrate...");
+      // Accepts projectId as query param or POST body
+      const canonResp = await fetch(`${functionBase}/canonicalize-scene-substrate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify({ projectId }),
+        signal: AbortSignal.timeout(120000),
+      });
+
+      results.canonicalize_scene_status = canonResp.ok
+        ? "success"
+        : `failed (${canonResp.status})`;
+
+      if (!canonResp.ok) {
+        const errText = await canonResp.text().catch(() => "");
+        results.errors.push(`canonicalize-scene-substrate: ${canonResp.status} — ${errText.slice(0, 200)}`);
+      } else {
+        const canonResult = await canonResp.json();
+        const sceneCount = canonResult.scenes_processed || canonResult.scene_count || 0;
+        console.log(`[reverse-engineer][post-extraction] canonicalize-scene-substrate: ${sceneCount} scenes`);
+      }
+    } catch (e: any) {
+      results.canonicalize_scene_status = "error";
+      results.errors.push(`canonicalize-scene-substrate: ${e.message}`);
+    }
+
+    // ── 4. scene_graph_classify_roles_heuristic ─────────────────────────────
+    try {
+      console.log("[reverse-engineer][post-extraction] calling scene_graph_classify_roles_heuristic...");
+      const roleResp = await fetch(`${functionBase}/dev-engine-v2`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "scene_graph_classify_roles_heuristic",
+          projectId,
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
+
+      results.classify_roles_status = roleResp.ok
+        ? "success"
+        : `failed (${roleResp.status})`;
+
+      if (!roleResp.ok) {
+        const errText = await roleResp.text().catch(() => "");
+        results.errors.push(`classify_roles: ${roleResp.status} — ${errText.slice(0, 200)}`);
+      } else {
+        const roleResult = await roleResp.json();
+        const assignedCount = roleResult.scenes_tagged || roleResult.scenes_processed || 0;
+        console.log(`[reverse-engineer][post-extraction] classify_roles: ${assignedCount} scenes tagged`);
+      }
+    } catch (e: any) {
+      results.classify_roles_status = "error";
+      results.errors.push(`classify_roles: ${e.message}`);
+    }
+
+    // ── 5. scene_graph_sync_spine_links ─────────────────────────────────────
+    try {
+      console.log("[reverse-engineer][post-extraction] calling scene_graph_sync_spine_links...");
+      const syncResp = await fetch(`${functionBase}/dev-engine-v2`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        body: JSON.stringify({
+          action: "scene_graph_sync_spine_links",
+          projectId,
+        }),
+        signal: AbortSignal.timeout(60000),
+      });
+
+      results.sync_spine_links_status = syncResp.ok
+        ? "success"
+        : `failed (${syncResp.status})`;
+
+      if (!syncResp.ok) {
+        const errText = await syncResp.text().catch(() => "");
+        results.errors.push(`sync_spine_links: ${syncResp.status} — ${errText.slice(0, 200)}`);
+      } else {
+        const syncResult = await syncResp.json();
+        const linksUpserted = syncResult.links_upserted || syncResult.scenes_processed || 0;
+        console.log(`[reverse-engineer][post-extraction] sync_spine_links: ${linksUpserted} links upserted`);
+      }
+    } catch (e: any) {
+      results.sync_spine_links_status = "error";
+      results.errors.push(`sync_spine_links: ${e.message}`);
+    }
+
+    // ── Determine overall status ────────────────────────────────────────────
+    const allOk =
+      results.canonicalize_scene_status === "success" &&
+      results.classify_roles_status === "success" &&
+      results.sync_spine_links_status === "success";
+
+    if (allOk) {
+      results.post_extraction_status = "success";
+    } else if (results.errors.length > 0) {
+      results.post_extraction_status = "partial";
+    } else {
+      results.post_extraction_status = "failed";
+    }
+
+    console.log(`[reverse-engineer][post-extraction] chain complete: ${results.post_extraction_status}`);
+  } catch (e: any) {
+    results.post_extraction_status = "failed";
+    results.errors.push(`post_extraction_chain: ${e.message}`);
+  }
+
+  return results;
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
