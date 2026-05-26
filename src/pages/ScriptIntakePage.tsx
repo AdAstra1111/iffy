@@ -51,7 +51,7 @@ export default function ScriptIntakePage() {
   const {
     intake, coverage, backfillDocs,
     upload, generateCoverage, saveCoverage,
-    generateBackfill, approveBackfillDoc,
+    generateBackfill, approveBackfillDoc, finalizeIntake,
   } = useScriptIntake(projectId);
 
   const [activeTab, setActiveTab] = useState('coverage');
@@ -210,6 +210,8 @@ export default function ScriptIntakePage() {
                   onApprove={(doc) => approveBackfillDoc.mutate({ doc, approve: true })}
                   onSaveDraft={(doc) => approveBackfillDoc.mutate({ doc, approve: false })}
                   approving={approveBackfillDoc.isPending}
+                  finalizing={finalizeIntake.isPending}
+                  onFinalize={() => finalizeIntake.mutate()}
                 />
               </TabsContent>
             </Tabs>
@@ -477,7 +479,7 @@ function CoverageSection({ title, icon, children, defaultOpen = true }: {
 
 /* ── Backfill Tab ── */
 function BackfillTab({
-  backfillDocs, selectedTypes, onToggleType, generating, onGenerate, onApprove, onSaveDraft, approving,
+  backfillDocs, selectedTypes, onToggleType, generating, onGenerate, onApprove, onSaveDraft, approving, finalizing, onFinalize,
 }: {
   backfillDocs: BackfillDoc[];
   selectedTypes: string[];
@@ -487,6 +489,8 @@ function BackfillTab({
   onApprove: (doc: BackfillDoc) => void;
   onSaveDraft: (doc: BackfillDoc) => void;
   approving: boolean;
+  finalizing?: boolean;
+  onFinalize?: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -603,6 +607,21 @@ function BackfillTab({
               </CardContent>
             </Card>
           ))}
+        </div>
+      )}
+
+      {/* Finalize Intake — trigger scene graph + spine links */}
+      {backfillDocs.filter(d => !d.error).length > 0 && onFinalize && (
+        <div className="flex justify-end pt-2 border-t border-border/30">
+          <Button
+            size="sm"
+            className="h-8 text-xs gap-1.5 bg-violet-600 hover:bg-violet-700"
+            onClick={onFinalize}
+            disabled={finalizing}
+          >
+            {finalizing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+            {finalizing ? 'Syncing spine links…' : 'Finalize Intake — Build Scene Graph'}
+          </Button>
         </div>
       )}
     </div>

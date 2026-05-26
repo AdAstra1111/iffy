@@ -282,6 +282,24 @@ export function useScriptIntake(projectId: string | undefined) {
     onError: (err: any) => toast.error(`Save failed: ${err.message}`),
   });
 
+  // Finalize intake — trigger spine link chain after all backfills saved
+  const finalizeIntake = useMutation({
+    mutationFn: async () => {
+      if (!projectId) throw new Error('No project ID');
+      const result = await callIntake('finalize_intake', { projectId });
+      return result as { status: string; errors: string[] };
+    },
+    onSuccess: (result) => {
+      if (result.status === 'success') {
+        toast.success('Spine links synced — scene graph ready');
+      } else if (result.status === 'partial') {
+        toast.warning(`Spine links partial: ${result.errors?.join(', ')}`);
+      }
+      qc.invalidateQueries({ queryKey: ['project-documents'] });
+    },
+    onError: (err: any) => toast.error(`Finalize failed: ${err.message}`),
+  });
+
   return {
     intake,
     coverage,
@@ -291,6 +309,7 @@ export function useScriptIntake(projectId: string | undefined) {
     saveCoverage,
     generateBackfill,
     approveBackfillDoc,
+    finalizeIntake,
   };
 }
 

@@ -761,6 +761,116 @@ async function saveBackfilledDoc(
   return { documentId, versionId: version.id };
 }
 
+/* ── action: finalize_intake ── */
+async function finalizeIntake(
+  supabase: any,
+  { projectId }: any
+) {
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+  const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const functionBase = `${SUPABASE_URL}/functions/v1`;
+
+  const results = {
+    status: "pending",
+    canonicalize_scene_status: null as string | null,
+    classify_roles_status: null as string | null,
+    sync_spine_links_status: null as string | null,
+    spine_created: false,
+    errors: [] as string[],
+  };
+
+  try {
+    // 1. Provisional narrative spine (if missing)
+    const { data: project } = await supabase
+      .from("projects")
+      .select("narrative_spine_json")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    if (!project) {
+      results.errors.push("Project not found");
+      results.status = "failed";
+      return results;
+    }
+
+    if (!project.narrative_spine_json) {
+      const emptySpine = {
+        story_engine: null, pressure_system: null, central_conflict: null,
+        inciting_incident: null, resolution_type: null, stakes_class: null,
+        protagonist_arc: null, midpoint_reversal: null, tonal_gravity: null,
+        _provenance: "script_intake_finalize",
+        _created_at: new Date().toISOString(),
+      };
+      const { error: spineErr } = await supabase
+        .from("projects")
+        .update({ narrative_spine_json: emptySpine })
+        .eq("id", projectId)
+        .is("narrative_spine_json", null);
+      if (!spineErr) {
+        results.spine_created = true;
+        console.log("[script-intake][finalize] provisional spine created");
+      }
+    }
+
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+    };
+
+    // 2. canonicalize-scene-substrate
+    try {
+      const canonResp = await fetch(`${functionBase}/canonicalize-scene-substrate`, {
+        method: "POST", headers,
+        body: JSON.stringify({ projectId }),
+        signal: AbortSignal.timeout(120000),
+      });
+      results.canonicalize_scene_status = canonResp.ok ? "success" : `failed (${canonResp.status})`;
+      if (!canonResp.ok) results.errors.push(`canonicalize: ${canonResp.status}`);
+    } catch (e: any) {
+      results.canonicalize_scene_status = "error";
+      results.errors.push(`canonicalize: ${e.message}`);
+    }
+
+    // 3. classify roles
+    try {
+      const roleResp = await fetch(`${functionBase}/dev-engine-v2`, {
+        method: "POST", headers,
+        body: JSON.stringify({ action: "scene_graph_classify_roles_heuristic", projectId }),
+        signal: AbortSignal.timeout(120000),
+      });
+      results.classify_roles_status = roleResp.ok ? "success" : `failed (${roleResp.status})`;
+      if (!roleResp.ok) results.errors.push(`classify_roles: ${roleResp.status}`);
+    } catch (e: any) {
+      results.classify_roles_status = "error";
+      results.errors.push(`classify_roles: ${e.message}`);
+    }
+
+    // 4. sync spine links
+    try {
+      const syncResp = await fetch(`${functionBase}/dev-engine-v2`, {
+        method: "POST", headers,
+        body: JSON.stringify({ action: "scene_graph_sync_spine_links", projectId }),
+        signal: AbortSignal.timeout(60000),
+      });
+      results.sync_spine_links_status = syncResp.ok ? "success" : `failed (${syncResp.status})`;
+      if (!syncResp.ok) results.errors.push(`sync_spine_links: ${syncResp.status}`);
+    } catch (e: any) {
+      results.sync_spine_links_status = "error";
+      results.errors.push(`sync_spine_links: ${e.message}`);
+    }
+
+    const allOk = results.canonicalize_scene_status === "success" &&
+      results.classify_roles_status === "success" &&
+      results.sync_spine_links_status === "success";
+    results.status = allOk ? "success" : results.errors.length > 0 ? "partial" : "failed";
+  } catch (e: any) {
+    results.status = "failed";
+    results.errors.push(`finalize: ${e.message}`);
+  }
+
+  return results;
+}
+
 /* ── main handler ── */
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS")
@@ -786,6 +896,9 @@ Deno.serve(async (req) => {
         break;
       case "save_backfilled_doc":
         result = await saveBackfilledDoc(supabase, userId, body);
+        break;
+      case "finalize_intake":
+        result = await finalizeIntake(supabase, body);
         break;
       default:
         return new Response(
