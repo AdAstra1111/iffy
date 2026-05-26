@@ -4,6 +4,7 @@
  * Single source of truth: useProjectPackage.
  */
 import { cn } from '@/lib/utils';
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 import { CheckCircle2, Circle, FileQuestion } from 'lucide-react';
 import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
@@ -169,13 +170,13 @@ export function PackageBar({ projectId, format, onDocClick }: Props) {
                   >
                     {cfg.icon}
                     <span className="whitespace-nowrap">
-                      {deliverable?.label ?? docType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                      {deliverable?.label ?? getDocTypeLabel(docType, format)}
                     </span>
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   <p className="font-medium">
-                    {deliverable?.label ?? docType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                    {deliverable?.label ?? getDocTypeLabel(docType, format)}
                   </p>
                   <p className="text-muted-foreground">{cfg.tooltip}</p>
                 </TooltipContent>
