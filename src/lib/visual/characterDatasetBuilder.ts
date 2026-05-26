@@ -6,6 +6,8 @@
  * Cross-product, not tuned to any single project.
  */
 
+import { buildVisualPromptBlock } from './buildVisualPromptBlock';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface CharacterRoleLayer {
@@ -120,9 +122,21 @@ export function buildCharacterVisualDataset(
   canonCharacter: Record<string, unknown> | null,
   canonJson: Record<string, unknown> | null,
   dnaRow: {
-    visual_prompt_block?: string;
     traits_json?: unknown;
     identity_signature?: unknown;
+    biological_sex?: string | null;
+    gender_presentation?: string | null;
+    age_range?: string | null;
+    ethnicity?: string[] | null;
+    body_type?: string | null;
+    height_class?: string | null;
+    facial_archetype?: string | null;
+    voice_quality?: string | null;
+    wardrobe_signals?: Record<string, { value?: string }> | null;
+    social_class?: string | null;
+    role_archetype?: string | null;
+    physical_categories?: Record<string, { value?: string }> | null;
+    binding_markers?: unknown[] | null;
   } | null,
   actor: {
     id?: string;
@@ -136,7 +150,7 @@ export function buildCharacterVisualDataset(
   const role = String(canonCharacter?.role || '');
   const desc = String(canonCharacter?.description || actor?.description || '');
   const combined = `${characterName} ${traits} ${role} ${desc}`;
-  const dnaBlock = String(dnaRow?.visual_prompt_block || '');
+  const dnaBlock = buildVisualPromptBlock(dnaRow);
   const fullText = `${combined} ${dnaBlock}`;
 
   const ageBand = detectAgeBand(fullText);

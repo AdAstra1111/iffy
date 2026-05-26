@@ -3855,12 +3855,19 @@ export default function ProjectDevelopmentEngine() {
 
       {/* Rewrite Trajectory Observatory Dialog */}
       {projectId && selectedDocId && (
-        <RewriteTrajectoryObservatory
-          open={observatoryOpen}
-          onOpenChange={setObservatoryOpen}
-          documentId={selectedDocId}
-          projectId={projectId}
-        />
+        <Dialog open={observatoryOpen} onOpenChange={setObservatoryOpen}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-sm font-display">
+                Rewrite Trajectory Observatory
+              </DialogTitle>
+            </DialogHeader>
+            <RewriteTrajectoryObservatory
+              documentId={selectedDocId}
+              projectId={projectId}
+            />
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* Floating Writers' Room button */}

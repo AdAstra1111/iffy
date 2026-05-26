@@ -440,7 +440,7 @@ export function RewriteTrajectoryObservatory({ projectId, documentId }: Props) {
                     </div>
                   ))}
                   <div className="flex items-center gap-2 text-[8px] text-muted-foreground/60 pt-0.5">
-                    <span>Noop (sim>0.95): {state.rewriteNoopSameContent}</span>
+                    <span>Noop (sim&gt;0.95): {state.rewriteNoopSameContent}</span>
                     <span>Labeled rewrites: {state.rewriteCreatedNewVersion}</span>
                   </div>
                 </>
@@ -539,17 +539,17 @@ export function RewriteTrajectoryObservatory({ projectId, documentId }: Props) {
             <div className="pl-1 text-[8px] space-y-1">
               <div className="grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-[8px] px-2 py-1 rounded bg-muted/20 border border-border/30">
                 <span className="text-muted-foreground/80">POSSIBLE_PARAPHRASE_LOOP</span>
-                <code className="font-mono text-foreground/80 text-right">sim>0.85 × flat CI/GP × 3+ consecutive</code>
+                <code className="font-mono text-foreground/80 text-right">sim&gt;0.85 × flat CI/GP × 3+ consecutive</code>
                 <span className="text-muted-foreground/80">POSSIBLE_FALSE_CONVERGENCE</span>
-                <code className="font-mono text-foreground/80 text-right">scores≥80 × sim<0.3 × 2+ pairs</code>
+                <code className="font-mono text-foreground/80 text-right">scores≥80 × sim&lt;0.3 × 2+ pairs</code>
                 <span className="text-muted-foreground/80">POSSIBLE_SPECIFICITY_COLLAPSE</span>
-                <code className="font-mono text-foreground/80 text-right">entity drop>30% × 3 versions</code>
+                <code className="font-mono text-foreground/80 text-right">entity drop&gt;30% × 3 versions</code>
                 <span className="text-muted-foreground/80">POSSIBLE_COSMETIC_REWRITE</span>
-                <code className="font-mono text-foreground/80 text-right">sim>0.95 × para change<10%</code>
+                <code className="font-mono text-foreground/80 text-right">sim&gt;0.95 × para change&lt;10%</code>
                 <span className="text-muted-foreground/80">NOTE_CHURN</span>
-                <code className="font-mono text-foreground/80 text-right">overlap>80% × 3+ versions</code>
+                <code className="font-mono text-foreground/80 text-right">overlap&gt;80% × 3+ versions</code>
                 <span className="text-muted-foreground/80">DIMINISHING_RETURNS</span>
-                <code className="font-mono text-foreground/80 text-right">version≥4 × CI/GP gradient<1</code>
+                <code className="font-mono text-foreground/80 text-right">version≥4 × CI/GP gradient&lt;1</code>
               </div>
             </div>
           )}

@@ -29,6 +29,7 @@
 
 import { supabase } from '@/integrations/supabase/client';
 import { normalizeCharacterKey } from './normalizeCharacterKey';
+import { buildVisualPromptBlock } from '@/lib/visual/buildVisualPromptBlock';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1813,19 +1814,20 @@ export async function buildCharacterCastingBrief(
   if (dnaCharacterName) {
     const { data: dnaRow } = await (supabase as any)
       .from('character_visual_dna')
-      .select(`visual_prompt_block, traits_json,
+      .select(`traits_json, physical_categories, binding_markers,
         biological_sex, gender_presentation, age_range, ethnicity, body_type,
         height_class, facial_archetype, voice_quality, wardrobe_signals,
-        social_class, role_archetype`)
+        social_class, role_archetype, identity_signature`)
       .eq('project_id', projectId)
       .eq('character_name', dnaCharacterName)
       .eq('is_current', true)
       .maybeSingle();
 
     if (dnaRow) {
-      // visual_prompt_block: apply defensive sanitizer since it's from visual DNA
-      if (dnaRow.visual_prompt_block) {
-        const sanitized = sanitizePlotLanguage(dnaRow.visual_prompt_block);
+      // Derive visual prompt block from structured DNA fields (replaces phantom visual_prompt_block)
+      const derivedPrompt = buildVisualPromptBlock(dnaRow);
+      if (derivedPrompt) {
+        const sanitized = sanitizePlotLanguage(derivedPrompt);
         if (sanitized) visualMarkers.push(sanitized);
       }
 
