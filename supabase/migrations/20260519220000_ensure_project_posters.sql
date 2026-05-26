@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.project_posters (
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
   user_id uuid NOT NULL,
   version_number integer NOT NULL DEFAULT 1,
-  status text NOT NULL DEFAULT 'pending',
+  render_status text NOT NULL DEFAULT 'pending',
   is_active boolean NOT NULL DEFAULT false,
 
   -- Source tracking

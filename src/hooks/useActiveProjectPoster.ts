@@ -40,7 +40,7 @@ export function useActiveProjectPoster(projectId: string | undefined): {
           .select('id, key_art_storage_path, rendered_storage_path, render_status')
           .eq('project_id', projectId)
           .eq('is_active', true)
-          .eq('status', 'ready')
+          .eq('render_status', 'ready')
           .limit(1)
           .maybeSingle();
         poster = result.data;
@@ -96,7 +96,7 @@ export function useActivePostersForProjects(projectIds: string[]): {
         .select('id, project_id, key_art_storage_path, rendered_storage_path')
         .in('project_id', projectIds)
         .eq('is_active', true)
-        .eq('status', 'ready');
+        .eq('render_status', 'ready');
 
       // Graceful 404: table may not exist — return empty instead of throwing
       if (error) {

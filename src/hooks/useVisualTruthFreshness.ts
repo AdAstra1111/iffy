@@ -56,7 +56,7 @@ export function useProjectPostersFreshness(projectId: string | undefined) {
         .from('project_posters')
         .select('id, truth_snapshot_json, freshness_status')
         .eq('project_id', projectId)
-        .eq('status', 'ready');
+        .eq('render_status', 'ready');
 
       if (!posters?.length) return {};
 

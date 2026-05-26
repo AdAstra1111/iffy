@@ -318,7 +318,7 @@ export function useDeletePoster(projectId: string | undefined) {
           .from("project_posters")
           .select("id")
           .eq("project_id", projectId)
-          .eq("status", "ready")
+          .eq("render_status", "ready")
           .order("version_number", { ascending: false })
           .limit(1);
 

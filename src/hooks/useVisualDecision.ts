@@ -88,9 +88,9 @@ export async function recommendPosterStyle(projectId: string): Promise<{ value: 
 export async function recommendPrimaryPoster(projectId: string): Promise<{ value: string; reason: string } | null> {
   const { data: posters } = await (supabase as any)
     .from('project_posters')
-    .select('id, layout_variant, version_number, status')
+    .select('id, layout_variant, version_number, render_status')
     .eq('project_id', projectId)
-    .eq('status', 'ready')
+    .eq('render_status', 'ready')
     .order('version_number', { ascending: false });
 
   if (!posters?.length) return null;
