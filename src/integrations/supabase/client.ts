@@ -50,9 +50,9 @@ function createProxiedClient(url: string, key: string) {
     try { captureErr('INVOKE', `calling ${fn}`, { options: typeof options }); } catch (_) {}
     const proxyUrl = `/api/supabase-proxy/functions/v1/${fn}`;
     const body = options.body !== undefined ? options.body : options;
-    // Refresh session BEFORE getting token to ensure we have a valid one
-    // This prevents edge functions from receiving expired tokens
-    try { await client.auth.refreshSession(); } catch (_) { /* Best-effort refresh — ignore errors */ }
+    // NOTE: refreshSession was removed — autoRefreshToken in client config handles this.
+    // Manual refreshSession() was creating new GoTrueClient instances ("Multiple GoTrueClient instances detected").
+    // NOTE: refreshSession removed — autoRefreshToken already handles this. Multiple GoTrueClient instances caused auth thrash.
     const { data: sessionData } = await client.auth.getSession();
     const authToken = sessionData?.session?.access_token || key;
     const headers: Record<string, string> = {
