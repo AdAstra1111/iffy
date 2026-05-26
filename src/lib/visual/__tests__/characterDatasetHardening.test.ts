@@ -39,14 +39,14 @@ describe('characterDatasetCanonHash', () => {
 
   it('evaluates freshness correctly', () => {
     const hash = computeCharacterCanonHashFromSources(baseCharacter, baseCanon, baseDna, []);
-    expect(evaluateCharacterFreshness(hash, hash)).toEqual({ status: 'fresh', reason: null });
+    expect(evaluateCharacterFreshness(hash, hash)).toEqual({ status: 'fresh', reason: 'Hash matches — dataset is current' });
     expect(evaluateCharacterFreshness(hash, 'cvd_different')).toEqual({
       status: 'stale',
-      reason: 'Source canon/DNA/actor inputs have changed since dataset was built',
+      reason: 'Hash mismatch — canonical inputs have changed',
     });
     expect(evaluateCharacterFreshness(null, hash)).toEqual({
       status: 'unknown',
-      reason: 'No source hash recorded',
+      reason: 'No stored hash to compare',
     });
   });
 });
