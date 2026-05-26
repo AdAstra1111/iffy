@@ -1025,6 +1025,25 @@ Deno.serve(async (req) => {
     }).auth.getUser();
     if (authErr || !user) throw new Error("Not authenticated");
 
+    // ── Governance gate: respect persisted hero_frames stage blockers ──
+    const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+    const heroGate = await readVisualGovernanceGate(supabase, project_id, "hero_frames");
+    if (heroGate.blocked) {
+      return new Response(
+        JSON.stringify({
+          error: `hero_frames blocked by visual governance`,
+          stage_id: "hero_frames",
+          blocker_codes: heroGate.blockers,
+          computed_status: heroGate.computed_status,
+          governance_source: heroGate.source,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (heroGate.source === "missing_snapshot") {
+      console.warn(`[governanceGate] Missing governance snapshot for hero_frames/${project_id} — allowing by default`);
+    }
+
     // ── Resolve all canonical inputs in parallel ──
     const [projectRow, canonRow, characters, styleRes] = await Promise.all([
       supabase.from("projects").select("title, format, genres").eq("id", project_id).single(),

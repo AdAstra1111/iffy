@@ -972,6 +972,25 @@ serve(async (req) => {
       });
     }
 
+    // ── Governance gate: respect persisted poster stage blockers ──
+    const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+    const posterGate = await readVisualGovernanceGate(supabase, project_id, "poster");
+    if (posterGate.blocked) {
+      return new Response(
+        JSON.stringify({
+          error: `poster blocked by visual governance`,
+          stage_id: "poster",
+          blocker_codes: posterGate.blockers,
+          computed_status: posterGate.computed_status,
+          governance_source: posterGate.source,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (posterGate.source === "missing_snapshot") {
+      console.warn(`[governanceGate] Missing governance snapshot for poster/${project_id} — allowing by default`);
+    }
+
     // ── VSAL: Resolve Visual Style Authority (soft — warns but does not block) ──
     const vsalResolution = await resolveVisualStyleProfile(supabase, project_id);
     if (!vsalResolution.found || !vsalResolution.complete) {

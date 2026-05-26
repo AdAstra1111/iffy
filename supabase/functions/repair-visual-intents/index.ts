@@ -868,6 +868,25 @@ serve(async (req) => {
               );
             }
 
+            // ── Governance gate: check poster stage before generating ──
+            const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+            const posterGate = await readVisualGovernanceGate(supabase, intent.project_id, "poster");
+            if (posterGate.blocked) {
+              return jsonRes(
+                {
+                  error: `Poster generation blocked by visual governance`,
+                  code: "GOVERNANCE_BLOCKED",
+                  stage_id: "poster",
+                  blocker_codes: posterGate.blockers,
+                  computed_status: posterGate.computed_status,
+                },
+                403,
+              );
+            }
+            if (posterGate.source === "missing_snapshot") {
+              console.warn(`[repair-visual-intents] Missing governance snapshot for poster/${intent.project_id} — allowing by default`);
+            }
+
             const posterUrl = `${Deno.env.get("SUPABASE_URL")!}/functions/v1/generate-poster`;
             const posterPayload = { project_id: intent.project_id };
 

@@ -1360,6 +1360,25 @@ serve(async (req) => {
       });
     }
 
+    // ── Governance gate: respect persisted lookbook stage blockers ──
+    const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
+    const lookbookGate = await readVisualGovernanceGate(supabase, project_id, "lookbook");
+    if (lookbookGate.blocked) {
+      return new Response(
+        JSON.stringify({
+          error: `lookbook blocked by visual governance`,
+          stage_id: "lookbook",
+          blocker_codes: lookbookGate.blockers,
+          computed_status: lookbookGate.computed_status,
+          governance_source: lookbookGate.source,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    if (lookbookGate.source === "missing_snapshot") {
+      console.warn(`[governanceGate] Missing governance snapshot for lookbook/${project_id} — allowing by default`);
+    }
+
     const validSections: LookbookSection[] = ["world", "character", "key_moment", "visual_language"];
     if (!validSections.includes(section)) {
       return new Response(JSON.stringify({ error: `Invalid section: ${section}` }), {
