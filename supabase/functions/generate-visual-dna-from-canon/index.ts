@@ -1474,12 +1474,14 @@ const CATEGORY_SUFFIXES = [
    * Detect if a character is non-human / mythic / divine entity.
    * These entities should not be forced into human identity categories.
    */
-  const NON_HUMAN_MARKERS = [
+const NON_HUMAN_MARKERS = [
     /\b(?:ten|forty|fifty|hundred|thousand)\s+(?:feet?|meters?)\s+tall\b/i,
-    /\b(?:divine|alien|mythical|mythic|supernatural|demonic|angelic|celestial)\b/i,
-    /\b(?:ram[-\s]like|horn|claw|tentacle|wing|hoof|tail|fang)\b/i,
-    /\b(?:colossal|gigantic|massive\s+(?:form|figure|being|creature))\b/i,
+    /\b(?:divine|alien|mythical|mythic|supernatural|demonic|angelic|celestial|regal|otherworldly)\b/i,
+    /\b(?:ram[\-\s]like|horn|claw|tentacle|wing|hoof|tail|fang)\b/i,
+    /\b(?:colossal|gigantic|massive|monstrous|giant)\s+(?:form|figure|being|creature|size|stature)\b/i,
     /\bnon[- ]?human\b/i,
+    /\b(?:polished\s+)?(?:obsidian|stone-like|metallic|crystalline)\s+skin\b/i,
+    /\bglowing\s+(?:eyes?|aura|presence)\b/i,
   ];
 
   function isNonHumanEntity(traits: any[]): boolean {

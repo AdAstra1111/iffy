@@ -124,10 +124,12 @@ function classifyInferenceType(
 
 const NON_HUMAN_MARKERS = [
   /\b(?:ten|forty|fifty|hundred|thousand)\s+(?:feet?|meters?)\s+tall\b/i,
-  /\b(?:divine|alien|mythical|mythic|supernatural|demonic|angelic|celestial)\b/i,
+  /\b(?:divine|alien|mythical|mythic|supernatural|demonic|angelic|celestial|regal|otherworldly)\b/i,
   /\b(?:ram[\-\s]like|horn|claw|tentacle|wing|hoof|tail|fang)\b/i,
-  /\b(?:colossal|gigantic|massive\s+(?:form|figure|being|creature))\b/i,
+  /\b(?:colossal|gigantic|massive|monstrous|giant)\s+(?:form|figure|being|creature|size|stature)\b/i,
   /\bnon[- ]?human\b/i,
+  /\b(?:polished\s+)?(?:obsidian|stone-like|metallic|crystalline)\s+skin\b/i,
+  /\bglowing\s+(?:eyes?|aura|presence)\b/i,
 ];
 
 function isNonHumanEntity(traits: any[]): boolean {
@@ -352,11 +354,11 @@ describe('isNonHumanEntity', () => {
     expect(isNonHumanEntity(traits)).toBe(true);
   });
 
-  it('returns true for Enki-like traits (ten feet tall + divine appearance)', () => {
+  it('returns true for Enki-like traits (alien + glowing eyes + regal)', () => {
     const traits = [
-      { label: 'ten feet tall', category: 'height', confidence: 'high' },
-      { label: 'otherworldly authority', category: 'posture', confidence: 'high' },
-      { label: 'divine or alien appearance', category: 'other', confidence: 'medium' },
+      { label: 'alien appearance', category: 'other', confidence: 'medium' },
+      { label: 'glowing eyes', category: 'face', confidence: 'high' },
+      { label: 'regal presence', category: 'posture', confidence: 'medium' },
     ];
     expect(isNonHumanEntity(traits)).toBe(true);
   });
