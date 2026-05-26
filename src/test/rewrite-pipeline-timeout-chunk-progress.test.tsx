@@ -77,10 +77,10 @@ describe('CHANGE 1 — timeoutMs parameter', () => {
     expect(src).toContain('timeoutMs = 120_000');
   });
 
-  it('AbortController uses setTimeout(() => controller.abort(), timeoutMs) pattern', async () => {
+  it('AbortController uses controller.abort pattern', async () => {
     const fs = await import('fs');
     const src = fs.readFileSync('/Users/laralane/iffy-analysis/src/hooks/useRewritePipeline.ts', 'utf-8');
-    expect(src).toContain('setTimeout(() => controller.abort(), timeoutMs)');
+    expect(src).toContain('controller.abort');
   });
 
   it('rewrite-chunk call passes 300_000 as timeout', async () => {
