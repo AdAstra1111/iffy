@@ -55,6 +55,7 @@ function formatDocType(dt: string) {
 }
 
 // ── Derive execution mode from job flags ──
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 export function deriveExecutionMode(job: AutoRunJob | null): ExecutionMode {
   if (!job) return 'manual';
   // Check the mode field first for 'assisted', then fall back to allow_defaults
@@ -86,7 +87,7 @@ export function EngineBar({
   const readiness = job?.last_readiness ?? null;
   const gap = job?.last_gap ?? null;
   const stageLabel = job
-    ? `${formatDocType(job.current_document)} → ${formatDocType(job.target_document)}`
+    ? `${getDocTypeLabel(job.current_document)} → ${getDocTypeLabel(job.target_document)}`
     : null;
 
   return (

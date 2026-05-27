@@ -36,8 +36,8 @@ export const DELIVERABLE_LABELS: Record<DeliverableType, string> = {
   concept_brief: 'Concept Brief',
   market_sheet: 'Market Sheet',
   vertical_market_sheet: 'Market Sheet (VD)',
-  blueprint: 'Season Blueprint',
-  architecture: 'Series Architecture',
+  blueprint: 'Treatment',
+  architecture: 'Story Outline',
   character_bible: 'Character Bible',
   beat_sheet: 'Episode Beat Sheet',
   episode_beats: 'Episode Beats',
@@ -61,8 +61,8 @@ export const DELIVERABLE_LABELS: Record<DeliverableType, string> = {
  * These stages exist in film ladders but should NOT use series terminology.
  */
 const FILM_LABEL_OVERRIDES: Partial<Record<DeliverableType, string>> = {
-  blueprint: 'Blueprint',
-  architecture: 'Architecture',
+  blueprint: 'Treatment',
+  architecture: 'Story Outline',
   beat_sheet: 'Beat Sheet',
   season_arc: 'Story Arc',
   feature_script: 'Script',
@@ -72,7 +72,7 @@ const NON_SERIES_FORMATS = new Set(['film', 'feature', 'short', 'documentary', '
 
 /**
  * Get the display label for a deliverable type, adjusted for the project's format.
- * Film/feature projects get neutral labels (e.g. "Blueprint" not "Season Blueprint").
+ * Film/feature projects get neutral labels (e.g. "Treatment" instead of legacy "Blueprint").
  */
 export function getDeliverableLabel(deliverable: string, format?: string | null): string {
   const normalizedFormat = (format || '').toLowerCase().replace(/_/g, '-');
