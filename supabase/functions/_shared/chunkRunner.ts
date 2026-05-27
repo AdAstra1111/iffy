@@ -873,15 +873,18 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       ?? null;
 
     if (headerForChunk) {
-      // Check if the chunk content already starts with this header (case-insensitive)
-      const startsWithHeader = c.trim().match(new RegExp(`^##\s+${headerForChunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, '')}`, 'i'));
+      // Check if the chunk content already starts with an act header
+      // Use broad regex to cover all LLM variants:
+      // "## Act 1: Setup — Beats", "## Act 1", "## ACT ONE — Setup", "## Act 2A"
+      // Prevents duplicate headers when LLM uses different format than injection header
+      const broadActHeader = /^##\s+Act\s+/i;
+      const startsWithHeader = broadActHeader.test(c.trim());
       if (startsWithHeader) {
-        // LLM already included the header — keep content as-is
+        // LLM already included an act header — keep content as-is
         assembledParts.push(c);
       } else {
         // Header missing — inject it
-        assembledParts.push(`${headerForChunk}\n
-${c.trim()}`);
+        assembledParts.push(`${headerForChunk}\n\n${c.trim()}`);
       }
     } else {
       // No header mapping — use as-is (fallback)
@@ -1057,7 +1060,8 @@ ${c.trim()}`);
       const chunkDef = plan.chunks[i];
       const hdr = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey] ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ''] ?? null;
       if (hdr) {
-        const startsHdr = c.trim().match(new RegExp('^##\s+' + hdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, ''), 'i'));
+        const broadActHeader = /^##\s+Act\s+/i;
+        const startsHdr = broadActHeader.test(c.trim());
         repairedParts.push(startsHdr ? c : hdr + '\n\n' + c.trim());
       } else {
         repairedParts.push(c);
@@ -1191,7 +1195,8 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
       if (!content) { resumeAssembledParts.push(''); continue; }
       const hdr = ACT_ASSEMBLY_HEADERS[c.chunkKey] ?? ACT_ASSEMBLY_HEADERS[c.sectionId ?? ''] ?? null;
       if (hdr) {
-        const startsHdr = content.trim().match(new RegExp('^##\s+' + hdr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/^##\s+/, ''), 'i'));
+        const broadActHeader = /^##\s+Act\s+/i;
+        const startsHdr = broadActHeader.test(content.trim());
         resumeAssembledParts.push(startsHdr ? content : hdr + '\n\n' + content.trim());
       } else {
         resumeAssembledParts.push(content);

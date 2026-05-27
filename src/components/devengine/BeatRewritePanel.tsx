@@ -456,6 +456,27 @@ function parseBeatSheet(plaintext: string): Act[] {
   let currentBeatLines: string[] = [];
   let currentBeatMeta: Partial<Beat> = {};
 
+  /** Normalize act name to canonical form: "ONE" → "1", "1: Setup" → "1" */
+  function normalizeActName(raw: string): string {
+    const actPrefix = raw.replace(/^ACT\s+/i, '');
+    const romanMap: Record<string, string> = {
+      'one': '1', 'i': '1',
+      'two a': '2A', 'twoa': '2A', 'ii a': '2A', 'iia': '2A',
+      'two b': '2B', 'twob': '2B', 'ii b': '2B', 'iib': '2B',
+      'two': '2', 'ii': '2',
+      'three': '3', 'iii': '3',
+      'four': '4', 'iv': '4',
+    };
+    const lower = actPrefix.toLowerCase().trim();
+    // Strip subtitle after colon or em-dash: "1: Setup" → "1"
+    const numberPart = lower.replace(/:.*$/, '').replace(/[—–-].*$/, '').trim();
+    if (romanMap[numberPart]) return `Act ${romanMap[numberPart]}`;
+    // Already numeric: "1", "2A" etc.
+    const numMatch = actPrefix.match(/^(\d+[abAB]?)/);
+    if (numMatch) return `Act ${numMatch[1].toUpperCase()}`;
+    return raw;
+  }
+
   function flushBeat() {
     if (!currentAct || currentBeatLines.length === 0) return;
     const raw = currentBeatLines.join('\n').trim();
@@ -499,8 +520,19 @@ function parseBeatSheet(plaintext: string): Act[] {
     const actMatch = trimmed.match(/^##\s+Act\s+([\w]+)\s*(?::[^]*?)?(?:\s*[—–-]\s*Beats)?$/i);
     if (actMatch) {
       flushBeat();
-      if (currentAct) acts.push(currentAct);
-      currentAct = { name: `Act ${actMatch[1]}`, beats: [] };
+      if (currentAct) {
+        // Deduplicate: merge into existing act with same canonical name
+        const canonical = normalizeActName(`Act ${currentAct.name}`);
+        const existing = acts.find(a => normalizeActName(a.name) === canonical);
+        if (existing && existing !== currentAct) {
+          existing.beats.push(...currentAct.beats);
+          currentAct = existing;
+        } else {
+          acts.push(currentAct);
+        }
+      }
+      const rawName = actMatch[1];
+      currentAct = { name: normalizeActName(`Act ${rawName}`), beats: [] };
       continue;
     }
 
@@ -521,7 +553,15 @@ function parseBeatSheet(plaintext: string): Act[] {
   }
 
   flushBeat();
-  if (currentAct) acts.push(currentAct);
+  if (currentAct) {
+    const canonical = normalizeActName(`Act ${currentAct.name}`);
+    const existing = acts.find(a => normalizeActName(a.name) === canonical);
+    if (existing && existing !== currentAct) {
+      existing.beats.push(...currentAct.beats);
+    } else {
+      acts.push(currentAct);
+    }
+  }
   return acts;
 }
 
