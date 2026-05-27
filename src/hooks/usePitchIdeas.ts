@@ -73,12 +73,10 @@ export function usePitchIdeas() {
   const { data: ideas = [], isLoading } = useQuery({
     queryKey: ['pitch-ideas'],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('pitch_ideas')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as PitchIdea[];
+      // Route through edge function to avoid Supabase REST API 406 (Accept header mismatch)
+      const { data, error } = await supabase.functions.invoke('list-pitch-ideas');
+      if (error) throw new Error(typeof error === 'string' ? error : error.message || 'Failed to fetch pitch ideas');
+      return (data?.ideas ?? []) as PitchIdea[];
     },
     enabled: !!user,
   });

@@ -9370,7 +9370,7 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
       }
       // ── MANUAL REWRITE VERSION PROLIFERATION GUARD ──
       {
-        const MAX_MANUAL_VERSIONS = 50;
+        const MAX_MANUAL_VERSIONS = 200;
         const { count: versionCount } = await supabase.from("project_document_versions").select("id", {
           count: "exact",
           head: true
