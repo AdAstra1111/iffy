@@ -151,3 +151,20 @@ export function useAuth(): AuthContextValue {
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');
   return ctx;
 }
+
+/**
+ * useSafeAuth — A safe wrapper around useAuth that catches the "must be used within AuthProvider" error.
+ *
+ * During React 18 + Suspense + Radix Portal reconciliation, the AuthContext can briefly
+ * disappear (SafeRouteBoundary remount). useSafeAuth catches the thrown error and returns
+ * null user/session/loading instead of propagating the crash up to an ErrorBoundary.
+ *
+ * Returns: { user: User | null; session: Session | null; loading: boolean }
+ */
+export function useSafeAuth(): { user: User | null; session: Session | null; loading: boolean } {
+  try {
+    return useAuth();
+  } catch {
+    return { user: null, session: null, loading: true };
+  }
+}

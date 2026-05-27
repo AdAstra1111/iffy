@@ -62,10 +62,6 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
   private handleRetry = (): void => {
     if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) return;
     try {
-      if (this.state.error?.message?.includes('useAuth') || this.state.error?.message?.includes('AuthProvider')) {
-        this.setState({ hasError: false, permanentFailure: true, errorMessage: 'Auth provider error — reload the page' });
-        return;
-      }
       this.setState({ hasError: false, error: null });
     } catch (e) {
       window.location.reload();

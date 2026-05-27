@@ -51,7 +51,16 @@ export interface ChunkRunResult {
 
 const GATEWAY_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MAX_ASSEMBLY_REPAIR_PASSES = 2;
-const CHUNK_LLM_TIMEOUT_MS = 180_000; // 3 minutes per chunk LLM call
+/**
+ * DocType-aware chunk LLM timeout.
+ * story_outline needs more time per chunk (4 acts × complex JSON generation).
+ * Returns timeout in ms.
+ */
+function chunkLLMTimeoutMs(docType: string): number {
+  if (docType === "story_outline") return 240_000; // 4 minutes per chunk — story outline is heavy
+  return 180_000; // 3 minutes default
+}
+
 const STALE_RUNNING_THRESHOLD_MS = 120_000; // 2 minutes — running chunk considered stale
 
 /**
@@ -87,10 +96,11 @@ async function callChunkLLM(
   system: string,
   user: string,
   model: string = "google/gemini-2.5-flash",
-  maxTokens: number = 16000
+  maxTokens: number = 16000,
+  timeoutMs: number = 180_000,
 ): Promise<string> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${CHUNK_LLM_TIMEOUT_MS/1000}s`)), CHUNK_LLM_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(new Error(`LLM call timed out after ${timeoutMs/1000}s`)), timeoutMs);
   try {
     const res = await fetch(gatewayUrl, {
       method: "POST",
@@ -113,7 +123,7 @@ async function callChunkLLM(
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === "AbortError") {
-      throw new Error(`Chunk LLM call timed out after ${CHUNK_LLM_TIMEOUT_MS / 1000}s`);
+      throw new Error(`Chunk LLM call timed out after ${timeoutMs / 1000}s`);
     }
     throw err;
   }
@@ -282,13 +292,27 @@ LONG TREATMENT LENGTH — MANDATORY:
       };
       const actTarget = PER_ACT_TARGETS[sectionKey] ?? "5\u20138 JSON entries (approximately 800\u20131,500 words)";
       lengthGuidance = `
-STORY OUTLINE LENGTH \u2014 MANDATORY:
-- A feature film story outline is 25\u201332 entries (approximately 3,000\u20135,500 words total across all 4 acts).
+STORY OUTLINE LENGTH — MANDATORY:
+- A feature film story outline is 25–32 entries (approximately 3,000–5,500 words total across all 4 acts).
 - This act (${sectionLabel}) must contain: ${actTarget}
-- Each entry is one {"number", "title", "description"} object in the "entries" JSON array. Description: 3\u20135 sentences covering what happens, dramatic purpose, and emotional shift.
+- Each entry is one {"number", "title", "description"} object in the "entries" JSON array. Description: 3–5 sentences covering what happens, dramatic purpose, and emotional shift.
 - Do NOT use sluglines, character cues, or dialogue formatting.
 - Do NOT summarise multiple moments into one entry. Every moment is its own entry.
 - Do NOT stop writing until you have reached the entry count target above.
+
+OUTPUT SCHEMA — RESPECT THIS EXACT STRUCTURE (applies to EVERY story_outline chunk, regardless of act):
+{
+  "title": "${opts.projectTitle}",
+  "format": "${(opts as any).projectFormat || 'film'}",
+  "entries": [
+    {
+      "number": 1,
+      "title": "Moment 1: [title — concise, evocative]",
+      "description": "3-5 sentences describing what happens, dramatic purpose, and emotional shift."
+    }
+  ]
+}
+Each entry in the "entries" array follows the same flat structure: number, title, description. No nested objects. No custom per-act fields. No per-act schema variation.
 `;
 
     // ── Beat Sheet ───────────────────────────────────────────────────────────
@@ -494,11 +518,11 @@ UPSTREAM CONTEXT (episode beats, character bible, season arc — use these as ca
 ${upstreamContent.slice(0, 9000)}
 
 ${previousChunkEnding ? `PREVIOUS EPISODE ENDING (for continuity):\n...${previousChunkEnding}\n\n` : ""}Write Episode ${epNum} now. Start directly with "## EPISODE ${epNum}:".`;
-    const raw = await callChunkLLM(apiKey, gatewayUrl, SEASON_SCRIPT_SYSTEM, epPrompt, "google/gemini-2.5-pro", 4000);
+    const raw = await callChunkLLM(apiKey, gatewayUrl, SEASON_SCRIPT_SYSTEM, epPrompt, "google/gemini-2.5-pro", 4000, chunkLLMTimeoutMs(docType));
     return raw.replace(/^```[\s\S]*?\n/, "").replace(/\n?```\s*$/, "").trim();
   }
 
-  return await callChunkLLM(apiKey, gatewayUrl, systemPrompt, chunkPrompt, model || "google/gemini-2.5-flash", tokenBudget);
+  return await callChunkLLM(apiKey, gatewayUrl, systemPrompt, chunkPrompt, model || "google/gemini-2.5-flash", tokenBudget, chunkLLMTimeoutMs(docType));
 }
 
 // ── Determine which chunks need (re)generation ──
@@ -1203,9 +1227,20 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     console.error(`[chunkRunner][IEL] COMPLETION_GATE_FAILED: episodic doc completed ${completedChunks}/${plan.totalChunks} — marking as incomplete, NOT success`);
   }
 
-  const isSuccess = validationResult.pass && failedChunks === 0 && episodeCompletionPass;
+  // ── STORY_OUTLINE COMPLETION GATE ──
+  // story_outline has exactly 4 chunks (Act 1, Act 2A, Act 2B, Act 3).
+  // If any chunk failed or timed out, the assembly is incomplete — must NOT promote.
+  const storyOutlineCompletionPass = docType === "story_outline"
+    ? completedChunks === plan.totalChunks
+    : true;
 
-  console.log(`[chunkRunner] Complete: ${completedChunks}/${plan.totalChunks}, validation=${validationResult.pass ? "PASS" : "FAIL"}, episodeGate=${episodeCompletionPass ? "PASS" : "FAIL"}, success=${isSuccess}, rid=${rid}`);
+  if (!storyOutlineCompletionPass) {
+    console.error(`[chunkRunner][IEL] STORY_OUTLINE_COMPLETION_GATE_FAILED: story_outline completed ${completedChunks}/${plan.totalChunks} — marking as incomplete, NOT success`);
+  }
+
+  const isSuccess = validationResult.pass && failedChunks === 0 && episodeCompletionPass && storyOutlineCompletionPass;
+
+  console.log(`[chunkRunner] Complete: ${completedChunks}/${plan.totalChunks}, validation=${validationResult.pass ? "PASS" : "FAIL"}, episodeGate=${episodeCompletionPass ? "PASS" : "FAIL"}, storyOutlineGate=${storyOutlineCompletionPass ? "PASS" : "FAIL"}, success=${isSuccess}, rid=${rid}`);
 
   return {
     success: isSuccess,

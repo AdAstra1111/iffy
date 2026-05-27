@@ -1157,8 +1157,14 @@ If you find yourself writing "Episode" headings, episode numbers, or dividing th
         ? `## SCREENPLAY FORMAT PROHIBITION (MANDATORY)\nThis is a ${docType.replace(/_/g, " ")} — NOT a screenplay. Do NOT use:\n- INT./EXT. scene headings or sluglines\n- Character name cues (CHARACTER NAME on its own line above dialogue)\n- Parenthetical action directions\n- Formatted dialogue blocks\nWrite in prose or structured text only. Violations will cause rejection.`
         : "";
 
+      // Fix E — Per-act vs full prompt split:
+      // Full outline (no resumeVersionId): emphasise ALL 4 acts context.
+      // Per-act resume (resumeVersionId present): keep "specified act" phrasing.
+      const isFullOutline = docType === "story_outline" && !(body as any).resumeVersionId;
       const storyOutlineRule = (docType === "story_outline" || docType === "architecture")
-        ? `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. Generate the specified act as 5-8 individual moments in the JSON entries array. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array — EVERY entry follows THIS EXACT schema. NO per-act schema variation is permitted. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all acts.`
+        ? isFullOutline
+          ? `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. You are generating ALL 4 acts (Act 1, Act 2A, Act 2B, Act 3) in parallel chunks. Each chunk must produce one act's entries. For your assigned act: generate 5-8 individual moments in the JSON entries array. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array — EVERY entry follows THIS EXACT schema. NO per-act schema variation is permitted. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all 4 acts.`
+          : `## STORY OUTLINE FORMAT (MANDATORY)\nOUTPUT AS JSON — see template for exact JSON structure. Generate the specified act as 5-8 individual moments in the JSON entries array. Each moment: 3-5 sentences describing what happens, the dramatic purpose, and the emotional shift. Each moment is one {"number", "title", "description"} entry in the "entries" array — EVERY entry follows THIS EXACT schema. NO per-act schema variation is permitted. No sluglines. No character cues. No dialogue formatting. Total ~25-32 moments across all acts.`
         : "";
 
       // ── Stage Identity Prompt Injection ──

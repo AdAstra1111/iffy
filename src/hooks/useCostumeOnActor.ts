@@ -92,7 +92,7 @@ import {
   formatLockFailureMessage as formatLockFailureMessageFn,
   type CharacterLockGap as CharacterLockGapType,
 } from '@/lib/visual/characterLockGap';
-import { useAuth } from '@/hooks/useAuth';
+import { useAuth, useSafeAuth } from '@/hooks/useAuth';
 
 // ── Types ──
 
@@ -240,7 +240,7 @@ const PRIORITY_STATES = ['work', 'domestic', 'public_formal'];
 
 export function useCostumeOnActor(projectId: string | undefined) {
   const qc = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const wardrobe = useCharacterWardrobe(projectId);
   const { mode } = useWorldValidationMode(projectId);
   const visualSets = useVisualSets(projectId);
