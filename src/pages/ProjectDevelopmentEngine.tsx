@@ -342,6 +342,7 @@ export default function ProjectDevelopmentEngine() {
   const [observatoryOpen, setObservatoryOpen] = useState(false);
   const mutationRewriteParamsRef = useRef<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
   const mutationHandledRef = useRef(false);
+  const lastLoggedReason = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
   const { data: canonicalNotes = [] } = useProjectNotes(projectId, {
@@ -845,7 +846,19 @@ export default function ProjectDevelopmentEngine() {
     const fallback = versions.filter((v: any) => v.approval_status === 'approved').sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(-1)[0];
     return fallback || null;
   }, [versions]);
-  const promotionGateVersionId = authoritativeVersion?.id || selectedVersionId || null;
+  // Stable promotionGateVersionId — separate memo sorted by version_number DESC
+  // NEVER falls through to selectedVersionId (was the root cause of the 3573b98c↔c8ca087c oscillation)
+  const stablePromotionVersion = useMemo(() => {
+    const strict = versions
+      .filter((v: any) => v.approval_status === 'approved' && v.is_current === true)
+      .sort((a: any, b: any) => (b.version_number || 0) - (a.version_number || 0));
+    if (strict.length > 0) return strict[0];
+    const fallback = versions
+      .filter((v: any) => v.approval_status === 'approved')
+      .sort((a: any, b: any) => (b.version_number || 0) - (a.version_number || 0));
+    return fallback.length > 0 ? fallback[0] : null;
+  }, [versions]);
+  const promotionGateVersionId = stablePromotionVersion?.id || null;
 
   // PATCH C — effectiveVersionId: authoritative wins over selected for all gate/convergence surfaces
   const effectiveVersionId = authoritativeVersion?.id || selectedVersionId || null;
@@ -1247,6 +1260,8 @@ export default function ProjectDevelopmentEngine() {
 
   const handleGenerateDocument = async () => {
     if (!selectedDoc?.doc_type || !isValidUUID(projectId) || isGeneratingDocument) return;
+    // Guard: prevent generating document for content below script-promotion threshold
+    if (versionText.length < 100) return;
     setIsGeneratingDocument(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -2894,19 +2909,35 @@ export default function ProjectDevelopmentEngine() {
                       })()}
 
                       {/* Publish as Script — gated by canPromoteToScript() */}
-                      {(() => {
+                      {useMemo(() => {
                         const result = canPromoteToScript({
                           docType: selectedDoc?.doc_type,
                           linkedScriptId: null, // TODO: wire linked_script_id when available
                           contentLength: versionText.length,
                           conceptBriefCanonViolations,
                         });
-                        if (!result.eligible) {
+                        const logKey = `${selectedVersionId}:${result.reason}`;
+                        if (lastLoggedReason.current !== logKey) {
+                          lastLoggedReason.current = logKey;
                           console.log('[Promote-to-Script] Hidden:', result.reason, {
                             doc_type: selectedDoc?.doc_type,
                             version_id: selectedVersionId,
                           });
-                          return null;
+                        }
+                        if (!result.eligible) {
+                          return (
+                            <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 border border-border/50">
+                              {result.reason.startsWith('content_too_short')
+                                ? `Your outline is too short (${versionText.length} chars). Add more content before publishing as script.`
+                                : result.reason.startsWith('already_script_doc_type')
+                                  ? `This document type (${selectedDoc?.doc_type}) is already a script.`
+                                  : result.reason.startsWith('linked_script_exists')
+                                    ? 'This document is already linked to a script record.'
+                                    : result.reason.startsWith('concept_brief_canon_violations')
+                                      ? 'The concept brief has unresolved canon violations. Resolve them before promoting to script.'
+                                      : `Cannot publish: ${result.reason}`}
+                            </div>
+                          );
                         }
                         return (
                            <ConfirmDialog
@@ -2928,7 +2959,7 @@ export default function ProjectDevelopmentEngine() {
                             </Button>
                           </ConfirmDialog>
                         );
-                      })()}
+                      }, [selectedDoc?.doc_type, versionText.length, selectedVersionId, selectedDocId, conceptBriefCanonViolations, selectedDoc, project])}
                     </div>
                   )}
                 </>
