@@ -59,7 +59,15 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
 
   private handleRetry = (): void => {
     if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) return;
-    this.setState({ hasError: false, error: null });
+    try {
+      this.setState({ hasError: false, error: null });
+    } catch (e) {
+      // Swallow errors from AuthProvider context or unmounted component.
+      // This prevents a crash during setState from cascading into the
+      // visual-pipeline-error-boundary race (safe-route-boundary +
+      // this boundary competing on concurrent recovery).
+      console.warn('[VisualPipelineErrorBoundary] handleRetry setState failed:', e);
+    }
   };
 
   render(): ReactNode {

@@ -172,12 +172,13 @@ export function SourceTruthDashboard({ projectId }: { projectId: string }) {
     queryFn: async () => {
       const { data } = await (supabase as any)
         .from('visual_sets')
-        .select('id, domain, status, character_key')
+        .select('id, domain, status')
         .eq('project_id', projectId)
         .neq('status', 'archived');
       return data || [];
     },
     enabled: !!projectId,
+    retry: false,
   });
 
   // Load hero frames count

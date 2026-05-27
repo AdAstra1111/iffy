@@ -57,6 +57,7 @@ import { deriveScriptChangeArtifacts, isScriptDocType } from '@/lib/script_chang
 import { type DevelopmentBehavior, type ConvergenceStatus, computeConvergenceStatus, BEHAVIOR_LABELS, BEHAVIOR_COLORS, DELIVERABLE_LABELS, getDeliverableLabel, defaultDeliverableForDocType, type DeliverableType } from '@/lib/dev-os-config';
 import { isSeriesFormat as checkSeriesFormat } from '@/lib/format-helpers';
 import { FORMAT_DEFAULTS } from '@/lib/qualifications/resolveQualifications';
+import { DOC_LABEL_ALIASES } from '@/config/documentLadders';
 import { DeliverablePipeline, type PipelineStageStatus } from '@/components/DeliverablePipeline';
 import { StagePlanPanel } from '@/components/stages/StagePlanPanel';
 
@@ -821,10 +822,11 @@ export default function ProjectDevelopmentEngine() {
     setImportHandled(true);
   }, [documents, docsLoading, searchParams, selectDocument, setSelectedVersionId, packageStatusData]);
 
-  // Auto-set deliverable type from selected doc
+  // Auto-set deliverable type from selected doc (normalized through DOC_LABEL_ALIASES)
   useEffect(() => {
     if (selectedDoc?.doc_type) {
-      setSelectedDeliverableType(defaultDeliverableForDocType(selectedDoc.doc_type));
+      const resolved = DOC_LABEL_ALIASES[selectedDoc.doc_type] ?? selectedDoc.doc_type;
+      setSelectedDeliverableType(defaultDeliverableForDocType(resolved));
     }
   }, [selectedDoc?.doc_type]);
 
@@ -834,7 +836,7 @@ export default function ProjectDevelopmentEngine() {
   const authoritativeVersion = useMemo(() => {
     const strict = versions.find((v: any) => v.approval_status === 'approved' && v.is_current === true);
     if (strict) return strict;
-    const fallback = versions.filter((v: any) => v.approval_status === 'approved').slice(-1)[0];
+    const fallback = versions.filter((v: any) => v.approval_status === 'approved').sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(-1)[0];
     return fallback || null;
   }, [versions]);
   const promotionGateVersionId = authoritativeVersion?.id || selectedVersionId || null;

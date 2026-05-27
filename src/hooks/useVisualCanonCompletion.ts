@@ -62,6 +62,7 @@ export function useVisualCanonCompletion(projectId: string | undefined) {
   // ── Load all inputs for the canonical resolver ──
   const { data: resolverInputs, isLoading } = useQuery({
     queryKey: ['visual-canon-slots', projectId],
+    retry: false,
     queryFn: async (): Promise<SlotResolverInputs> => {
       if (!projectId) {
         return {

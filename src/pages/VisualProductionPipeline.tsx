@@ -173,6 +173,7 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
   const topLocationCount = Math.min(locations?.length || 0, 4);
   const pdQuery = useQuery({
     queryKey: ['pipeline-pd-state', projectId, topLocationCount],
+    retry: false,
     queryFn: async () => {
       if (!projectId) return { total: 0, locked: 0, created: 0, allLocked: false };
       let sets: any[] = [];

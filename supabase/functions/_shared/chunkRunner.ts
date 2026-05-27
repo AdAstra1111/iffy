@@ -859,40 +859,62 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     "relationships_and_dynamics": "## Relationships & Dynamics",
   };
 
-  const assembledParts: string[] = [];
-  for (let i = 0; i < plan.totalChunks; i++) {
-    const c = chunkContents[i];
-    const chunkDef = plan.chunks[i];
-    if (!c) {
-      assembledParts.push(`[SECTION ${i + 1} GENERATION FAILED — REGENERATE THIS DOCUMENT]`);
-      continue;
-    }
-    // Determine the act header for this chunk
-    const headerForChunk = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey]
-      ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ""]
-      ?? null;
-
-    if (headerForChunk) {
-      // Check if the chunk content already starts with an act header
-      // Use broad regex to cover all LLM variants:
-      // "## Act 1: Setup — Beats", "## Act 1", "## ACT ONE — Setup", "## Act 2A"
-      // Prevents duplicate headers when LLM uses different format than injection header
-      const broadActHeader = /^##\s+Act\s+/i;
-      const startsWithHeader = broadActHeader.test(c.trim());
-      if (startsWithHeader) {
-        // LLM already included an act header — keep content as-is
-        assembledParts.push(c);
-      } else {
-        // Header missing — inject it
-        assembledParts.push(`${headerForChunk}\n\n${c.trim()}`);
+  // ── Story outline: JSON merge path (no markdown headers, merge .entries arrays) ──
+  let assembledContent: string;
+  if (docType === "story_outline") {
+    const allEntries: any[] = [];
+    for (let i = 0; i < plan.totalChunks; i++) {
+      const c = chunkContents[i];
+      if (!c) {
+        console.warn(`[chunkRunner] Story outline chunk ${i} missing content — skipping`);
+        continue;
       }
-    } else {
-      // No header mapping — use as-is (fallback)
-      assembledParts.push(c);
+      try {
+        const parsed = JSON.parse(c);
+        if (parsed.entries && Array.isArray(parsed.entries)) {
+          allEntries.push(...parsed.entries);
+        }
+      } catch (err) {
+        console.warn(`[chunkRunner] Could not parse story_outline chunk ${i} — skipping`);
+      }
     }
-  }
+    assembledContent = JSON.stringify({ entries: allEntries });
+  } else {
+    // ── Standard assembly: inject act headers per ACT_ASSEMBLY_HEADERS ──
+    const assembledParts: string[] = [];
+    for (let i = 0; i < plan.totalChunks; i++) {
+      const c = chunkContents[i];
+      const chunkDef = plan.chunks[i];
+      if (!c) {
+        assembledParts.push(`[SECTION ${i + 1} GENERATION FAILED — REGENERATE THIS DOCUMENT]`);
+        continue;
+      }
+      // Determine the act header for this chunk
+      const headerForChunk = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey]
+        ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ""]
+        ?? null;
 
-  let assembledContent = assembledParts.join("\n\n");
+      if (headerForChunk) {
+        // Check if the chunk content already starts with an act header
+        // Use broad regex to cover all LLM variants:
+        // "## Act 1: Setup — Beats", "## Act 1", "## ACT ONE — Setup", "## Act 2A"
+        // Prevents duplicate headers when LLM uses different format than injection header
+        const broadActHeader = /^##\s+Act\s+/i;
+        const startsWithHeader = broadActHeader.test(c.trim());
+        if (startsWithHeader) {
+          // LLM already included an act header — keep content as-is
+          assembledParts.push(c);
+        } else {
+          // Header missing — inject it
+          assembledParts.push(`${headerForChunk}\n\n${c.trim()}`);
+        }
+      } else {
+        // No header mapping — use as-is (fallback)
+        assembledParts.push(c);
+      }
+    }
+    assembledContent = assembledParts.join("\n\n");
+  }
   let validationResult: any;
 
   for (let repairPass = 0; repairPass <= MAX_ASSEMBLY_REPAIR_PASSES; repairPass++) {
@@ -1053,21 +1075,38 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     }
 
     // Reassemble — apply ACT_ASSEMBLY_HEADERS injection to repaired assembly too
-    const repairedParts: string[] = [];
-    for (let i = 0; i < plan.totalChunks; i++) {
-      const c = chunkContents[i];
-      if (!c) { repairedParts.push(''); continue; }
-      const chunkDef = plan.chunks[i];
-      const hdr = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey] ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ''] ?? null;
-      if (hdr) {
-        const broadActHeader = /^##\s+Act\s+/i;
-        const startsHdr = broadActHeader.test(c.trim());
-        repairedParts.push(startsHdr ? c : hdr + '\n\n' + c.trim());
-      } else {
-        repairedParts.push(c);
+    if (docType === "story_outline") {
+      const allEntries: any[] = [];
+      for (let i = 0; i < plan.totalChunks; i++) {
+        const c = chunkContents[i];
+        if (!c) continue;
+        try {
+          const parsed = JSON.parse(c);
+          if (parsed.entries && Array.isArray(parsed.entries)) {
+            allEntries.push(...parsed.entries);
+          }
+        } catch (err) {
+          console.warn(`[chunkRunner] Repair: Could not parse story_outline chunk ${i} — skipping`);
+        }
       }
+      assembledContent = JSON.stringify({ entries: allEntries });
+    } else {
+      const repairedParts: string[] = [];
+      for (let i = 0; i < plan.totalChunks; i++) {
+        const c = chunkContents[i];
+        if (!c) { repairedParts.push(''); continue; }
+        const chunkDef = plan.chunks[i];
+        const hdr = ACT_ASSEMBLY_HEADERS[chunkDef.chunkKey] ?? ACT_ASSEMBLY_HEADERS[chunkDef.sectionId ?? ''] ?? null;
+        if (hdr) {
+          const broadActHeader = /^##\s+Act\s+/i;
+          const startsHdr = broadActHeader.test(c.trim());
+          repairedParts.push(startsHdr ? c : hdr + '\n\n' + c.trim());
+        } else {
+          repairedParts.push(c);
+        }
+      }
+      assembledContent = repairedParts.join("\n\n");
     }
-    assembledContent = repairedParts.join("\n\n");
   }
 
   // 5. Store assembled content AND atomically clear bg_generating.
@@ -1162,7 +1201,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
  * Does NOT call fresh init that overwrites state.
  */
 export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise<ChunkRunResult> {
-  const { supabase, documentId, versionId, plan } = opts;
+  const { supabase, documentId, versionId, plan, docType } = opts;
 
   // Resolve gateway URL if not explicitly provided
   const resolvedGw = opts.gatewayUrl
@@ -1188,21 +1227,40 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
 
   if (pendingChunks.length === 0) {
     // All chunks done — just reassemble
-    const resumeAssembledParts: string[] = [];
-    for (const c of plan.chunks) {
-      const existing = chunkMap.get(c.chunkIndex);
-      const content = existing?.content || "";
-      if (!content) { resumeAssembledParts.push(''); continue; }
-      const hdr = ACT_ASSEMBLY_HEADERS[c.chunkKey] ?? ACT_ASSEMBLY_HEADERS[c.sectionId ?? ''] ?? null;
-      if (hdr) {
-        const broadActHeader = /^##\s+Act\s+/i;
-        const startsHdr = broadActHeader.test(content.trim());
-        resumeAssembledParts.push(startsHdr ? content : hdr + '\n\n' + content.trim());
-      } else {
-        resumeAssembledParts.push(content);
+    let assembled: string;
+    if (docType === "story_outline") {
+      const allEntries: any[] = [];
+      for (const c of plan.chunks) {
+        const existing = chunkMap.get(c.chunkIndex);
+        const content = existing?.content || "";
+        if (!content) continue;
+        try {
+          const parsed = JSON.parse(content);
+          if (parsed.entries && Array.isArray(parsed.entries)) {
+            allEntries.push(...parsed.entries);
+          }
+        } catch (err) {
+          console.warn(`[chunkRunner] Resume: Could not parse story_outline chunk ${c.chunkIndex} — skipping`);
+        }
       }
+      assembled = JSON.stringify({ entries: allEntries });
+    } else {
+      const resumeAssembledParts: string[] = [];
+      for (const c of plan.chunks) {
+        const existing = chunkMap.get(c.chunkIndex);
+        const content = existing?.content || "";
+        if (!content) { resumeAssembledParts.push(''); continue; }
+        const hdr = ACT_ASSEMBLY_HEADERS[c.chunkKey] ?? ACT_ASSEMBLY_HEADERS[c.sectionId ?? ''] ?? null;
+        if (hdr) {
+          const broadActHeader = /^##\s+Act\s+/i;
+          const startsHdr = broadActHeader.test(content.trim());
+          resumeAssembledParts.push(startsHdr ? content : hdr + '\n\n' + content.trim());
+        } else {
+          resumeAssembledParts.push(content);
+        }
+      }
+      assembled = resumeAssembledParts.join("\n\n");
     }
-    const assembled = resumeAssembledParts.join("\n\n");
 
     return {
       success: true,

@@ -320,6 +320,7 @@ export function useCostumeOnActor(projectId: string | undefined) {
   // Fetch existing costume look sets — EPOCH-FILTERED
   const setsQuery = useQuery({
     queryKey: ['costume-look-sets', projectId, currentEpoch],
+    retry: false,
     queryFn: async () => {
       if (!projectId) return [];
       const { data, error } = await (supabase as any)

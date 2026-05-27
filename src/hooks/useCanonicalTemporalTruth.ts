@@ -62,15 +62,26 @@ export function useCanonicalTemporalTruth(projectId: string | undefined) {
     queryKey: ['scene-index-locations', projectId],
     queryFn: async () => {
       if (!projectId) return [];
-      const { data } = await (supabase as any)
+      // Two-step query to avoid invalid embed FK path from scene_graph_order
+      // to scene_graph_versions — PostgREST 400s on the embed.
+      // Step 1: Get active scene ids from scene_graph_order
+      const { data: activeScenes } = await (supabase as any)
         .from('scene_graph_order')
-        .select('scene_id, scene:scene_graph_scenes!inner(id, scene_key), version:scene_graph_versions!inner(location)')
+        .select('scene_id')
         .eq('project_id', projectId)
         .eq('is_active', true);
-      return (data || []).map((r: any) => r.version?.location).filter(Boolean) as string[];
+      if (!activeScenes?.length) return [];
+      const sceneIds = activeScenes.map((r: any) => r.scene_id);
+      // Step 2: Resolve locations from scene_graph_versions
+      const { data: versions } = await (supabase as any)
+        .from('scene_graph_versions')
+        .select('scene_id, location')
+        .in('scene_id', sceneIds);
+      return (versions || []).map((r: any) => r.location).filter(Boolean) as string[];
     },
     enabled: !!projectId,
     staleTime: 30_000,
+    retry: false,
   });
 
   // 3. Load canon locations era_relevance

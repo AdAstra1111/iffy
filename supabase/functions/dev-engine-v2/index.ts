@@ -6922,6 +6922,15 @@ ${docTextForScoring}`;
         previousCI,
         forceProModel: body.forceProModel
       });
+      // ── DUPLICATE REQUEST GUARD: check if an ANALYZE run was already created for this version within 60s ──
+      const { count: existingAnalyzeCount } = await supabase.from("development_runs").select("*", { count: "exact", head: true }).eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").gte("created_at", new Date(Date.now() - 60000).toISOString());
+      if (existingAnalyzeCount && existingAnalyzeCount > 0) {
+        console.warn(`[dev-engine-v2] analyze: duplicate request suppressed (version_id=${effectiveVersionId.slice(0, 8)}, existing_runs=${existingAnalyzeCount} within 60s)`);
+        const { data: latestRun } = await supabase.from("development_runs").select("*").eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").order("created_at", { ascending: false }).limit(1).single();
+        return new Response(JSON.stringify(latestRun || { success: false, error: "Duplicate request suppressed — analysis already in progress for this version." }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
       const raw = await callAI(OPENROUTER_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.0, 6000, 42);
       let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
       // ── Strict JSON retry: one deterministic recovery attempt ──
@@ -8142,6 +8151,15 @@ ${(()=>{
       } catch (_e) {}
       // ── NEC Guardrail injection for notes ──
       const notesNecBlock = await loadNECGuardrailBlock(supabase, projectId);
+      // ── DUPLICATE REQUEST GUARD: check if a NOTES run was already created for this version within 60s ──
+      const { count: existingNotesCount } = await supabase.from("development_runs").select("*", { count: "exact", head: true }).eq("version_id", versionId).eq("run_type", "NOTES").gte("created_at", new Date(Date.now() - 60000).toISOString());
+      if (existingNotesCount && existingNotesCount > 0) {
+        console.warn(`[dev-engine-v2] notes: duplicate request suppressed (version_id=${versionId.slice(0, 8)}, existing_runs=${existingNotesCount} within 60s)`);
+        const { data: latestNotesRun } = await supabase.from("development_runs").select("*").eq("version_id", versionId).eq("run_type", "NOTES").order("created_at", { ascending: false }).limit(1).single();
+        return new Response(JSON.stringify(latestNotesRun || { success: false, error: "Duplicate request suppressed — notes generation already in progress for this version." }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
       const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
       const raw = await callAI(OPENROUTER_API_KEY, BALANCED_MODEL, notesSystem, userPrompt, 0.25, 6000);
       let parsed = await parseAIJson(OPENROUTER_API_KEY, raw);
