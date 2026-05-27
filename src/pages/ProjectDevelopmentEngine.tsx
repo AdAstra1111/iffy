@@ -336,7 +336,7 @@ export default function ProjectDevelopmentEngine() {
   const [globalWritersRoomOpen, setGlobalWritersRoomOpen] = useState(false);
   const [nextActionNoteId, setNextActionNoteId] = useState<string | null>(null);
   const [nextActionDrawerOpen, setNextActionDrawerOpen] = useState(false);
-  const lastPromotionGateVersionRef = useRef<string | null>(null);
+  const lastPromotionGateVersionRef = useRef<{ versionId: string | null; docType: string | null }>({ versionId: null, docType: null });
   // Graph Mutation Pipeline state
   const [showMutationPanel, setShowMutationPanel] = useState(false);
   const [observatoryOpen, setObservatoryOpen] = useState(false);
@@ -1066,11 +1066,25 @@ export default function ProjectDevelopmentEngine() {
 
     // ── Version mismatch / stale gate diagnostics ──
     const convergenceVersionId = selectedVersionId || null;
+    const prevDocType = lastPromotionGateVersionRef.current.docType;
+    const currDocType = selectedDeliverableType;
+    const prevVersionId = lastPromotionGateVersionRef.current.versionId;
+
     if (convergenceVersionId && convergenceVersionId !== promotionGateVersionId) {
-      console.warn(`[ui][IEL] promotion_gate_version_mismatch { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", convergence_version_id: "${convergenceVersionId}", action: "force_rebind" }`);
+      if (prevDocType && prevDocType !== currDocType) {
+        console.info(`[ui][IEL] cross_doc_gate_switch_expected { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", prev_doc_type: "${prevDocType}", new_doc_type: "${currDocType}", prev_version_id: "${prevVersionId}", new_version_id: "${promotionGateVersionId}", action: "force_rebind_blocked" }`);
+      } else {
+        console.warn(`[ui][IEL] promotion_gate_version_mismatch { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", convergence_version_id: "${convergenceVersionId}", action: "force_rebind" }`);
+      }
     }
-    if (lastPromotionGateVersionRef.current && lastPromotionGateVersionRef.current !== promotionGateVersionId) {
-      console.info(`[ui][IEL] stale_gate_state_invalidated { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", old_gate_version_id: "${lastPromotionGateVersionRef.current}", new_gate_version_id: "${promotionGateVersionId}" }`);
+    if (prevVersionId && prevVersionId !== promotionGateVersionId) {
+      if (prevDocType && prevDocType !== currDocType) {
+        console.info(`[ui][IEL] cross_doc_gate_switch_expected { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", prev_doc_type: "${prevDocType}", new_doc_type: "${currDocType}", prev_version_id: "${prevVersionId}", new_version_id: "${promotionGateVersionId}", action: "stale_gate_suppressed" }`);
+        // Clear ref so same-doc-type transitions can trigger genuine stale detection later
+        lastPromotionGateVersionRef.current = { versionId: null, docType: null };
+      } else {
+        console.info(`[ui][IEL] stale_gate_state_invalidated { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", old_gate_version_id: "${prevVersionId}", new_gate_version_id: "${promotionGateVersionId}" }`);
+      }
     }
 
     const { ci, gp, gap, trajectory, iterCount, blockers, highImpact } = promotionState;
@@ -1093,7 +1107,7 @@ export default function ProjectDevelopmentEngine() {
     });
 
     console.info(`[ui][IEL] authoritative_promotion_state_recomputed { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", ci: ${ci}, gp: ${gp}, blockers: ${blockers.length}, high_impact_count: ${highImpact.length}, readiness_score: ${result.readiness_score} }`);
-    lastPromotionGateVersionRef.current = promotionGateVersionId;
+    lastPromotionGateVersionRef.current = { versionId: promotionGateVersionId, docType: selectedDeliverableType };
   }, [promotionState.signature]);
 
   const runAnalysisWithContext = () => {

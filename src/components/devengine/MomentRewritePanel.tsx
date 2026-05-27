@@ -70,10 +70,10 @@ export default function MomentRewritePanel({
   useEffect(() => {
     if (!initialized || !versionId || momentCount !== null) return;
     supabase
-      .from('document_versions')
+      .from('project_document_versions')
       .select('plaintext')
       .eq('id', versionId)
-      .single()
+      .maybeSingle()
       .then(({ data, error }) => {
         if (error || !data?.plaintext) return;
         try {
