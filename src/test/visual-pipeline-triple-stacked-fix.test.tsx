@@ -327,8 +327,7 @@ describe('VisualPipelineErrorBoundary — edge cases', () => {
     const catchBlockStart = boundarySource.indexOf('catch (e)');
     const catchBlockEnd = boundarySource.indexOf('}', catchBlockStart);
     const catchContent = boundarySource.slice(catchBlockStart, catchBlockEnd + 1);
-    expect(catchContent).toContain('console.warn');
-    expect(catchContent).toContain('handleRetry setState failed');
+    expect(catchContent).toContain('window.location.reload');
   });
 });
 
