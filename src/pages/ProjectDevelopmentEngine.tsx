@@ -152,9 +152,8 @@ import { useDialogueAtoms } from '@/hooks/useDialogueAtoms';
 import { StageIdentityBlocker } from '@/components/devengine/StageIdentityBlocker';
 import { StageIdentityBadge } from '@/components/devengine/StageIdentityBadge';
 import { AutopilotPanel } from '@/components/dev/AutopilotPanel';
-import { DevEngineSimpleView } from '@/components/devengine/DevEngineSimpleView';
 import { EngineBar, deriveExecutionMode, type ExecutionMode } from '@/components/devengine/EngineBar';
-import { useUIMode } from '@/hooks/useUIMode';
+import { updateSearchParams } from '@/lib/searchParams';
 import { useSeedPackStatus } from '@/hooks/useSeedPackStatus';
 import { normalizeDecisionsForUI } from '@/lib/decisions/normalizeDecisionUI';
 import { useEnrichedPendingDecisions } from '@/hooks/useEnrichedPendingDecisions';
@@ -167,34 +166,6 @@ import { TreatmentActBlueprintPanel } from '@/components/devengine/TreatmentActB
 export default function ProjectDevelopmentEngine() {
   const { id: projectId } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { mode: uiMode, setMode: setUIMode } = useUIMode();
-  // PATCH 3: When ?tab=autorun, default to simple view for this session without overwriting saved preference.
-  // userExplicitlyToggled prevents re-overriding if user navigates to autorun tab later after toggling.
-  const userExplicitlyToggledRef = useRef(false);
-  // Use ref so the toggle handler can read current value synchronously without stale state
-  const autorunSessionOverrideRef = useRef<boolean>(() => {
-    const t = new URLSearchParams(window.location.search).get('tab');
-    return t === 'autorun';
-  });
-  const [, forceRender] = useState(0);
-  // Re-set override when tab changes to autorun (SPA navigation) — unless user already toggled
-  useEffect(() => {
-    const tabParam = searchParams.get('tab');
-    if (tabParam === 'autorun' && !userExplicitlyToggledRef.current) {
-      autorunSessionOverrideRef.current = true;
-      forceRender(n => n + 1);
-    } else if (tabParam !== 'autorun') {
-      autorunSessionOverrideRef.current = false;
-    }
-  }, [searchParams]);
-  const viewMode = autorunSessionOverrideRef.current ? 'simple' : uiMode;
-  const handleToggleMode = useCallback(() => {
-    // Read uiMode directly — avoids stale closure from useCallback dependency on viewMode
-    userExplicitlyToggledRef.current = true;
-    autorunSessionOverrideRef.current = false; // synchronous — no stale state
-    const nextMode = uiMode === 'simple' ? 'advanced' : 'simple';
-    setUIMode(nextMode);
-  }, [uiMode, setUIMode]);
   // Execution mode preference (persists to job when one exists, otherwise local)
   const [localExecutionMode, setLocalExecutionMode] = useState<ExecutionMode>('full_autopilot');
   // Auto-trigger Generate Options after notes land — flag-based to avoid const assignment
@@ -2173,8 +2144,6 @@ export default function ProjectDevelopmentEngine() {
       <EngineBar
         job={autoRun.job}
         isRunning={autoRun.isRunning}
-        uiMode={viewMode}
-        onToggleMode={handleToggleMode}
         executionMode={effectiveExecutionMode}
         onSetExecutionMode={(mode: ExecutionMode) => {
           setLocalExecutionMode(mode);
@@ -2218,91 +2187,7 @@ export default function ProjectDevelopmentEngine() {
         />
       </div>
 
-      {/* ═══ SIMPLE MODE / ADVANCED MODE ═══ */}
-      {viewMode === 'simple' ? (
-        <>
-        {/* ═══ CLEAN MODE: Simplified workspace with EngineBar + document + decisions only when blocked ═══ */}
-        <DevEngineSimpleView
-          projectId={projectId!}
-          projectTitle={(project as any)?.title || ''}
-          format={normalizedFormat}
-          documents={documents}
-          docsLoading={docsLoading}
-          approvedVersionMap={approvedVersionMap}
-          selectedDocId={selectedDocId}
-          selectedVersionId={selectedVersionId}
-          versionText={versionText}
-          selectDocument={selectDocument}
-          setSelectedVersionId={setSelectedVersionId}
-          autoRunJob={autoRun.job}
-          autoRunSteps={autoRun.steps}
-          autoRunIsRunning={autoRun.isRunning}
-          autoRunConnectionState={autoRun.connectionState}
-          autoRunError={autoRun.error}
-          autoRunActivated={autoRun.activated}
-          seedDocs={seedStatus.docs}
-          seedLoading={seedStatus.isLoading}
-        />
 
-        {/* World Rules — shown in Simple mode when comparables exist or rulesetUserId available */}
-        {rulesetUserId && projectId && (
-          <WorldRulesAccordion projectId={projectId} lane={rulesetLane} userId={rulesetUserId} />
-        )}
-
-        {/* Decision surface — only shown when engine is BLOCKED in clean mode */}
-        {autoRun.job?.awaiting_approval && (() => {
-          const jobHasDecisions = Array.isArray(autoRun.job?.pending_decisions) && (autoRun.job!.pending_decisions as any[]).length > 0;
-          if (!jobHasDecisions) return null;
-          const decisions = (autoRun.job!.pending_decisions as any[]).map((d: any) => {
-            const missingFields: string[] = [];
-            if (!d.question) missingFields.push('question');
-            if (!Array.isArray(d.options) || d.options.length === 0) missingFields.push('options');
-            if (missingFields.length > 0) {
-              console.warn('[ui][IEL] blocking_decision_rendered', {
-                job_id: autoRun.job?.id, doc_type: autoRun.job?.current_document,
-                decision_id: d.id, decision_key: d.decision_key,
-                missing_fields: missingFields,
-              });
-            }
-            return {
-              note_id: d.id,
-              severity: d.impact === 'blocking' ? 'blocker' as const : 'high' as const,
-              note: d.question || d.reason || d.decision_key || 'Decision required',
-              options: (Array.isArray(d.options) ? d.options : []).map((o: any) => ({
-                option_id: o.value || o.option_id || o.label || 'unknown',
-                title: o.label || o.value || o.title || 'Option',
-                what_changes: [o.why || o.label || o.value || ''].filter(Boolean),
-              })),
-              recommended_option_id: typeof d.recommended === 'object' && d.recommended !== null ? d.recommended.value : d.recommended,
-              decision_key: d.decision_key,
-              source: d.source,
-            };
-          });
-          return (
-            <DecisionModePanel
-              projectId={projectId!}
-              documentId={selectedDocId}
-              versionId={selectedVersionId}
-              documentText={versionText}
-              docType={selectedDoc?.doc_type}
-              versionNumber={selectedVersion?.version_number}
-              updatedAt={selectedVersion?.created_at}
-              decisions={decisions}
-              globalDirections={[]}
-              jobId={autoRun.job?.id}
-              isAutoRunPaused={autoRun.job?.status === 'paused'}
-              onRewriteComplete={() => {
-                invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
-              }}
-              onAutoRunContinue={(opts, gd) => autoRun.applyDecisionsAndContinue?.(opts, gd)}
-              onDecisionsChange={setNotesDecisions}
-              availableVersions={versions?.map((v: any) => ({ id: v.id, version_number: v.version_number, label: v.label }))}
-              hideApplyButton={!autoRun.job?.id}
-            />
-          );
-        })()}
-        </>
-      ) : (
       <div data-devengine-advanced-wrapper>
       {/* ═══ SEED APPLIED BANNER ═══ */}
       {seedDraft && projectId && rulesetUserId && (
@@ -3013,7 +2898,7 @@ export default function ProjectDevelopmentEngine() {
           <Tabs value={intelligenceTab} onValueChange={(v) => {
               console.log('[ConvergenceTab] onValueChange:', v, 'current:', intelligenceTab);
               lastManualTabChangeRef.current = Date.now();
-              startTransition(() => setIntelligenceTab(v));
+              startTransition(() => { setIntelligenceTab(v); updateSearchParams(setSearchParams, p => { p.set('tab', v); }); });
             }} className="w-full">
              <TabsList className="w-full justify-start bg-muted/30 border border-border/50 h-9 flex-wrap">
               <TabsTrigger value="notes" className="text-xs">Notes & Feedback</TabsTrigger>

@@ -9,12 +9,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
-  Pause, Square, Play, Loader2, Settings2,
+  Pause, Square, Play, Loader2,
   Activity, Target, TrendingDown, Zap,
 } from 'lucide-react';
 import type { AutoRunJob } from '@/hooks/useAutoRun';
-import type { UIMode } from '@/lib/mode';
-
 // ── Execution Mode ──
 export type ExecutionMode = 'manual' | 'assisted' | 'full_autopilot';
 
@@ -69,8 +67,6 @@ export function deriveExecutionMode(job: AutoRunJob | null): ExecutionMode {
 interface EngineBarProps {
   job: AutoRunJob | null;
   isRunning: boolean;
-  uiMode: UIMode;
-  onToggleMode: () => void;
   executionMode: ExecutionMode;
   onSetExecutionMode: (mode: ExecutionMode) => void;
   onPause: () => void;
@@ -79,7 +75,7 @@ interface EngineBarProps {
 }
 
 export function EngineBar({
-  job, isRunning, uiMode, onToggleMode,
+  job, isRunning,
   executionMode, onSetExecutionMode,
   onPause, onResume, onStop,
 }: EngineBarProps) {
@@ -176,17 +172,5 @@ export function EngineBar({
           </Button>
         )}
       </div>
-
-      {/* Advanced toggle */}
-      <Button
-        variant={uiMode === 'advanced' ? 'default' : 'outline'}
-        size="sm"
-        className="h-7 text-[10px] px-2.5 gap-1"
-        onClick={onToggleMode}
-      >
-        <Settings2 className="h-3 w-3" />
-        {uiMode === 'advanced' ? 'Advanced' : 'Clean'}
-      </Button>
-    </div>
   );
 }

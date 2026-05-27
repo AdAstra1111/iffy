@@ -21,7 +21,6 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import ProjectDetail from "./pages/ProjectDetail";
 import ProjectDevelopmentEngine from "./pages/ProjectDevelopmentEngine";
-import DevelopmentEngine from "./pages/DevelopmentEngine";
 import SeriesWriterPage from "./pages/SeriesWriter";
 
 // Lazy-load everything else
@@ -211,7 +210,7 @@ const AnimatedRoutes = () => {
           <Route path="/demo" element={<DemoPortal />} />
           <Route path="/demo/run" element={<ProtectedRoute><DemoDashboard /></ProtectedRoute>} />
           <Route path="/investor" element={<ProtectedRoute><InvestorPresentation /></ProtectedRoute>} />
-          <Route path="/development-engine" element={<ProtectedRoute><DevelopmentEngine /></ProtectedRoute>} />
+          <Route path="/development-engine" element={<Navigate to="/projects" replace />} />
           <Route path="/projects/:id/development" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/notes" element={<ProtectedRoute><NotesInbox /></ProtectedRoute>} />
           <Route path="/projects/:id/series-writer" element={<ProtectedRoute><SeriesWriterPage /></ProtectedRoute>} />
