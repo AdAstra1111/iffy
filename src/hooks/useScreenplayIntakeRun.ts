@@ -365,26 +365,50 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
     ? (sceneExtractStage?.output_summary as any)?.existing_scene_count ?? null
     : null;
 
-  // Scene graph health classification (advisory, read-only)
+  // Scene graph health — derived directly from scene_graph_scenes (no proxy needed)
   const { data: graphHealth } = useQuery<SceneGraphHealth | null>({
     queryKey: ['scene-graph-health', projectId],
     enabled: !!projectId && !!data?.run,
     retry: false,
+    staleTime: 30_000,
     queryFn: async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const token = session?.access_token ?? '';
-        const result = await callFunction('lara-db-proxy', {
-          action: 'classify_scene_graph',
-          params: { project_id: projectId },
-        }, token);
-        if (result?.state) return result as SceneGraphHealth;
-        return null;
+        const { data: scenes, error } = await supabase
+          .from('scene_graph_scenes')
+          .select('scene_key, scene_order, scene_kind')
+          .eq('project_id', projectId);
+
+        if (error) throw error;
+        if (!scenes?.length) {
+          return { state: 'EMPTY_GRAPH' as const, scene_count: 0, orphan_count: 0, missing_order_count: 0, key_gap_count: 0, signals: ['no_scenes'] };
+        }
+
+        const scene_count = scenes.length;
+        const missing_order_count = scenes.filter(s => s.scene_order === null || s.scene_order === undefined).length;
+        const key_gap_count = scenes.filter(s => !s.scene_key).length;
+        const orphan_count = scenes.filter(s => s.scene_kind === 'narrative' && !s.scene_order).length;
+
+        let state: SceneGraphHealthState;
+        const signals: string[] = [];
+
+        if (missing_order_count === 0 && key_gap_count === 0 && scene_count >= 3) {
+          state = 'POPULATED_GRAPH';
+          signals.push('all_signals_clean');
+        } else if (scene_count > 0) {
+          state = 'PARTIAL_GRAPH';
+          if (missing_order_count > 0) signals.push('missing_order');
+          if (key_gap_count > 0) signals.push('key_gap');
+          if (orphan_count > 0) signals.push('orphan_scenes');
+        } else {
+          state = 'EMPTY_GRAPH';
+          signals.push('no_scenes');
+        }
+
+        return { state, scene_count, orphan_count, missing_order_count, key_gap_count, signals };
       } catch {
         return null;
       }
     },
-    staleTime: 30_000,
   });
 
   return {
