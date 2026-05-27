@@ -27,6 +27,7 @@ ALTER TABLE public.narrative_entities ADD CONSTRAINT narrative_entities_entity_t
     'arc'::text,
     'conflict'::text,
     'creature'::text,
+    'animal'::text,
     'vehicle'::text,
     'prop'::text,
     'environment'::text,

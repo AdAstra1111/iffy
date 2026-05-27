@@ -23,7 +23,7 @@ import { isSectionRepairSupported } from "./deliverableSectionRegistry.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type NITEntityType   = "character" | "arc" | "conflict";
+export type NITEntityType   = "character" | "arc" | "conflict" | "creature" | "animal" | "vehicle" | "prop" | "location";
 export type NITSourceKind   = "project_canon" | "spine_axis" | "manual";
 export type NITEntityStatus = "active" | "stale" | "retired";
 
@@ -76,7 +76,7 @@ export const CONFLICT_PRIMARY_KEY  = "CONFLICT_PRIMARY";
  *   toEntityKey('CHAR', 'The Alternate Elara') → CHAR_THE_ALTERNATE_ELARA
  *   toEntityKey('CHAR', 'Dr. Eleanor Ramsay')  → CHAR_DR_ELEANOR_RAMSAY
  */
-export function toEntityKey(prefix: "CHAR" | "ARC" | "CONFLICT", label: string): string {
+export function toEntityKey(prefix: "CHAR" | "ARC" | "CONFLICT" | "CREA" | "ANML" | "VEH" | "PROP" | "LOC", label: string): string {
   const slug = label
     .toUpperCase()
     .normalize("NFD")
@@ -130,11 +130,19 @@ export async function syncCanonEntities(
     .filter((c): c is { name: string; role?: string; description?: string } =>
       !!c && typeof c.name === "string" && c.name.trim().length > 0
     )
-    .map((char, i) => ({
+    .map((char, i) => {
+      const entityType = (char.entity_type ?? "character") as NITEntityType;
+      const prefix = entityType === "creature" ? "CREA" :
+                     entityType === "animal"   ? "ANML" :
+                     entityType === "vehicle"  ? "VEH" :
+                     entityType === "prop"     ? "PROP" :
+                     entityType === "location" ? "LOC" :
+                     "CHAR";
+      return {
       project_id:     projectId,
-      entity_key:     toEntityKey("CHAR", char.name),
+      entity_key:     toEntityKey(prefix as any, char.name),
       canonical_name: char.name,
-      entity_type:    "character" as NITEntityType,
+      entity_type:    entityType,
       source_kind:    "project_canon" as NITSourceKind,
       source_key:     `characters[${i}]`,
       status:         "active" as NITEntityStatus,

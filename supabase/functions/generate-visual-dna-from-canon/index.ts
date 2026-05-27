@@ -463,6 +463,8 @@ async function handleAllCharacters(
 
   const allCharNames = new Set<string>();
   for (const c of characters) {
+    // Skip non-human canon entries (creature, animal, vehicle, prop, etc.)
+    if (c.entity_type && c.entity_type !== "character") continue;
     const name = c.name || c.character_name || "";
     if (name) allCharNames.add(name);
   }

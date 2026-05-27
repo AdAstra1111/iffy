@@ -95,6 +95,24 @@ async function checkCastBindings(
   boundCount: number;
   detail: string;
 }> {
+  // Authoritative count: NIT narrative_entities with entity_type='character'
+  const { count: nitCharCount, error: nitError } = await supabase
+    .from("narrative_entities")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("entity_type", "character")
+    .eq("status", "active");
+
+  if (nitError) {
+    return {
+      characterCount: 0,
+      boundCount: 0,
+      detail: `Query error: ${nitError.message}`,
+    };
+  }
+
+  const authoritativeCount = nitCharCount ?? 0;
+
   // Count characters with visual DNA
   const { count: dnaCount, error: dnaError } = await supabase
     .from("character_visual_dna")
@@ -112,8 +130,10 @@ async function checkCastBindings(
 
   const charCount = dnaCount ?? 0;
 
-  // Fallback: check project_characters if no DNA
-  let charTotal = charCount;
+  // Use authoritative NIT count as primary, fall back to visual DNA count
+  let charTotal = authoritativeCount > 0 ? authoritativeCount : charCount;
+
+  // Final fallback: check project_characters if no data from other sources
   if (charTotal === 0) {
     const { count: pcCount } = await supabase
       .from("project_characters")
