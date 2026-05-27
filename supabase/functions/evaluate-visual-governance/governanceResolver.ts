@@ -74,7 +74,13 @@ export interface PipelineInputs {
   /** Cast state */
   totalCharacters: number;
   lockedCharacters: number;
-  castComplete: boolean; // all locked + datasets complete + coherent
+  castComplete: boolean; // character identity readiness: atoms complete + visual DNA present
+
+  /** Visual DNA identity readiness (separate from actor anchor readiness) */
+  hasVisualDNA: boolean;
+  boundActorCount: number;
+  hasActorBindings: boolean;
+  actorAnchorsComplete: boolean; // actor anchor coverage/coherence (separate from castComplete)
 
   /** Hero Frames state */
   heroFrameTotal: number;
@@ -647,12 +653,22 @@ export async function resolveStageGovernance(
     castBlockers.push('Requires source truth');
   } else if (inputs.castComplete) {
     castStatus = 'locked';
-  } else if (inputs.lockedCharacters > 0) {
-    castStatus = 'in_progress';
-  } else if (inputs.totalCharacters > 0) {
-    castStatus = 'not_started';
   } else {
-    castStatus = 'not_started';
+    // Character identity readiness determines status
+    castStatus = inputs.totalCharacters > 0 ? 'in_progress' : 'not_started';
+
+    // Granular blocker codes
+    const atomsMissing = !inputs.totalCharacters || inputs.totalCharacters === 0;
+    const atomsIncomplete = !atomsMissing && inputs.lockedCharacters < inputs.totalCharacters;
+    const dnaMissing = !inputs.hasVisualDNA;
+    const bindingsMissing = !inputs.hasActorBindings;
+    const anchorInsufficient = inputs.hasActorBindings && !inputs.actorAnchorsComplete;
+
+    if (atomsMissing) castBlockers.push('MISSING_CHARACTER_ATOMS');
+    if (atomsIncomplete) castBlockers.push('MISSING_CHARACTER_ATOMS');
+    if (dnaMissing) castBlockers.push('MISSING_VISUAL_DNA');
+    if (bindingsMissing) castBlockers.push('MISSING_ACTOR_BINDINGS');
+    if (anchorInsufficient) castBlockers.push('ACTOR_ANCHOR_INSUFFICIENT');
   }
   stages.push({
     stage_id: 'cast',

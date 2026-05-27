@@ -129,7 +129,7 @@ serve(async (req) => {
         .eq("generation_purpose", "hero_frame")
         .eq("is_active", true),
 
-      // 10. visual_sets (production design)
+      // 11. visual_sets (production design)
       supabase
         .from("visual_sets")
         .select("id, domain, status, target_name, updated_at")
@@ -137,20 +137,20 @@ serve(async (req) => {
         .like("domain", "production_design_%")
         .neq("status", "archived"),
 
-      // 11. lookbook_sections
+      // 12. lookbook_sections
       supabase
         .from("lookbook_sections")
         .select("id, section_status, updated_at")
         .eq("project_id", projectId),
 
-      // 12. poster_candidates
+      // 13. poster_candidates
       supabase
         .from("poster_candidates")
         .select("id", { count: "exact", head: true })
         .eq("project_id", projectId)
         .eq("status", "candidate"),
 
-      // 13. concept_brief_versions
+      // 14. concept_brief_versions
       supabase
         .from("concept_brief_versions")
         .select("version_number")
@@ -158,7 +158,7 @@ serve(async (req) => {
         .order("version_number", { ascending: false })
         .limit(1),
 
-      // 14. Stale-risk timestamps (parallel sub-queries)
+      // 15. Stale-risk timestamps (parallel sub-queries)
       fetchStaleRiskTimestamps(supabase, projectId),
     ]);
 
@@ -204,9 +204,27 @@ serve(async (req) => {
       lockedCharacters = completedAtoms?.length ?? 0;
     }
 
-    // Actor dataset completeness
-    let castComplete = lockedCharacters > 0 && lockedCharacters >= totalCharacters;
-    if (castComplete && castList.length > 0) {
+    // ── Character identity readiness ──
+    // Character atoms complete?
+    const characterAtomsReady =
+      totalCharacters > 0 && lockedCharacters > 0 && lockedCharacters >= totalCharacters;
+
+    // Visual DNA present (direct query to avoid batch issues)
+    const { data: dnaRows } = await supabase
+      .from("character_visual_dna")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("is_current", true);
+    const visualDnaCount = (dnaRows as any[])?.length ?? 0;
+    const hasVisualDNA = visualDnaCount > 0;
+
+    // Actor bindings (project_ai_cast with ai_actor_id)
+    const boundActorCount = castList.filter((c: any) => c.ai_actor_id).length;
+    const hasActorBindings = boundActorCount > 0;
+
+    // ── Actor anchor readiness (separate from castComplete) ──
+    let actorAnchorsComplete = false;
+    if (boundActorCount > 0) {
       const actorIds = castList
         .map((c: any) => c.ai_actor_id)
         .filter(Boolean);
@@ -215,13 +233,16 @@ serve(async (req) => {
           .from("ai_actors")
           .select("id, anchor_coverage_status, anchor_coherence_status")
           .in("id", actorIds);
-        castComplete = (actors ?? []).every(
+        actorAnchorsComplete = (actors ?? []).every(
           (a: any) =>
             a.anchor_coverage_status === "complete" &&
             a.anchor_coherence_status === "coherent",
         );
       }
     }
+
+    // castComplete = character identity readiness (atoms + visual_dna)
+    const castComplete = characterAtomsReady && hasVisualDNA;
 
     // Hero Frames state
     const images = (hfImages as any[]) ?? [];
@@ -295,6 +316,10 @@ serve(async (req) => {
       totalCharacters,
       lockedCharacters,
       castComplete,
+      hasVisualDNA,
+      boundActorCount,
+      hasActorBindings,
+      actorAnchorsComplete,
       heroFrameTotal,
       heroFrameApproved,
       heroFramePrimaryApproved,
