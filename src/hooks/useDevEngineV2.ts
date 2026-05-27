@@ -374,24 +374,24 @@ export function useDevEngineV2(projectId: string | undefined) {
       case 'analyze':
       case 'notes':
         // Analysis/notes affect runs, convergence — NOT versions or docs
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', projectId, dId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', projectId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', dId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', dId, vId] });
         // Do NOT invalidate dev-v2-versions — analysis doesn't change version data
         break;
 
       case 'rewrite':
         // Rewrite creates new versions
-        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', projectId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
+        qc.invalidateQueries({ queryKey: ['dev-v2-convergence', dId, vId] });
         break;
 
       case 'convert':
         // Convert creates new documents + versions
         qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
         break;
 
       case 'create-paste':
@@ -402,18 +402,18 @@ export function useDevEngineV2(projectId: string | undefined) {
 
       case 'beat-sheet-to-script':
         qc.invalidateQueries({ queryKey: ['dev-v2-docs', projectId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
         break;
 
       case 'drift-acknowledge':
       case 'drift-resolve':
-        qc.invalidateQueries({ queryKey: ['dev-v2-drift', projectId] });
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-drift', vId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
         break;
 
       case 'delete-version':
-        qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
+        if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
         break;
 
       case 'delete-document':
@@ -422,7 +422,7 @@ export function useDevEngineV2(projectId: string | undefined) {
 
       default:
         // Fallback: minimal invalidation for unclassified actions
-        qc.invalidateQueries({ queryKey: ['dev-v2-runs', projectId] });
+        if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
         if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
         break;
     }

@@ -192,7 +192,14 @@ export default function ProjectDevelopmentEngine() {
     },
     retry: false,
     onSuccess: () => {
-      invalidateDevEngine(qc, { projectId, docId: selectedDocId, versionId: selectedVersionId, deep: true });
+      // Targeted invalidation — only dev-v2-doc-runs + dev-v2-runs + dev-v2-convergence
+      // for the current doc/version. Avoids blanket refetch of ALL dev-v2-* queries
+      // (docs, versions, drift, approved, etc.) which would trigger cascading rerenders
+      // and potentially create new array references consumed by the promotion effect.
+      if (selectedDocId) qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', selectedDocId] });
+      if (selectedVersionId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', selectedVersionId] });
+      qc.invalidateQueries({ queryKey: ['dev-v2-convergence', selectedDocId, selectedVersionId] });
+      qc.invalidateQueries({ queryKey: ['seed-pack-versions', projectId] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -822,15 +829,14 @@ export default function ProjectDevelopmentEngine() {
   }, [selectedDoc?.doc_type]);
 
   // Resolve authoritative version for promotion gating (strict approved+current, fallback approved)
-  const strictAuthoritativeVersion = useMemo(
-    () => versions.find((v: any) => v.approval_status === 'approved' && v.is_current === true) || null,
-    [versions],
-  );
-  const fallbackApprovedVersion = useMemo(
-    () => versions.filter((v: any) => v.approval_status === 'approved').slice(-1)[0] || null,
-    [versions],
-  );
-  const authoritativeVersion = strictAuthoritativeVersion || fallbackApprovedVersion || null;
+  // Single deterministic memo — avoids two separate useMemos both keyed on [versions] that
+  // each create new references on every 10s poll (contributing to the render loop).
+  const authoritativeVersion = useMemo(() => {
+    const strict = versions.find((v: any) => v.approval_status === 'approved' && v.is_current === true);
+    if (strict) return strict;
+    const fallback = versions.filter((v: any) => v.approval_status === 'approved').slice(-1)[0];
+    return fallback || null;
+  }, [versions]);
   const promotionGateVersionId = authoritativeVersion?.id || selectedVersionId || null;
 
   // PATCH C — effectiveVersionId: authoritative wins over selected for all gate/convergence surfaces
@@ -993,26 +999,13 @@ export default function ProjectDevelopmentEngine() {
     }
   }, [allPrioritizedMoves]);
 
-  // ── Idempotency guard for promotion state recomputation ──
-  const prevPromotionSignatureRef = useRef<string | null>(null);
-
-  // Trigger Promotion Intelligence from authoritative version-bound evaluation state
-  useEffect(() => {
-    if (!promotionGateVersionId) {
-      promotionIntel.clear();
-      return;
-    }
-
-    const convergenceVersionId = selectedVersionId || null;
-    if (convergenceVersionId && convergenceVersionId !== promotionGateVersionId) {
-      console.warn(`[ui][IEL] promotion_gate_version_mismatch { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", convergence_version_id: "${convergenceVersionId}", action: "force_rebind" }`);
-      // PATCH D — log mismatch but do NOT force-rebind (allows manual version browsing)
-      // The authoritative version is still used for gate evaluation via effectiveVersionId
-    }
-
-    if (lastPromotionGateVersionRef.current && lastPromotionGateVersionRef.current !== promotionGateVersionId) {
-      console.info(`[ui][IEL] stale_gate_state_invalidated { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", old_gate_version_id: "${lastPromotionGateVersionRef.current}", new_gate_version_id: "${promotionGateVersionId}" }`);
-    }
+  // ── Memoized promotion schema + signature ──
+  // Extracted from the effect below so the effect depends only on a string primitive,
+  // not on array references (allDocRuns, documents, approvedVersionMap) that create
+  // new references on every 10s polling refetch and trigger the request storm.
+  const promotionState = useMemo(() => {
+    const empty = { signature: null, blockers: [], highImpact: [], ci: 0, gp: 0, gap: 0, trajectory: null, iterCount: 0 };
+    if (!promotionGateVersionId) return empty;
 
     const isApprovedGate = authoritativeVersion?.id === promotionGateVersionId && authoritativeVersion?.approval_status === 'approved';
     const { blockers, highImpact } = extractNoteCounts(
@@ -1026,10 +1019,7 @@ export default function ProjectDevelopmentEngine() {
     const trajectory = promotionGateAnalysis?.convergence?.trajectory ?? promotionGateAnalysis?.trajectory ?? null;
     const iterCount = allDocRuns.filter((r: any) => r.run_type === 'ANALYZE').length;
 
-    console.info(`[ui][IEL] promotion_gate_version_bound { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", ci: ${ci}, gp: ${gp}, blockers: ${blockers.length}, high_impact_count: ${highImpact.length} }`);
-
-    // ── Idempotency guard: skip if computed input has not changed ──
-    const promotionSchema = {
+    const schema = {
       projectId,
       jobId: autoRun.job?.id,
       docType: selectedDeliverableType,
@@ -1045,11 +1035,45 @@ export default function ProjectDevelopmentEngine() {
       seasonEpisodeCount: effectiveSeasonEpisodes ?? '',
       convergenceStatus: promotionConvergenceStatus,
     };
-    const signature = JSON.stringify(promotionSchema);
-    if (signature === prevPromotionSignatureRef.current) {
+    const signature = JSON.stringify(schema);
+
+    return { signature, blockers, highImpact, ci, gp, gap, trajectory, iterCount, isApprovedGate };
+  }, [
+    promotionGateAnalysis, promotionGateNotes, promotionGateVersionId,
+    authoritativeVersion?.id, authoritativeVersion?.approval_status,
+    allDocRuns, documents, approvedVersionMap, selectedDeliverableType,
+    projectFormat, effectiveSeasonEpisodes, promotionConvergenceStatus,
+    autoRun.job?.id, projectId,
+  ]);
+
+  const prevPromotionSignatureRef = useRef<string | null>(null);
+
+  // Trigger Promotion Intelligence — depends ONLY on memoized string to avoid
+  // request-storm render loop from array-reference deps on every 10s poll.
+  useEffect(() => {
+    if (!promotionState.signature) {
+      promotionIntel.clear();
+      return;
+    }
+
+    // ── Idempotency guard FIRST (before any console.logs) ──
+    if (promotionState.signature === prevPromotionSignatureRef.current) {
       return; // Skip — state unchanged
     }
-    prevPromotionSignatureRef.current = signature;
+    prevPromotionSignatureRef.current = promotionState.signature;
+
+    // ── Version mismatch / stale gate diagnostics ──
+    const convergenceVersionId = selectedVersionId || null;
+    if (convergenceVersionId && convergenceVersionId !== promotionGateVersionId) {
+      console.warn(`[ui][IEL] promotion_gate_version_mismatch { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", convergence_version_id: "${convergenceVersionId}", action: "force_rebind" }`);
+    }
+    if (lastPromotionGateVersionRef.current && lastPromotionGateVersionRef.current !== promotionGateVersionId) {
+      console.info(`[ui][IEL] stale_gate_state_invalidated { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", old_gate_version_id: "${lastPromotionGateVersionRef.current}", new_gate_version_id: "${promotionGateVersionId}" }`);
+    }
+
+    const { ci, gp, gap, trajectory, iterCount, blockers, highImpact } = promotionState;
+
+    console.info(`[ui][IEL] promotion_gate_version_bound { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", ci: ${ci}, gp: ${gp}, blockers: ${blockers.length}, high_impact_count: ${highImpact.length} }`);
 
     const result = promotionIntel.computeLocal({
       ci, gp, gap, trajectory,
@@ -1068,8 +1092,7 @@ export default function ProjectDevelopmentEngine() {
 
     console.info(`[ui][IEL] authoritative_promotion_state_recomputed { project_id: "${projectId}", job_id: "${autoRun.job?.id || 'none'}", doc_type: "${selectedDeliverableType}", authoritative_version_id: "${promotionGateVersionId}", gate_version_id: "${promotionGateVersionId}", ci: ${ci}, gp: ${gp}, blockers: ${blockers.length}, high_impact_count: ${highImpact.length}, readiness_score: ${result.readiness_score} }`);
     lastPromotionGateVersionRef.current = promotionGateVersionId;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [promotionGateAnalysis, promotionGateNotes, promotionGateVersionId, selectedVersionId, authoritativeVersion?.id, authoritativeVersion?.approval_status, allDocRuns, documents, approvedVersionMap, selectedDeliverableType, projectFormat, effectiveSeasonEpisodes, promotionConvergenceStatus, autoRun.job?.id]);
+  }, [promotionState.signature]);
 
   const runAnalysisWithContext = () => {
     // Guard: only block if there is genuinely no content to analyze.

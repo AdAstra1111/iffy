@@ -59,7 +59,6 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
 
   private handleRetry = (): void => {
     if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) return;
-    this.recoveryAttempts++;
     this.setState({ hasError: false, error: null });
   };
 

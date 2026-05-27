@@ -831,6 +831,11 @@ export function useCostumeOnActor(projectId: string | undefined) {
 
           if (genError) {
             console.error(`[Costume] Generation error for ${slot.slot_key}:`, genError);
+            // 403 = governance block — not transient, break the retry loop
+            if ((genError as any)?.context?.status === 403) {
+              console.warn(`[Costume] 403 on ${slot.slot_key} — governance blocking generation, breaking retry loop`);
+              break;
+            }
             convState = { ...convState, attempt_count: convState.attempt_count + 1 };
             continue;
           }
@@ -1662,6 +1667,11 @@ export function useCostumeOnActor(projectId: string | undefined) {
 
         if (genError) {
           console.error(`[Costume] Single-slot generation error for ${slotKey}:`, genError);
+          // 403 = governance block — not transient, break the retry loop
+          if ((genError as any)?.context?.status === 403) {
+            console.warn(`[Costume] 403 on ${slotKey} — governance blocking generation, breaking retry loop`);
+            break;
+          }
           convState = { ...convState, attempt_count: convState.attempt_count + 1 };
           continue;
         }
@@ -1802,8 +1812,7 @@ export function useCostumeOnActor(projectId: string | undefined) {
                 continuity_gate_status: singleGate.continuity_gate.status,
                 continuity_score: singleGate.continuity_gate.continuity_score,
               },
-              updated_at: new Date().toISOString(),
-            }).eq('id', slot.id);
+              }).eq('id', slot.id);
           } catch (slotUpdateErr) {
             console.error('[Costume][IEL] CRITICAL: Failed to persist slot state after generation:', slotUpdateErr);
           }
@@ -1838,7 +1847,6 @@ export function useCostumeOnActor(projectId: string | undefined) {
             scoring_policy: slotPolicy.key,
             costume_run_id: runManifest.run_id, generation_mode: runManifest.generation_mode,
           },
-          updated_at: new Date().toISOString(),
         }).eq('id', slot.id);
       } catch (err) {
         console.error('[Costume][IEL] CRITICAL: Failed to persist final slot state:', err);

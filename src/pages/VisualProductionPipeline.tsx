@@ -2271,8 +2271,7 @@ export default function VisualProductionPipeline() {
   }
 
   return (
-    <VisualPipelineErrorBoundary stageLabel="Visual Production Pipeline">
-    <div className="h-full flex flex-col">
+    <div key="vpp-root" className="h-full flex flex-col">
       {/* Top bar */}
       <div className="border-b border-border/30 bg-card/20 px-4 py-3 flex items-center gap-3">
         <Link to={`/projects/${projectId}`}>
@@ -2346,8 +2345,15 @@ export default function VisualProductionPipeline() {
         </div>
       </div>
 
+      <VisualPipelineErrorBoundary stageLabel="Content Panel">
+        <Suspense fallback={
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        }>
+
       {/* Main layout */}
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+      <div key="vpp-main" className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         {/* Stage rail — LEFT (visible on lg+) */}
         <div className="w-56 xl:w-64 border-r border-border/20 bg-card/10 p-2 space-y-1 overflow-y-auto shrink-0 hidden lg:block">
           {stages.map((state, idx) => (
@@ -2394,14 +2400,8 @@ export default function VisualProductionPipeline() {
         </div>
 
         {/* Content panel — CENTER */}
-        <div className="flex-1 overflow-y-auto">
+        <div key="vpp-content" className="flex-1 overflow-y-auto">
           <div className="max-w-5xl mx-auto">
-            <VisualPipelineErrorBoundary stageLabel="Content Panel">
-              <Suspense fallback={
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            }>
               {/* Visual Governance: stale risk + recommended action */}
               {(() => {
                 const action = computeRecommendedAction({
@@ -2481,9 +2481,7 @@ export default function VisualProductionPipeline() {
                         <strong>Explore / Lab</strong> — Internal exploration surface. Not included in investor-facing outputs.
                       </span>
                     </div>
-                    <Suspense fallback={<div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
-                      <LookBookContent />
-                    </Suspense>
+                    <LookBookContent />
                     <div className="mt-4">
                       <LookbookPreflightPanel projectId={projectId} activeStage={activeStage} />
                     </div>
@@ -2507,12 +2505,11 @@ export default function VisualProductionPipeline() {
                 projectId={projectId}
                 stageId={activeStage}
               />
-            </Suspense>
-            </VisualPipelineErrorBoundary>
           </div>
         </div>
       </div>
+        </Suspense>
+      </VisualPipelineErrorBoundary>
     </div>
-    </VisualPipelineErrorBoundary>
   );
 }
