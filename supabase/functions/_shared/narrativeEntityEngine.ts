@@ -153,7 +153,8 @@ export async function syncCanonEntities(
         aliases:        [],
       },
       updated_at: now,
-    }));
+      };
+    });
 
   if (rows.length === 0) return { synced: 0 };
 
