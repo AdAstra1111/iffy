@@ -328,11 +328,25 @@ async function handleGenerate(projectId: string) {
           const costumeName = (atom.attributes as any)?.primaryOutfit || atom.canonical_name.split(' — ').slice(1).join(' — ') || "Costume";
           console.log(`Generating costume atom: ${costumeName} for ${charName}`);
 
+          // Check if this entity is a non-character type — log as warn, not error
+          let entityType: string | null = null;
+          if (atom.entity_id) {
+            const { data: entityRow } = await admin
+              .from("narrative_entities")
+              .select("entity_type")
+              .eq("id", atom.entity_id)
+              .maybeSingle();
+            if (entityRow?.entity_type && entityRow.entity_type !== "character") {
+              entityType = entityRow.entity_type;
+              console.warn(`[costume-atomiser] entity ${atom.entity_id} is type "${entityType}" — generating costume for non-character entity (this is expected for creatures, animals, etc.)`);
+            }
+          }
+
           // Get associated character atom for physical description
           let characterAtomDescription = "";
           let characterArcSummary = "";
 
-          if (atom.entity_id) {
+          if (atom.entity_id && !entityType) {
             const { data: charAtom } = await admin
               .from("atoms")
               .select("attributes")
