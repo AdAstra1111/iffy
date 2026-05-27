@@ -568,7 +568,23 @@ function parseBeatSheet(plaintext: string): Act[] {
       acts.push(currentAct);
     }
   }
-  return acts;
+
+  // Post-processing dedup: merge any remaining duplicates by canonical name
+  // This catches cases where object identity checks fail (same reference already in acts)
+  const merged: Act[] = [];
+  const seen = new Set<string>();
+  for (const act of acts) {
+    if (!seen.has(act.name)) {
+      seen.add(act.name);
+      merged.push(act);
+    } else {
+      const existing = merged.find(m => m.name === act.name);
+      if (existing) {
+        existing.beats.push(...(act.beats || []));
+      }
+    }
+  }
+  return merged;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
