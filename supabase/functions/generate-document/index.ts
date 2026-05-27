@@ -2346,6 +2346,38 @@ ${existingCBContent.slice(0, 30000)}`;
               })
               .eq("id", chunkVersion!.id);
             console.error(`[generate-document][IEL] Chunked generation ${isIncomplete ? 'INCOMPLETE' : 'FAILED'} — NOT promoting: ${docType} v${chunkVersionNum} completed=${chunkResult.completedChunks}/${chunkResult.totalChunks} failed=${chunkResult.failedChunks}`);
+
+            // ── AUTO-RESUME (Fix D) ──────────────────────────────────────────────
+            // When incomplete (partial chunks completed), trigger resumeChunkedGeneration
+            // to retry only the failed chunks. Skip 'done' chunks automatically.
+            if (isIncomplete) {
+              console.log(`[generate-document][AUTO-RESUME] Triggering resume for ${docType} v${chunkVersionNum} — ${chunkResult.completedChunks}/${chunkResult.totalChunks} done, ${chunkResult.failedChunks} failed`);
+              try {
+                const resumeResult = await resumeChunkedGeneration({
+                  supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
+                  documentId: chunkDocRecord!.id, versionId: chunkVersion!.id,
+                  docType, plan, systemPrompt: system, upstreamContent,
+                  projectTitle: project.title || "Untitled",
+                  additionalContext, model: "google/gemini-2.5-flash",
+                  episodeCount: resolvedQuals?.season_episode_count,
+                  requestId,
+                });
+                if (resumeResult.success) {
+                  await serviceClient.from("project_document_versions")
+                    .update({ is_current: true, meta_json: { bg_generating: false, bg_completed_at: new Date().toISOString(), chunks_total: resumeResult.totalChunks, chunks_completed: resumeResult.completedChunks } })
+                    .eq("id", chunkVersion!.id);
+                  await serviceClient.from("project_documents")
+                    .update({ latest_version_id: chunkVersion!.id, updated_at: new Date().toISOString() })
+                    .eq("id", chunkDocRecord!.id);
+                  console.log(`[generate-document][AUTO-RESUME] SUCCESS: ${docType} v${chunkVersionNum} resume completed ${resumeResult.completedChunks}/${resumeResult.totalChunks}`);
+                } else {
+                  console.error(`[generate-document][AUTO-RESUME] FAILED: ${docType} v${chunkVersionNum} resume still incomplete — ${resumeResult.completedChunks}/${resumeResult.totalChunks} failed=${resumeResult.failedChunks}`);
+                }
+              } catch (resumeErr: any) {
+                console.error(`[generate-document][AUTO-RESUME] ERROR: ${docType} v${chunkVersionNum} — ${resumeErr?.message}`);
+              }
+            }
+            // ── END AUTO-RESUME ────────────────────────────────────────────
           }
         } catch (bgErr: any) {
           console.error(`[generate-document] Chunked background generation FAILED: ${docType} — ${bgErr?.message}`);

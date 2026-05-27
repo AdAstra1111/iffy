@@ -3770,6 +3770,27 @@ async function finalizeBest(supabase: any, jobId: string, job: any, explicitCurr
     .eq("id", bestVersionId)
     .maybeSingle();
   if (!ver) return false;
+
+  // ── STORY_OUTLINE COMPLETION INTEGRITY CHECK (Fix F) ──
+  // Before promoting a story_outline version, verify that ALL chunks completed.
+  // meta_json.chunks_completed must equal meta_json.chunks_total (typically 4).
+  // This prevents promotion of partially-generated outlines where Acts 2A-3 are missing.
+  const docType = job?.current_document;
+  if (docType === "story_outline") {
+    const meta = ver?.meta_json || {};
+    const chunksTotal = meta.chunks_total ?? 0;
+    const chunksCompleted = meta.chunks_completed ?? 0;
+    if (chunksCompleted < chunksTotal) {
+      console.log(`[auto-run][IEL] STORY_OUTLINE_INTEGRITY_FAILED: version ${bestVersionId} has ${chunksCompleted}/${chunksTotal} chunks complete — BLOCKING promotion`);
+      await logStep(supabase, jobId, null, docType, "story_outline_integrity_failed",
+        `Story outline version ${bestVersionId} has incomplete chunks (${chunksCompleted}/${chunksTotal}). Not promoting.`,
+        {}, undefined, { version_id: bestVersionId, chunks_completed: chunksCompleted, chunks_total: chunksTotal });
+      return false;
+    }
+    console.log(`[auto-run][IEL] STORY_OUTLINE_INTEGRITY_PASSED: version ${bestVersionId} has ${chunksCompleted}/${chunksTotal} chunks complete`);
+  }
+  // ── END STORY_OUTLINE INTEGRITY CHECK ──
+
   const canonDrift = ver?.meta_json?.canon_drift;
   const hasViolations = canonDrift && canonDrift.passed === false && (canonDrift.violations > 0 || (canonDrift.findings && canonDrift.findings.some((f: any) => f.severity === "violation")));
 
