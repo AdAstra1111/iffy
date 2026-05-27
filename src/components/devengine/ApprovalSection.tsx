@@ -30,6 +30,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getDocTypeLabel } from '@/lib/can-promote-to-script';
 
 interface Divergence {
   id: string;
