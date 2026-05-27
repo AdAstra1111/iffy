@@ -1,5 +1,8 @@
 import React from 'react';
 
+/** Module-level ref to prevent concurrent recovery across error boundaries. */
+const recoveryInFlightRef = { current: false };
+
 interface SafeRouteBoundaryProps {
   children: React.ReactNode;
 }
@@ -35,6 +38,12 @@ export class SafeRouteBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Guard: prevent concurrent recovery if another boundary is already recovering
+    if (recoveryInFlightRef.current) {
+      console.warn('[SafeRouteBoundary] Recovery already in flight — skipping concurrent recovery');
+      return;
+    }
+
     this.recoveryAttempts++;
 
     console.warn(
@@ -52,7 +61,9 @@ export class SafeRouteBoundary extends React.Component<
     }
 
     // Auto-recover after a short delay — the race condition is transient
+    recoveryInFlightRef.current = true;
     setTimeout(() => {
+      recoveryInFlightRef.current = false;
       this.setState({ hasError: false, error: null });
     }, 500);
   }

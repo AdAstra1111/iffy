@@ -143,7 +143,10 @@ const queryClient = new QueryClient({
       staleTime: 1000 * 60 * 2, // 2 min – avoid redundant refetches
       gcTime: 1000 * 60 * 10, // 10 min garbage collection
       refetchOnWindowFocus: false,
-      retry: 1,
+      retry: (failureCount: number, error: any) => {
+        if (error?.status === 400 || error?.status === 404 || error?.status === 406) return false;
+        return failureCount < 1;
+      },
     },
   },
 });

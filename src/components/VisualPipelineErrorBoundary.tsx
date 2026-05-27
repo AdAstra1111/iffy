@@ -24,6 +24,8 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  permanentFailure?: boolean;
+  errorMessage?: string;
 }
 
 export class VisualPipelineErrorBoundary extends Component<Props, State> {
@@ -60,19 +62,19 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
   private handleRetry = (): void => {
     if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) return;
     try {
+      if (this.state.error?.message?.includes('useAuth') || this.state.error?.message?.includes('AuthProvider')) {
+        this.setState({ hasError: false, permanentFailure: true, errorMessage: 'Auth provider error — reload the page' });
+        return;
+      }
       this.setState({ hasError: false, error: null });
     } catch (e) {
-      // Swallow errors from AuthProvider context or unmounted component.
-      // This prevents a crash during setState from cascading into the
-      // visual-pipeline-error-boundary race (safe-route-boundary +
-      // this boundary competing on concurrent recovery).
-      console.warn('[VisualPipelineErrorBoundary] handleRetry setState failed:', e);
+      window.location.reload();
     }
   };
 
   render(): ReactNode {
     if (this.state.hasError) {
-      if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) {
+      if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS || this.state.permanentFailure) {
         return (
           <div className="flex flex-col items-center justify-center py-20 px-4">
             <AlertTriangle className="h-8 w-8 text-destructive mb-3" />
@@ -80,10 +82,12 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
               {this.props.stageLabel || 'Pipeline stage'} encountered an error
             </h3>
             <p className="text-sm text-muted-foreground mb-4 max-w-md text-center">
-              {this.state.error?.message || 'An unexpected error occurred.'}
+              {this.state.errorMessage || this.state.error?.message || 'An unexpected error occurred.'}
             </p>
             <p className="text-xs text-muted-foreground mb-4">
-              Automatic recovery failed after {MAX_RECOVERY_ATTEMPTS} attempts. Please refresh the page.
+              {this.state.permanentFailure
+                ? 'This error cannot be recovered. Please refresh the page.'
+                : `Automatic recovery failed after ${MAX_RECOVERY_ATTEMPTS} attempts. Please refresh the page.`}
             </p>
             <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
               <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
