@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback, startTransition } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { flushSync } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { BgGenBanner } from '@/components/devengine/BgGenBanner';
@@ -2898,7 +2898,7 @@ export default function ProjectDevelopmentEngine() {
           <Tabs value={intelligenceTab} onValueChange={(v) => {
               console.log('[ConvergenceTab] onValueChange:', v, 'current:', intelligenceTab);
               lastManualTabChangeRef.current = Date.now();
-              startTransition(() => { setIntelligenceTab(v); updateSearchParams(setSearchParams, p => { p.set('tab', v); }); });
+              setIntelligenceTab(v); updateSearchParams(setSearchParams, p => { p.set('tab', v); });
             }} className="w-full">
              <TabsList className="w-full justify-start bg-muted/30 border border-border/50 h-9 flex-wrap">
               <TabsTrigger value="notes" className="text-xs">Notes & Feedback</TabsTrigger>
@@ -3686,7 +3686,6 @@ export default function ProjectDevelopmentEngine() {
             </TabsContent>
           </Tabs>
         </div>
-      )}
 
       {/* ═══ SHARED OVERLAYS (visible in both modes) ═══ */}
 

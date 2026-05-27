@@ -172,5 +172,6 @@ export function EngineBar({
           </Button>
         )}
       </div>
+      </div>
   );
 }
