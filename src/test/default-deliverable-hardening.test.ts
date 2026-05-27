@@ -19,12 +19,12 @@ describe('defaultDeliverableForDocType identity', () => {
     expect(defaultDeliverableForDocType('concept_brief')).toBe('concept_brief');
   });
 
-  it('treatment resolves to blueprint (intentional dev-engine mapping)', () => {
-    expect(defaultDeliverableForDocType('treatment')).toBe('blueprint');
+  it('treatment resolves to treatment (canonical mapping)', () => {
+    expect(defaultDeliverableForDocType('treatment')).toBe('treatment');
   });
 
-  it('story_outline resolves to architecture (intentional dev-engine mapping)', () => {
-    expect(defaultDeliverableForDocType('story_outline')).toBe('architecture');
+  it('story_outline resolves to story_outline (canonical mapping)', () => {
+    expect(defaultDeliverableForDocType('story_outline')).toBe('story_outline');
   });
 
   it('character_bible resolves to character_bible', () => {

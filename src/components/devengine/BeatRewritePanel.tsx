@@ -557,10 +557,13 @@ function parseBeatSheet(plaintext: string): Act[] {
 
   flushBeat();
   if (currentAct) {
-    const canonical = normalizeActName(`Act ${currentAct.name}`);
-    const existing = acts.find(a => normalizeActName(a.name) === canonical);
-    if (existing && existing !== currentAct) {
-      existing.beats.push(...currentAct.beats);
+    const canonical = currentAct.name; // already normalized
+    const existing = acts.find(a => a.name === canonical);
+    if (existing) {
+      if (existing !== currentAct) {
+        existing.beats.push(...currentAct.beats);
+      }
+      // If existing === currentAct, it's already in acts — skip push
     } else {
       acts.push(currentAct);
     }
