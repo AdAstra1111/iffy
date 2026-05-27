@@ -54,6 +54,9 @@ interface PreflightResult {
   canon_hash: string | null;
   scene_count: number;
   character_count: number;
+  creature_count: number;
+  vehicle_count: number;
+  prop_count: number;
   location_count: number;
   cast_bound_count: number;
   location_bound_count: number;
@@ -143,6 +146,41 @@ async function checkCastBindings(
     detail: allBound
       ? `All ${charTotal} character(s) have cast bindings`
       : `${bound}/${charTotal} character(s) have cast bindings`,
+  };
+}
+
+/**
+ * Check non-character entity bindings (creature, vehicle, prop) by querying
+ * entity_visual_states for each entity type.
+ */
+async function checkNonCharacterBindings(
+  supabase: ReturnType<typeof createClient>,
+  projectId: string,
+  entityType: string,
+  label: string,
+): Promise<{
+  boundCount: number;
+  detail: string;
+}> {
+  const { count, error } = await supabase
+    .from("entity_visual_states")
+    .select("id", { count: "exact", head: true })
+    .eq("project_id", projectId)
+    .eq("entity_type", entityType);
+
+  if (error) {
+    return {
+      boundCount: 0,
+      detail: `Query error (${label}): ${error.message}`,
+    };
+  }
+
+  const bound = count ?? 0;
+  return {
+    boundCount: bound,
+    detail: bound > 0
+      ? `${bound} ${label}(s) have visual state bindings`
+      : `No ${label} visual state bindings found`,
   };
 }
 
@@ -464,6 +502,9 @@ serve(async (req) => {
     const [
       sceneResult,
       castResult,
+      creatureResult,
+      vehicleResult,
+      propResult,
       locationResult,
       styleResult,
       canonResult,
@@ -472,6 +513,9 @@ serve(async (req) => {
     ] = await Promise.all([
       checkSceneIndex(supabase, projectId),
       checkCastBindings(supabase, projectId),
+      checkNonCharacterBindings(supabase, projectId, "creature", "creature"),
+      checkNonCharacterBindings(supabase, projectId, "vehicle", "vehicle"),
+      checkNonCharacterBindings(supabase, projectId, "prop", "prop"),
       checkLocationBindings(supabase, projectId),
       checkVisualStyle(supabase, projectId),
       checkCanonHash(supabase, projectId),
@@ -492,6 +536,21 @@ serve(async (req) => {
           castResult.characterCount > 0 &&
           castResult.boundCount >= castResult.characterCount,
         detail: castResult.detail,
+      },
+      {
+        code: BLOCKER_CODES.MISSING_CAST_BINDINGS,
+        passed: true,
+        detail: creatureResult.detail,
+      },
+      {
+        code: BLOCKER_CODES.MISSING_CAST_BINDINGS,
+        passed: true,
+        detail: vehicleResult.detail,
+      },
+      {
+        code: BLOCKER_CODES.MISSING_CAST_BINDINGS,
+        passed: true,
+        detail: propResult.detail,
       },
       {
         code: BLOCKER_CODES.MISSING_LOCATION_BINDINGS,
@@ -532,6 +591,9 @@ serve(async (req) => {
       canon_hash: canonResult.hash,
       scene_count: sceneResult.count,
       character_count: castResult.characterCount,
+      creature_count: creatureResult.boundCount,
+      vehicle_count: vehicleResult.boundCount,
+      prop_count: propResult.boundCount,
       location_count: locationResult.locationCount,
       cast_bound_count: castResult.boundCount,
       location_bound_count: locationResult.boundCount,

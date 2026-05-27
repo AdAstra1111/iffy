@@ -82,6 +82,11 @@ export interface PipelineInputs {
   hasActorBindings: boolean;
   actorAnchorsComplete: boolean; // actor anchor coverage/coherence (separate from castComplete)
 
+  /** Non-character entity readiness (creature, vehicle, prop visual state bindings) */
+  creaturesReady: boolean;
+  vehiclesReady: boolean;
+  propsReady: boolean;
+
   /** Hero Frames state */
   heroFrameTotal: number;
   heroFrameApproved: number;
@@ -879,6 +884,7 @@ export async function computeSourceSnapshotHash(inputs: PipelineInputs): Promise
   const canonicalParts: string[] = [
     // Booleans (sorted alphabetically by key)
     `castComplete:${inputs.castComplete}`,
+    `creaturesReady:${inputs.creaturesReady}`,
     `hasCanon:${inputs.hasCanon}`,
     `hasLocations:${inputs.hasLocations}`,
     `hasVisualStyle:${inputs.hasVisualStyle}`,
@@ -886,6 +892,8 @@ export async function computeSourceSnapshotHash(inputs: PipelineInputs): Promise
     `lookbookExists:${inputs.lookbookExists}`,
     `lookbookStale:${inputs.lookbookStale}`,
     `pdAllLocked:${inputs.pdAllLocked}`,
+    `propsReady:${inputs.propsReady}`,
+    `vehiclesReady:${inputs.vehiclesReady}`,
     `visualLanguageApproved:${inputs.visualLanguageApproved}`,
     `visualStyleComplete:${inputs.visualStyleComplete}`,
 

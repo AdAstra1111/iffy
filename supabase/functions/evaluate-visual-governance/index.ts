@@ -218,6 +218,29 @@ serve(async (req) => {
     const visualDnaCount = (dnaRows as any[])?.length ?? 0;
     const hasVisualDNA = visualDnaCount > 0;
 
+    // ── Non-character entity readiness (creature, vehicle, prop) ──
+    const [creatureResult, vehicleResult, propResult] = await Promise.all([
+      supabase
+        .from("entity_visual_states")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("entity_type", "creature"),
+      supabase
+        .from("entity_visual_states")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("entity_type", "vehicle"),
+      supabase
+        .from("entity_visual_states")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("entity_type", "prop"),
+    ]);
+
+    const creaturesReady = ((creatureResult as any)?.count ?? 0) > 0;
+    const vehiclesReady = ((vehicleResult as any)?.count ?? 0) > 0;
+    const propsReady = ((propResult as any)?.count ?? 0) > 0;
+
     // Actor bindings (project_ai_cast with ai_actor_id)
     const boundActorCount = castList.filter((c: any) => c.ai_actor_id).length;
     const hasActorBindings = boundActorCount > 0;
@@ -241,8 +264,8 @@ serve(async (req) => {
       }
     }
 
-    // castComplete = character identity readiness (atoms + visual_dna)
-    const castComplete = characterAtomsReady && hasVisualDNA;
+    // castComplete = character identity readiness + non-character entity readiness
+    const castComplete = characterAtomsReady && hasVisualDNA && creaturesReady && vehiclesReady && propsReady;
 
     // Hero Frames state
     const images = (hfImages as any[]) ?? [];
@@ -320,6 +343,9 @@ serve(async (req) => {
       boundActorCount,
       hasActorBindings,
       actorAnchorsComplete,
+      creaturesReady,
+      vehiclesReady,
+      propsReady,
       heroFrameTotal,
       heroFrameApproved,
       heroFramePrimaryApproved,
