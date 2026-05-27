@@ -369,6 +369,7 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
   const { data: graphHealth } = useQuery<SceneGraphHealth | null>({
     queryKey: ['scene-graph-health', projectId],
     enabled: !!projectId && !!data?.run,
+    retry: false,
     queryFn: async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();

@@ -158,8 +158,8 @@ const AnimatedRoutes = () => {
   const location = useLocation();
   return (
     <>
+      <SafeRouteBoundary>
       <Suspense fallback={<PageFallback />}>
-        <SafeRouteBoundary>
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -254,8 +254,8 @@ const AnimatedRoutes = () => {
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
-        </SafeRouteBoundary>
       </Suspense>
+    </SafeRouteBoundary>
     </>
   );
 };
