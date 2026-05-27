@@ -9340,15 +9340,29 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
       }
       // Inject protagonist block into system prompt (replace placeholder)
       const effectiveRewritePrompt = rewriteSystemPrompt.replace("__PROTAGONIST_BLOCK__", protagonistBlock || "\n\nCRITICAL: The protagonist(s) of this project MUST appear in every output. Do not omit, anonymize, or replace them.");
-      // ── Narrative Context Resolver: unified NEC + canon + signals + decisions + voice ──
+      // ── Narrative Context Resolver: canon + signals + decisions + voice ──
+      // NEC is loaded separately via loadNECGuardrailBlock (consolidated path with analyze + notes)
       const rewriteLane = project1?.assigned_lane || "independent-film";
       const narrativeCtx = await resolveNarrativeContext(supabase, projectId, {
         lane: rewriteLane,
         format: effectiveFormat,
         includeSignals: true
       });
-      const narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+      // Build narrative block excluding NEC — NEC comes via direct loadNECGuardrailBlock
+      const nonNecNarrativeBlock = [
+        narrativeCtx.canon.blockText,
+        narrativeCtx.canonConstraintBlock,
+        narrativeCtx.effectiveProfile.blockText,
+        narrativeCtx.structuralLineage.blockText,
+        narrativeCtx.signals.blockText,
+        narrativeCtx.lockedDecisions.blockText,
+        narrativeCtx.voice.blockText,
+        narrativeCtx.worldPopulation.blockText,
+      ].filter(Boolean).join("\n");
+      // Load NEC directly (consolidated path — same as analyze and notes)
+      const rewriteNecBlock = await loadNECGuardrailBlock(supabase, projectId);
       console.log(`[dev-engine-v2] rewrite: narrative-context hash=${narrativeCtx.metadata.resolverHash} signals=${narrativeCtx.metadata.counts.signals} decisions=${narrativeCtx.metadata.counts.decisions} canonChars=${narrativeCtx.metadata.counts.canonChars}`);
+      console.log(`[dev-engine-v2] rewrite: NEC guardrail loaded via direct path (consolidated)`);
       // ── UPSTREAM NOTE DEBT INJECTION (UNIFIED — reads all 3 note systems) ──
       let upstreamNoteBlock = "";
       {
@@ -9466,10 +9480,11 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
         console.warn("[dev-engine-v2] rewrite: character facts block build failed (non-fatal):", cfErr?.message);
       }
       const treatmentFormatGuidance = effectiveDocType === "treatment" ? "\n\nFORMAT GUIDANCE: This is a TREATMENT document. Write vivid prose narrative organized by ## ACT section headers. Do NOT use INT./EXT. sluglines or screenplay format. Each ## ACT section: 4-7 pages (~1,500-2,000 words) of present-tense prose with full scenes, atmosphere, character interiority. Do NOT summarise." : "";
-      const userPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+      const userPrompt = `${rewriteNecBlock}
+PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 \nAPPROVED NOTES:\n${JSON.stringify(approvedNotes || [])}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
-${narrativeBlock}${characterFactsBlock}
+${nonNecNarrativeBlock}${characterFactsBlock}
 TARGET FORMAT: ${targetDocType || "same as source"}${treatmentFormatGuidance}
 ${episodeGridFormatReminder}
 MATERIAL TO REWRITE:\n${fullText}`;

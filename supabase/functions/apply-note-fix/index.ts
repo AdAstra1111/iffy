@@ -335,9 +335,26 @@ Apply the fix above. Return ONLY the complete revised document text.`;
           const missingSections = validateSectionedOutput(newText, docType);
           if (missingSections.length > 0) {
             console.error(`[apply-note-fix][IEL] SECTION_TRUNCATION_DETECTED: docType=${docType} missing=${missingSections.join(",")} outputLen=${newText.length} inputLen=${baseText.length}`);
-            // Attempt auto-repair: inject a warning into the result so the user can see it
-            // but do not silently drop — log prominently
-            console.warn(`[apply-note-fix] WARNING: Output may be truncated. Missing sections: ${missingSections.join(", ")}. Input: ${baseText.length} chars, Output: ${newText.length} chars.`);
+            // Retry once with increased maxTokens (48k) to recover truncated sections
+            console.warn(`[apply-note-fix] Section truncation detected — retrying with increased maxTokens (48000)...`);
+            const retryResult = await callLLM({
+              apiKey, model: MODELS.PRO, system: systemPrompt, user: userPrompt,
+              temperature: 0.2, maxTokens: 48000,
+            });
+            const retryText = retryResult.content.trim();
+            if (retryText) {
+              const retryMissing = validateSectionedOutput(retryText, docType);
+              if (retryMissing.length === 0) {
+                newText = retryText;
+                console.log(`[apply-note-fix] Retry succeeded: all sections present outputLen=${retryText.length}`);
+              } else {
+                console.error(`[apply-note-fix][IEL] SECTION_TRUNCATION_RETRY_FAILED: docType=${docType} still missing=${retryMissing.join(",")} after retry`);
+                return json({ error: `AI output truncated — missing structural sections: ${retryMissing.join(", ")}. Increase document context or split the note into smaller changes.` }, 500);
+              }
+            } else {
+              console.error(`[apply-note-fix] Retry returned empty result — blocking save`);
+              return json({ error: `AI output truncated — sectioned document rewrite failed. Increase document context or split the note into smaller changes.` }, 500);
+            }
           } else {
             console.log(`[apply-note-fix] Section completeness OK: docType=${docType} sections=all-present outputLen=${newText.length}`);
           }
