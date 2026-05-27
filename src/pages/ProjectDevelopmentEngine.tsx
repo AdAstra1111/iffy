@@ -830,6 +830,12 @@ export default function ProjectDevelopmentEngine() {
     }
   }, [selectedDoc?.doc_type]);
 
+  // Clear promotion gate state when doc type changes (prevents stale cross-doc detection)
+  useEffect(() => {
+    lastPromotionGateVersionRef.current = { versionId: null, docType: null };
+    prevAuthVersionRef.current = null;
+  }, [selectedDoc?.doc_type]);
+
   // Resolve authoritative version for promotion gating (strict approved+current, fallback approved)
   // Single deterministic memo — avoids two separate useMemos both keyed on [versions] that
   // each create new references on every 10s poll (contributing to the render loop).
