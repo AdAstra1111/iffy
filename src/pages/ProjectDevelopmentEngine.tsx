@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, startTransition } from 'react';
 import { flushSync } from 'react-dom';
 import { useMutation } from '@tanstack/react-query';
 import { BgGenBanner } from '@/components/devengine/BgGenBanner';
@@ -229,11 +229,18 @@ export default function ProjectDevelopmentEngine() {
   const VALID_TABS = new Set(['notes', 'issues', 'convergence', 'qualifications', 'autorun', 'series-scripts', 'criteria', 'package', 'canon', 'provenance', 'scenes', 'quality', 'docsets', 'timeline', 'visual', 'cascade']);
   const initialTab = (() => { const t = searchParams.get('tab'); return t && VALID_TABS.has(t) ? t : 'notes'; })();
   const [intelligenceTab, setIntelligenceTab] = useState(initialTab);
+  // Tab change timestamp — prevents searchParams sync from rolling back manual selection
+  const lastManualTabChangeRef = useRef(0);
 
   // Sync tab from URL when searchParams change (e.g. navigated with ?tab=autorun)
   useEffect(() => {
     const tabParam = searchParams.get('tab');
     console.log('[DEBUG] useEffect searchParams fired, tabParam:', tabParam, 'current intelligenceTab:', intelligenceTab);
+    // Rollback guard — skip if user manually changed tab within last 500ms
+    if (Date.now() - lastManualTabChangeRef.current < 500) {
+      console.log('[ConvergenceTab] SKIP searchParams sync — manual tab change too recent');
+      return;
+    }
     if (tabParam && VALID_TABS.has(tabParam) && tabParam !== intelligenceTab) {
       console.log('[DEBUG] Syncing tab to:', tabParam);
       setIntelligenceTab(tabParam);
@@ -3003,7 +3010,11 @@ export default function ProjectDevelopmentEngine() {
 
           {/* ═══ INTELLIGENCE PANELS (tabbed, below workspace) ═══ */}
 
-          <Tabs value={intelligenceTab} onValueChange={setIntelligenceTab} className="w-full">
+          <Tabs value={intelligenceTab} onValueChange={(v) => {
+              console.log('[ConvergenceTab] onValueChange:', v, 'current:', intelligenceTab);
+              lastManualTabChangeRef.current = Date.now();
+              startTransition(() => setIntelligenceTab(v));
+            }} className="w-full">
              <TabsList className="w-full justify-start bg-muted/30 border border-border/50 h-9 flex-wrap">
               <TabsTrigger value="notes" className="text-xs">Notes & Feedback</TabsTrigger>
               <TabsTrigger value="issues" className="text-xs flex items-center gap-1">
@@ -3309,7 +3320,7 @@ export default function ProjectDevelopmentEngine() {
               />
             </TabsContent>
 
-            <TabsContent value="convergence" className="mt-3">
+            <TabsContent value="convergence" className="mt-3 min-h-[200px]">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <ConvergencePanel
                   latestAnalysis={latestAnalysis}
