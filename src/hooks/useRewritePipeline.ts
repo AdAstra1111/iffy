@@ -298,7 +298,7 @@ export function useRewritePipeline(projectId: string | undefined) {
     const accessToken = session.access_token;
 
     const refreshToken = async (): Promise<string> => {
-      const { data: { session: freshSession } } = await supabase.auth.refreshSession();
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
       if (!freshSession) throw new Error('Session expired — please log in again');
       return freshSession.access_token;
     };

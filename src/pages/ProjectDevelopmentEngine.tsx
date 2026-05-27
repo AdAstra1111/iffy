@@ -1313,7 +1313,6 @@ export default function ProjectDevelopmentEngine() {
         return;
       } else {
         // Refresh session before invocation — long-running edge functions can expire the token mid-call
-        await supabase.auth.refreshSession();
         const { data: { session: freshSession } } = await supabase.auth.getSession();
         if (!freshSession) throw new Error('Session expired — please log in again');
         const { error: genErr } = await supabase.functions.invoke('generate-document', {
@@ -2056,7 +2055,6 @@ export default function ProjectDevelopmentEngine() {
     if (!projectId || !selectedVersionId) throw new Error('No version selected');
     setApprovePending(true);
     try {
-      await supabase.auth.refreshSession({ force: true });
       await approveAndActivate({
         projectId,
         documentVersionId: selectedVersionId,

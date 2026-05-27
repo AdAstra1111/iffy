@@ -65,9 +65,7 @@ export function useProjects() {
     let result = await runProjectsSelect();
 
     if (result.data.length === 0 && result.count === 0 && allowRecovery && activeSession.refresh_token) {
-      const { data: refreshed, error: refreshError } = await supabase.auth.refreshSession({
-        refresh_token: activeSession.refresh_token,
-      });
+      const { data: refreshed, error: refreshError } = await supabase.auth.getSession();
 
       if (refreshError) {
         console.warn('[Projects] Session refresh failed during empty-list recovery', refreshError);

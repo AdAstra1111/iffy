@@ -260,7 +260,6 @@ export function useScriptDropProject() {
     try {
       // Refresh session first — prevents Supabase SDK's autoRefreshToken from
       // aborting in-flight requests mid-pipeline ("signal is aborted without reason")
-      await supabase.auth.refreshSession();
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? '';
 

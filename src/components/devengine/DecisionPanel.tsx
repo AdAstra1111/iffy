@@ -61,7 +61,6 @@ interface DecisionPanelProps {
 async function callAutoRun(action: string, extra: Record<string, any> = {}) {
   let sessionToken = '';
   try {
-    await supabase.auth.refreshSession({ force: true });
     const { data: { session } } = await supabase.auth.getSession();
     sessionToken = session?.access_token || '';
   } catch {

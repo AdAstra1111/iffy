@@ -677,7 +677,6 @@ function RewriteModal({
     setLoading(true);
     setError('');
     try {
-      await supabase.auth.refreshSession().catch(() => {});
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
@@ -865,7 +864,6 @@ export default function BeatRewritePanel({
     for (const beat of allBeats) {
       setBeatStatuses(prev => ({ ...prev, [beat.id]: 'running' }));
       try {
-        await supabase.auth.refreshSession().catch(() => {});
         const { data: { session } } = await supabase.auth.getSession();
         const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
           method: 'POST',
