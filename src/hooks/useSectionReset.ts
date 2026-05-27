@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { CanonicalSectionKey } from '@/hooks/useLookbookSections';
 import { buildCanonicalSectionFilter } from '@/lib/lookbook/pipeline/lookbookSlotRegistry';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 
 export interface SectionResetResult {
   archivedCount: number;
@@ -157,6 +158,20 @@ export function useSectionReset(projectId: string) {
       }
 
       // Step 2: Generate fresh images
+      // GOVERNANCE GATE: lookbook
+      // CLASSIFICATION: ROUTE_THROUGH_REPAIR — section reset should route through repair intents
+      const guard = await checkGenerationGuard(projectId, 'lookbook');
+      if (guard.blocked) {
+        toast.error(guard.message);
+        setRegeneratingSection(null);
+        return;
+      }
+      if (guard.source === 'missing_snapshot' || guard.source === 'error') {
+        toast.info('Cannot regenerate: ' + guard.message);
+        setRegeneratingSection(null);
+        return;
+      }
+
       const filter = buildCanonicalSectionFilter(sectionKey);
       const sectionParam = sectionKey === 'character_identity' ? 'character'
         : sectionKey === 'world_locations' ? 'world'

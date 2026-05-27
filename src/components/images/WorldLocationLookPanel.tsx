@@ -25,6 +25,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ProjectImage } from '@/lib/images/types';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 
 interface WorldLocationLookPanelProps {
   projectId: string;
@@ -443,6 +444,18 @@ function HydratedLocationRow({
 
   const generateLocationRef = useCallback(async () => {
     if (generating || !canGenerate) return;
+    // GOVERNANCE GATE: lookbook — location reference generation
+    // CLASSIFICATION: ROUTE_THROUGH_REPAIR — location refs should route through repair intents
+    const locGuard = await checkGenerationGuard(projectId, 'lookbook');
+    if (locGuard.blocked) {
+      toast.error(locGuard.message);
+      return;
+    }
+    if (locGuard.source === 'missing_snapshot' || locGuard.source === 'error') {
+      toast.error('Cannot generate location refs: ' + locGuard.message);
+      return;
+    }
+
     onGenerationStateChange('generating');
     try {
       const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {

@@ -12,7 +12,9 @@
  */
 import { useState, useCallback, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useVisualGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 import {
   resolveVisualCanonSlots,
   getMissingSlotsByDependencyOrder,
@@ -55,6 +57,7 @@ export interface CompletionProgress {
 export function useVisualCanonCompletion(projectId: string | undefined) {
   const qc = useQueryClient();
   const [progress, setProgress] = useState<CompletionProgress | null>(null);
+  const guard = useVisualGenerationGuard(projectId, 'lookbook');
 
   // ── Load all inputs for the canonical resolver ──
   const { data: resolverInputs, isLoading } = useQuery({
@@ -171,6 +174,21 @@ export function useVisualCanonCompletion(projectId: string | undefined) {
     };
     setProgress({ ...progressState });
 
+    // GOVERNANCE GATE: lookbook — covers character_identity, character_wardrobe, production_design_location
+    // CLASSIFICATION: ROUTE_THROUGH_REPAIR
+    if (guard.blocked) {
+      toast.error(guard.message);
+      return;
+    }
+    if (guard.source === 'missing_snapshot') {
+      toast.info('Governance not yet evaluated. Refresh governance and try again.');
+      return;
+    }
+    if (guard.source === 'error') {
+      toast.error('Unable to verify governance, please refresh.');
+      return;
+    }
+
     for (let i = 0; i < eligibleSlots.length; i++) {
       const slot = eligibleSlots[i];
       progressState.currentIndex = i;
@@ -243,7 +261,7 @@ export function useVisualCanonCompletion(projectId: string | undefined) {
     qc.invalidateQueries({ queryKey: ['visual-canon-slots', projectId] });
     qc.invalidateQueries({ queryKey: ['canon-visual-alignment', projectId] });
     qc.invalidateQueries({ queryKey: ['visual-sets-summary', projectId] });
-  }, [coverage, projectId, qc]);
+  }, [coverage, projectId, qc, guard, toast]);
 
   return {
     coverage,

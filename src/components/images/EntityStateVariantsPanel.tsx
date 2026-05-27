@@ -13,6 +13,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { useProjectImages } from '@/hooks/useProjectImages';
 import { useImageCuration } from '@/hooks/useImageCuration';
 import { useEntityVisualStates, CHARACTER_STATE_CATEGORIES, LOCATION_STATE_CATEGORIES } from '@/hooks/useEntityVisualStates';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -334,9 +335,21 @@ function StateGenerationBar({
       // May already exist, continue with generation
     }
 
-    try {
-      const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
-        body: {
+// GOVERNANCE GATE: lookbook — state variant generation
+      // CLASSIFICATION: ROUTE_THROUGH_REPAIR — state variants should route through repair intents
+      const stateGuard = await checkGenerationGuard(projectId, 'lookbook');
+      if (stateGuard.blocked) {
+        toast.error(stateGuard.message);
+        return;
+      }
+      if (stateGuard.source === 'missing_snapshot' || stateGuard.source === 'error') {
+        toast.error('Cannot generate state variant: ' + stateGuard.message);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
+          body: {
           project_id: projectId,
           section: isCharacter ? 'character' : 'world',
           count: shotTypes.length,

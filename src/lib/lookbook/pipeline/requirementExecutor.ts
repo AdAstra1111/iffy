@@ -19,6 +19,7 @@
  * - Deck-level overuse penalty for repeated room/setup across editorial slides
  */
 import { supabase } from '@/integrations/supabase/client';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import type { ProjectImage } from '@/lib/images/types';
 import { resolvePromptTemplate, buildPromptFromTemplate, type PromptContext } from '@/lib/images/slotPromptRegistry';
 import { classifyOrientation } from '@/lib/images/orientationUtils';
@@ -409,6 +410,24 @@ export async function executeRequirements(
         let batchData: any = null;
         let batchError: any = null;
         let retryAttempt = 0;
+
+        // GOVERNANCE GATE: lookbook
+        // CLASSIFICATION: ROUTE_THROUGH_REPAIR
+        {
+          const guard = await checkGenerationGuard(projectId, 'lookbook');
+          if (guard.blocked) {
+            log(`[${section}] Governance blocked: ${guard.message}`);
+            throw new Error(guard.message);
+          }
+          if (guard.source === 'missing_snapshot') {
+            log(`[${section}] Governance not yet evaluated — refreshing governance is required`);
+            throw new Error('Governance snapshot not yet evaluated. Refresh governance to check if generation is permitted.');
+          }
+          if (guard.source === 'error') {
+            log(`[${section}] Governance check failed: ${guard.message}`);
+            throw new Error('Unable to verify governance, please refresh.');
+          }
+        }
 
         while (retryAttempt <= MAX_RETRIES_PER_CALL) {
           try {

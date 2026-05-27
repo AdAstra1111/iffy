@@ -11,6 +11,7 @@ import {
   type TruthSnapshot,
   type VisualAssetType,
 } from '@/lib/visual-truth-dependencies';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 
 /**
  * Check freshness of a single visual asset against current upstream truth.
@@ -143,6 +144,16 @@ export function useRefreshPosterFromTruth(projectId: string | undefined) {
   return useMutation({
     mutationFn: async (posterId: string) => {
       if (!projectId) throw new Error('No project ID');
+      // GOVERNANCE GATE: poster
+      // CLASSIFICATION: DISABLE_UNTIL_READY — refresh from truth depends on governance readiness
+      const posterGuard = await checkGenerationGuard(projectId, 'poster');
+      if (posterGuard.blocked) {
+        throw new Error(posterGuard.message);
+      }
+      if (posterGuard.source === 'missing_snapshot' || posterGuard.source === 'error') {
+        throw new Error('Cannot refresh poster: ' + posterGuard.message);
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-poster', {
         body: {
           project_id: projectId,

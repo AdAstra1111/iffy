@@ -43,6 +43,7 @@ import { ResetVisualCanonModal } from '@/components/images/ResetVisualCanonModal
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { ProjectImage, AssetGroup } from '@/lib/images/types';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 interface VisualCanonResetPanelProps {
   projectId: string;
   /** Optional callback to trigger lookbook rebuild after full canon rebuild */
@@ -416,6 +417,18 @@ export function VisualCanonResetPanel({ projectId, onLookbookRebuild }: VisualCa
           if (slot.assetGroup === 'character') genBody.identity_canon_facts = desc;
           if (slot.assetGroup === 'world') genBody.location_description = desc;
         }
+      }
+
+      // GOVERNANCE GATE: lookbook — auto-populate visual set
+      // CLASSIFICATION: DISABLE_UNTIL_READY — auto-populate depends on governance being ready
+      const populateGuard = await checkGenerationGuard(projectId, 'lookbook');
+      if (populateGuard.blocked) {
+        toast.error(populateGuard.message);
+        return { generated: 0, total: 0, failed: 0, blocked: 0 };
+      }
+      if (populateGuard.source === 'missing_snapshot' || populateGuard.source === 'error') {
+        toast.error('Cannot auto-populate: ' + populateGuard.message);
+        return { generated: 0, total: 0, failed: 0, blocked: 0 };
       }
 
       try {

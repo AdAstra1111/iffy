@@ -6,6 +6,7 @@
 import { useCallback, useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useVisualGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import { toast } from 'sonner';
 import type { ProjectImage, ProjectImageRole, AssetGroup, CurationState } from '@/lib/images/types';
 
@@ -126,6 +127,7 @@ export function useLookbookSectionImages(
   options: { curationFilter?: CurationState | 'all'; pageSize?: number } = {},
 ) {
   const qc = useQueryClient();
+  const guard = useVisualGenerationGuard(projectId, 'lookbook');
   const [generating, setGenerating] = useState(false);
   const [pageCount, setPageCount] = useState(1);
   const pageSize = options.pageSize || 12;
@@ -164,6 +166,21 @@ export function useLookbookSectionImages(
     if (!projectId || generating) return;
     setGenerating(true);
     try {
+      // GOVERNANCE GATE: lookbook
+      // CLASSIFICATION: DISABLE_UNTIL_READY
+      if (guard.blocked) {
+        toast.error(guard.message);
+        return;
+      }
+      if (guard.source === 'missing_snapshot') {
+        toast.info('Governance not yet evaluated. Refresh governance and try again.');
+        return;
+      }
+      if (guard.source === 'error') {
+        toast.error('Unable to verify governance, please refresh.');
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
         body: {
           project_id: projectId,
@@ -191,7 +208,7 @@ export function useLookbookSectionImages(
     } finally {
       setGenerating(false);
     }
-  }, [projectId, section, entityId, generating, qc]);
+  }, [projectId, section, entityId, generating, qc, guard, toast]);
 
   return {
     sectionImages,

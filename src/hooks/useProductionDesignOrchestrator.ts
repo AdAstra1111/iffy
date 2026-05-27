@@ -21,6 +21,7 @@
  */
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useVisualGenerationGuard, checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import { useVisualSets, type VisualSet, type VisualSetSlot } from './useVisualSets';
 import { useCanonLocations } from './useCanonLocations';
 import { useProjectCanon } from './useProjectCanon';
@@ -633,6 +634,7 @@ function familyKey(f: PDFamily): string {
 // ── Hook ──
 
 export function useProductionDesignOrchestrator(projectId: string | undefined) {
+  const guard = useVisualGenerationGuard(projectId, 'lookbook');
   const [buildStatus, setBuildStatus] = useState<PDBuildStatus>('idle');
   const [buildProgress, setBuildProgress] = useState<BuildProgress>({
     total: 0, done: 0, failed: 0, slotCompletedTick: 0, familyProgress: new Map(),
@@ -738,6 +740,21 @@ export function useProductionDesignOrchestrator(projectId: string | undefined) {
     task: { setId: string; slot: VisualSetSlot; family: PDFamily; userNote?: string },
   ): Promise<'success' | 'failed'> => {
     try {
+      // GOVERNANCE GATE: lookbook
+      // CLASSIFICATION: ROUTE_THROUGH_REPAIR
+      if (guard.blocked) {
+        toast.error(guard.message);
+        return 'failed';
+      }
+      if (guard.source === 'missing_snapshot') {
+        toast.info('Governance not yet evaluated. Refresh governance and try again.');
+        return 'failed';
+      }
+      if (guard.source === 'error') {
+        toast.error('Unable to verify governance, please refresh.');
+        return 'failed';
+      }
+
       const authority = resolveAuthorityForPDDomain(task.family.domain, task.family.targetName);
       const filteredPdDirective = filterTextForSlot(pdDirective, authority);
       const slotNegatives = getSlotNegatives(authority);
@@ -1253,6 +1270,16 @@ export function useProductionDesignOrchestrator(projectId: string | undefined) {
       texture_variant: 'texture_ref', motif_primary: 'detail',
       motif_variant: 'detail', motif_damage: 'detail', motif_repair: 'detail',
     };
+
+    // GOVERNANCE GATE: lookbook — PD slot regeneration
+    // CLASSIFICATION: ROUTE_THROUGH_REPAIR — production design should route through repair intents
+    const pdGuard = await checkGenerationGuard(projectId, 'lookbook');
+    if (pdGuard.blocked) {
+      throw new Error(pdGuard.message);
+    }
+    if (pdGuard.source === 'missing_snapshot' || pdGuard.source === 'error') {
+      throw new Error('Cannot regenerate PD slot: ' + pdGuard.message);
+    }
 
     const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
       body: {

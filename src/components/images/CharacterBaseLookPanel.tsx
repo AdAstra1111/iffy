@@ -32,6 +32,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ProjectImage, CurationState } from '@/lib/images/types';
 import { isCharacterIdentityImage, IDENTITY_SHOT_TYPES } from '@/lib/images/types';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 
 interface CharacterBaseLookPanelProps {
   projectId: string;
@@ -763,6 +764,20 @@ function CharacterIdentitySection({
         };
       }
 
+      // GOVERNANCE GATE: lookbook — character identity generation
+      // CLASSIFICATION: ROUTE_THROUGH_REPAIR — should route through repair-visual-intents
+      const identityGuard = await checkGenerationGuard(projectId, 'lookbook');
+      if (identityGuard.blocked) {
+        toast.error(identityGuard.message);
+        setGenerating(false);
+        return;
+      }
+      if (identityGuard.source === 'missing_snapshot' || identityGuard.source === 'error') {
+        toast.error('Cannot generate identity: ' + identityGuard.message);
+        setGenerating(false);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
         body: {
           project_id: projectId,
@@ -827,6 +842,20 @@ function CharacterIdentitySection({
 
       // Step 2: Generate fresh pack if requested (no stale anchors — fresh_identity_mode)
       if (andGenerate) {
+        // GOVERNANCE GATE: lookbook — fresh identity generation
+        // CLASSIFICATION: ROUTE_THROUGH_REPAIR — should route through repair-visual-intents
+        const freshGuard = await checkGenerationGuard(projectId, 'lookbook');
+        if (freshGuard.blocked) {
+          toast.error(freshGuard.message);
+          setGenerating(false);
+          return;
+        }
+        if (freshGuard.source === 'missing_snapshot' || freshGuard.source === 'error') {
+          toast.error('Cannot generate fresh identity: ' + freshGuard.message);
+          setGenerating(false);
+          return;
+        }
+
         const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {
           body: {
             project_id: projectId,
@@ -1238,6 +1267,18 @@ function CharacterReferenceSection({
 
   const generateRef = useCallback(async () => {
     if (generating) return;
+    // GOVERNANCE GATE: lookbook — reference image generation
+    // CLASSIFICATION: PREVIEW_ONLY — character reference generation, governed as preview
+    const refGuard = await checkGenerationGuard(projectId, 'lookbook');
+    if (refGuard.blocked) {
+      toast.error(refGuard.message);
+      return;
+    }
+    if (refGuard.source === 'missing_snapshot' || refGuard.source === 'error') {
+      toast.error('Cannot generate references: ' + refGuard.message);
+      return;
+    }
+
     setGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-lookbook-image', {

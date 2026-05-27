@@ -12,6 +12,7 @@
  * Uses project_images as the single source of truth.
  */
 import { supabase } from '@/integrations/supabase/client';
+import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import type { ProjectImage } from './types';
 import type { ImageGap, GapAnalysisResult } from './lookbookGapAnalyzer';
 import { resolvePromptTemplate, buildPromptFromTemplate, type PromptContext } from './slotPromptRegistry';
@@ -312,6 +313,27 @@ export async function executeGapGenerations(
       const assetGroup = SUBJECT_TO_ASSET_GROUP[sectionResolutions[0].gap.subjectType] || 'visual_language';
 
       toast.info(`Generating ${count} ${section} image${count > 1 ? 's' : ''}…`);
+
+      // GOVERNANCE GATE: lookbook
+      // CLASSIFICATION: ROUTE_THROUGH_REPAIR
+      {
+        const guard = await checkGenerationGuard(projectId, 'lookbook');
+        if (guard.blocked) {
+          toast.error(guard.message);
+          failed += count;
+          continue;
+        }
+        if (guard.source === 'missing_snapshot') {
+          toast.info('Governance not yet evaluated. Refresh governance and try again.');
+          failed += count;
+          continue;
+        }
+        if (guard.source === 'error') {
+          toast.error('Unable to verify governance, please refresh.');
+          failed += count;
+          continue;
+        }
+      }
 
       const { data, error } = await (supabase as any).functions.invoke('generate-lookbook-image', {
         body: {
