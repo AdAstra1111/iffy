@@ -958,6 +958,29 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         bannedPhraseHits: bannedHit ? ["banned_language_in_assembly"] : [],
         repairAction: missingBeatIndices.length > 0 ? "regen_missing" : bannedHit ? "regen_all" : "none",
       };
+    } else if (docType === "story_outline") {
+      // JSON merge path — validate JSON parseability instead of section headings
+      try {
+        const parsed = JSON.parse(assembledContent);
+        const pass = parsed && Array.isArray(parsed.entries) && parsed.entries.length > 0;
+        validationResult = {
+          pass,
+          failures: pass ? [] : [{ type: "invalid_json", detail: "story_outline assembly failed to produce valid JSON entries array" }],
+          missingIndices: [],
+          missingSections: [],
+          bannedPhraseHits: [],
+          repairAction: pass ? "none" : "regen_all",
+        };
+      } catch {
+        validationResult = {
+          pass: false,
+          failures: [{ type: "invalid_json", detail: "story_outline assembly produced unparseable JSON" }],
+          missingIndices: [],
+          missingSections: [],
+          bannedPhraseHits: [],
+          repairAction: "regen_all",
+        };
+      }
     } else {
       validationResult = validateSectionedContent(
         assembledContent,
