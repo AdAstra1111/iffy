@@ -79,7 +79,7 @@ export function useProjectCanon(projectId: string | undefined) {
         .from('project_canon')
         .select('canon_json')
         .eq('project_id', projectId)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return (data?.canon_json || {}) as CanonJson;
     },
