@@ -1,7 +1,6 @@
 // ── Entity Extraction System Prompt ──────────────────────────────────────
 // Used by Graph Mutation Pipeline Phase 1 to extract character entities
 // from narrative text. Returns structured JSON for review and approval.
-
 export const ENTITY_EXTRACTION_SYSTEM = `You are an entity extraction specialist. Your task is to identify and extract character entities from the provided narrative text.
 
 ANALYSIS INSTRUCTIONS

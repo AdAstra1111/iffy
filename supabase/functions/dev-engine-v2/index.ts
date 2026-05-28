@@ -825,14 +825,16 @@ function extractJSON(raw) {
  * 3. Normalize wrapper keys (act, scene, entry → "entries")
  * 4. Merge all entries into unified {title, format, entries}
  * 5. Return null on truly unparseable content (fail closed)
- */
-function convertStoryOutlineToJson(text) {
+ */ function convertStoryOutlineToJson(text) {
   const trimmed = (text || "").trim();
   if (!trimmed) return null;
   // Case 1: Already raw JSON
   if (trimmed.startsWith("{")) {
-    try { return JSON.parse(trimmed); }
-    catch { return null; }
+    try {
+      return JSON.parse(trimmed);
+    } catch  {
+      return null;
+    }
   }
   // Case 2: ##-prefixed hybrid format from chunkRunner
   // Split on ## headers and look for JSON code blocks after each header
@@ -842,7 +844,7 @@ function convertStoryOutlineToJson(text) {
   let title = "";
   let format = "story_outline";
   // Track seen wrapper key types to normalize across sections
-  for (const section of sections) {
+  for (const section of sections){
     // Skip the first section if it's just whitespace or raw text before the first ##
     const sectionText = section.trim();
     if (!sectionText || /^[A-Za-z\s]+$/.test(sectionText) || !/\{/.test(sectionText)) continue;
@@ -872,7 +874,7 @@ function convertStoryOutlineToJson(text) {
       // Normalize wrapper keys: look for entries, scenes, moments, items
       const entries = parsed.entries || parsed.scenes || parsed.moments || parsed.items || parsed.beats || [];
       if (Array.isArray(entries) && entries.length > 0) {
-        for (const entry of entries) {
+        for (const entry of entries){
           if (entry && typeof entry.title === "string" && typeof entry.number === "number") {
             allEntries.push(entry);
           } else if (entry && typeof entry === "object") {
@@ -900,12 +902,16 @@ function convertStoryOutlineToJson(text) {
           });
         }
       }
-    } catch {
+    } catch  {
       continue; // Skip sections that don't parse
     }
   }
   if (allEntries.length === 0) return null;
-  return { title, format, entries: allEntries };
+  return {
+    title,
+    format,
+    entries: allEntries
+  };
 }
 /**
  * Process a story outline rewrite:
@@ -3437,9 +3443,7 @@ function computeAdaptiveBatchSize(plan, engagementSceneCount) {
   // but cap total at min(10, impacted_scene_count + engagementSceneCount)
   const hasEngagement = (engagementSceneCount ?? 0) > 0;
   const hardMax = hasEngagement ? 10 : 8;
-  const effectiveCount = hasEngagement
-    ? Math.min(hardMax, impacted_scene_count + engagementSceneCount)
-    : impacted_scene_count;
+  const effectiveCount = hasEngagement ? Math.min(hardMax, impacted_scene_count + engagementSceneCount) : impacted_scene_count;
   return Math.max(1, Math.min(hardMax, Math.min(base, effectiveCount)));
 }
 // ── Entity Propagation — Allowed Relation Types (depth=1 only) ──────────────
@@ -5450,7 +5454,6 @@ async function computeSelectiveRegenerationPlanHelper(supabase, projectId, unitK
     }
   };
 }
-
 // ── parseBeatsFromText (named export) ──────────────────────────────────────
 // ╔═══════════════════════════════════════════════════════════════════╗
 // ║  SYNC WARNING — DUPLICATED LOGIC                                ║
@@ -5464,77 +5467,76 @@ export function parseBeatsFromText(text) {
   const headerPattern = /^##\s+Beat\s+\d+/gm;
   const headerStarts = [];
   let hm;
-  while ((hm = headerPattern.exec(text)) !== null) headerStarts.push(hm.index);
+  while((hm = headerPattern.exec(text)) !== null)headerStarts.push(hm.index);
   if (headerStarts.length > 0) {
-    return headerStarts.map((start, i) => ({
-      beat: text.slice(start, i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length),
-      start,
-      end: i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length,
-    }));
+    return headerStarts.map((start, i)=>({
+        beat: text.slice(start, i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length),
+        start,
+        end: i + 1 < headerStarts.length ? headerStarts[i + 1] : text.length
+      }));
   }
   // Try ### Beat header (h3) format
   const headerPatternH3 = /^###\s+Beat\s+\d+/gm;
   const headerStartsH3 = [];
   let hm3;
-  while ((hm3 = headerPatternH3.exec(text)) !== null) headerStartsH3.push(hm3.index);
+  while((hm3 = headerPatternH3.exec(text)) !== null)headerStartsH3.push(hm3.index);
   if (headerStartsH3.length > 0) {
-    return headerStartsH3.map((start, i) => ({
-      beat: text.slice(start, i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length),
-      start,
-      end: i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length,
-    }));
+    return headerStartsH3.map((start, i)=>({
+        beat: text.slice(start, i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length),
+        start,
+        end: i + 1 < headerStartsH3.length ? headerStartsH3[i + 1] : text.length
+      }));
   }
   // Fallback: ### N. Title format (h1/h2/h3 followed by number and period)
   const h3NumberedPattern = /^#{1,3}\s+\d+\.?\s+/gm;
   const h3NumberedStarts = [];
   let hn3;
-  while ((hn3 = h3NumberedPattern.exec(text)) !== null) h3NumberedStarts.push(hn3.index);
+  while((hn3 = h3NumberedPattern.exec(text)) !== null)h3NumberedStarts.push(hn3.index);
   if (h3NumberedStarts.length > 0) {
-    return h3NumberedStarts.map((start, i) => ({
-      beat: text.slice(start, i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length),
-      start,
-      end: i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length,
-    }));
+    return h3NumberedStarts.map((start, i)=>({
+        beat: text.slice(start, i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length),
+        start,
+        end: i + 1 < h3NumberedStarts.length ? h3NumberedStarts[i + 1] : text.length
+      }));
   }
   // Fallback: numbered markdown format "N. **Beat Name**"
   const numberedPattern = /^\d+\.\s+\*\*/gm;
   const numberedStarts = [];
   let nm;
-  while ((nm = numberedPattern.exec(text)) !== null) numberedStarts.push(nm.index);
+  while((nm = numberedPattern.exec(text)) !== null)numberedStarts.push(nm.index);
   if (numberedStarts.length > 0) {
-    return numberedStarts.map((start, i) => ({
-      beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
-      start,
-      end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length,
-    }));
+    return numberedStarts.map((start, i)=>({
+        beat: text.slice(start, i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length),
+        start,
+        end: i + 1 < numberedStarts.length ? numberedStarts[i + 1] : text.length
+      }));
   }
   // Fallback: plain numbered "N. Name" (no bold markers)
   const plainNumberedPattern = /^\d+\.\s+(?!\*\*)/gm;
   const plainNumberedStarts = [];
   let pnm;
-  while ((pnm = plainNumberedPattern.exec(text)) !== null) plainNumberedStarts.push(pnm.index);
+  while((pnm = plainNumberedPattern.exec(text)) !== null)plainNumberedStarts.push(pnm.index);
   if (plainNumberedStarts.length > 0) {
-    return plainNumberedStarts.map((start, i) => ({
-      beat: text.slice(start, i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length),
-      start,
-      end: i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length,
-    }));
+    return plainNumberedStarts.map((start, i)=>({
+        beat: text.slice(start, i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length),
+        start,
+        end: i + 1 < plainNumberedStarts.length ? plainNumberedStarts[i + 1] : text.length
+      }));
   }
   // Fallback: plain text "BEAT N: Name" format
   const beatTextPattern = /^BEAT\s+(\d+)\s*[:—–-]?\s*(.+)/gim;
   const beatTextStarts = [];
   let btm;
-  while ((btm = beatTextPattern.exec(text)) !== null) beatTextStarts.push(btm.index);
+  while((btm = beatTextPattern.exec(text)) !== null)beatTextStarts.push(btm.index);
   if (beatTextStarts.length > 0) {
-    return beatTextStarts.map((start, i) => ({
-      beat: text.slice(start, i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length),
-      start,
-      end: i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length,
-    }));
+    return beatTextStarts.map((start, i)=>({
+        beat: text.slice(start, i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length),
+        start,
+        end: i + 1 < beatTextStarts.length ? beatTextStarts[i + 1] : text.length
+      }));
   }
   return [];
 }
-
 serve(async (req)=>{
   if (req.method === "OPTIONS") return new Response(null, {
     headers: corsHeaders
@@ -6923,12 +6925,23 @@ ${docTextForScoring}`;
         forceProModel: body.forceProModel
       });
       // ── DUPLICATE REQUEST GUARD: check if an ANALYZE run was already created for this version within 60s ──
-      const { count: existingAnalyzeCount } = await supabase.from("development_runs").select("*", { count: "exact", head: true }).eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").gte("created_at", new Date(Date.now() - 60000).toISOString());
+      const { count: existingAnalyzeCount } = await supabase.from("development_runs").select("*", {
+        count: "exact",
+        head: true
+      }).eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").gte("created_at", new Date(Date.now() - 60000).toISOString());
       if (existingAnalyzeCount && existingAnalyzeCount > 0) {
         console.warn(`[dev-engine-v2] analyze: duplicate request suppressed (version_id=${effectiveVersionId.slice(0, 8)}, existing_runs=${existingAnalyzeCount} within 60s)`);
-        const { data: latestRun } = await supabase.from("development_runs").select("*").eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").order("created_at", { ascending: false }).limit(1).single();
-        return new Response(JSON.stringify(latestRun || { success: false, error: "Duplicate request suppressed — analysis already in progress for this version." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        const { data: latestRun } = await supabase.from("development_runs").select("*").eq("version_id", effectiveVersionId).eq("run_type", "ANALYZE").order("created_at", {
+          ascending: false
+        }).limit(1).single();
+        return new Response(JSON.stringify(latestRun || {
+          success: false,
+          error: "Duplicate request suppressed — analysis already in progress for this version."
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
       const raw = await callAI(OPENROUTER_API_KEY, analyzeModel, systemPrompt, userPrompt, 0.0, 6000, 42);
@@ -7002,27 +7015,20 @@ ${docTextForScoring}`;
       // If no engagement data exists, skip gracefully (edge case #1).
       if (versionId) {
         try {
-          const { data: engagementRows } = await supabase
-            .from("scene_engagement_scores")
-            .select("total_score, emotional_journey_score, character_connection_score, narrative_absorption_score, visceral_impact_score, cognitive_load_score, confidence, prediction_source, scene_key")
-            .eq("document_version_id", versionId);
-          
+          const { data: engagementRows } = await supabase.from("scene_engagement_scores").select("total_score, emotional_journey_score, character_connection_score, narrative_absorption_score, visceral_impact_score, cognitive_load_score, confidence, prediction_source, scene_key").eq("document_version_id", versionId);
           if (engagementRows && engagementRows.length > 0) {
             const sceneCount = engagementRows.length;
-            const avgTotal = Math.round(engagementRows.reduce((s, r) => s + r.total_score, 0) / sceneCount);
-            const avgEmotional = Math.round(engagementRows.reduce((s, r) => s + (r.emotional_journey_score || 0), 0) / sceneCount);
-            const avgConnection = Math.round(engagementRows.reduce((s, r) => s + (r.character_connection_score || 0), 0) / sceneCount);
-            const avgAbsorption = Math.round(engagementRows.reduce((s, r) => s + (r.narrative_absorption_score || 0), 0) / sceneCount);
-            const avgVisceral = Math.round(engagementRows.reduce((s, r) => s + (r.visceral_impact_score || 0), 0) / sceneCount);
-            const avgCognitive = Math.round(engagementRows.reduce((s, r) => s + (r.cognitive_load_score || 0), 0) / sceneCount);
-            const avgConfidence = parseFloat((engagementRows.reduce((s, r) => s + (r.confidence || 0), 0) / sceneCount).toFixed(2));
-            const sources = new Set(engagementRows.map(r => r.prediction_source));
-            const predictionSource = sources.has('tribe_realtime') ? 'tribe_realtime'
-              : sources.has('tribe_simulated') ? 'tribe_simulated' : 'surrogate';
-            
+            const avgTotal = Math.round(engagementRows.reduce((s, r)=>s + r.total_score, 0) / sceneCount);
+            const avgEmotional = Math.round(engagementRows.reduce((s, r)=>s + (r.emotional_journey_score || 0), 0) / sceneCount);
+            const avgConnection = Math.round(engagementRows.reduce((s, r)=>s + (r.character_connection_score || 0), 0) / sceneCount);
+            const avgAbsorption = Math.round(engagementRows.reduce((s, r)=>s + (r.narrative_absorption_score || 0), 0) / sceneCount);
+            const avgVisceral = Math.round(engagementRows.reduce((s, r)=>s + (r.visceral_impact_score || 0), 0) / sceneCount);
+            const avgCognitive = Math.round(engagementRows.reduce((s, r)=>s + (r.cognitive_load_score || 0), 0) / sceneCount);
+            const avgConfidence = parseFloat((engagementRows.reduce((s, r)=>s + (r.confidence || 0), 0) / sceneCount).toFixed(2));
+            const sources = new Set(engagementRows.map((r)=>r.prediction_source));
+            const predictionSource = sources.has('tribe_realtime') ? 'tribe_realtime' : sources.has('tribe_simulated') ? 'tribe_simulated' : 'surrogate';
             const engagementThreshold = ENGAGEMENT_DEFAULTS.threshold;
             const thresholdPassed = avgTotal >= engagementThreshold;
-            
             parsed.engagement = {
               total_score: avgTotal,
               scene_count: sceneCount,
@@ -7034,10 +7040,9 @@ ${docTextForScoring}`;
               avg_confidence: avgConfidence,
               prediction_source: predictionSource,
               threshold_passed: thresholdPassed,
-              threshold: engagementThreshold,
+              threshold: engagementThreshold
             };
             parsed.engagement_threshold_passed = thresholdPassed;
-            
             console.log(`[dev-engine-v2] engagement_gate: total=${avgTotal}/${engagementThreshold} scenes=${sceneCount} source=${predictionSource} passed=${thresholdPassed}`);
           } else {
             // No engagement data — skip gracefully (legacy docs, no neural validation run yet)
@@ -7121,15 +7126,17 @@ ${docTextForScoring}`;
         };
       }
       // ── Fingerprint helpers for resolved-note matching ──
-      function normalizeText(s: string): string {
+      function normalizeText(s) {
         return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
       }
-      function djb2(str: string): string {
+      function djb2(str) {
         let hash = 5381;
-        for (let i = 0; i < str.length; i++) { hash = ((hash << 5) + hash + str.charCodeAt(i)) >>> 0; }
+        for(let i = 0; i < str.length; i++){
+          hash = (hash << 5) + hash + str.charCodeAt(i) >>> 0;
+        }
         return hash.toString(36);
       }
-      function generateFingerprint(n: any): string {
+      function generateFingerprint(n) {
         const key = n.note_key || n.id || '';
         const severity = n.severity || '';
         const desc = normalizeText(n.description || n.note || '');
@@ -7385,14 +7392,19 @@ ${docTextForScoring}`;
           if (ciOk && gpOk && engagementOk) {
             parsed.convergence.status = "converged";
             if (!parsed.convergence.reasons) parsed.convergence.reasons = [];
-            const reasons = ["All blockers resolved"];
+            const reasons = [
+              "All blockers resolved"
+            ];
             if (engagementDataExists && !parsed.engagement_threshold_passed) {
               reasons.push("Engagement below threshold");
             }
             parsed.convergence.reasons = reasons;
           } else if (!engagementOk) {
             // Explicitly prevent convergence when engagement is below threshold
-            parsed.convergence.reasons = [...parsed.convergence.reasons || [], "Engagement below threshold"];
+            parsed.convergence.reasons = [
+              ...parsed.convergence.reasons || [],
+              "Engagement below threshold"
+            ];
           }
         }
       }
@@ -7617,7 +7629,12 @@ ${docTextForScoring}`;
       try {
         const { projectId, documentId, versionId, approvedNotes } = body;
         if (!projectId || !documentId || !versionId) throw new Error("projectId, documentId, versionId required");
-        const result = await classifyMutationsHandler(supabase, supabase, { projectId, documentId, versionId, approvedNotes });
+        const result = await classifyMutationsHandler(supabase, supabase, {
+          projectId,
+          documentId,
+          versionId,
+          approvedNotes
+        });
         return new Response(JSON.stringify(result), {
           headers: {
             ...corsHeaders,
@@ -7626,7 +7643,9 @@ ${docTextForScoring}`;
         });
       } catch (err) {
         console.error("[dev-engine-v2] classify_mutations error:", err);
-        return new Response(JSON.stringify({ error: err.message }), {
+        return new Response(JSON.stringify({
+          error: err.message
+        }), {
           status: 500,
           headers: {
             ...corsHeaders,
@@ -7642,7 +7661,12 @@ ${docTextForScoring}`;
       try {
         const { projectId, proposalIds, approved, reviewComment } = body;
         if (!projectId || !proposalIds) throw new Error("projectId, proposalIds required");
-        const result = await applyGraphMutationsHandler(supabase, supabase, { projectId, proposalIds, approved, reviewComment });
+        const result = await applyGraphMutationsHandler(supabase, supabase, {
+          projectId,
+          proposalIds,
+          approved,
+          reviewComment
+        });
         return new Response(JSON.stringify(result), {
           headers: {
             ...corsHeaders,
@@ -7651,7 +7675,9 @@ ${docTextForScoring}`;
         });
       } catch (err) {
         console.error("[dev-engine-v2] apply_graph_mutations error:", err);
-        return new Response(JSON.stringify({ error: err.message }), {
+        return new Response(JSON.stringify({
+          error: err.message
+        }), {
           status: 500,
           headers: {
             ...corsHeaders,
@@ -8152,12 +8178,23 @@ ${(()=>{
       // ── NEC Guardrail injection for notes ──
       const notesNecBlock = await loadNECGuardrailBlock(supabase, projectId);
       // ── DUPLICATE REQUEST GUARD: check if a NOTES run was already created for this version within 60s ──
-      const { count: existingNotesCount } = await supabase.from("development_runs").select("*", { count: "exact", head: true }).eq("version_id", versionId).eq("run_type", "NOTES").gte("created_at", new Date(Date.now() - 60000).toISOString());
+      const { count: existingNotesCount } = await supabase.from("development_runs").select("*", {
+        count: "exact",
+        head: true
+      }).eq("version_id", versionId).eq("run_type", "NOTES").gte("created_at", new Date(Date.now() - 60000).toISOString());
       if (existingNotesCount && existingNotesCount > 0) {
         console.warn(`[dev-engine-v2] notes: duplicate request suppressed (version_id=${versionId.slice(0, 8)}, existing_runs=${existingNotesCount} within 60s)`);
-        const { data: latestNotesRun } = await supabase.from("development_runs").select("*").eq("version_id", versionId).eq("run_type", "NOTES").order("created_at", { ascending: false }).limit(1).single();
-        return new Response(JSON.stringify(latestNotesRun || { success: false, error: "Duplicate request suppressed — notes generation already in progress for this version." }), {
-          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        const { data: latestNotesRun } = await supabase.from("development_runs").select("*").eq("version_id", versionId).eq("run_type", "NOTES").order("created_at", {
+          ascending: false
+        }).limit(1).single();
+        return new Response(JSON.stringify(latestNotesRun || {
+          success: false,
+          error: "Duplicate request suppressed — notes generation already in progress for this version."
+        }), {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json"
+          }
         });
       }
       const userPrompt = `ANALYSIS:\n${JSON.stringify(analysis)}${notesCanonBlock}${notesNecBlock}${upstreamDeferredBlock}\n\nMATERIAL (${version.plaintext.length} chars total):\n${version.plaintext}`;
@@ -8973,7 +9010,10 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
         }
         // Graceful fallback: construct basic single-option decisions from note descriptions
         const fallbackDecisions = [];
-        for (const n of [...blockers, ...highImpact]) {
+        for (const n of [
+          ...blockers,
+          ...highImpact
+        ]){
           const noteId = n.stable_key || n.id || n.note_key || `note-${fallbackDecisions.length + 1}`;
           const noteDesc = n.description || n.note || "";
           fallbackDecisions.push({
@@ -8983,13 +9023,13 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
             options: [
               {
                 option_id: `${noteId}-resolve`,
-                title: noteDesc
-                  ? `Resolve: ${noteDesc.length > 55 ? noteDesc.slice(0, 55) + "..." : noteDesc}`
-                  : `Address ${noteId}`,
-                what_changes: noteDesc ? [noteDesc] : [`Address the issue: ${noteId}`],
-                tradeoffs: n.why_it_matters
-                  ? `Why it matters: ${n.why_it_matters.length > 200 ? n.why_it_matters.slice(0, 200) + "..." : n.why_it_matters}`
-                  : "",
+                title: noteDesc ? `Resolve: ${noteDesc.length > 55 ? noteDesc.slice(0, 55) + "..." : noteDesc}` : `Address ${noteId}`,
+                what_changes: noteDesc ? [
+                  noteDesc
+                ] : [
+                  `Address the issue: ${noteId}`
+                ],
+                tradeoffs: n.why_it_matters ? `Why it matters: ${n.why_it_matters.length > 200 ? n.why_it_matters.slice(0, 200) + "..." : n.why_it_matters}` : "",
                 creative_risk: "med",
                 commercial_lift: 0
               }
@@ -9357,7 +9397,7 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
         narrativeCtx.signals.blockText,
         narrativeCtx.lockedDecisions.blockText,
         narrativeCtx.voice.blockText,
-        narrativeCtx.worldPopulation.blockText,
+        narrativeCtx.worldPopulation.blockText
       ].filter(Boolean).join("\n");
       // Load NEC directly (consolidated path — same as analyze and notes)
       const rewriteNecBlock = await loadNECGuardrailBlock(supabase, projectId);
@@ -9514,7 +9554,7 @@ MATERIAL TO REWRITE:\n${fullText}`;
             // Deduplicate consecutive non-character sections (ENSEMBLE NOTES / RELATIONSHIP DYNAMICS)
             // that have accumulated from previous rewrite rounds embedding headers in content.
             const dedupedSections = [];
-            for (const sec of sections) {
+            for (const sec of sections){
               const prev = dedupedSections[dedupedSections.length - 1];
               if (prev && prev.sectionType !== 'character' && sec.sectionType !== 'character' && prev.sectionType === sec.sectionType && prev.name === sec.name) {
                 prev.body = prev.body + '\n\n---\n\n' + sec.body;
@@ -9633,8 +9673,11 @@ MATERIAL TO REWRITE:\n${fullText}`;
                     // Accumulated from previous rewrite rounds where the LLM included ## ENSEMBLE NOTES
                     // in its rewritten_text output. Prevents re-embedding on subsequent rounds.
                     let sanitizedBody = section.body;
-                    const headerPatternsToStrip = ["## ENSEMBLE NOTES", "## RELATIONSHIP DYNAMICS"];
-                    for (const hp of headerPatternsToStrip) {
+                    const headerPatternsToStrip = [
+                      "## ENSEMBLE NOTES",
+                      "## RELATIONSHIP DYNAMICS"
+                    ];
+                    for (const hp of headerPatternsToStrip){
                       const hpRegex = new RegExp("^" + hp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "gm");
                       sanitizedBody = sanitizedBody.replace(hpRegex, "[MERGED SECTION CONTENT]").trim();
                     }
@@ -9730,14 +9773,17 @@ ${section.sectionType === 'relationship_dynamics' ? '- Fields: DEFAULT MODE, A N
                     ].filter(Boolean).join(" ").toLowerCase();
                     return noteText.includes(section.name.toLowerCase()) || noteText.includes(section.role.toLowerCase());
                   });
-                    let sanitizedCharBody = section.body;
-                    // Reuse same dedup sanitization for character sections (belt and suspenders)
-                    const charHeaderPatternsToStrip = ["## ENSEMBLE NOTES", "## RELATIONSHIP DYNAMICS"];
-                    for (const hp of charHeaderPatternsToStrip) {
-                      const hpRegex = new RegExp("^" + hp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "gm");
-                      sanitizedCharBody = sanitizedCharBody.replace(hpRegex, "[MERGED SECTION CONTENT]").trim();
-                    }
-                    const charUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
+                  let sanitizedCharBody = section.body;
+                  // Reuse same dedup sanitization for character sections (belt and suspenders)
+                  const charHeaderPatternsToStrip = [
+                    "## ENSEMBLE NOTES",
+                    "## RELATIONSHIP DYNAMICS"
+                  ];
+                  for (const hp of charHeaderPatternsToStrip){
+                    const hpRegex = new RegExp("^" + hp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*$", "gm");
+                    sanitizedCharBody = sanitizedCharBody.replace(hpRegex, "[MERGED SECTION CONTENT]").trim();
+                  }
+                  const charUserPrompt = `PROTECT (non-negotiable):\n${JSON.stringify(protectItems || [])}${canonDocsBlock}
 
 APPROVED NOTES (applying to "${section.name}"):\n${JSON.stringify(charApprovedNotes)}${decisionDirectives}${globalDirContext}${upstreamNoteBlock}
 ${narrativeBlock}${characterFactsBlock}
@@ -10060,17 +10106,13 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // This gate explicitly promotes the new version and cleans up stale flags.
       try {
         // Clear is_current on all other versions for this document
-        await supabase.from("project_document_versions")
-          .update({ is_current: false })
-          .eq("document_id", documentId)
-          .eq("is_current", true)
-          .neq("id", newVersion.id);
-
+        await supabase.from("project_document_versions").update({
+          is_current: false
+        }).eq("document_id", documentId).eq("is_current", true).neq("id", newVersion.id);
         // Promote the new version to current
-        await supabase.from("project_document_versions")
-          .update({ is_current: true })
-          .eq("id", newVersion.id);
-
+        await supabase.from("project_document_versions").update({
+          is_current: true
+        }).eq("id", newVersion.id);
         // Clear stale bg_generating flags from any version for this document
         // The progress init writes bg_generating: true to the source versionId
         // during per-character generation. If the new version creation fails or
@@ -10086,25 +10128,21 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         } catch (sqlErr) {
           // Fallback: fetch and update one by one
           console.warn("[dev-engine-v2] rewrite: exec_sql bg_generating cleanup failed, trying fallback:", sqlErr?.message);
-          const { data: stuckVersions } = await supabase
-            .from("project_document_versions")
-            .select("id, meta_json")
-            .eq("document_id", documentId)
-            .neq("id", newVersion.id)
-            .not("meta_json", "is", null);
+          const { data: stuckVersions } = await supabase.from("project_document_versions").select("id, meta_json").eq("document_id", documentId).neq("id", newVersion.id).not("meta_json", "is", null);
           if (stuckVersions) {
-            for (const sv of stuckVersions) {
+            for (const sv of stuckVersions){
               if (sv.meta_json?.bg_generating === true) {
-                const cleanedMeta = { ...sv.meta_json };
+                const cleanedMeta = {
+                  ...sv.meta_json
+                };
                 delete cleanedMeta.bg_generating;
-                await supabase.from("project_document_versions")
-                  .update({ meta_json: cleanedMeta })
-                  .eq("id", sv.id);
+                await supabase.from("project_document_versions").update({
+                  meta_json: cleanedMeta
+                }).eq("id", sv.id);
               }
             }
           }
         }
-
         console.log(`[dev-engine-v2] rewrite: PROMOTED v${newVersion.version_number} to current, cleared bg_generating on stale versions`);
       } catch (promoErr) {
         console.warn("[dev-engine-v2] rewrite: promotion gate failed (non-fatal):", promoErr?.message);
@@ -10466,7 +10504,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         strategy = "legacy_slugline";
       }
       // ── Context Parity: resolve narrative context + constraint pack at plan time ──
-      let narrativeBlock = "";
+      let narrativeBlock1 = "";
       let narrativeResolverHash = "";
       let narrativeCounts = {};
       let constraintPackBlock = "";
@@ -10479,11 +10517,11 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           format: planFormat,
           includeSignals: true
         });
-        narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+        narrativeBlock1 = buildNarrativeContextBlock(narrativeCtx);
         narrativeResolverHash = narrativeCtx.metadata.resolverHash;
         narrativeCounts = narrativeCtx.metadata.counts;
         constraintPackBlock = await loadConstraintPack(supabase, projectId);
-        console.log(`[dev-engine-v2] rewrite-plan: stored_context_pack hash=${narrativeResolverHash} narrative_chars=${narrativeBlock.length} constraint_chars=${constraintPackBlock.length} signals=${narrativeCounts.signals ?? 0} decisions=${narrativeCounts.decisions ?? 0} canonChars=${narrativeCounts.canonChars ?? 0} nec=${narrativeCounts.nec_pref ?? 0}/${narrativeCounts.nec_max ?? 0}`);
+        console.log(`[dev-engine-v2] rewrite-plan: stored_context_pack hash=${narrativeResolverHash} narrative_chars=${narrativeBlock1.length} constraint_chars=${constraintPackBlock.length} signals=${narrativeCounts.signals ?? 0} decisions=${narrativeCounts.decisions ?? 0} canonChars=${narrativeCounts.canonChars ?? 0} nec=${narrativeCounts.nec_pref ?? 0}/${narrativeCounts.nec_max ?? 0}`);
       } catch (ctxErr) {
         console.warn(`[dev-engine-v2] rewrite-plan: context pack resolution failed (proceeding without):`, ctxErr?.message || ctxErr);
       }
@@ -10627,7 +10665,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           strategy,
           episode_count: resolvedEpisodeCount,
           chunk_meta: chunkMeta,
-          narrative_block: narrativeBlock || null,
+          narrative_block: narrativeBlock1 || null,
           narrative_resolver_hash: narrativeResolverHash || null,
           narrative_counts: Object.keys(narrativeCounts).length > 0 ? narrativeCounts : null,
           constraint_pack_block: constraintPackBlock || null
@@ -11448,7 +11486,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           format,
           includeSignals: true
         });
-        const narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+        const narrativeBlock1 = buildNarrativeContextBlock(narrativeCtx);
         let notesBlock = "";
         if (approvedNotes && approvedNotes.length > 0) {
           notesBlock = "\n\nAPPROVED NOTES & DECISIONS:\n" + approvedNotes.map(function(n) {
@@ -11495,7 +11533,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           const systemMsg = `You are rewriting ONE moment of a story outline for "${project1.title || "this project"}".
 
 Production type: ${format}.
-${narrativeBlock}
+${narrativeBlock1}
 
 INSTRUCTIONS:
 - Rewrite ONLY the Description field of the CURRENT MOMENT below.
@@ -11931,7 +11969,7 @@ INSTRUCTIONS:
         format,
         includeSignals: true
       });
-      const narrativeBlock = buildNarrativeContextBlock(narrativeCtx);
+      const narrativeBlock1 = buildNarrativeContextBlock(narrativeCtx);
       const constraintPackBlock = await loadConstraintPack(supabase, projectId);
       let characterFactsBlock = "";
       try {
@@ -11970,7 +12008,7 @@ INSTRUCTIONS:
         "Production type: " + format + ".",
         "IMPORTANT: Output PLAIN TEXT MARKDOWN only. No JSON. Preserve the section header exactly as given.",
         "Do NOT create duplicate ## sections. Replace the content of the relevant section — do NOT append new sections to the document.",
-        narrativeBlock,
+        narrativeBlock1,
         constraintPackBlock,
         characterFactsBlock,
         "FORMAT: This is a " + (doc.doc_type || "document").replace(/_/g, " ") + ". " + (isBeatSheetJSON ? "Structured beat sheet. Preserve all structural beat fields. Rewrite description/name/emotional_shift/protagonist_state only." : "Vivid prose narrative in acts. NO INT./EXT. sluglines. Present-tense prose. Full scenes."),
@@ -12264,7 +12302,7 @@ INSTRUCTIONS:
         await supabase.from("treatment_acts").insert(pendingRows);
         console.log("[treatment-per-act] inserted 4 pending treatment_acts rows for treatment_id=" + documentId);
         // ── PHASE 2: Background pipeline ──
-        const runPerActPipeline = async () => {
+        const runPerActPipeline = async ()=>{
           const priorActResults = [];
           const _gwPerAct = resolveGateway();
           const perActApiKey = _gwPerAct.apiKey;
@@ -16852,7 +16890,9 @@ Return ONLY valid JSON:
               threads: [],
               arc_steps: [],
               updated_at: new Date().toISOString()
-            }, { onConflict: "project_id,scene_id" });
+            }, {
+              onConflict: "project_id,scene_id"
+            });
             if (upsErr) console.warn("[scene_graph_sync_spine_links] upsert error (no_roles):", upsErr.message);
           }
           perScene.push({
@@ -16885,7 +16925,9 @@ Return ONLY valid JSON:
               threads: [],
               arc_steps: [],
               updated_at: new Date().toISOString()
-            }, { onConflict: "project_id,scene_id" });
+            }, {
+              onConflict: "project_id,scene_id"
+            });
             if (upsErr) console.warn("[scene_graph_sync_spine_links] upsert error (no_mapped_axis):", upsErr.message);
           }
           perScene.push({
@@ -19783,15 +19825,7 @@ Return ONLY valid JSON:
     // Returns: seed_id + per-layer row counts.
     //
     if (action === "create_dev_seed_v2") {
-      const { projectId, // Layer 1 — Project Identity (required)
-      title, lane: lane1, format, target_audience, genre_stack, tone_contract, market_hook, runtime_pattern, episode_pattern, comparable_mode, // Layer 2 — Premise Kernel
-      premise, // Layer 3 — Narrative Axes (array)
-      axes, // Layer 4 — Narrative Units (array)
-      units, // Layer 5 — Entity Graph
-      entities, entity_relations, // Layer 6 — Canon Rules (array)
-      canon_rules, // Layer 7 — Structural Beat Seeds (array)
-      beats, // Layer 8 — Generation Intent
-      generation_intent } = body;
+      const { projectId, title, lane: lane1, format, target_audience, genre_stack, tone_contract, market_hook, runtime_pattern, episode_pattern, comparable_mode, premise, axes, units, entities, entity_relations, canon_rules, beats, generation_intent } = body;
       if (!projectId) {
         return new Response(JSON.stringify({
           ok: false,
@@ -24737,13 +24771,13 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
             const mode = r.detection_mode ?? "explicit";
             acc[mode] = (acc[mode] ?? 0) + 1;
             return acc;
-          }, {} as Record<string,number>),
+          }, {}),
           human_verified_count: results.filter((r)=>r.human_verified === true).length,
           by_domain: results.reduce((acc, r)=>{
             const domain = r.domain ?? "structural";
             acc[domain] = (acc[domain] ?? 0) + 1;
             return acc;
-          }, {} as Record<string,number>)
+          }, {})
         }
       }), {
         headers: {
@@ -25918,37 +25952,30 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
       const engagementScenes = [];
       if (documentVersionId) {
         try {
-          const { data: engRows } = await supabase
-            .from("scene_engagement_scores")
-            .select("scene_key, total_score")
-            .eq("document_version_id", documentVersionId)
-            .lt("total_score", ENGAGEMENT_DEFAULTS.threshold);
-
+          const { data: engRows } = await supabase.from("scene_engagement_scores").select("scene_key, total_score").eq("document_version_id", documentVersionId).lt("total_score", ENGAGEMENT_DEFAULTS.threshold);
           if (engRows && engRows.length > 0) {
-            const lowEngagementKeys = [...new Set(engRows.map(r => r.scene_key))];
+            const lowEngagementKeys = [
+              ...new Set(engRows.map((r)=>r.scene_key))
+            ];
             // Load scene_graph metadata for these keys
-            const { data: sceneRows } = await supabase
-              .from("scene_graph_scenes")
-              .select("id, scene_key")
-              .in("scene_key", lowEngagementKeys)
-              .eq("project_id", projectId);
-
+            const { data: sceneRows } = await supabase.from("scene_graph_scenes").select("id, scene_key").in("scene_key", lowEngagementKeys).eq("project_id", projectId);
             if (sceneRows && sceneRows.length > 0) {
-              const sceneKeyToId = new Map(sceneRows.map(s => [s.scene_key, s.id]));
-              const sceneIds = sceneRows.map(s => s.id);
-              const { data: verRows } = await supabase
-                .from("scene_graph_versions")
-                .select("scene_id, slugline")
-                .in("scene_id", sceneIds)
-                .order("version_number", { ascending: false });
+              const sceneKeyToId = new Map(sceneRows.map((s)=>[
+                  s.scene_key,
+                  s.id
+                ]));
+              const sceneIds = sceneRows.map((s)=>s.id);
+              const { data: verRows } = await supabase.from("scene_graph_versions").select("scene_id, slugline").in("scene_id", sceneIds).order("version_number", {
+                ascending: false
+              });
               const sluglineMap = new Map();
-              for (const v of verRows || []) {
+              for (const v of verRows || []){
                 if (!sluglineMap.has(v.scene_id)) sluglineMap.set(v.scene_id, v.slugline ?? null);
               }
               // Deduplicate against existing plan scenes
-              const existingSceneIds = new Set(plan.impacted_scenes.map(s => s.scene_id));
-              const existingSceneKeys = new Set(plan.impacted_scenes.map(s => s.scene_key));
-              for (const row of engRows) {
+              const existingSceneIds = new Set(plan.impacted_scenes.map((s)=>s.scene_id));
+              const existingSceneKeys = new Set(plan.impacted_scenes.map((s)=>s.scene_key));
+              for (const row of engRows){
                 if (existingSceneKeys.has(row.scene_key)) continue;
                 const sceneId = sceneKeyToId.get(row.scene_key);
                 if (!sceneId || existingSceneIds.has(sceneId)) continue;
@@ -25958,7 +25985,7 @@ ${patchLayer === "layer_7_beats" ? "IMPORTANT: Include ALL existing beats plus a
                   slugline: sluglineMap.get(sceneId) ?? null,
                   axis_key: "engagement",
                   risk_source: "engagement",
-                  risk_reason: `low_engagement: score=${row.total_score} threshold=${ENGAGEMENT_DEFAULTS.threshold}`,
+                  risk_reason: `low_engagement: score=${row.total_score} threshold=${ENGAGEMENT_DEFAULTS.threshold}`
                 });
                 existingSceneIds.add(sceneId);
                 existingSceneKeys.add(row.scene_key);
@@ -43033,14 +43060,14 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       // 4. Scene reference — optional (numbered format has no **Scene:** field)
       const sceneMatch = targetBeat.match(/\*\*Scene:\*\* (.*)\n/);
       const sceneRef = sceneMatch ? sceneMatch[1] : null;
-      const narrativeBlock = buildNarrativeContextBlock(await resolveNarrativeContext(supabase, projectId, {
+      const narrativeBlock1 = buildNarrativeContextBlock(await resolveNarrativeContext(supabase, projectId, {
         includeSignals: true
       }));
       const constraintPackBlock = await loadConstraintPack(supabase, projectId);
       // 5. Build per-beat rewrite prompt with upstream context + approved notes
       const systemPromptParts = [
         "You are rewriting a script beat in markdown format.",
-        narrativeBlock
+        narrativeBlock1
       ];
       if (sceneRef) {
         const { data: storyOutline } = await supabase.from("project_documents").select("plaintext").eq("title", sceneRef).single();

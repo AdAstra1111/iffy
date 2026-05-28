@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveGateway } from "../_shared/llm.ts";
 import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
 import { computeEdgeQualityGate } from "../_shared/edgeQualityGate.ts";
 import type { ImageRole, ImageStyleMode } from "../_shared/imageGenerationResolver.ts";
@@ -1231,8 +1230,12 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const _gw = resolveGateway();
-    if (!_gw.apiKey) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
+    // Resolve API key centrally via imageGenerationResolver
+    const baseGenConfig = resolveImageGenerationConfig({
+      role: 'lookbook_cover',
+      styleMode: 'photorealistic_cinematic',
+    });
+    if (!baseGenConfig.providerApiKey) throw new Error("No image provider API key configured");
 
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -2127,7 +2130,7 @@ FRAMING RULES:
       const refsForThisShot = (identityLockUsed && assetGroup === "character") ? identityReferenceUrls : [];
 
       try {
-        const imageResult = await generateImage(_gw.apiKey, prompt, genConfig.model, _gw.url, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
+        const imageResult = await generateImage(genConfig.providerApiKey, prompt, genConfig.model, genConfig.gatewayUrl, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
 
         const identitySegment = identity_mode ? '-identity' : '';
         const stateSegment = state_key ? `-${state_key}` : '';
