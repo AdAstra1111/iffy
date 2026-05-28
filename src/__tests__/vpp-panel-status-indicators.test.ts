@@ -308,22 +308,17 @@ describe('WorldLocationLookPanel — VisualSkeleton + dual VisualPanelErrorBound
   });
 
   it('wraps empty state return in VisualPanelErrorBoundary', () => {
-    // Extract the empty state block: starts at "if (locations.length === 0)" and ends at the first ");"
+    // The empty state return block contains the VisualPanelErrorBoundary
+    // Just verify that the area between "if (locations.length === 0)" and "TooltipProvider" has it
     const emptyStart = source.indexOf("if (locations.length === 0");
+    const tooltipStart = source.indexOf("<TooltipProvider>");
     expect(emptyStart).not.toBe(-1);
+    expect(tooltipStart).toBeGreaterThan(emptyStart);
 
-    // Count parens to find matching close: first `return (` then matching `);`
-    const returnParenStart = source.indexOf("return (", emptyStart);
-    expect(returnParenStart).not.toBe(-1);
-
-    // Take a generous block from empty state start to the next "});" or ");" after the card closes
-    const emptyBlock = source.substring(
-      emptyStart,
-      source.indexOf(");", returnParenStart + 50)
-    );
-    expect(emptyBlock).toContain('<VisualPanelErrorBoundary');
-    expect(emptyBlock).toContain('</VisualPanelErrorBoundary>');
-    expect(emptyBlock).toContain('panelLabel="WorldLocationLookPanel"');
+    const emptySection = source.substring(emptyStart, tooltipStart);
+    expect(emptySection).toContain('<VisualPanelErrorBoundary');
+    expect(emptySection).toContain('</VisualPanelErrorBoundary>');
+    expect(emptySection).toContain('panelLabel="WorldLocationLookPanel"');
   });
 
   it('wraps main content return in VisualPanelErrorBoundary', () => {
@@ -377,10 +372,17 @@ describe('VisualUnitHistoryTimeline — VisualSkeleton, VisualEmptyState, Visual
   });
 
   it('uses VisualEmptyState component for empty state', () => {
-    const emptyBlock = source.substring(
-      source.indexOf("events.length === 0"),
-      source.indexOf(":")
-    );
+    // Find where the events.length === 0 ternary starts, capture the block
+    const isLoadingIndex = source.indexOf("isLoading ?");
+    const emptyStart = source.indexOf("events.length === 0", isLoadingIndex);
+    expect(emptyStart).not.toBe(-1);
+
+    // The block continues until `<ScrollArea` or `:` for the else clause
+    const scrollAreaIndex = source.indexOf("<ScrollArea", emptyStart);
+    const emptyBlock = scrollAreaIndex > 0
+      ? source.substring(emptyStart, scrollAreaIndex)
+      : source.substring(emptyStart, emptyStart + 300);
+
     expect(emptyBlock).toContain('<VisualEmptyState');
   });
 
