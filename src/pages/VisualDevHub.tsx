@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 import { CharacterBaseLookPanel } from '@/components/images/CharacterBaseLookPanel';
 import { WorldLocationLookPanel } from '@/components/images/WorldLocationLookPanel';
 import { VisualCanonResetPanel } from '@/components/images/VisualCanonResetPanel';
@@ -127,15 +128,20 @@ export default function VisualDevHub() {
   const [loadingCanon, setLoadingCanon] = useState(true);
 
   // Guard: no projectId in route
-  if (!projectId) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center space-y-2">
-          <p className="text-sm text-muted-foreground">No project selected.</p>
-        </div>
-      </div>
-    );
-  }
+    if (!projectId) {
+      return (
+        <VisualEmptyState
+          icon={<ArrowLeft className="h-8 w-8" />}
+          title="No project selected"
+          description="Select a project from your dashboard to start working on visual production."
+          action={
+            <Link to="/dashboard">
+              <Button variant="outline" size="sm">Go to Dashboard</Button>
+            </Link>
+          }
+        />
+      );
+    }
 
   // Load canon data for Change Studio targets
   useEffect(() => {

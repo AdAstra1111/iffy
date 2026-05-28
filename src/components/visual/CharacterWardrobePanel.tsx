@@ -11,6 +11,9 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Loader2, ChevronDown, Shirt, Sparkles, Eye } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
@@ -24,15 +27,12 @@ export function CharacterWardrobePanel({ projectId }: Props) {
   const { temporalTruth } = useCanonicalTemporalTruth(projectId);
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground p-4">
-        <Loader2 className="h-3 w-3 animate-spin" /> Loading wardrobe data…
-      </div>
-    );
+    return <VisualSkeleton variant="card" />;
   }
 
   return (
-    <div className="space-y-4">
+    <VisualPanelErrorBoundary panelLabel="CharacterWardrobePanel">
+      <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-display font-semibold text-foreground flex items-center gap-1.5">
@@ -76,15 +76,22 @@ export function CharacterWardrobePanel({ projectId }: Props) {
           ))}
         </div>
       ) : !extraction ? (
-        <p className="text-xs text-muted-foreground">
-          No wardrobe profiles extracted yet. Click Extract to analyze characters.
-        </p>
+        <VisualEmptyState
+          icon={<Shirt className="h-5 w-5" />}
+          title="No wardrobe profiles"
+          description="Click Extract to analyze characters."
+          compact
+        />
       ) : (
-        <p className="text-xs text-muted-foreground">
-          No characters found in canon.
-        </p>
+        <VisualEmptyState
+          icon={<Shirt className="h-5 w-5" />}
+          title="No characters found"
+          description="No characters found in canon."
+          compact
+        />
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

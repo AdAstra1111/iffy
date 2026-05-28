@@ -7,8 +7,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { FileBarChart, Loader2, RefreshCw, Image, CheckCircle } from 'lucide-react';
+import { Loader2, RefreshCw, Image, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import {
   buildConceptBrief,
   persistConceptBrief,

@@ -12,6 +12,7 @@ import type { GovernanceAwareStage } from '@/lib/visual/visualGovernanceTypes';
 import { computeRecommendedAction, VISUAL_GOVERNANCE_ACTIONS } from '@/lib/visual/visualGovernanceActions';
 import type { ActionRecommendation } from '@/lib/visual/visualGovernanceActions';
 import { VisualCoherencePanel } from '@/components/visual/VisualCoherencePanel';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useParams, Link } from 'react-router-dom';
 import {
@@ -2431,9 +2432,7 @@ export default function VisualProductionPipeline() {
         {/* Content panel — CENTER */}
         <div key="vpp-content" className="flex-1 overflow-y-auto">
           <Suspense fallback={
-            <div className="flex items-center justify-center py-20">
-              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            </div>
+            <VisualSkeleton variant="panel" lines={6} className="py-12" />
           }>
           <div className="max-w-5xl mx-auto">
               {/* Visual Governance: stale risk + recommended action */}
