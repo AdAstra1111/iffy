@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
-import { ArrowLeft, Film, Sparkles, Music, Camera, Clapperboard, Wand2, Paintbrush, Video, Loader2, LayoutList } from 'lucide-react';
+import { ArrowLeft, Film, Sparkles, Music, Camera, Clapperboard, Wand2, Paintbrush, Video, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';

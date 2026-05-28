@@ -19,7 +19,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
-  Lock, Unlock, Download, Loader2, ImagePlus, Upload,
+  Lock, Unlock, Download, ImagePlus, Upload,
   ArrowLeft, LayoutGrid, List, Film, Sparkles, Palette,
   ChevronDown, Link2, Shield, Play,
 } from 'lucide-react';
