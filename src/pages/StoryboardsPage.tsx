@@ -28,6 +28,8 @@ import { useStoryboards, type StoryboardBoard } from '@/hooks/useStoryboards';
 import { useVisualReferences, type VisualReferenceSet } from '@/hooks/useVisualReferences';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 
 const AnimaticEditor = lazy(() => import('@/components/animatic/AnimaticEditor'));
 
@@ -223,18 +225,15 @@ export default function StoryboardsPage() {
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            </div>
+            <VisualSkeleton variant="card" count={4} />
           ) : boards.length === 0 ? (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Film className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No storyboard panels yet. They'll be created automatically from the shot list.</p>
-              </CardContent>
-            </Card>
+            <VisualEmptyState
+              icon={<Film className="h-8 w-8" />}
+              title="No storyboard panels yet"
+              description="They'll be created automatically from the shot list."
+            />
           ) : activeTab === 'animatic' ? (
-            <Suspense fallback={<div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}>
+            <Suspense fallback={<VisualSkeleton variant="panel" />}>
               <AnimaticEditor
                 projectId={projectId!}
                 shotListId={shotListId!}

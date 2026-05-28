@@ -16,9 +16,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Switch } from '@/components/ui/switch';
 import {
   ArrowLeft, Plus, Trash2, Upload, Lock, Unlock, Palette,
-  MapPin, User, Loader2, X, ImagePlus, Star,
+  MapPin, User, Loader2, X, ImagePlus, Star, UserPlus,
 } from 'lucide-react';
 import { useVisualReferences, type VisualReferenceSet, type VisualReferenceAsset } from '@/hooks/useVisualReferences';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 
 export default function VisualReferencesPage() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -68,20 +70,16 @@ export default function VisualReferencesPage() {
 
   const renderRefList = (items: VisualReferenceSet[], type: 'character' | 'location' | 'style') => {
     if (setsLoading) {
-      return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+      return <VisualSkeleton variant="card" count={3} />;
     }
     if (items.length === 0) {
       return (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-sm text-muted-foreground mb-3">
-              No {type} references yet.
-            </p>
-            <Button size="sm" className="gap-1 text-xs" onClick={() => openCreate(type)}>
-              <Plus className="h-3 w-3" />Add {type}
-            </Button>
-          </CardContent>
-        </Card>
+        <VisualEmptyState
+          icon={type === 'character' ? <UserPlus className="h-8 w-8" /> : type === 'location' ? <MapPin className="h-8 w-8" /> : <Palette className="h-8 w-8" />}
+          title={`No ${type} references yet`}
+          description="Add your first reference to get started."
+          action={<Button size="sm" className="gap-1 text-xs" onClick={() => openCreate(type)}><Plus className="h-3 w-3" />Add {type}</Button>}
+        />
       );
     }
 

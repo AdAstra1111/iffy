@@ -1,7 +1,9 @@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
+import { Sparkles } from 'lucide-react';
 import type { VisualUnitRun } from '@/lib/types/visualUnits';
 
 interface Props {
@@ -12,7 +14,7 @@ interface Props {
 
 export function VisualUnitRunsList({ runs, selectedRunId, onSelect }: Props) {
   if (runs.length === 0) {
-    return <p className="text-[10px] text-muted-foreground text-center py-4 px-3">No runs yet. Create one to extract visual units.</p>;
+    return <VisualEmptyState compact icon={<Sparkles className="h-3 w-3" />} title="No runs yet" description="Create one to extract visual units." />;
   }
 
   return (

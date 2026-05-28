@@ -4,8 +4,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
-import { RefreshCw, FileText } from 'lucide-react';
+import { RefreshCw, FileText, FileSearch } from 'lucide-react';
 import type { SourceVersionInfo } from '@/lib/types/visualUnits';
 
 interface Props {
@@ -34,7 +35,7 @@ export function VisualUnitSourcesPanel({ sources, warnings, isLoading, onRefresh
       <CardContent className="p-0">
         <ScrollArea className="h-[25vh]">
           {entries.length === 0 && !isLoading && (
-            <p className="text-[10px] text-muted-foreground text-center py-4">No sources found</p>
+            <VisualEmptyState compact icon={<FileSearch className="h-3 w-3" />} title="No sources found" description="Run extraction to detect source documents." />
           )}
           <div className="space-y-0.5 px-3 pb-3">
             {entries.map(([docType, info]) => (

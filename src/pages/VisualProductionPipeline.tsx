@@ -661,9 +661,7 @@ function VisualCanonPanel({ projectId, inputs }: { projectId: string; inputs: Pi
       </div>
       <div className="rounded-lg border border-border/30 bg-card/30 p-4 space-y-3">
         {loading ? (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3 w-3 animate-spin" /> Loading visual style…
-          </div>
+          <VisualSkeleton variant="text-block" lines={3} />
         ) : profile ? (
           <div className="space-y-2">
             {profile.period && (
@@ -701,9 +699,7 @@ function VisualCanonPanel({ projectId, inputs }: { projectId: string; inputs: Pi
             )}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No visual style defined yet. This will be auto-inferred from your canon or can be set manually.
-          </p>
+          <VisualEmptyState compact title="No visual style defined" description="Auto-inferred from canon or set manually." />
         )}
         <Link to={`/projects/${projectId}`}>
           <Button variant="outline" size="sm" className="text-xs gap-1.5">
@@ -1497,9 +1493,10 @@ function HeroFramesPanel({ projectId, inputs }: { projectId: string; inputs: Pip
             </div>
           ) : (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                No hero frames generated yet. Generate cinematic anchor stills to establish the project's visual truth.
-              </p>
+              <VisualEmptyState
+                title="No hero frames generated"
+                description="Generate cinematic anchor stills to establish the project's visual truth."
+              />
               <div className="rounded-md border border-border/20 bg-muted/10 p-3 space-y-2">
                 <p className="text-[11px] font-medium text-foreground">What hero frames define:</p>
                 <ul className="text-[11px] text-muted-foreground space-y-1 list-disc list-inside">

@@ -9,6 +9,7 @@ import { ArrowLeft, Film, Sparkles, Music, Camera, Clapperboard, Wand2, Paintbru
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
 import { TrailerScriptStudio } from '@/components/trailer/cinematic/TrailerScriptStudio';
 import { RhythmGridViewer } from '@/components/trailer/cinematic/RhythmGridViewer';
 import { RhythmTimelineOverlay } from '@/components/trailer/cinematic/RhythmTimelineOverlay';
@@ -235,11 +236,7 @@ export default function TrailerPipelinePage() {
           </TabsContent>
 
           <TabsContent value="clips">
-            <Suspense fallback={
-              <div className="flex items-center justify-center p-12">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-              </div>
-            }>
+            <Suspense fallback={<VisualSkeleton variant="panel" lines={4} />}>
               <LazyClipCandidatesStudio embedded />
             </Suspense>
           </TabsContent>

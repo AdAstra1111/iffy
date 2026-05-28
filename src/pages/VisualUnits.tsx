@@ -27,6 +27,8 @@ import { VisualUnitCandidatesList } from '@/components/visualUnits/VisualUnitCan
 import { VisualUnitCandidateCard } from '@/components/visualUnits/VisualUnitCandidateCard';
 import { VisualUnitDiffPanel } from '@/components/visualUnits/VisualUnitDiffPanel';
 import { VisualUnitHistoryTimeline } from '@/components/visualUnits/VisualUnitHistoryTimeline';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 import type { VisualUnitCandidate, DiffJson } from '@/lib/types/visualUnits';
 import { toast } from 'sonner';
 
@@ -301,7 +303,7 @@ export default function VisualUnits() {
               </CardHeader>
               <CardContent>
                 {canonicalUnits.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">No canonical visual units yet. Accept candidates in the Review tab.</p>
+                  <VisualEmptyState title="No canonical units" description="Accept candidates in the Review tab to build your storyboard." />
                 ) : (
                   <ScrollArea className="h-[60vh]">
                     <div className="space-y-2">
@@ -345,7 +347,7 @@ export default function VisualUnits() {
               </CardHeader>
               <CardContent>
                 {canonicalUnits.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">No canonical visual units yet.</p>
+                  <VisualEmptyState title="No canonical units" description="Accept candidates in the Review tab to build your export data." />
                 ) : (
                   <div className="space-y-4">
                     {trailerExport.rhythm_warnings.length > 0 && (
@@ -392,7 +394,7 @@ export default function VisualUnits() {
               </CardHeader>
               <CardContent>
                 {canonicalUnits.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">No canonical visual units yet.</p>
+                  <VisualEmptyState title="No canonical units" description="Accept candidates in the Review tab to build your export data." />
                 ) : (
                   <div className="space-y-4">
                     <div>

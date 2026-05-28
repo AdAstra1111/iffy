@@ -22,6 +22,8 @@ import {
 import { useShotList, type ShotListItem } from '@/hooks/useShotList';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
 
 const SHOT_TYPE_OPTIONS = ['WS', 'MS', 'CU', 'ECU', 'OTS', 'POV', 'INSERT', '2SHOT', 'AERIAL', 'TRACKING'];
 
@@ -250,12 +252,11 @@ export default function ShotListPage() {
 
           {/* No shot list yet */}
           {!listsLoading && shotLists.length === 0 && (
-            <Card>
-              <CardContent className="py-12 text-center">
-                <Camera className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">No shot lists yet. Generate one from a script document in the Development Engine.</p>
-              </CardContent>
-            </Card>
+            <VisualEmptyState
+              icon={<Camera className="h-8 w-8" />}
+              title="No shot lists yet"
+              description="Generate one from a script document in the Development Engine."
+            />
           )}
 
           {activeShotList && (
@@ -345,9 +346,7 @@ export default function ShotListPage() {
 
                 {/* Grouped items */}
                 {itemsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                  </div>
+                  <VisualSkeleton variant="table-row" count={6} />
                 ) : (
                   <div className="space-y-2">
                     {groupedByScene.map(([sceneNum, sceneItems]) => (
