@@ -48,6 +48,8 @@ export interface ImageGenResolverOutput {
   model: string;
   gatewayUrl: string;
   apiKeyEnvVar: string;
+  /** Resolved API key value — callers should use this instead of reading env vars directly */
+  providerApiKey: string;
   settings: {
     modalities: string[];
   };

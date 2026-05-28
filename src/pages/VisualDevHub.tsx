@@ -16,6 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
 import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import { CharacterBaseLookPanel } from '@/components/images/CharacterBaseLookPanel';
 import { WorldLocationLookPanel } from '@/components/images/WorldLocationLookPanel';
 import { VisualCanonResetPanel } from '@/components/images/VisualCanonResetPanel';
@@ -173,15 +175,8 @@ export default function VisualDevHub() {
   if (loadingCanon) {
     return (
       <div className="min-h-screen bg-background">
-        <div className="max-w-[1200px] mx-auto px-4 py-20 space-y-6 animate-pulse">
-          <div className="h-5 w-48 bg-muted rounded" />
-          <div className="h-3 w-64 bg-muted/60 rounded" />
-          <div className="h-32 bg-muted/40 rounded-lg" />
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            <div className="h-28 bg-muted/40 rounded-lg" />
-            <div className="h-28 bg-muted/40 rounded-lg" />
-            <div className="h-28 bg-muted/40 rounded-lg" />
-          </div>
+        <div className="max-w-[1200px] mx-auto px-4 py-20">
+          <VisualSkeleton variant="panel" lines={6} />
         </div>
       </div>
     );
@@ -212,7 +207,9 @@ export default function VisualDevHub() {
             subtitle="Review, approve, reject, and compare all generated images"
             defaultOpen={true}
           >
-            {projectId && <ReviewStudio projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="ReviewStudio">
+              {projectId && <ReviewStudio projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ VISUAL STYLE AUTHORITY ═══ */}
@@ -222,17 +219,19 @@ export default function VisualDevHub() {
             subtitle="Define period, lighting, texture, and style rules for all image generation"
             defaultOpen={false}
           >
-            {projectId && <VisualStyleAuthorityPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="VisualStyleAuthority">
+              {projectId && <VisualStyleAuthorityPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
-
-          {/* ═══ STORY INGESTION ═══ */}
           <WorkSection
             icon={<BookOpen className="h-4 w-4" />}
             title="Story Ingestion Engine"
             subtitle="Parse script into scenes, characters, locations, props, and state variants"
             defaultOpen={false}
           >
-            {projectId && <StoryIngestionPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="StoryIngestion">
+              {projectId && <StoryIngestionPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ PRIMARY: Cast Photos & Identity ═══ */}
@@ -262,7 +261,9 @@ export default function VisualDevHub() {
                 </Button>
               </Link>
             </div>
-            {projectId && <CharacterBaseLookPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="CharacterBaseLook">
+              {projectId && <CharacterBaseLookPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ World & Location References ═══ */}
@@ -272,7 +273,9 @@ export default function VisualDevHub() {
             subtitle="Establishing shots, atmospheric details, environmental storytelling"
             defaultOpen={false}
           >
-            {projectId && <WorldLocationLookPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="WorldLocationLook">
+              {projectId && <WorldLocationLookPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ Visual Canon Reset & Rebuild ═══ */}
@@ -282,7 +285,9 @@ export default function VisualDevHub() {
             subtitle="Reset visual canon by section, review required slots, approve or archive"
             defaultOpen={false}
           >
-            {projectId && <VisualCanonResetPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="VisualCanonReset">
+              {projectId && <VisualCanonResetPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ Visual Change Studio ═══ */}
@@ -292,13 +297,15 @@ export default function VisualDevHub() {
             subtitle="What-if scenarios — explore visual changes without mutating canon"
             defaultOpen={false}
           >
-            {projectId && (
-              <VisualChangeStudio
-                projectId={projectId}
-                characters={characters}
-                locations={locations}
-              />
-            )}
+            <VisualPanelErrorBoundary panelLabel="VisualChangeStudio">
+              {projectId && (
+                <VisualChangeStudio
+                  projectId={projectId}
+                  characters={characters}
+                  locations={locations}
+                />
+              )}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ Visual Set Curation (Advanced) ═══ */}
@@ -308,7 +315,9 @@ export default function VisualDevHub() {
             subtitle="Optional — slot-based governance for structured curation and locking"
             defaultOpen={false}
           >
-            {projectId && <VisualSetCurationPanel projectId={projectId} />}
+            <VisualPanelErrorBoundary panelLabel="VisualSetCuration">
+              {projectId && <VisualSetCurationPanel projectId={projectId} />}
+            </VisualPanelErrorBoundary>
           </WorkSection>
 
           {/* ═══ Production Tools ═══ */}
