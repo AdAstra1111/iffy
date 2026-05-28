@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { useState } from 'react';
 import type { TrendEngine, EngineWeight, EngineScore } from '@/lib/trend-viability';
@@ -39,7 +39,7 @@ export function useEngineWeights(productionType: string | undefined) {
 
 export function useProjectEngineScores(projectId: string | undefined) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const query = useQuery({
     queryKey: ['engine-scores', projectId],
@@ -84,7 +84,7 @@ export function useProjectEngineScores(projectId: string | undefined) {
 
 export function usePredictionOutcomes(projectId: string | undefined) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const query = useQuery({
     queryKey: ['prediction-outcomes', projectId],

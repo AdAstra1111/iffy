@@ -16,7 +16,7 @@ import {
 import {
   Breadcrumb, BreadcrumbList, BreadcrumbItem, BreadcrumbLink, BreadcrumbPage, BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { cn } from '@/lib/utils';
 
 const toolItems = [
@@ -51,7 +51,7 @@ interface ExplorerLayoutProps {
 
 export function ExplorerLayout({ breadcrumbs, children, title, subtitle, actions }: ExplorerLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const { signOut } = useAuth();
+  const { signOut } = useSafeAuth();
   const navigate = useNavigate();
   const location = useLocation();
 

@@ -7,7 +7,7 @@ import { Header } from '@/components/Header';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/hooks/use-toast';
@@ -18,7 +18,7 @@ import { CorpusIntegrityPanel } from '@/components/corpus/CorpusIntegrityPanel';
 import { useUIMode } from '@/hooks/useUIMode';
 import { MODES } from '@/lib/mode';
 export default function Settings() {
-  const { user, signOut } = useAuth();
+  const { user, signOut } = useSafeAuth();
   const { plan } = useSubscription();
   const { mode, setMode } = useUIMode();
   const navigate = useNavigate();

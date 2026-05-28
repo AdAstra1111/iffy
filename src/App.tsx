@@ -175,6 +175,15 @@ const PageFallback = () => (
   </div>
 );
 
+function RedirectTo({ path }: { path: string }) {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={`/projects/${id}/${path}`} replace />;
+}
+
+function RedirectToDevelop() {
+  return <RedirectTo path="develop" />;
+}
+
 const AnimatedRoutes = () => {
   const location = useLocation();
   const systemMode = useFeatureFlag('NEW_SYSTEM_MODE');
@@ -185,7 +194,7 @@ const AnimatedRoutes = () => {
       <SafeRouteBoundary>
       <Suspense fallback={<PageFallback />}>
         <Shell>
-        <Routes location={location} >
+        <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 // ── Types ─────────────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ export interface DerivedArtifact {
 // ── Hooks ─────────────────────────────────────────────────────────────
 
 export function useApprovedSources() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['approved-sources', user?.id],
     queryFn: async () => {
@@ -55,7 +55,7 @@ export function useApprovedSources() {
 }
 
 export function useAddSource() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { title: string; source_url: string; format: string; license_reference: string; rights_status: string }) => {
@@ -106,7 +106,7 @@ export function useDeleteSource() {
 }
 
 export function useCorpusScripts() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-scripts', user?.id],
     queryFn: async () => {

@@ -92,7 +92,7 @@ import {
   formatLockFailureMessage as formatLockFailureMessageFn,
   type CharacterLockGap as CharacterLockGapType,
 } from '@/lib/visual/characterLockGap';
-import { useAuth, useSafeAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 // ── Types ──
 

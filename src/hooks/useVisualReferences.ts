@@ -3,7 +3,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface VisualReferenceSet {
@@ -33,7 +33,7 @@ export interface VisualReferenceAsset {
 }
 
 export function useVisualReferences(projectId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: refSets = [], isLoading: setsLoading } = useQuery({

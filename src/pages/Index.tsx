@@ -1,10 +1,10 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import iffyLogo from '@/assets/iffy-logo-v3.png';
 import Landing from './Landing';
 
 const Index = () => {
-  const { user, loading } = useAuth();
+  const { user, loading } = useSafeAuth();
 
   if (loading) {
     return (

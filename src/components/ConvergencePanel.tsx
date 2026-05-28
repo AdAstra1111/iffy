@@ -8,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { OperationProgress } from '@/components/OperationProgress';
 import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 const CONVERGENCE_STAGES = [
   { at: 10, label: 'Initializing convergence engine…' },
@@ -82,7 +82,7 @@ export function ConvergencePanel({
   projectId, projectTitle, format, genres, lane, budget,
   scoringGrid, riskFlags, coverageSummary, deliverableType,
 }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [result, setResult] = useState<ConvergenceResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [strategicPriority, setStrategicPriority] = useState('BALANCED');

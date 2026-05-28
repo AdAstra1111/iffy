@@ -3,7 +3,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import type { ShotListItem } from '@/hooks/useShotList';
 
@@ -34,7 +34,7 @@ export interface StoryboardBoard {
 }
 
 export function useStoryboards(projectId: string | undefined, shotListId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: boards = [], isLoading } = useQuery({

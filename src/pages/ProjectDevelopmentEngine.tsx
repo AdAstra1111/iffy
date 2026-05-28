@@ -211,9 +211,9 @@ export default function ProjectDevelopmentEngine() {
   // Tab change timestamp — prevents searchParams sync from rolling back manual selection
   const lastManualTabChangeRef = useRef(0);
 
-  // Sync tab from URL when searchParams change (e.g. navigated with ?tab=autorun)
+  // Sync tab from URL when searchParams change
+  const tabParam = searchParams.get('tab');
   useEffect(() => {
-    const tabParam = searchParams.get('tab');
     console.log('[DEBUG] useEffect searchParams fired, tabParam:', tabParam, 'current intelligenceTab:', intelligenceTab);
     // Rollback guard — skip if user manually changed tab within last 500ms
     if (Date.now() - lastManualTabChangeRef.current < 500) {
@@ -224,7 +224,7 @@ export default function ProjectDevelopmentEngine() {
       console.log('[DEBUG] Syncing tab to:', tabParam);
       setIntelligenceTab(tabParam);
     }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tabParam]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
 
@@ -2909,7 +2909,7 @@ export default function ProjectDevelopmentEngine() {
                       })()}
 
                       {/* Publish as Script — gated by canPromoteToScript() */}
-                      {useMemo(() => {
+                      {(() => {
                         const result = canPromoteToScript({
                           docType: selectedDoc?.doc_type,
                           linkedScriptId: null, // TODO: wire linked_script_id when available
@@ -2959,7 +2959,7 @@ export default function ProjectDevelopmentEngine() {
                             </Button>
                           </ConfirmDialog>
                         );
-                      }, [selectedDoc?.doc_type, versionText.length, selectedVersionId, selectedDocId, conceptBriefCanonViolations, selectedDoc, project])}
+                      })()}
                     </div>
                   )}
                 </>

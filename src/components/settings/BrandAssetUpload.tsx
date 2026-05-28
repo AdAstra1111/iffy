@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Upload, Trash2, Loader2, ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
@@ -10,7 +10,7 @@ const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp'];
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
 export function BrandAssetUpload() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [preview, setPreview] = useState<string | null>(null);

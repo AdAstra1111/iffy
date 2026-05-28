@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 
 export type Plan = 'free' | 'pro' | 'enterprise';
@@ -62,7 +62,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
 };
 
 export function useSubscription() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryClient = useQueryClient();
 
   const { data: subscription, isLoading: subLoading } = useQuery({

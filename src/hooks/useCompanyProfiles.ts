@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useSafeAuth } from "@/hooks/useAuth";
 import type { CompanyIntelligenceProfile } from "@/lib/paradox-house-mode";
 
 export function useCompanyProfiles() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ["company-intelligence-profiles", user?.id],
     queryFn: async () => {

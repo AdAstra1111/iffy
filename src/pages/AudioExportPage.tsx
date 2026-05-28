@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { useProject } from '@/hooks/useProjects';
 import { useAudioExport, type AudioJob, type AudioJobOptions } from '@/hooks/useAudioExport';
 
@@ -72,7 +72,7 @@ const QUALITY_INFO = {
 // ── Main component ─────────────────────────────────────────────────────────
 export default function AudioExportPage() {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const { project } = useProject(projectId);
   const { loading: exporting, pollingJob, startExport, startPolling } = useAudioExport();
 

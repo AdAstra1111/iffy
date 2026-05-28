@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { isLearningPoolEligible, LEARNING_POOL_CI_THRESHOLD } from '@/lib/learningPool';
 
@@ -67,7 +67,7 @@ export interface PitchFeedback {
 }
 
 export function usePitchIdeas() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: ideas = [], isLoading } = useQuery({
@@ -137,7 +137,7 @@ export function usePitchIdeas() {
 }
 
 export function usePitchFeedback(pitchId: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: feedback = [] } = useQuery({

@@ -78,7 +78,7 @@ export interface VisualAdapter {
   getEntityImages(type: string, id: string, projectId: string): Promise<VisualImage[]>
   generateImage(entityType: string, entityId: string, intent: GenerationIntent, projectId: string): Promise<GenerationResult>
   approveImage(imageId: string): Promise<void>
-  setPrimaryImage(entityType: string, entityId: string, imageId: string): Promise<void>
+  setPrimaryImage(entityType: string, entityId: string, imageId: string, projectId: string): Promise<void>
   getStyleProfile(projectId: string): Promise<StyleProfile>
 }
 

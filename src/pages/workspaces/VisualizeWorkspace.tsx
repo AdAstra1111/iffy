@@ -317,6 +317,7 @@ const VisualizeWorkspace: React.FC = () => {
         selectedEntity.type,
         selectedEntity.id,
         imageId,
+        projectId,
       )
       toast.success('Primary image set')
       if (selectedEntity) await loadImages(selectedEntity)

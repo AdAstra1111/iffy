@@ -29,7 +29,7 @@ import { useAddDocuments } from '@/hooks/useAddDocuments';
 import { useProjectDuplicate } from '@/hooks/useProjectDuplicate';
 import { useActiveCastTrends, useActiveSignals } from '@/hooks/useTrends';
 import { calculateTrendInfluence } from '@/lib/trend-influence';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { useScriptCharacters } from '@/hooks/useScriptCharacters';
 import { useProjectCast, useProjectPartners, useProjectScripts, useProjectFinance, useProjectHODs } from '@/hooks/useProjectAttachments';
 import { generateProjectInsights } from '@/lib/project-insights';
@@ -92,7 +92,7 @@ export default function ProjectDetail() {
 
   const { data: castTrends = [] } = useActiveCastTrends();
   const { data: trendSignals = [] } = useActiveSignals();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [incentiveAnalysedThisSession, setIncentiveAnalysedThisSession] = useState(false);
 

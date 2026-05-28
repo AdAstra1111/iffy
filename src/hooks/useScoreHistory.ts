@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 export interface ScoreSnapshot {
   id: string;
@@ -13,7 +13,7 @@ export interface ScoreSnapshot {
 }
 
 export function useScoreHistory(projectId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryClient = useQueryClient();
 
   const { data: history = [], isLoading } = useQuery({

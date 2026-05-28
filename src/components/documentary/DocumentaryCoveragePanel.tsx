@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { OperationProgress } from '@/components/OperationProgress';
 import { format } from 'date-fns';
 
@@ -119,7 +119,7 @@ function CollapsibleSection({ title, content, defaultOpen = false }: { title: st
 }
 
 export function DocumentaryCoveragePanel({ projectId, projectTitle, format: fmt, genres, lane }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [loading, setLoading] = useState(false);
   const [runs, setRuns] = useState<DocCoverageResult[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);

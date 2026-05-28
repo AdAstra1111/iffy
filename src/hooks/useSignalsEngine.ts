@@ -6,7 +6,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import type { ProjectSignalMatch, DocFactLedgerItem, SignalsApplyConfig } from '@/lib/signals-types';
 
@@ -104,7 +104,7 @@ export function useProjectSignalsSettings(projectId: string | undefined) {
 
 export function useDocFactLedger(projectId: string | undefined) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const query = useQuery({
     queryKey: ['doc-fact-ledger', projectId],

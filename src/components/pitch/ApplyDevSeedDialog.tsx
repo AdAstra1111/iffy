@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import type { PitchIdea } from '@/hooks/usePitchIdeas';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import type { CanonJson, CanonCharacter } from '@/hooks/useProjectCanon';
@@ -435,7 +435,7 @@ async function createDocWithVersion(
 // ── Component ─────────────────────────────────────────────────────────
 
 export function ApplyDevSeedDialog({ idea, open, onOpenChange }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);

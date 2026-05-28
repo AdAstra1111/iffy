@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 export interface CommercialProofEntry {
   id: string;
@@ -26,7 +26,7 @@ export interface CommercialProofEntry {
 }
 
 export function useCommercialProof(genre?: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['commercial-proof', genre],
     queryFn: async () => {

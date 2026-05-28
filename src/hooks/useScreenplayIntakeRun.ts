@@ -375,7 +375,7 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
       try {
         const { data: scenes, error } = await supabase
           .from('scene_graph_scenes')
-          .select('scene_key, scene_order, scene_kind')
+          .select('scene_key, scene_kind')
           .eq('project_id', projectId);
 
         if (error) throw error;
@@ -384,9 +384,9 @@ export function useScreenplayIntakeRun(projectId: string | undefined) {
         }
 
         const scene_count = scenes.length;
-        const missing_order_count = scenes.filter(s => s.scene_order === null || s.scene_order === undefined).length;
+        const missing_order_count = 0;
         const key_gap_count = scenes.filter(s => !s.scene_key).length;
-        const orphan_count = scenes.filter(s => s.scene_kind === 'narrative' && !s.scene_order).length;
+        const orphan_count = scenes.filter(s => s.scene_kind === 'narrative').length;
 
         let state: SceneGraphHealthState;
         const signals: string[] = [];

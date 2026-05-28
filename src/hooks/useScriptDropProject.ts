@@ -30,7 +30,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ async function finaliseIntakeRun(
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function useScriptDropProject() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const navigate  = useNavigate();
   const [stages,    setStages]    = useState<DropStage[]>(INITIAL_STAGES);
   const [isRunning, setIsRunning] = useState(false);

@@ -20,7 +20,7 @@ import { toast } from 'sonner';
 import { useResolvedCalibration } from '@/hooks/useCorpusInsights';
 import { useExtractDocuments } from '@/hooks/useExtractDocuments';
 import { OperationProgress, EXTRACT_STAGES } from '@/components/OperationProgress';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { format as fmtDate } from 'date-fns';
 import { GreatNotesLibrary } from '@/components/script/GreatNotesLibrary';
 import { CorpusLibrary } from '@/components/corpus/CorpusLibrary';
@@ -206,7 +206,7 @@ function getNoteId(note: any): string { return note.note_id || note.id || ''; }
 function getNoteText(note: any): string { return note.note_text || note.text || ''; }
 
 function NoteActions({ note, runId, projectType, existingTag }: { note: any; runId: string; projectType: string; existingTag?: NoteFeedback }) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [greatOpen, setGreatOpen] = useState(false);
   const [editText, setEditText] = useState('');
@@ -334,7 +334,7 @@ function StructuredNotesView({ notes, runId, projectType, feedbackMap }: { notes
 }
 
 function FeedbackPanel({ runId }: { runId: string }) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [ratings, setRatings] = useState({ overall: 3, accuracy: 3, specificity: 3, actionability: 3, market: 3 });
   const [freeText, setFreeText] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -522,7 +522,7 @@ export function ScriptCoverage({ projectId, projectTitle, format, genres, hasDoc
   const [useCorpusBenchmark, setUseCorpusBenchmark] = useState(false);
   const extract = useExtractDocuments(projectId);
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   // Resolve baseline for coverage display
   const resolved = useResolvedCalibration(productionType || format, genres?.[0]);

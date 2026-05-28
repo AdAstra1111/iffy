@@ -3,7 +3,7 @@
  */
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import type { StoryboardBoard } from '@/hooks/useStoryboards';
 
@@ -50,7 +50,7 @@ export interface AnimaticMarker {
 }
 
 export function useAnimatic(projectId: string | undefined, shotListId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   // Fetch animatic for this shot list

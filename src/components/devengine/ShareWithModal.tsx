@@ -14,7 +14,7 @@ import { Copy, Link2, UserPlus, RefreshCw, Loader2, Check, Trash2 } from 'lucide
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import type { ProjectPackage } from '@/hooks/useProjectPackage';
 
 type Scope = 'approved_preferred' | 'approved_only' | 'latest_only';
@@ -30,7 +30,7 @@ interface Props {
 }
 
 export function ShareWithModal({ open, onOpenChange, projectId, projectTitle, pkg }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const [linkScope, setLinkScope] = useState<Scope>('approved_preferred');

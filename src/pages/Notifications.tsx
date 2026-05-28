@@ -13,7 +13,7 @@ import { useNotifications, type Notification } from '@/hooks/useNotifications';
 import { useProjects } from '@/hooks/useProjects';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { useQuery } from '@tanstack/react-query';
 
 /* ── icon map ── */
@@ -80,7 +80,7 @@ interface SmartAlert {
 }
 
 function useSmartAlerts(): SmartAlert[] {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const { data: contracts = [] } = useQuery({
     queryKey: ['smart-alerts-contracts', user?.id],

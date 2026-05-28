@@ -2,8 +2,8 @@
  * checkVisualGovernance — lightweight governance gate check for frontend generator call sites.
  *
  * Calls the evaluate-visual-governance edge function and checks whether a specific stage
- * is blocked from proceeding (i.e., has blocker codes). Fail-open on errors: if the
- * governance check itself fails, we allow generation to proceed with a console.warn.
+ * is blocked from proceeding (i.e., has blocker codes). Fail-closed on errors: if the
+ * governance check itself fails, we block generation with a console.warn.
  *
  * Usage:
  *   const { blocked, blockers, computed_status } = await checkVisualGovernance(projectId, 'hero_frames');
@@ -23,8 +23,8 @@ export interface GovernanceCheckResult {
 
 /**
  * Evaluate visual governance for a specific stage and return whether generation
- * is blocked. Fail-open: returns { blocked: false } on any error so the user
- * is not blocked by a transient infrastructure issue.
+ * is blocked. Fail-closed: returns { blocked: true } on any error so generation
+ * is prevented when governance information is unavailable.
  */
 export async function checkVisualGovernance(
   projectId: string,
@@ -41,7 +41,7 @@ export async function checkVisualGovernance(
         `[checkVisualGovernance] Edge function error for stage "${stageId}":`,
         error.message,
       );
-      return { blocked: false, blockers: [], computed_status: null };
+      return { blocked: true, blockers: [`Edge function error: ${error.message}`], computed_status: null };
     }
 
     // The function returns { stages: StageGovernance[] } with each stage
@@ -70,7 +70,7 @@ export async function checkVisualGovernance(
       `[checkVisualGovernance] Error checking governance for stage "${stageId}":`,
       err?.message ?? String(err),
     );
-    // Fail-open: allow generation on infrastructure errors
-    return { blocked: false, blockers: [], computed_status: null };
+    // Fail-closed: block generation on infrastructure errors
+    return { blocked: true, blockers: ['Governance check threw an exception'], computed_status: null };
   }
 }

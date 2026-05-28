@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
+import { useSafeAuth } from "@/hooks/useAuth";
 import { Header } from "@/components/Header";
 import { PageTransition } from "@/components/PageTransition";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -58,7 +58,7 @@ const classIcons: Record<Classification, React.ReactNode> = {
 };
 
 function useIsParadoxHouseMember() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ["paradox-house-member", user?.id],
     queryFn: async () => {

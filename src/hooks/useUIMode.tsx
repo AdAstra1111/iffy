@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, ReactNode } from 'react';
 import type { UIMode } from '@/lib/mode';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 interface UIModeContextValue {
@@ -29,7 +29,7 @@ function writeLocalStorage(mode: UIMode): void {
 }
 
 export function UIModeProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryClient = useQueryClient();
 
   // Local state always wins — read from localStorage immediately for instant toggle

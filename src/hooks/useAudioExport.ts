@@ -2,7 +2,7 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface AudioJobOptions {
@@ -36,7 +36,7 @@ export interface AudioExportOptions extends AudioJobOptions {
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
 export function useAudioExport() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [loading, setLoading] = useState(false);
   const [pollingJob, setPollingJob] = useState<AudioJob | null>(null);
   const [pollingError, setPollingError] = useState<string | null>(null);

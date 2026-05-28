@@ -91,7 +91,7 @@ export const visualAdapter: VisualAdapter = {
       const merged = [...rows]
       for (const cc of canonChars) {
         if (cc.name && !tableNames.has(cc.name.toLowerCase())) {
-          merged.push({ id: `canon-${cc.name}`, name: cc.name })
+          merged.push({ id: `canon-${cc.name}`, name: cc.name } as any)
         }
       }
 
@@ -285,19 +285,20 @@ export const visualAdapter: VisualAdapter = {
     }
   },
 
-  async setPrimaryImage(entityType, entityId, imageId): Promise<void> {
-    try {
-      // First, clear primary flag from all images of this entity
-      // Determine asset group based on entity type
-      const assetGroup = entityType === 'character' ? 'hero_frame' : 'location'
+  async setPrimaryImage(entityType: string, entityId: string, imageId: string, projectId: string): Promise<void> {
+      try {
+        // First, clear primary flag from all images of this entity
+        // Determine asset group based on entity type
+        const assetGroup = entityType === 'character' ? 'hero_frame' : 'location'
 
-      // Clear existing primary
-      await (supabase as any)
-        .from('project_images')
-        .update({ is_primary: false, role: entityType === 'character' ? 'hero_variant' : 'location_variant' })
-        .eq('project_id', entityId)  // Note: We use entityId as project_id context - we need projectId
-        .eq('asset_group', assetGroup)
-        .eq('is_primary', true)
+        // Clear existing primary
+        await (supabase as any)
+          .from('project_images')
+          .update({ is_primary: false, role: entityType === 'character' ? 'hero_variant' : 'location_variant' })
+          .eq('project_id', projectId)
+          .eq('asset_group', assetGroup)
+          .eq('is_primary', true)
+          .or(`subject.eq.${entityId},subject_type.eq.${entityType}`)
 
       // Set new primary
       const { error } = await (supabase as any)

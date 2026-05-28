@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import { Gauge, ArrowRight, Activity, UsersRound } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { ParadoxHouseModePanel } from '@/components/ParadoxHouseModePanel';
 import { CompanyProfileSelector } from '@/components/CompanyProfileSelector';
 import { useActiveCompanyProfile } from '@/hooks/useCompanyProfiles';
@@ -65,7 +65,7 @@ export function OverviewDashboard({
   const { mode: userMode } = useUIMode();
   const effectiveMode = getEffectiveMode(userMode, (project as any).ui_mode_override);
   const isAdvanced = effectiveMode === 'advanced';
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   // Check Paradox House membership
   const { data: isParadoxMember } = useQuery({

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface BuyerContact {
@@ -36,7 +36,7 @@ export interface BuyerMeeting {
 
 export function useBuyerContacts() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryKey = ['buyer-contacts', user?.id];
 
   const { data: contacts = [], isLoading } = useQuery({
@@ -99,7 +99,7 @@ export function useBuyerContacts() {
 
 export function useBuyerMeetings(contactId: string | undefined) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryKey = ['buyer-meetings', contactId];
 
   const { data: meetings = [], isLoading } = useQuery({

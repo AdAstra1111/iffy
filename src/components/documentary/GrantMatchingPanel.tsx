@@ -7,7 +7,7 @@ import { Landmark, ExternalLink, Calendar, MapPin, Target, Loader2 } from 'lucid
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 const KNOWN_FUNDS = [
@@ -59,7 +59,7 @@ function matchGenreToTopics(genres: string[]): string[] {
 }
 
 export function GrantMatchingPanel({ projectId, genres }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [matches, setMatches] = useState<GrantMatch[]>([]);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState<string[]>([]);

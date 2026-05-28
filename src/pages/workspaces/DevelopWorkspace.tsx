@@ -107,17 +107,33 @@ const DevelopWorkspace: React.FC = () => {
       // Fetch existing documents
       const { data: docs, error } = await supabase
         .from('project_documents')
-        .select('id, doc_type, approval_status, title')
+        .select('id, doc_type, latest_version_id')
         .eq('project_id', projectId)
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
+      // Fetch approval statuses from project_document_versions
+      const versionIds = (docs || [])
+        .map(d => (d as any).latest_version_id)
+        .filter(Boolean) as string[]
+      const versionStatusMap = new Map<string, string>()
+      if (versionIds.length > 0) {
+        const { data: versions } = await supabase
+          .from('project_document_versions')
+          .select('id, approval_status')
+          .in('id', versionIds)
+        for (const v of (versions || [])) {
+          if ((v as any).approval_status) versionStatusMap.set(v.id, (v as any).approval_status)
+        }
+      }
+
       // Group by doc_type (latest per type)
-      const docMap = new Map<string, { id: string; title: string; approval_status: string | null }>()
+      const docMap = new Map<string, { id: string; approval_status: string | null }>()
       for (const doc of docs || []) {
         if (!docMap.has(doc.doc_type)) {
-          docMap.set(doc.doc_type, doc)
+          const status = (doc as any).latest_version_id ? (versionStatusMap.get((doc as any).latest_version_id) || null) : null
+          docMap.set(doc.doc_type, { id: doc.id, approval_status: status })
         }
       }
 

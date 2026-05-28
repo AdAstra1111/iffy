@@ -17,7 +17,7 @@ import { ApplyDevSeedDialog } from '@/components/pitch/ApplyDevSeedDialog';
 import { OperationProgress, GENERATE_PITCH_STAGES } from '@/components/OperationProgress';
 import { usePitchIdeas, type PitchIdea } from '@/hooks/usePitchIdeas';
 import { useProjects } from '@/hooks/useProjects';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import jsPDF from 'jspdf';
@@ -29,7 +29,7 @@ import { DnaEngineSelector, type DnaEngineSelection } from '@/components/pitch/D
 const EMPTY_DNA_SELECTION: DnaEngineSelection = { mode: 'none', dnaProfileId: null, engineKey: null };
 
 export default function PitchIdeas() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const { ideas, isLoading, save, update, remove } = usePitchIdeas();
   const { projects } = useProjects();
   const qc = useQueryClient();

@@ -17,7 +17,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { INFLUENCE_DIMENSIONS, type InfluenceDimension } from '@/lib/rulesets/types';
 import { toast } from 'sonner';
 import { loadProjectLaneRulesetPrefs, saveProjectLaneRulesetPrefs } from '@/lib/rulesets/uiState';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 const DIM_LABELS: Record<InfluenceDimension, string> = {
   pacing: 'Pacing',
@@ -133,7 +133,7 @@ export function CompsPanel({ projectId, lane, userId, onInfluencersSet }: CompsP
   const [loading, setLoading] = useState(false);
   const [selections, setSelections] = useState<Record<string, InfluencerSelection>>({});
   const [saving, setSaving] = useState(false);
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   // Persisted comparables from project_comparables table
   const [persistedComps, setPersistedComps] = useState<PersistedComp[]>([]);

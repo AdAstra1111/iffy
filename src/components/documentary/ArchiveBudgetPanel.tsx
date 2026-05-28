@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 interface Props {
@@ -25,7 +25,7 @@ const typeIcons: Record<string, any> = {
 };
 
 export function ArchiveBudgetPanel({ projectId }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [assets, setAssets] = useState<any[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newAsset, setNewAsset] = useState({

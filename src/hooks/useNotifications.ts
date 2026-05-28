@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 export interface Notification {
   id: string;
@@ -17,7 +17,7 @@ export interface Notification {
 
 export function useNotifications() {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const queryKey = ['notifications', user?.id];
 
   const { data: notifications = [], isLoading } = useQuery({
@@ -50,7 +50,9 @@ export function useNotifications() {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 

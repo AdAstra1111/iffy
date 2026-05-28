@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface ScriptIntakeState {
@@ -82,7 +82,7 @@ async function callIntake(action: string, body: any) {
 }
 
 export function useScriptIntake(projectId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
   const [intake, setIntake] = useState<ScriptIntakeState | null>(null);
   const [coverage, setCoverage] = useState<CoverageResult | null>(null);

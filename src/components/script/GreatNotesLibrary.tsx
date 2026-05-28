@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format as fmtDate } from 'date-fns';
 
@@ -30,7 +30,7 @@ interface GreatNote {
 }
 
 export function GreatNotesLibrary() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [notes, setNotes] = useState<GreatNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');

@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { saveProjectLaneRulesetPrefs } from '@/lib/rulesets/uiState';
 import {
   STYLE_BENCHMARK_LABELS,
@@ -64,7 +64,7 @@ export function TrendSuggestedActions({ projectId, lane, driftData, signals, pro
   const [expanded, setExpanded] = useState(true);
   const [appliedIds, setAppliedIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const actions = useMemo(() => {
     const result: SuggestedAction[] = [];

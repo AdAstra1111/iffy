@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface StructuredNote {
@@ -32,7 +32,7 @@ export interface NoteFeedbackEntry {
 }
 
 export function useNoteFeedback(coverageRunId: string | null) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [feedbackMap, setFeedbackMap] = useState<Record<string, NoteFeedbackEntry>>({});
   const [teamFeedback, setTeamFeedback] = useState<Record<string, NoteFeedbackEntry[]>>({});
   const [loading, setLoading] = useState(false);

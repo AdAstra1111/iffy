@@ -34,7 +34,7 @@ import { canSeeAdvanced } from '@/lib/visibility';
 import { useScriptEngine, type ScriptScene, type ScriptVersion } from '@/hooks/useScriptEngine';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { format as fmtDate } from 'date-fns';
 
 // Intelligence sub-panels — lazy imports via the existing coverage component internals
@@ -548,7 +548,7 @@ export function ScriptStudio({
 }: ScriptStudioProps) {
   const { mode } = useUIMode();
   const isAdvanced = canSeeAdvanced(mode);
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   // Script engine data
   const { scenes, versions, activeScript } = useScriptEngine(projectId);

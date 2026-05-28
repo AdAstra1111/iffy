@@ -4,7 +4,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 // ── Preset defaults ──
@@ -53,7 +53,7 @@ export function getPresetDocTypes(packType: PackType): string[] {
 }
 
 export function useSharePack(projectId: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   // Fetch existing packs for this project

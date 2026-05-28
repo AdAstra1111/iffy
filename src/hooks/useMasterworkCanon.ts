@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 export interface MasterworkEntry {
   id: string;
@@ -33,7 +33,7 @@ export interface MasterworkEntry {
 }
 
 export function useMasterworkCanon(genre?: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['masterwork-canon', genre],
     queryFn: async () => {

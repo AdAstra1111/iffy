@@ -6,7 +6,7 @@ import { setProjectModality, type ProductionModality } from '@/config/production
 import { setAnimationMeta, type AnimationMeta } from '@/config/animationMeta';
 import { classifyProject } from '@/lib/lane-classifier';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 async function requireAuthenticatedSession() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -37,7 +37,7 @@ async function uploadDocuments(files: File[], userId: string): Promise<string[]>
 
 export function useProjects() {
   const queryClient = useQueryClient();
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useSafeAuth();
   const hasQueryableSession = Boolean(session?.access_token);
   const isAuthSettling = authLoading || (!!user && !hasQueryableSession);
 
@@ -276,7 +276,7 @@ export function useProjects() {
 }
 
 export function useProject(id: string | undefined) {
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useSafeAuth();
   const hasQueryableSession = Boolean(session?.access_token);
   const isAuthSettling = authLoading || (!!user && !hasQueryableSession);
 

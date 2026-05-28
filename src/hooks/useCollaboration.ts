@@ -235,7 +235,7 @@ export function useProjectComments(projectId: string | undefined, section?: stri
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      try { supabase.removeChannel(channel); } catch {};
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);

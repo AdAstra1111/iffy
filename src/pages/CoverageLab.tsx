@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { format as fmtDate } from 'date-fns';
 import { Header } from '@/components/Header';
@@ -23,7 +23,7 @@ import { GreatNotesLibrary } from '@/components/script/GreatNotesLibrary';
 
 // ─── Prompt Versions Tab ───
 function PromptVersionsTab() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [versions, setVersions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);

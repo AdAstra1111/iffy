@@ -59,12 +59,25 @@ const CastWorkspace: React.FC = () => {
   const [isActioning, setIsActioning] = useState(false)
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
 
-  // ── Feature flag guard ─────────────────────────────────────────────────
+  // ── Feature flag guard: defer to inner component so all hooks run ──────
   if (!flagEnabled) {
     return <LegacyFallback />
   }
 
-  // ── Fetch casting statuses ─────────────────────────────────────────────
+  return <CastWorkspaceInner projectId={projectId} />
+}
+
+// ── Inner component — all hooks run unconditionally ──────────────────────────
+
+const CastWorkspaceInner: React.FC<{ projectId: string | undefined }> = ({ projectId }) => {
+  const expertMode = useExpertMode()
+  const qc = useQueryClient()
+
+  // ── Local state ────────────────────────────────────────────────────────
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null)
+  const [selectedActorId, setSelectedActorId] = useState<string | null>(null)
+  const [isActioning, setIsActioning] = useState(false)
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null)
   const {
     data: statuses = [],
     isLoading: statusesLoading,

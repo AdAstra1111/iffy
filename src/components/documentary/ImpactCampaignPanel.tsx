@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 interface Props {
   projectId: string;
@@ -22,7 +22,7 @@ interface ImpactPlan {
 }
 
 export function ImpactCampaignPanel({ projectId }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [loading, setLoading] = useState(false);
   const [plan, setPlan] = useState<ImpactPlan | null>(null);
   const [context, setContext] = useState('');

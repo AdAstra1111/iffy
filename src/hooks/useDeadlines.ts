@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface ProjectDeadline {
@@ -18,7 +18,7 @@ export interface ProjectDeadline {
 
 export function useDeadlines(projectId?: string) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const { data: deadlines = [], isLoading } = useQuery({
     queryKey: ['project-deadlines', projectId],
@@ -95,7 +95,7 @@ export function useDeadlines(projectId?: string) {
 
 /** Fetch ALL deadlines across all projects for dashboard use */
 export function useAllDeadlines() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   return useQuery({
     queryKey: ['all-project-deadlines'],

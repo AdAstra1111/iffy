@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 interface Props {
@@ -21,7 +21,7 @@ const SEVERITIES = ['low', 'medium', 'high', 'critical'];
 const CONSENT_STATUSES = ['pending', 'sent', 'signed', 'expired', 'revoked'];
 
 export function ConsentLegalDashboard({ projectId }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [consentForms, setConsentForms] = useState<any[]>([]);
   const [legalFlags, setLegalFlags] = useState<any[]>([]);
   const [showAddConsent, setShowAddConsent] = useState(false);

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface ConceptExpansion {
@@ -46,7 +46,7 @@ export interface ConceptLockVersion {
 }
 
 export function useConceptExpansion(pitchIdeaId: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: expansions = [], isLoading } = useQuery({
@@ -104,7 +104,7 @@ export function useConceptExpansion(pitchIdeaId: string) {
 }
 
 export function useStressTest(expansionId: string | null) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: stressTests = [], isLoading } = useQuery({
@@ -159,7 +159,7 @@ export function useStressTest(expansionId: string | null) {
 }
 
 export function useConceptLockVersions(pitchIdeaId: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const { data: versions = [] } = useQuery({

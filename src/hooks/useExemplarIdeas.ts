@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import type { PitchIdea } from '@/hooks/usePitchIdeas';
 
@@ -35,7 +35,7 @@ export function computeSimilarityScore(source: PitchIdea, candidate: PitchIdea):
 }
 
 export function useExemplarIdeas(filters: ExemplarFilters = {}) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   const { data: exemplars = [], isLoading, error } = useQuery({
     queryKey: ['exemplar-ideas', filters],
@@ -97,7 +97,7 @@ export function useExemplarIdeas(filters: ExemplarFilters = {}) {
 }
 
 export function useSimilarExemplars(sourceIdea: PitchIdea | null) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   return useQuery({
     queryKey: ['similar-exemplars', sourceIdea?.id],

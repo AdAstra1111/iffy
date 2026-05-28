@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export type TriageStatus = 'unsorted' | 'shortlist' | 'maybe' | 'no' | 'pass';
@@ -33,7 +33,7 @@ interface AddTriageInput {
 }
 
 export function useTalentTriage(projectId: string) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const [items, setItems] = useState<TalentTriageItem[]>([]);
   const [loading, setLoading] = useState(true);
 

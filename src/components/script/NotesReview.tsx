@@ -14,7 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { useNoteFeedback, StructuredNote, NoteFeedbackEntry } from '@/hooks/useNoteFeedback';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -75,7 +75,7 @@ interface Props {
 }
 
 export function NotesReview({ notes, runId, projectId, projectType }: Props) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const { feedbackMap, upsertFeedback, getTeamStats } = useNoteFeedback(runId);
 
   const [categoryFilter, setCategoryFilter] = useState('all');

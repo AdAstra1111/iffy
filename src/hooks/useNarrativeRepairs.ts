@@ -83,7 +83,7 @@ export function useNarrativeRepairs(projectId: string | undefined) {
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      supabase.removeChannel(channel);
+      try { supabase.removeChannel(channel); } catch {}
     };
   }, [projectId, queryClient]);
 

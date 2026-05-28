@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface CorpusCalibration {
@@ -68,7 +68,7 @@ export interface CorpusPlaybook {
 }
 
 export function useCorpusCalibrations() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-calibrations', user?.id],
     queryFn: async () => {
@@ -87,7 +87,7 @@ export function useCorpusCalibrations() {
 }
 
 export function useBaselineProfiles() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-baselines', user?.id],
     queryFn: async () => {
@@ -106,7 +106,7 @@ export function useBaselineProfiles() {
 }
 
 export function useStyleProfiles() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-styles', user?.id],
     queryFn: async () => {
@@ -127,7 +127,7 @@ export function useStyleProfiles() {
 }
 
 export function useLaneNorms() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-lane-norms', user?.id],
     queryFn: async () => {
@@ -146,7 +146,7 @@ export function useLaneNorms() {
 }
 
 export function useCorpusPlaybooks() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-playbooks', user?.id],
     queryFn: async () => {
@@ -162,7 +162,7 @@ export function useCorpusPlaybooks() {
 }
 
 export function useGoldBaseline(productionType: string | undefined) {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-gold-baseline', user?.id, productionType],
     queryFn: async () => {
@@ -426,7 +426,7 @@ export function computeDeviationFromRange(
 
 /** Fetch all corpus scripts with quality/truncation metadata for the health dashboard */
 export function useCorpusHealth() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   return useQuery({
     queryKey: ['corpus-health', user?.id],
     queryFn: async () => {

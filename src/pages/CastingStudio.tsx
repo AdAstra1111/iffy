@@ -27,7 +27,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { aiCastApi } from '@/lib/aiCast/aiCastApi';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import {
@@ -77,7 +77,7 @@ const STATUS_CONFIG: Record<CandidateStatus, { label: string; color: string; ico
 
 export default function CastingStudio() {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
 
   const [filterStatus, setFilterStatus] = useState<CandidateStatus | 'all'>('all');

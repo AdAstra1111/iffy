@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 
 export interface CorpusIntegrityResult {
   id: string;
@@ -12,7 +12,7 @@ export interface CorpusIntegrityResult {
 }
 
 export function useCorpusIntegrityStatus() {
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
 
   return useQuery({
     queryKey: ['corpus-integrity-status', user?.id],
