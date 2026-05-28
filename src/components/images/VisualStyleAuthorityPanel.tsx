@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { AlertCircle, CheckCircle2, Plus, X, Loader2, Sparkles } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
@@ -63,11 +65,7 @@ export function VisualStyleAuthorityPanel({ projectId }: Props) {
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground p-4">
-        <Loader2 className="h-3 w-3 animate-spin" /> Resolving visual style…
-      </div>
-    );
+    return <VisualSkeleton variant="form" />;
   }
 
   const isComplete = FIELDS.every(f => {
@@ -76,6 +74,7 @@ export function VisualStyleAuthorityPanel({ projectId }: Props) {
   });
 
   return (
+    <VisualPanelErrorBoundary panelLabel="VisualStyleAuthorityPanel">
     <div className="space-y-4">
       {/* Status bar */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -151,6 +150,7 @@ export function VisualStyleAuthorityPanel({ projectId }: Props) {
         </Button>
       </div>
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

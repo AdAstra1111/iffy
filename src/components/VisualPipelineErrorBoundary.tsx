@@ -12,6 +12,7 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { recoveryInFlightRef } from './SafeRouteBoundary';
 
 const MAX_RECOVERY_ATTEMPTS = 2;
 
@@ -41,6 +42,22 @@ export class VisualPipelineErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
+    const isRemoveChild = error instanceof DOMException &&
+      error.name === 'NotFoundError' &&
+      error.message.includes('removeChild');
+    if (isRemoveChild) {
+      console.warn('[VisualPipelineErrorBoundary] Transient removeChild error (Suspense race) — recovering without counting attempt');
+      recoveryInFlightRef.current = true;
+      setTimeout(() => {
+        recoveryInFlightRef.current = false;
+        this.setState({ hasError: false, error: null });
+      }, 500);
+      return;
+    }
+    if (recoveryInFlightRef.current) {
+      console.warn('[VisualPipelineErrorBoundary] Recovery already in flight — skipping concurrent recovery');
+      return;
+    }
     this.recoveryAttempts++;
 
     if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) {

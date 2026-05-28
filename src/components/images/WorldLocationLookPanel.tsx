@@ -26,6 +26,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { ProjectImage } from '@/lib/images/types';
 import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface WorldLocationLookPanelProps {
   projectId: string;
@@ -235,17 +237,13 @@ export function WorldLocationLookPanel({ projectId }: WorldLocationLookPanelProp
   }, [canonJson, seedFromCanon]);
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 py-4 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-xs">Hydrating location data...</span>
-      </div>
-    );
+    return <VisualSkeleton variant="panel" />;
   }
 
   // Empty state
   if (locations.length === 0) {
     return (
+      <VisualPanelErrorBoundary panelLabel="WorldLocationLookPanel">
       <div className="py-4">
         <Card className="border-dashed border-amber-500/30 bg-amber-500/5">
           <CardContent className="py-6 text-center space-y-3">
@@ -265,10 +263,12 @@ export function WorldLocationLookPanel({ projectId }: WorldLocationLookPanelProp
           </CardContent>
         </Card>
       </div>
+      </VisualPanelErrorBoundary>
     );
   }
 
   return (
+    <VisualPanelErrorBoundary panelLabel="WorldLocationLookPanel">
     <TooltipProvider>
       <div className="space-y-1">
         <div className="flex items-center gap-2 mb-2">
@@ -391,6 +391,7 @@ export function WorldLocationLookPanel({ projectId }: WorldLocationLookPanelProp
         ))}
       </div>
     </TooltipProvider>
+    </VisualPanelErrorBoundary>
   );
 }
 

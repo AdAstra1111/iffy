@@ -26,16 +26,17 @@ const eventIcons: Record<string, string> = {
 
 export function VisualUnitHistoryTimeline({ events, isLoading }: Props) {
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-xs">History</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        {isLoading ? (
-          <div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-        ) : events.length === 0 ? (
-          <p className="text-[10px] text-muted-foreground text-center py-6 px-3">Select a candidate to see its history.</p>
-        ) : (
+    <VisualPanelErrorBoundary panelLabel="VisualUnitHistoryTimeline">
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-xs">History</CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading ? (
+            <VisualSkeleton variant="list" />
+          ) : events.length === 0 ? (
+            <VisualEmptyState compact title="No history" description="Select a candidate to see its history." />
+          ) : (
           <ScrollArea className="h-[40vh]">
             <div className="px-3 pb-3 space-y-0.5">
               {events.map(ev => (
@@ -60,5 +61,6 @@ export function VisualUnitHistoryTimeline({ events, isLoading }: Props) {
         )}
       </CardContent>
     </Card>
+    </VisualPanelErrorBoundary>
   );
 }

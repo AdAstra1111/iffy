@@ -1,5 +1,7 @@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import type { VisualUnitRun } from '@/lib/types/visualUnits';
 
 interface Props {
@@ -14,7 +16,8 @@ export function VisualUnitRunsList({ runs, selectedRunId, onSelect }: Props) {
   }
 
   return (
-    <ScrollArea className="h-[20vh]">
+    <VisualPanelErrorBoundary panelLabel="VisualUnitRunsList">
+      <ScrollArea className="h-[20vh]">
       <div className="space-y-0.5 px-3 pb-3">
         {runs.map(run => (
           <button
@@ -37,5 +40,6 @@ export function VisualUnitRunsList({ runs, selectedRunId, onSelect }: Props) {
         ))}
       </div>
     </ScrollArea>
+    </VisualPanelErrorBoundary>
   );
 }

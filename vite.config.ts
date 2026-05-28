@@ -17,6 +17,13 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      '/api/supabase-proxy': {
+        target: 'https://hdfderbphdobomkdjypc.supabase.co',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/supabase-proxy\//, ''),
+      },
+    },
     hmr: {
       overlay: false,
     },

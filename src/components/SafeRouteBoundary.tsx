@@ -1,7 +1,7 @@
 import React from 'react';
 
 /** Module-level ref to prevent concurrent recovery across error boundaries. */
-const recoveryInFlightRef = { current: false };
+export const recoveryInFlightRef = { current: false };
 
 interface SafeRouteBoundaryProps {
   children: React.ReactNode;

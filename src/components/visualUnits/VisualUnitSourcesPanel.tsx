@@ -3,7 +3,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, RefreshCw, FileText } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
+import { RefreshCw, FileText } from 'lucide-react';
 import type { SourceVersionInfo } from '@/lib/types/visualUnits';
 
 interface Props {
@@ -16,12 +18,17 @@ interface Props {
 export function VisualUnitSourcesPanel({ sources, warnings, isLoading, onRefresh }: Props) {
   const entries = sources ? Object.entries(sources) : [];
 
+  if (isLoading) {
+    return <VisualSkeleton variant="panel" />;
+  }
+
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-xs">Source Documents</CardTitle>
-        <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onRefresh} disabled={isLoading}>
-          {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+    <VisualPanelErrorBoundary panelLabel="VisualUnitSourcesPanel">
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-xs">Source Documents</CardTitle>
+          <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={onRefresh}>
+            <RefreshCw className="h-3 w-3" />
         </Button>
       </CardHeader>
       <CardContent className="p-0">
@@ -53,5 +60,6 @@ export function VisualUnitSourcesPanel({ sources, warnings, isLoading, onRefresh
         </ScrollArea>
       </CardContent>
     </Card>
+    </VisualPanelErrorBoundary>
   );
 }

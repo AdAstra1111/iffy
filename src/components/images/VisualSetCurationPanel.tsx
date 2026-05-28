@@ -32,6 +32,8 @@ import {
 } from '@/hooks/useVisualSets';
 import { useImageEvaluation } from '@/hooks/useImageEvaluation';
 import { useProjectImages } from '@/hooks/useProjectImages';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
 
 // ── Status Config ──
 
@@ -76,12 +78,7 @@ export function VisualSetCurationPanel({ projectId, domain, targetName }: Props)
   const archivedSets = filteredSets.filter(s => s.status === 'archived');
 
   if (vs.isLoading) {
-    return (
-      <div className="flex items-center gap-2 py-3 text-muted-foreground">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span className="text-xs">Loading visual sets...</span>
-      </div>
-    );
+    return <VisualSkeleton variant="panel" />;
   }
 
   // Group active sets by entity + state for clear visualization
@@ -96,6 +93,7 @@ export function VisualSetCurationPanel({ projectId, domain, targetName }: Props)
   }, [activeSets]);
 
   return (
+    <VisualPanelErrorBoundary panelLabel="VisualSetCurationPanel">
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -164,6 +162,7 @@ export function VisualSetCurationPanel({ projectId, domain, targetName }: Props)
         </Collapsible>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 
@@ -314,7 +313,7 @@ function VisualSetSlotGrid({
   const canLock = readiness?.ready_to_lock === true && !isStale;
 
   if (loadingSlots) {
-    return <div className="px-3 pb-3"><Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" /></div>;
+    return <VisualSkeleton variant="panel" />;
   }
 
   return (
