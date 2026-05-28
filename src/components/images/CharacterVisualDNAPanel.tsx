@@ -40,6 +40,8 @@ import {
 } from '@/lib/images/dnaAutoFlow';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
