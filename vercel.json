@@ -30,6 +30,39 @@
     "api/supabase-proxy/functions/v1/project-folder-engine.ts": {
       "maxDuration": 300
     },
+    "api/supabase-proxy/functions/v1/generate-shot-list.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/generate-scene-demo.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/generate-framing.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/extract-visual-dna.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/auto-populate-visual-set.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/render-animatic.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/evaluate-visual-similarity.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/export-lookbook-pdf.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/comps-engine.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/comps-style-fingerprint.ts": {
+      "maxDuration": 300
+    },
+    "api/supabase-proxy/functions/v1/generate-casting-candidates.ts": {
+      "maxDuration": 300
+    },
     "api/nit-sync-proxy.ts": {
       "maxDuration": 300
     },
