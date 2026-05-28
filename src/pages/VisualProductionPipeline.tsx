@@ -5,7 +5,7 @@
  *
  * Embeds existing systems (CastingPipeline, ProductionDesign, LookBook) — no duplication.
  */
-import { useState, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useMemo, useEffect, useRef, lazy, Suspense, memo } from 'react';
 import { useVisualCoherence } from '@/hooks/useVisualCoherence';
 import { useVisualGovernance } from '@/hooks/useVisualGovernance';
 import type { GovernanceAwareStage } from '@/lib/visual/visualGovernanceTypes';
@@ -424,7 +424,7 @@ function usePipelineInputs(projectId: string | undefined): PipelineInputs {
 }
 
 // ── Stage Rail Item ──
-function StageRailItem({
+const StageRailItem = memo(function StageRailItem({
   state,
   isActive,
   onClick,
@@ -503,7 +503,7 @@ function StageRailItem({
       </div>
     </button>
   );
-}
+});
 
 // ── Visual Governance: Provenance display component ──
 function ProvenanceDisplay({ provenance }: { provenance?: StageProvenance }) {
@@ -2221,6 +2221,72 @@ function HeroFramesPanel({ projectId, inputs }: { projectId: string; inputs: Pip
   );
 }
 
+// ── Visual Stage Rail — extracted to stabilize re-renders ──
+const VisualStageRail = memo(function VisualStageRail({
+  stages,
+  activeStage,
+  onStageChange,
+  vcsResult,
+  vcsLoading,
+  vcsDiagnostics,
+}: {
+  stages: GovernanceAwareStage[];
+  activeStage: string;
+  onStageChange: (stage: PipelineStage) => void;
+  vcsResult: any;
+  vcsLoading: boolean;
+  vcsDiagnostics: any;
+}) {
+  return (
+    <>
+      {/* Stage rail — LEFT (visible on lg+) */}
+      <div className="w-56 xl:w-64 border-r border-border/20 bg-card/10 p-2 space-y-1 overflow-y-auto shrink-0 hidden lg:block">
+        {stages.map((state, idx) => (
+          <div key={state.stage}>
+            {idx > 0 && (
+              <div className="flex justify-center py-0.5">
+                <div className={`h-3 w-px ${
+                  stages[idx - 1].status === 'locked' || stages[idx - 1].status === 'approved'
+                    ? 'bg-primary/30'
+                    : 'bg-border/20'
+                }`} />
+              </div>
+            )}
+            <StageRailItem
+              state={state}
+              isActive={activeStage === state.stage}
+              onClick={() => onStageChange(state.stage)}
+            />
+          </div>
+        ))}
+        {/* Visual Coherence Score */}
+        <div className="mt-3 pt-3 border-t border-border/20">
+          <VisualCoherencePanel result={vcsResult} loading={vcsLoading} diagnostics={vcsDiagnostics} />
+        </div>
+      </div>
+
+      {/* Mobile stage selector */}
+      <div className="lg:hidden px-3 py-2 border-b border-border/20 bg-card/10 flex gap-1.5 overflow-x-auto">
+        {stages.map(state => {
+          const style = statusStyle(state.status);
+          const isActive = activeStage === state.stage;
+          return (
+            <button
+              key={state.stage}
+              onClick={() => onStageChange(state.stage)}
+              className={`shrink-0 px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
+                isActive ? `${style.bg} ${style.text} ${style.border} border` : 'text-muted-foreground hover:bg-muted/20'
+              }`}
+            >
+              {state.label}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+});
+
 export default function VisualProductionPipeline() {
   const { id: projectId } = useParams<{ id: string }>();
   const inputs = usePipelineInputs(projectId);
@@ -2236,10 +2302,12 @@ export default function VisualProductionPipeline() {
   const suggestedStage = useMemo(() => getActiveStage(stages), [stages]);
   const [activeStage, setActiveStage] = useState<PipelineStage>(suggestedStage);
 
-  // Auto-focus on suggested stage on first load
+  // Auto-focus on suggested stage on first load — guarded to prevent cascade
   useEffect(() => {
-    setActiveStage(suggestedStage);
-  }, [suggestedStage]);
+    if (suggestedStage && suggestedStage !== activeStage) {
+      setActiveStage(suggestedStage);
+    }
+  }, [suggestedStage, activeStage]);
 
   const activeState = stages.find(s => s.stage === activeStage) || stages[0];
 
@@ -2350,50 +2418,15 @@ export default function VisualProductionPipeline() {
 
       {/* Main layout */}
       <div key="vpp-main" className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        {/* Stage rail — LEFT (visible on lg+) */}
-        <div className="w-56 xl:w-64 border-r border-border/20 bg-card/10 p-2 space-y-1 overflow-y-auto shrink-0 hidden lg:block">
-          {stages.map((state, idx) => (
-            <div key={state.stage}>
-              {idx > 0 && (
-                <div className="flex justify-center py-0.5">
-                  <div className={`h-3 w-px ${
-                    stages[idx - 1].status === 'locked' || stages[idx - 1].status === 'approved'
-                      ? 'bg-primary/30'
-                      : 'bg-border/20'
-                  }`} />
-                </div>
-              )}
-              <StageRailItem
-                state={state}
-                isActive={activeStage === state.stage}
-                onClick={() => setActiveStage(state.stage)}
-              />
-            </div>
-          ))}
-          {/* Visual Coherence Score */}
-          <div className="mt-3 pt-3 border-t border-border/20">
-            <VisualCoherencePanel result={vcsResult} loading={vcsLoading} diagnostics={vcsDiagnostics} />
-          </div>
-        </div>
-
-        {/* Mobile stage selector */}
-        <div className="lg:hidden px-3 py-2 border-b border-border/20 bg-card/10 flex gap-1.5 overflow-x-auto">
-          {stages.map(state => {
-            const style = statusStyle(state.status);
-            const isActive = activeStage === state.stage;
-            return (
-              <button
-                key={state.stage}
-                onClick={() => setActiveStage(state.stage)}
-                className={`shrink-0 px-2.5 py-1.5 rounded-md text-[10px] font-medium transition-colors ${
-                  isActive ? `${style.bg} ${style.text} ${style.border} border` : 'text-muted-foreground hover:bg-muted/20'
-                }`}
-              >
-                {state.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Visual Stage Rail — desktop sidebar + mobile selector + coherence */}
+        <VisualStageRail
+          stages={stages}
+          activeStage={activeStage}
+          onStageChange={setActiveStage}
+          vcsResult={vcsResult}
+          vcsLoading={vcsLoading}
+          vcsDiagnostics={vcsDiagnostics}
+        />
 
         {/* Content panel — CENTER */}
         <div key="vpp-content" className="flex-1 overflow-y-auto">

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { resolvePipelineStages, type PipelineInputs } from '@/lib/visual/pipelineStatusResolver';
 import { 
@@ -99,33 +99,37 @@ export function useVisualGovernance({
     return () => { mountedRef.current = false; };
   }, [projectId, enabled, evaluate]);
 
-  // Compute merged stages
-  let mergedStages: GovernanceAwareStage[];
-  let dataSource: 'live_computed' | 'persisted_snapshot' | 'loading';
+  // Compute merged stages — stabilized with useMemo to prevent re-render cascades
+  const { mergedStages, dataSource } = useMemo(() => {
+    let mergedStages: GovernanceAwareStage[];
+    let dataSource: 'live_computed' | 'persisted_snapshot' | 'loading';
 
-  if (!inputs) {
-    mergedStages = [];
-    dataSource = 'loading';
-  } else {
-    const liveStages: GovernanceAwareStage[] = resolvePipelineStages(inputs).map(s => ({
-      ...s,
-      governance_source: 'live_computed' as const,
-    }));
-
-    if (isEvaluating && snapshot === null) {
-      // First evaluation in flight — show live compute
-      mergedStages = liveStages;
-      dataSource = 'live_computed';
-    } else if (snapshot && snapshot.length > 0) {
-      mergedStages = mergeGovernanceSnapshot(liveStages, snapshot, lastEvaluatedAt ?? undefined);
-      // Check if ALL stages have snapshot coverage
-      const map = new Map(snapshot.map(r => [r.stage_id, r]));
-      dataSource = liveStages.every(s => map.has(s.stage)) ? 'persisted_snapshot' : 'live_computed';
+    if (!inputs) {
+      mergedStages = [];
+      dataSource = 'loading';
     } else {
-      mergedStages = liveStages;
-      dataSource = 'live_computed';
+      const liveStages: GovernanceAwareStage[] = resolvePipelineStages(inputs).map(s => ({
+        ...s,
+        governance_source: 'live_computed' as const,
+      }));
+
+      if (isEvaluating && snapshot === null) {
+        // First evaluation in flight — show live compute
+        mergedStages = liveStages;
+        dataSource = 'live_computed';
+      } else if (snapshot && snapshot.length > 0) {
+        mergedStages = mergeGovernanceSnapshot(liveStages, snapshot, lastEvaluatedAt ?? undefined);
+        // Check if ALL stages have snapshot coverage
+        const map = new Map(snapshot.map(r => [r.stage_id, r]));
+        dataSource = liveStages.every(s => map.has(s.stage)) ? 'persisted_snapshot' : 'live_computed';
+      } else {
+        mergedStages = liveStages;
+        dataSource = 'live_computed';
+      }
     }
-  }
+
+    return { mergedStages, dataSource };
+  }, [inputs, isEvaluating, snapshot, lastEvaluatedAt]);
 
   return {
     stages: mergedStages,

@@ -210,6 +210,7 @@ const AnimatedRoutes = () => {
           <Route path="/ai-cast/actors" element={<ProtectedRoute><ActorLibrary /></ProtectedRoute>} />
           <Route path="/actor-marketplace" element={<ProtectedRoute><ActorMarketplace /></ProtectedRoute>} />
           <Route path="/calibration-lab" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
+          <Route path="/coverage-lab" element={<ProtectedRoute><CoverageLab /></ProtectedRoute>} />
           <Route path="/demo" element={<DemoPortal />} />
           <Route path="/demo/run" element={<ProtectedRoute><DemoDashboard /></ProtectedRoute>} />
           <Route path="/investor" element={<ProtectedRoute><InvestorPresentation /></ProtectedRoute>} />
