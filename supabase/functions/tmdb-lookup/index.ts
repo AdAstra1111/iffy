@@ -46,14 +46,28 @@ Deno.serve(async (req)=>{
       headers: authHeaders
     });
     if (!searchRes.ok) {
-      const errorBody = await searchRes.text();
-      console.error('TMDB API error:', searchRes.status, errorBody);
+      let tmdbMessage = 'Unknown TMDB error';
+      try {
+        const errorJson = await searchRes.json();
+        tmdbMessage = errorJson.status_message || `HTTP ${searchRes.status}`;
+      } catch {
+        tmdbMessage = `HTTP ${searchRes.status}`;
+      }
+      console.error('TMDB API error:', searchRes.status, tmdbMessage);
       return new Response(
-        JSON.stringify({ error: 'TMDB API error', status: searchRes.status }),
+        JSON.stringify({ error: 'TMDB API error', status: 502, tmdb_error: true, tmdb_status_code: searchRes.status, tmdb_message: tmdbMessage }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
     const searchData = await searchRes.json();
+    // TMDB error payload — invalid v3 keys return HTTP 200 with { success: false }
+    if (searchData.success === false || searchData.status_message) {
+      console.error('TMDB API error in response body:', searchData);
+      return new Response(
+        JSON.stringify({ error: 'TMDB API error', status: 502, tmdb_error: true, tmdb_status_code: searchData.status_code, tmdb_message: searchData.status_message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     if (!searchData.results || searchData.results.length === 0) {
       return new Response(JSON.stringify(mode === 'search' ? {
         results: []
@@ -106,6 +120,13 @@ Deno.serve(async (req)=>{
       creditsRes.json(),
       externalRes.json()
     ]);
+    if (detail.success === false || detail.status_message) {
+      console.error('TMDB API error in detail response:', detail);
+      return new Response(
+        JSON.stringify({ error: 'TMDB API error', status: 502, tmdb_error: true, tmdb_message: detail.status_message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     // Build notable credits (top 10 by popularity)
     const allCredits = [
       ...(credits.cast || []).map((c)=>({
