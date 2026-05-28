@@ -231,7 +231,6 @@ export function VisualExecutionHistoryPanel({ projectId, stageId }: Props) {
           ))}
         </div>
       </div>
-      </div>
     </VisualPanelErrorBoundary>
   );
 }

@@ -12,6 +12,7 @@ import type { ExecutionProvenanceRow } from '@/lib/visual/visualExecutionProvena
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Loader2, Check, X, RotateCcw, MessageSquare, ThumbsUp, ThumbsDown, RefreshCw } from 'lucide-react';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 interface Props {
   execution: ExecutionProvenanceRow;
@@ -67,7 +68,8 @@ export function VisualExecutionReviewPanel({ execution, onReviewComplete }: Prop
   const canReset = currentState !== 'pending_review';
 
   return (
-    <div className="border border-border/20 rounded p-2.5 space-y-2 bg-muted/[0.02]">
+    <VisualPanelErrorBoundary panelLabel="VisualExecutionReviewPanel" compact>
+      <div className="border border-border/20 rounded p-2.5 space-y-2 bg-muted/[0.02]">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
