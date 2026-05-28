@@ -16,6 +16,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import { cn } from '@/lib/utils';
 import { classifyCharacterIdentity } from '@/lib/images/characterImageEligibility';
 import { classifyPremiumImageQuality } from '@/lib/images/premiumQualityGate';
@@ -154,7 +156,8 @@ export function HeroFrameDetailViewer({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <VisualPanelErrorBoundary panelLabel="HeroFrameDetailViewer">
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl w-[96vw] max-h-[96vh] p-0 gap-0 bg-background border-border/50 overflow-hidden">
         <div className="flex flex-col md:flex-row h-full max-h-[96vh]">
           {/* ── Image Panel ── */}
@@ -418,6 +421,7 @@ export function HeroFrameDetailViewer({
           </div>
         </div>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+    </VisualPanelErrorBoundary>
   );
 }

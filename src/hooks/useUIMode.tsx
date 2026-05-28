@@ -105,3 +105,21 @@ export function useUIMode(): UIModeContextValue {
   if (!ctx) throw new Error('useUIMode must be used within UIModeProvider');
   return ctx;
 }
+
+/**
+ * useSafeUIMode — A safe wrapper around useUIMode that catches the
+ * "must be used within UIModeProvider" error.
+ *
+ * During React 18 + Suspense + lazy reconciliation, the UIModeContext can briefly
+ * disappear. useSafeUIMode catches the thrown error and returns safe defaults
+ * instead of propagating the crash up to an ErrorBoundary.
+ *
+ * Returns: { mode: UIMode; setMode: (m: UIMode) => void; loading: boolean }
+ */
+export function useSafeUIMode(): UIModeContextValue {
+  try {
+    return useUIMode();
+  } catch {
+    return { mode: 'simple', setMode: () => {}, loading: true };
+  }
+}

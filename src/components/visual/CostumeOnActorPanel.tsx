@@ -67,6 +67,9 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import type { VisualSetSlot } from '@/hooks/useVisualSets';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string | undefined;
@@ -948,18 +951,17 @@ export function CostumeOnActorPanel({ projectId }: Props) {
   }, [projectId, temporal, wardrobe, costume]);
 
   if (costume.isLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading costume-on-actor data...</div>;
+    return <VisualSkeleton variant="card" count={3} />;
   }
 
   if (!costume.hasWardrobe) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="p-6 text-center space-y-3">
-          <Shirt className="mx-auto h-8 w-8 opacity-40" />
-          <p className="text-sm text-muted-foreground">
-            Wardrobe profiles must be extracted before costume looks can be generated.
-          </p>
-          {!wardrobe.hasCanon ? (
+      <VisualEmptyState
+        icon={<Shirt className="h-8 w-8" />}
+        title="Wardrobe profiles required"
+        description="Wardrobe profiles must be extracted before costume looks can be generated."
+        action={
+          !wardrobe.hasCanon ? (
             <p className="text-xs text-muted-foreground">No canon data available — add project canon first.</p>
           ) : (
             <Button
@@ -974,27 +976,27 @@ export function CostumeOnActorPanel({ projectId }: Props) {
               )}
               {wardrobe.extracting ? 'Extracting…' : 'Extract Wardrobe Profiles'}
             </Button>
-          )}
-        </CardContent>
-      </Card>
+          )
+        }
+      />
     );
   }
 
   if (costume.boundCharacters.length === 0) {
     return (
-      <Card className="border-dashed">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          <User className="mx-auto mb-2 h-8 w-8 opacity-40" />
-          <p>No characters found in cast. Add characters to begin.</p>
-        </CardContent>
-      </Card>
+      <VisualEmptyState
+        icon={<User className="h-8 w-8" />}
+        title="No characters found"
+        description="No characters found in cast. Add characters to begin."
+      />
     );
   }
 
   const gls = costume.globalLockGapSummary;
 
   return (
-    <div className="space-y-4">
+    <VisualPanelErrorBoundary panelLabel="CostumeOnActorPanel">
+      <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -1796,5 +1798,6 @@ export function CostumeOnActorPanel({ projectId }: Props) {
         />
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }

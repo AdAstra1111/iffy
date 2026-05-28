@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import {
   ChevronDown, Film, CheckCircle2, AlertCircle, XCircle,
   Loader2, Play, Image, RefreshCw, Lock, ShieldAlert, CheckCheck,

@@ -12,6 +12,8 @@ import {
 } from '@/lib/visual/visualGovernanceTypes';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, Shield, AlertTriangle, FileText, Users, MapPin, Palette, Key, RefreshCw, Lock } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
@@ -40,7 +42,8 @@ export function HeroFramePreflightPanel({ projectId, activeStage }: Props) {
   if (activeStage !== 'hero_frames') return null;
 
   return (
-    <div className="border border-amber-500/20 rounded-lg bg-amber-500/[0.02] p-3 space-y-3">
+    <VisualPanelErrorBoundary panelLabel="HeroFramePreflightPanel">
+      <div className="border border-amber-500/20 rounded-lg bg-amber-500/[0.02] p-3 space-y-3">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -63,12 +66,7 @@ export function HeroFramePreflightPanel({ projectId, activeStage }: Props) {
         )}
       </div>
 
-      {isLoading && (
-        <div className="flex items-center gap-2 text-[10px] text-muted-foreground py-1">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Evaluating readiness...
-        </div>
-      )}
+      {isLoading && <VisualSkeleton variant="panel" lines={2} />}
 
       {isError && (
         <div className="flex items-center gap-2 text-[10px] text-red-600 py-1">
@@ -139,5 +137,6 @@ export function HeroFramePreflightPanel({ projectId, activeStage }: Props) {
         </>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }

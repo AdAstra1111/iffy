@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, RefreshCw, Image, CheckCircle } from 'lucide-react';
+import { FileBarChart, Loader2, RefreshCw, Image, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
 import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
@@ -103,15 +103,12 @@ export function ConceptBriefPanel({ projectId }: ConceptBriefPanelProps) {
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    );
+    return <VisualSkeleton variant="panel" lines={3} />;
   }
 
   return (
-    <div className="space-y-6">
+    <VisualPanelErrorBoundary panelLabel="ConceptBriefPanel">
+      <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-foreground">Executive Concept Brief</h2>
@@ -195,12 +192,13 @@ export function ConceptBriefPanel({ projectId }: ConceptBriefPanelProps) {
           })}
         </div>
       ) : (
-        <div className="text-center py-12 text-muted-foreground border border-dashed border-border rounded-lg">
-          <FileBarChart className="w-10 h-10 mx-auto mb-3 opacity-40" />
-          <p className="text-sm">No concept brief yet</p>
-          <p className="text-xs mt-1">Click "Build Concept Brief" to curate your best images into an investor-ready package</p>
-        </div>
+        <VisualEmptyState
+          icon={<FileBarChart className="h-10 w-10" />}
+          title="No concept brief yet"
+          description={'Click "Build Concept Brief" to curate your best images into an investor-ready package'}
+        />
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }

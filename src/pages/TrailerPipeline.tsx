@@ -29,7 +29,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { updateSearchParams } from '@/lib/searchParams';
-import { useUIMode } from '@/hooks/useUIMode';
+import { useSafeUIMode } from '@/hooks/useUIMode';
 
 export default function TrailerPipelinePage() {
   const { id: projectId } = useParams<{ id: string }>();
@@ -38,7 +38,7 @@ export default function TrailerPipelinePage() {
   const studioTabParam = searchParams.get('studioTab');
   const [activeTab, setActiveTab] = useState(studioTabParam && VALID_TABS.has(studioTabParam) ? studioTabParam : 'script');
   const [selectedScriptRunId, setSelectedScriptRunId] = useState<string>();
-  const { mode } = useUIMode();
+  const { mode } = useSafeUIMode();
 
   // Active plan from URL or auto-select
   const blueprintIdParam = searchParams.get('blueprintId') || undefined;
