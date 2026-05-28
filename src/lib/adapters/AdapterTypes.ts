@@ -67,26 +67,27 @@ export interface LadderDocument {
 
 // Adapter interface definitions — these are the contracts
 export interface DocLadderAdapter {
-  getLadder(format: string): LadderDocument[]
-  getCurrentDoc(): LadderDocument | null
-  generateDoc(intent: GenerationIntent): Promise<GenerationResult>
-  approveDoc(docId: string): Promise<void>
+  getLadder(format: string, projectId?: string): LadderDocument[]
+  getCurrentDoc(projectId?: string): LadderDocument | null
+  generateDoc(intent: GenerationIntent, projectId?: string): Promise<GenerationResult>
+  approveDoc(docId: string, projectId?: string): Promise<void>
 }
 
 export interface VisualAdapter {
-  getEntities(type: string): Promise<VisualEntity[]>
-  getEntityImages(type: string, id: string): Promise<VisualImage[]>
-  generateImage(entityType: string, entityId: string, intent: GenerationIntent): Promise<GenerationResult>
+  getEntities(type: string, projectId: string): Promise<VisualEntity[]>
+  getEntityImages(type: string, id: string, projectId: string): Promise<VisualImage[]>
+  generateImage(entityType: string, entityId: string, intent: GenerationIntent, projectId: string): Promise<GenerationResult>
   approveImage(imageId: string): Promise<void>
   setPrimaryImage(entityType: string, entityId: string, imageId: string): Promise<void>
-  getStyleProfile(): Promise<StyleProfile>
+  getStyleProfile(projectId: string): Promise<StyleProfile>
 }
 
 export interface CastAdapter {
-  getCastingStatus(): Promise<CastingStatus[]>
-  getCandidates(characterId: string): Promise<ActorCandidate[]>
-  shortlistActor(characterId: string, actorId: string): Promise<void>
-  approveCasting(characterId: string, actorId: string): Promise<void>
+  getCastingStatus(projectId: string): Promise<CastingStatus[]>
+  getCandidates(characterId: string, projectId: string): Promise<ActorCandidate[]>
+  shortlistActor(characterId: string, actorId: string, projectId: string): Promise<void>
+  approveCasting(characterId: string, actorId: string, projectId: string): Promise<void>
+  removeShortlist(characterId: string, actorId: string, projectId: string): Promise<void>
 }
 
 export interface ProduceAdapter {
@@ -95,13 +96,22 @@ export interface ProduceAdapter {
 }
 
 export interface PackageAdapter {
-  getPackageItems(): Promise<{ type: string; status: string }[]>
-  generateItem(type: string, intent: GenerationIntent): Promise<GenerationResult>
+  getPackageItems(projectId: string): Promise<{ type: string; status: string }[]>
+  generateItem(type: string, intent: GenerationIntent, projectId: string): Promise<GenerationResult>
 }
 
 export interface DeliverAdapter {
-  getExportTypes(): Promise<{ format: string; available: boolean }[]>
-  exportProject(format: string): Promise<GenerationResult>
+  getExportTypes(projectId: string): Promise<ExportTypeInfo[]>
+  exportProject(format: string, projectId: string): Promise<GenerationResult>
+}
+
+export interface ExportTypeInfo {
+  format: string
+  label: string
+  icon: string
+  description: string
+  available: boolean
+  estimatedSize: string | null
 }
 
 export interface IntelligenceAdapter {

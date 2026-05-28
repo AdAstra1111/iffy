@@ -257,13 +257,24 @@ describe('scene_spine_links RLS tighten migration - static structural validation
 });
 
 describe('Version collision check', () => {
-  it('no two migration files share the version prefix 20260311280000', () => {
+  it('no two migration files share the same version prefix (durable guard)', () => {
     const migrationsDir = path.resolve(__dirname, '../../supabase/migrations');
-    const files = fs.readdirSync(migrationsDir);
-    const version = '20260311280000';
-    const collidingFiles = files.filter((f) => f.startsWith(version));
-    // After the fix, only has_project_access_null_guard_v1 should remain at 20260311280000
-    expect(collidingFiles.length).toBe(1);
-    expect(collidingFiles[0]).toContain('has_project_access_null_guard');
+    const files = fs.readdirSync(migrationsDir).filter((f) => f.endsWith('.sql'));
+    // Extract the 17-character version prefix (YYYYMMDDHHMMSS + optional sub-version)
+    // e.g., 20260311280000, 20260311280001
+    const versionCounts = new Map<string, number>();
+    for (const f of files) {
+      // Match version: YYYYMMDDHHMMSS optionally followed by 001, 002, etc.
+      const match = f.match(/^(\d{14}(?:\d{3})?)/);
+      if (match) {
+        const prefix = match[1];
+        versionCounts.set(prefix, (versionCounts.get(prefix) || 0) + 1);
+      }
+    }
+    const collisions = Array.from(versionCounts.entries())
+      .filter(([, count]) => count > 1)
+      .map(([version, count]) => `${version}: ${count} files`);
+    expect(collisions, `Version collisions found: ${collisions.join(', ') || 'none'}`)
+      .toEqual([]);
   });
 });
