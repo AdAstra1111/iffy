@@ -200,6 +200,7 @@ export function VisualCanonExtractionPanel({ projectId }: Props) {
           ))}
         </div>
       )}
-    </div>
+      </div>
+    </VisualPanelErrorBoundary>
   );
 }

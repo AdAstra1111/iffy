@@ -10,6 +10,8 @@ import { AlertTriangle, CheckCircle, TrendingUp, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VCSResult, VCSComponentKey, VCSComponentResult } from '@/lib/visual/visualCoherenceEngine';
 import type { VCSDiagnostics } from '@/lib/visual/vcsInputAssembler';
+import { VisualSkeleton } from './VisualSkeleton';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 interface Props {
   result: VCSResult | null;
@@ -73,11 +75,7 @@ function ComponentRow({ name, comp }: { name: VCSComponentKey; comp: VCSComponen
 
 export function VisualCoherencePanel({ result, loading, diagnostics }: Props) {
   if (loading) {
-    return (
-      <div className="rounded-lg border border-border/40 p-4">
-        <div className="text-xs text-muted-foreground animate-pulse">Computing visual coherence…</div>
-      </div>
-    );
+    return <VisualSkeleton variant="panel" />;
   }
 
   if (!result) {
@@ -94,7 +92,8 @@ export function VisualCoherencePanel({ result, loading, diagnostics }: Props) {
   const entries = Object.entries(result.components) as [VCSComponentKey, VCSComponentResult][];
 
   return (
-    <div className="rounded-lg border border-border/40 overflow-hidden">
+    <VisualPanelErrorBoundary panelLabel="VisualCoherencePanel">
+      <div className="rounded-lg border border-border/40 overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border/30 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -158,6 +157,7 @@ export function VisualCoherencePanel({ result, loading, diagnostics }: Props) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </VisualPanelErrorBoundary>
   );
 }

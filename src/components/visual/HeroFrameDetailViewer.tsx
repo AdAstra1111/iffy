@@ -16,7 +16,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
 import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import { cn } from '@/lib/utils';
 import { classifyCharacterIdentity } from '@/lib/images/characterImageEligibility';

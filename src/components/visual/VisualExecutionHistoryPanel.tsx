@@ -14,6 +14,9 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Check, X, Clock, Layers, ArrowRight, AlertCircle, MessageSquare } from 'lucide-react';
 import { VisualExecutionReviewPanel } from './VisualExecutionReviewPanel';
+import { VisualSkeleton } from './VisualSkeleton';
+import { VisualEmptyState } from './VisualEmptyState';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
@@ -182,21 +185,16 @@ export function VisualExecutionHistoryPanel({ projectId, stageId }: Props) {
   });
 
   if (loading && rows.length === 0) {
-    return (
-      <div className="border-t border-border/30 mt-4 p-4 md:p-6">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Loading execution history…
-        </div>
-      </div>
-    );
+    return <VisualSkeleton variant="list" />;
   }
 
   if (error && rows.length === 0) {
     return (
-      <div className="border-t border-border/30 mt-4 p-4 md:p-6">
-        <p className="text-[10px] text-muted-foreground/60">Execution history unavailable</p>
-      </div>
+      <VisualEmptyState
+        title="Execution history unavailable"
+        compact
+        icon={<AlertCircle className="h-3 w-3" />}
+      />
     );
   }
 
@@ -212,7 +210,8 @@ export function VisualExecutionHistoryPanel({ projectId, stageId }: Props) {
   const filteredGroups = stageId ? groups.filter(g => g.stage_id === stageId) : groups;
 
   return (
-    <div className="border-t border-border/30 mt-4">
+    <VisualPanelErrorBoundary panelLabel="VisualExecutionHistoryPanel">
+      <div className="border-t border-border/30 mt-4">
       <div className="p-4 md:p-6 space-y-3">
         {/* Header */}
         <div className="flex items-center gap-2">
@@ -232,6 +231,7 @@ export function VisualExecutionHistoryPanel({ projectId, stageId }: Props) {
           ))}
         </div>
       </div>
-    </div>
+      </div>
+    </VisualPanelErrorBoundary>
   );
 }

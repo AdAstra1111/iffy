@@ -18,6 +18,12 @@ function captureError(type: string, message: string, details?: any) {
 
 // Global error handlers
 window.addEventListener('error', (e) => {
+  // Suppress transient removeChild errors — handled by SafeRouteBoundary, noise in diagnostics
+  if (e.error instanceof DOMException &&
+      e.error.name === 'NotFoundError' &&
+      e.error.message?.includes('removeChild')) {
+    return;
+  }
   captureError('UNCAUGHT', e.message, {
     filename: e.filename,
     lineno: e.lineno,

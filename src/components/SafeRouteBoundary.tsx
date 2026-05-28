@@ -12,7 +12,7 @@ interface SafeRouteBoundaryState {
   error: Error | null;
 }
 
-const MAX_RECOVERY_ATTEMPTS = 2;
+const MAX_RECOVERY_ATTEMPTS = 5;
 
 /**
  * Error boundary that catches transient React DOM reconciliation errors
@@ -38,6 +38,20 @@ export class SafeRouteBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    // Detect transient removeChild errors from Suspense+portal race conditions
+    const isRemoveChildError = error instanceof DOMException &&
+      error.name === 'NotFoundError' &&
+      error.message.includes('removeChild');
+    if (isRemoveChildError) {
+      console.warn('[SafeRouteBoundary] Transient removeChild error (Suspense+portal race) — recovering without counting attempt');
+      recoveryInFlightRef.current = true;
+      setTimeout(() => {
+        recoveryInFlightRef.current = false;
+        this.setState({ hasError: false, error: null });
+      }, 500);
+      return;
+    }
+
     // Guard: prevent concurrent recovery if another boundary is already recovering
     if (recoveryInFlightRef.current) {
       console.warn('[SafeRouteBoundary] Recovery already in flight — skipping concurrent recovery');
