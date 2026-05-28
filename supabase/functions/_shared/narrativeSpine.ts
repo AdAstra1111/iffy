@@ -797,3 +797,39 @@ export function parseClassBSpineCheckOutput(parsed: any): ClassBSpineCheckOutput
   if (checks.length === 0) return null;
   return { checks };
 }
+
+// ── lockNarrativeSpine — fires when Concept Brief is approved ──
+// Transitions the pending_lock decision_ledger spine entry to locked=true, status='active'.
+// No-op if already locked or if no pending_lock entry exists (user hasn't confirmed yet — diagnostic only).
+export async function lockNarrativeSpine(supabase: any, projectId: string, docType: string): Promise<void> {
+  if (docType !== 'concept_brief') return; // only fires on CB approval
+  try {
+    const { data: entries } = await supabase
+      .from('decision_ledger')
+      .select('id, locked, status')
+      .eq('project_id', projectId)
+      .eq('decision_key', 'narrative_spine')
+      .in('status', ['pending_lock', 'active']);
+    if (!entries || entries.length === 0) {
+      console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "no_spine_entry" }`);
+      return;
+    }
+    const activeEntry = entries.find((e: any) => e.status === 'active' && e.locked === true);
+    if (activeEntry) {
+      console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "already_locked", entry_id: "${activeEntry.id}" }`);
+      return;
+    }
+    const pendingEntry = entries.find((e: any) => e.status === 'pending_lock');
+    if (!pendingEntry) {
+      console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "not_confirmed_by_user" }`);
+      return;
+    }
+    await supabase
+      .from('decision_ledger')
+      .update({ locked: true, status: 'active' })
+      .eq('id', pendingEntry.id);
+    console.log(`[narrativeSpine] spine_locked { project_id: "${projectId}", entry_id: "${pendingEntry.id}", trigger: "concept_brief_approved" }`);
+  } catch (e: any) {
+    console.warn(`[narrativeSpine] spine_lock_error { project_id: "${projectId}", error: "${e?.message}" }`);
+  }
+}

@@ -45,6 +45,14 @@ Deno.serve(async (req)=>{
     const searchRes = await fetch(`https://api.themoviedb.org/3/search/person?query=${encodeURIComponent(name)}&include_adult=false&language=en-US&page=1${apiKeyParam}`, {
       headers: authHeaders
     });
+    if (!searchRes.ok) {
+      const errorBody = await searchRes.text();
+      console.error('TMDB API error:', searchRes.status, errorBody);
+      return new Response(
+        JSON.stringify({ error: 'TMDB API error', status: searchRes.status }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     const searchData = await searchRes.json();
     if (!searchData.results || searchData.results.length === 0) {
       return new Response(JSON.stringify(mode === 'search' ? {

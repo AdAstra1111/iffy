@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emitTransition, TRANSITION_EVENTS } from "../_shared/transitionLedger.ts";
 import { extractCanonConstraints, detectCanonDrift, logDriftResult } from "../_shared/canonConstraintEnforcement.ts";
+import { lockNarrativeSpine } from "../_shared/narrativeSpine.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -351,6 +352,13 @@ Deno.serve(async (req) => {
         console.log(`[project-folder-engine] set_current_version { version_id: "${documentVersionId}", document_id: "${version.document_id}" }`);
       } catch (setCurrentErr: any) {
         console.warn(`[project-folder-engine] set_current_version_failed { version_id: "${documentVersionId}", error: "${setCurrentErr?.message}" }`);
+      }
+
+      // ── Lock Narrative Spine on Concept Brief approval (fail-open — never blocks approval) ──
+      if (docTypeKey === 'concept_brief') {
+        await lockNarrativeSpine(db, projectId, docTypeKey).catch((e: any) => {
+          console.warn(`[project-folder-engine] lockNarrativeSpine_error { project_id: "${projectId}", error: "${e?.message}" }`);
+        });
       }
 
       // ── TRANSITION LEDGER: authoritative_version_resolved (fail-open — never block approval) ──

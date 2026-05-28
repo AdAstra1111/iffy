@@ -8,7 +8,7 @@ function compositeScore(ci: number, gp: number): number { return ci * CI_WEIGHT 
 import { emitTransition, TRANSITION_EVENTS } from "../_shared/transitionLedger.ts";
 import { getCanonicalNextStage } from "../_shared/ladder-invariant.ts";
 import { validateStageIdentity, buildDiagnostic } from "../_shared/stageIdentityContracts.ts";
-import { spineToPromptBlock } from "../_shared/narrativeSpine.ts";
+import { spineToPromptBlock, lockNarrativeSpine } from "../_shared/narrativeSpine.ts";
 import { extractCanonConstraints, detectCanonDrift, logDriftResult } from "../_shared/canonConstraintEnforcement.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isCPMEnabled, buildCPRepairDirections, CPM_GENERATION_PROMPT_BLOCK, logCPM } from "../_shared/characterPressureMatrix.ts";
@@ -3710,42 +3710,6 @@ This is a TV/Series format. Format Rules must define: episode count (${episodeCo
   }
 
   return ""; // unknown format — no seed, fall through to AI generation as before
-}
-
-// ── Helper: lockNarrativeSpine — fires when Concept Brief is approved ──
-// Transitions the pending_lock decision_ledger spine entry to locked=true, status='active'.
-// No-op if already locked or if no pending_lock entry exists (user hasn't confirmed yet — diagnostic only).
-async function lockNarrativeSpine(supabase: any, projectId: string, docType: string): Promise<void> {
-  if (docType !== 'concept_brief') return; // only fires on CB approval
-  try {
-    const { data: entries } = await supabase
-      .from('decision_ledger')
-      .select('id, locked, status')
-      .eq('project_id', projectId)
-      .eq('decision_key', 'narrative_spine')
-      .in('status', ['pending_lock', 'active']);
-    if (!entries || entries.length === 0) {
-      console.log(`[auto-run][spine] spine_lock_skipped { project_id: "${projectId}", reason: "no_spine_entry" }`);
-      return;
-    }
-    const activeEntry = entries.find((e: any) => e.status === 'active' && e.locked === true);
-    if (activeEntry) {
-      console.log(`[auto-run][spine] spine_lock_skipped { project_id: "${projectId}", reason: "already_locked", entry_id: "${activeEntry.id}" }`);
-      return;
-    }
-    const pendingEntry = entries.find((e: any) => e.status === 'pending_lock');
-    if (!pendingEntry) {
-      console.log(`[auto-run][spine] spine_lock_skipped { project_id: "${projectId}", reason: "not_confirmed_by_user" }`);
-      return;
-    }
-    await supabase
-      .from('decision_ledger')
-      .update({ locked: true, status: 'active' })
-      .eq('id', pendingEntry.id);
-    console.log(`[auto-run][spine] spine_locked { project_id: "${projectId}", entry_id: "${pendingEntry.id}", trigger: "concept_brief_approved" }`);
-  } catch (e: any) {
-    console.warn(`[auto-run][spine] spine_lock_error { project_id: "${projectId}", error: "${e?.message}" }`);
-  }
 }
 
 // ── Helper: finalize-best — promote best_version_id on job end ──
