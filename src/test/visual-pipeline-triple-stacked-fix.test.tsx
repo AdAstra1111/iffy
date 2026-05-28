@@ -71,6 +71,22 @@ describe('VisualProductionPipeline — ErrorBoundary structure (Fix #3)', () => 
     expect(boundaryContent).toContain('key="vpp-content"');
   });
 
+  it('sidebar (hidden lg:block) is OUTSIDE Suspense but INSIDE ErrorBoundary', () => {
+    // Verify the sidebar's "hidden lg:block" div exists inside ErrorBoundary
+    // but appears BEFORE the <Suspense> tag — proving Suspense wraps only content, not sidebar
+    const boundaryOpenIdx = PIPELINE_SOURCE.indexOf('<VisualPipelineErrorBoundary');
+    const boundaryCloseIdx = PIPELINE_SOURCE.lastIndexOf('</VisualPipelineErrorBoundary>');
+    const boundaryContent = PIPELINE_SOURCE.slice(boundaryOpenIdx, boundaryCloseIdx);
+
+    // Sidebar must be inside ErrorBoundary
+    expect(boundaryContent).toContain('hidden lg:block');
+
+    // Sidebar must appear BEFORE Suspense opening inside the ErrorBoundary
+    const sidebarIdx = boundaryContent.indexOf('hidden lg:block');
+    const suspenseIdx = boundaryContent.indexOf('<Suspense');
+    expect(sidebarIdx).toBeLessThan(suspenseIdx);
+  });
+
   it('errored component triggers fallback UI', async () => {
     // Use ErrorBoundary wrapping a component that throws
     const ThrowingChild = () => { throw new Error('Pipeline stage crashed'); };

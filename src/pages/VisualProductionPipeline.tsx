@@ -2347,11 +2347,6 @@ export default function VisualProductionPipeline() {
       </div>
 
       <VisualPipelineErrorBoundary stageLabel="Content Panel">
-        <Suspense fallback={
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        }>
 
       {/* Main layout */}
       <div key="vpp-main" className="flex-1 flex flex-col lg:flex-row overflow-hidden">
@@ -2402,6 +2397,11 @@ export default function VisualProductionPipeline() {
 
         {/* Content panel — CENTER */}
         <div key="vpp-content" className="flex-1 overflow-y-auto">
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          }>
           <div className="max-w-5xl mx-auto">
               {/* Visual Governance: stale risk + recommended action */}
               {(() => {
@@ -2507,9 +2507,9 @@ export default function VisualProductionPipeline() {
                 stageId={activeStage}
               />
           </div>
+          </Suspense>
         </div>
       </div>
-        </Suspense>
       </VisualPipelineErrorBoundary>
     </div>
   );

@@ -8,7 +8,7 @@ ADD COLUMN IF NOT EXISTS analysis_passes jsonb DEFAULT NULL;
 
 -- Create storage bucket for project documents
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('project-documents', 'project-documents', false) ON CONFLICT (id) DO NOTHING ON CONFLICT (id) DO NOTHING;
+VALUES ('project-documents', 'project-documents', false) ON CONFLICT (id) DO NOTHING;
 
 -- RLS: Users can upload documents to their own folder
 CREATE POLICY "Users can upload project documents"
