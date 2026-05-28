@@ -15,7 +15,7 @@
  * │  Legacy: "Open in Classic View"                    │
  * └───────────────────────────────────────────────────┘
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink, BarChart3, CheckCircle2, Users, UserCheck, Clock } from 'lucide-react'
@@ -24,6 +24,7 @@ import { toast } from 'sonner'
 import { useFeatureFlag } from '@/hooks/useFeatureFlag'
 import { supabase } from '@/integrations/supabase/client'
 import { castAdapter } from '@/lib/adapters/castAdapter'
+import { useExpertMode } from '@/hooks/useExpertMode'
 
 import CharacterCastingList from '@/components/cast/CharacterCastingList'
 import CandidateGrid from '@/components/cast/CandidateGrid'
@@ -32,6 +33,9 @@ import BindingControls from '@/components/cast/BindingControls'
 
 import type { CastingStatus, ActorCandidate } from '@/lib/adapters/AdapterTypes'
 import type { ActorProfile } from '@/components/cast/ActorDetail'
+
+// ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
+const ExpertCastPanel = React.lazy(() => import('@/components/cast/ExpertCastPanel'))
 
 // ── Query keys ───────────────────────────────────────────────────────────────
 
@@ -46,6 +50,7 @@ const QK = {
 const CastWorkspace: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>()
   const flagEnabled = useFeatureFlag('NEW_WORKSPACE_CAST')
+  const expertMode = useExpertMode()
   const qc = useQueryClient()
 
   // ── Local state ────────────────────────────────────────────────────────
@@ -441,6 +446,13 @@ const CastWorkspace: React.FC = () => {
           {mainContent}
         </div>
       </div>
+
+      {/* Expert mode metadata panel */}
+      {expertMode && (
+        <Suspense fallback={null}>
+          <ExpertCastPanel projectId={projectId!} />
+        </Suspense>
+      )}
     </div>
   )
 }

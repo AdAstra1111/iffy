@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveGateway } from "../_shared/llm.ts";
 import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
 import { computeEdgeQualityGate } from "../_shared/edgeQualityGate.ts";
 import { resolveVisualStyleProfile } from "../_shared/visualStyleAuthority.ts";
@@ -1298,8 +1297,6 @@ serve(async (req)=>{
     headers: corsHeaders
   });
   try {
-    const _gw = resolveGateway();
-    if (!_gw.apiKey) throw new Error("No AI gateway key configured (OPENROUTER_API_KEY / OPENROUTER_API_KEY)");
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -2376,7 +2373,7 @@ FRAMING RULES:
       // Use identity references for ALL character generation when locked
       const refsForThisShot = identityLockUsed && assetGroup === "character" ? identityReferenceUrls : [];
       try {
-        const imageResult = await generateImage(_gw.apiKey, prompt, genConfig.model, _gw.url, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
+        const imageResult = await generateImage(genConfig.providerApiKey, prompt, genConfig.model, genConfig.gatewayUrl, refsForThisShot.length > 0 ? refsForThisShot : undefined, effectiveWidth, effectiveHeight);
         const identitySegment = identity_mode ? '-identity' : '';
         const stateSegment = state_key ? `-${state_key}` : '';
         const storagePath = `${project_id}/lookbook/${section}/${Date.now()}-${shotType || `v${i}`}${identitySegment}${stateSegment}.${imageResult.format}`;

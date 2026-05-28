@@ -14,7 +14,7 @@
  * │ │                         │ │ Score: 82   │  │
  * └─────────────────────────────└───────────────┘
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ExternalLink } from 'lucide-react'
@@ -31,9 +31,14 @@ import DocumentViewer from '@/components/develop/DocumentViewer'
 import CanonContextRail from '@/components/develop/CanonContextRail'
 import QualityScore from '@/components/develop/QualityScore'
 import DevelopToolbar from '@/components/develop/DevelopToolbar'
+import { useExpertMode } from '@/hooks/useExpertMode'
+import { ExpertModeGate } from '@/components/shell/ExpertModeGate'
 
 import type { LadderDocument } from '@/lib/adapters/AdapterTypes'
 import { getLadderForFormat } from '@/lib/stages/registry'
+
+// ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
+const ExpertDevelopPanel = React.lazy(() => import('@/components/develop/ExpertDevelopPanel'))
 
 // ── Label map ───────────────────────────────────────────────────────────────
 
@@ -59,6 +64,7 @@ function getStageLabel(stage: string): string {
 const DevelopWorkspace: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>()
   const flagEnabled = useFeatureFlag('NEW_WORKSPACE_DEVELOP')
+  const expertMode = useExpertMode()
 
   // ── Project context ────────────────────────────────────────────────────
   const { project, isLoading: projectLoading } = useProject(projectId)
@@ -444,6 +450,13 @@ const DevelopWorkspace: React.FC = () => {
           Open in Classic View
         </Link>
       </div>
+
+      {/* Expert mode metadata panel */}
+      {expertMode && (
+        <Suspense fallback={null}>
+          <ExpertDevelopPanel projectId={projectId!} docId={currentDocId} />
+        </Suspense>
+      )}
     </div>
   )
 }

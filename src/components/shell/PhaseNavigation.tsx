@@ -1,18 +1,20 @@
 /**
  * PhaseNavigation — horizontal phase bar with 7 phases + Intelligence trigger.
  *
- * All phases are locked/disabled for now (workspaces come in later tasks).
- * Clicking any locked phase shows a "Coming soon" tooltip.
+ * Detects active phase from URL, highlights current phase, enables navigation
+ * to available workspaces, and shows locked/coming-soon states for unavailable
+ * phases. Respects feature flags for workspace gating.
  */
 
-import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { Lock } from 'lucide-react'
+import { Lock, Check } from 'lucide-react'
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { useWorkspaceNav, getLegacyFallbackUrl, useProjectIdFromPath } from '@/hooks/useWorkspaceNav'
 
 const SHELL_FOCUS =
   'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background'
@@ -45,8 +47,24 @@ interface PhaseNavigationProps {
 }
 
 export function PhaseNavigation({ onIntelligenceToggle }: PhaseNavigationProps) {
-  // No active phase initially — all locked
-  const [activePhase] = useState<string | null>(null)
+  const navigate = useNavigate()
+  const { active, completed, isAvailable } = useWorkspaceNav()
+  const projectId = useProjectIdFromPath()
+
+  const handlePhaseClick = (phaseKey: string) => {
+    if (!projectId) return
+
+    if (isAvailable(phaseKey)) {
+      // Navigate to the workspace route
+      navigate(`/projects/${projectId}/${phaseKey}`)
+    } else {
+      // Navigate to the legacy fallback URL
+      navigate(getLegacyFallbackUrl(phaseKey, projectId))
+    }
+  }
+
+  // Determine if this is a workspace route at all
+  const onWorkspaceRoute = active !== null
 
   return (
     <nav className={cn(
@@ -57,35 +75,68 @@ export function PhaseNavigation({ onIntelligenceToggle }: PhaseNavigationProps) 
       {/* Phase items */}
       <div className="flex items-center gap-0.5 flex-1 overflow-x-auto">
         {PHASES.map((phase) => {
-          const isActive = activePhase === phase.key
-          const isLocked = true // All phases locked for now
+          const isActive = active === phase.key
+          const isCompleted = (completed as string[]).includes(phase.key)
+          const isAvailableForPhase = isAvailable(phase.key)
+          const isFuturePhase = !isActive && !isCompleted
+          const isClickable = !!projectId
+          const showLocked = !isAvailableForPhase && !isActive && !isCompleted
+
+          // If the workspace flag is false, phase still navigates (to legacy URL)
+          // Only show as genuinely locked if not even the legacy route exists
+          // Since all phases can navigate (either to workspace or legacy), we keep them all clickable
 
           return (
             <Tooltip key={phase.key}>
               <TooltipTrigger asChild>
                 <button
-                  disabled
+                  onClick={() => handlePhaseClick(phase.key)}
                   className={cn(
                     'relative flex items-center gap-1.5',
                     'px-2.5 py-1.5 rounded-md',
                     'text-[11px] font-medium tracking-tight',
                     'transition-all duration-150',
-                    'cursor-not-allowed',
-                    isActive
-                      ? 'text-foreground bg-muted/30'
-                      : cn(SHELL_UI.disabled, SHELL_UI.hoverText, SHELL_UI.hoverBg),
+                    isClickable ? 'cursor-pointer' : 'cursor-default',
+                    // Active phase: highlighted with glow
+                    isActive && cn(
+                      'text-foreground bg-muted/30',
+                      'shadow-[0_0_8px_rgba(168,85,247,0.15)]',
+                      'after:absolute after:bottom-0 after:left-1/4 after:w-1/2 after:h-[2px]',
+                      'after:bg-purple-400/60 after:rounded-full after:shadow-[0_0_4px_rgba(168,85,247,0.4)]',
+                    ),
+                    // Completed phase
+                    isCompleted && !isActive && cn(
+                      'text-foreground/80',
+                      SHELL_UI.hoverText,
+                      SHELL_UI.hoverBg,
+                    ),
+                    // Future phase (not active, not completed)
+                    isFuturePhase && !isActive && cn(
+                      SHELL_UI.disabled,
+                      SHELL_UI.hoverText,
+                      SHELL_UI.hoverBg,
+                    ),
+                    // Not on a workspace route — dim everything
+                    !onWorkspaceRoute && cn(SHELL_UI.disabled),
                     SHELL_FOCUS,
                   )}
                 >
                   <span className="text-xs">{phase.icon}</span>
                   <span>{phase.label}</span>
-                  {isLocked && (
+                  {isCompleted && !isActive && (
+                    <Check className="h-2.5 w-2.5 text-green-400/70 ml-0.5" />
+                  )}
+                  {showLocked && (
                     <Lock className="h-2.5 w-2.5 text-muted-foreground/20 ml-0.5" />
                   )}
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-[10px]">
-                Coming soon
+                {isActive && 'Current phase'}
+                {isCompleted && !isActive && 'Completed'}
+                {!isActive && !isCompleted && !isAvailableForPhase && 'Coming soon'}
+                {!isActive && !isCompleted && isAvailableForPhase && !onWorkspaceRoute && phase.label}
+                {isFuturePhase && !isActive && isAvailableForPhase && onWorkspaceRoute && 'Complete current phase first'}
               </TooltipContent>
             </Tooltip>
           )

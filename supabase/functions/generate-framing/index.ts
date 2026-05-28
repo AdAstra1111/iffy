@@ -5,6 +5,7 @@
  * POST { projectId, contentType }
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { resolveGateway } from "../_shared/llm.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -16,8 +17,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENROUTER_API_KEY");
-    if (!OPENROUTER_API_KEY) throw new Error("No AI API key configured — set OPENROUTER_API_KEY or OPENROUTER_API_KEY");
+    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") || Deno.env.get("OPENAI_API_KEY");
+    if (!OPENROUTER_API_KEY) throw new Error("No AI API key configured — set OPENROUTER_API_KEY or OPENAI_API_KEY");
 
     const sbUrl = Deno.env.get("SUPABASE_URL")!;
     const sbKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;

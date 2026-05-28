@@ -1,3 +1,5 @@
+import type { ImageGenRequest } from './imageGen.ts';
+
 /**
  * Image Generation API Resolver — Single source of truth for provider/model/config selection.
  *
@@ -71,7 +73,7 @@ const IMAGE_MODELS = {
 const GATEWAY_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const PROVIDER = 'openrouter';
 const API_KEY_ENV = 'OPENROUTER_API_KEY';
-const FALLBACK_API_KEY_ENV = 'OPENROUTER_API_KEY';
+const FALLBACK_API_KEY_ENV = 'OPENAI_API_KEY';
 
 // ── Role → Quality mapping ──────────────────────────────────────────────────
 
@@ -161,6 +163,42 @@ function buildRationale(
   parts.push(`Model: ${model}`);
   if (fallback) parts.push('FALLBACK: primary model unavailable');
   return parts.join(' | ');
+}
+
+// ── Image API Key Resolver ──────────────────────────────────────────────────
+
+/**
+ * Resolve the API key for image generation using a priority chain.
+ * Priority: OPENROUTER_API_KEY → OPENAI_API_KEY
+ *
+ * Use this instead of reading env vars directly in edge functions.
+ */
+export function resolveImageApiKey(): string | undefined {
+  if (typeof Deno === 'undefined') return undefined;
+  return Deno.env.get(API_KEY_ENV) || Deno.env.get(FALLBACK_API_KEY_ENV) || undefined;
+}
+
+// ── Convenience: build a complete ImageGenRequest ───────────────────────────
+
+/**
+ * Convenience function that returns a complete ImageGenRequest from resolver
+ * inputs and a prompt. Callers can pass this directly to generateImageViaGateway()
+ * without manually assembling gatewayUrl, apiKey, and model.
+ */
+export function resolveImageGenerationRequest(
+  input: ImageGenResolverInput,
+  prompt: string,
+  referenceImageUrls?: string[],
+): ImageGenRequest {
+  const config = resolveImageGenerationConfig(input);
+  const apiKey = config.providerApiKey || resolveImageApiKey() || '';
+  return {
+    gatewayUrl: config.gatewayUrl,
+    apiKey,
+    model: config.model,
+    prompt,
+    referenceImageUrls,
+  };
 }
 
 // ── Helper: build repository metadata ───────────────────────────────────────

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
+import { resolveImageGenerationConfig, buildImageRepositoryMeta, resolveImageApiKey } from "../_shared/imageGenerationResolver.ts";
 import { resolveVisualStyleProfile } from "../_shared/visualStyleAuthority.ts";
 import { resolveFormatToLane, resolvePrestigeStyle, assemblePrestigePrompt } from "../_shared/prestigeStyleSystem.ts";
 const corsHeaders = {
@@ -788,8 +788,8 @@ serve(async (req)=>{
     headers: corsHeaders
   });
   try {
-    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY is not configured");
+    const OPENROUTER_API_KEY=***: undefined;
+    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway API key configured");
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

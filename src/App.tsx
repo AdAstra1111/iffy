@@ -111,6 +111,9 @@ const ProjectImageLibrary = lazy(() => import("./pages/ProjectImageLibrary"));
 const ActorLibrary = lazy(() => import("./pages/ActorLibrary"));
 const CharacterEntityMergePage = lazy(() => import("./pages/CharacterEntityMergePage"));
 
+// System dashboard
+const SystemDashboard = lazy(() => import("./pages/workspaces/SystemDashboard"));
+
 // Workspace routes (A5 — workspace stubs)
 const ConceptWorkspace = lazy(() => import("./pages/workspaces/ConceptWorkspace"));
 const DevelopWorkspace = lazy(() => import("./pages/workspaces/DevelopWorkspace"));
@@ -125,6 +128,10 @@ import { ProjectShell } from "@/components/project/ProjectShell";
 
 // PlatformShell — cinematic OS shell wrapper (A1)
 import { PlatformShell } from "@/components/shell/PlatformShell";
+
+// SystemShell — minimal technical shell for /system/* routes
+import { SystemShell } from "@/components/shell/SystemShell";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 
 // Trailer redirect helper — maps old trailer routes to canonical /projects/:id/trailer?tab=
 function TrailerRedirect({ tab }: { tab?: string }) {
@@ -170,11 +177,14 @@ const PageFallback = () => (
 
 const AnimatedRoutes = () => {
   const location = useLocation();
+  const systemMode = useFeatureFlag('NEW_SYSTEM_MODE');
+  const isSystemRoute = systemMode && location.pathname.startsWith('/system');
+  const Shell = isSystemRoute ? SystemShell : PlatformShell;
   return (
     <>
       <SafeRouteBoundary>
       <Suspense fallback={<PageFallback />}>
-        <PlatformShell>
+        <Shell>
         <Routes location={location} >
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -276,9 +286,23 @@ const AnimatedRoutes = () => {
           <Route path="/invite" element={<AcceptInvite />} />
           <Route path="/share/pack/:token" element={<SharePackView />} />
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
+          {/* System mode routes — gated by NEW_SYSTEM_MODE feature flag */}
+          {systemMode && (
+            <>
+              <Route path="/system" element={<ProtectedRoute><SystemDashboard /></ProtectedRoute>} />
+              <Route path="/system/kanban" element={<ProtectedRoute><Pipeline /></ProtectedRoute>} />
+              <Route path="/system/pipeline" element={<ProtectedRoute><AutorunMonitor /></ProtectedRoute>} />
+              <Route path="/system/calibration" element={<ProtectedRoute><CalibrationLab /></ProtectedRoute>} />
+              <Route path="/system/coverage" element={<ProtectedRoute><CoverageLab /></ProtectedRoute>} />
+              <Route path="/system/trend-governance" element={<ProtectedRoute><TrendGovernance /></ProtectedRoute>} />
+              <Route path="/system/intel-policies" element={<ProtectedRoute><IntelPolicies /></ProtectedRoute>} />
+              <Route path="/system/blueprint" element={<ProtectedRoute><CIBlueprintEngine /></ProtectedRoute>} />
+              <Route path="/system/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            </>
+          )}
           <Route path="*" element={<NotFound />} />
         </Routes>
-        </PlatformShell>
+        </Shell>
       </Suspense>
     </SafeRouteBoundary>
     </>

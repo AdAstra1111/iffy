@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 
@@ -17,6 +17,10 @@ import VisualGrid from '@/components/visualize/VisualGrid'
 import ImageViewer from '@/components/visualize/ImageViewer'
 import GenerationControls from '@/components/visualize/GenerationControls'
 import EntityDetailPanel from '@/components/visualize/EntityDetailPanel'
+import { useExpertMode } from '@/hooks/useExpertMode'
+
+// ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
+const ExpertVisualizePanel = React.lazy(() => import('@/components/visualize/ExpertVisualizePanel'))
 
 // ── Entity List Card (for the overview before entity selection) ──────────────
 
@@ -87,6 +91,7 @@ function EntityListCard({ entity, onClick }: EntityListCardProps) {
 
 const VisualizeWorkspace: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>()
+  const expertMode = useExpertMode()
 
   // ── State ────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState<string | null>(null)
@@ -672,6 +677,13 @@ const VisualizeWorkspace: React.FC = () => {
           Open in Classic View
         </Link>
       </div>
+
+      {/* Expert mode metadata panel */}
+      {expertMode && (
+        <Suspense fallback={null}>
+          <ExpertVisualizePanel projectId={projectId!} />
+        </Suspense>
+      )}
     </div>
   )
 }

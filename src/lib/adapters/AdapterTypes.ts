@@ -114,8 +114,29 @@ export interface ExportTypeInfo {
   estimatedSize: string | null
 }
 
+// ── Intelligence Overlay Types ──────────────────────────────────────────────
+
+export type InsightCategory = 'trends' | 'market' | 'financing' | 'reports'
+
+export interface InsightCardData {
+  id: string
+  title: string
+  text: string
+  relevance: number          // 0–100, mapped to subtle indicator
+  sourceIcon: string         // emoji or lucide icon name
+  sourceLabel: string
+  category: InsightCategory
+  supportingData?: Record<string, unknown>
+}
+
 export interface IntelligenceAdapter {
-  getInsights(context: string): Promise<{ insights: string[] }>
+  getInsights(context: string, data?: {
+    trends?: unknown[]
+    marketData?: unknown[]
+    dashboardData?: unknown
+    reports?: unknown[]
+    project?: { format?: string; genres?: string[]; budget_range?: string }
+  }): InsightCardData[]
 }
 
 // Combined adapter registry

@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       qualityTarget: "standard",
     });
 
-    const apiKey = Deno.env.get(genConfig.apiKeyEnvVar);
+    const apiKey=***d) || '';
     if (!apiKey) {
       await updateRunStatus(run_id, "failed", "No API key configured");
       return new Response(

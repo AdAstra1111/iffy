@@ -740,8 +740,6 @@ Deno.serve(async (req)=>{
   try {
     const { project_id, count = 4, slot_index, target_narrative_function } = await req.json();
     if (!project_id) throw new Error("project_id is required");
-    const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY");
-    if (!OPENROUTER_API_KEY) throw new Error("OPENROUTER_API_KEY not configured");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Server configuration error");
@@ -820,6 +818,7 @@ Deno.serve(async (req)=>{
       qualityTarget: "premium"
     };
     const genConfig = resolveImageGenerationConfig(resolverInput);
+    if (!genConfig.providerApiKey) throw new Error("No AI gateway API key configured");
     const repoMeta = buildImageRepositoryMeta(genConfig, resolverInput);
     const effectiveCount = Math.min(Math.max(count, 1), 16);
     const results = [];
@@ -960,7 +959,7 @@ Deno.serve(async (req)=>{
         const resp = await fetch(GATEWAY_URL, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+            Authorization: `Bearer ${genConfig.providerApiKey}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({

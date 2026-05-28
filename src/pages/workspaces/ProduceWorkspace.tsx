@@ -19,7 +19,7 @@
  * │ [Open in Classic View]                                      │
  * └─────────────────────────────────────────────────────────────┘
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { ExternalLink, Film, Camera, Clapperboard, Music, CheckCircle2, Circle, Loader2, AlertCircle, Users, MapPin } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -33,9 +33,13 @@ import { useBlueprints } from '@/lib/trailerPipeline/useTrailerPipeline'
 import { useAudioAssets } from '@/lib/trailerPipeline/audioHooks'
 import { produceAdapter } from '@/lib/adapters/produceAdapter'
 import { supabase } from '@/integrations/supabase/client'
+import { useExpertMode } from '@/hooks/useExpertMode'
 
 import { VisualSkeleton } from '@/components/visual/VisualSkeleton'
 import { VisualEmptyState } from '@/components/visual/VisualEmptyState'
+
+// ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
+const ExpertProducePanel = React.lazy(() => import('@/components/produce/ExpertProducePanel'))
 
 // ── Asset type labels ──────────────────────────────────────────────────────
 
@@ -54,6 +58,7 @@ const ASSET_META: Record<AssetType, { label: string; icon: React.ElementType }> 
 const ProduceWorkspace: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>()
   const flagEnabled = useFeatureFlag('NEW_WORKSPACE_PRODUCE')
+  const expertMode = useExpertMode()
 
   // ── Project context ────────────────────────────────────────────────────
   const { project, isLoading: projectLoading } = useProject(projectId)
@@ -396,6 +401,13 @@ const ProduceWorkspace: React.FC = () => {
           Open in Classic View
         </Link>
       </div>
+
+      {/* Expert mode metadata panel */}
+      {expertMode && (
+        <Suspense fallback={null}>
+          <ExpertProducePanel projectId={projectId!} />
+        </Suspense>
+      )}
     </div>
   )
 }

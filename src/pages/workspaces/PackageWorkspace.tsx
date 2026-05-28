@@ -16,7 +16,7 @@
  * Each item shows status. Generation triggers existing backend.
  * Legacy fallback link to classic view.
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, Suspense } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { ExternalLink, Loader2, CheckCircle2, Clock, AlertCircle, FileText } from 'lucide-react'
@@ -25,6 +25,10 @@ import { Badge } from '@/components/ui/badge'
 import { useFeatureFlag } from '@/hooks/useFeatureFlag'
 import { useProject } from '@/hooks/useProjects'
 import { packageAdapter } from '@/lib/adapters/packageAdapter'
+import { useExpertMode } from '@/hooks/useExpertMode'
+
+// ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
+const ExpertPackagePanel = React.lazy(() => import('@/components/package/ExpertPackagePanel'))
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,6 +86,7 @@ function getItemLabel(type: string): string {
 const PackageWorkspace: React.FC = () => {
   const { id: projectId } = useParams<{ id: string }>()
   const flagEnabled = useFeatureFlag('NEW_WORKSPACE_PACKAGE')
+  const expertMode = useExpertMode()
 
   // ── Project context ────────────────────────────────────────────────────
   const { project, isLoading: projectLoading } = useProject(projectId)
@@ -373,6 +378,13 @@ const PackageWorkspace: React.FC = () => {
           Open in Classic View
         </Link>
       </div>
+
+      {/* Expert mode metadata panel */}
+      {expertMode && (
+        <Suspense fallback={null}>
+          <ExpertPackagePanel projectId={projectId!} />
+        </Suspense>
+      )}
     </div>
   )
 }
