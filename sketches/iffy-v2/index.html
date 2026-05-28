@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>IFFY Workspaces</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0a0a0b; color: #f0f0f0; min-height: 100vh; }
+
+/* Header */
+.header { display: flex; align-items: center; padding: 0 16px; height: 40px; border-bottom: 1px solid rgba(255,255,255,0.05); background: #0a0a0b; }
+.header .logo { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, #a855f7, #4f46e5); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: white; margin-right: 8px; }
+.header .title { font-size: 14px; font-family: Georgia, serif; color: white; }
+.header .badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: rgba(59,130,246,0.15); color: #93c5fd; border: 1px solid rgba(59,130,246,0.2); margin-left: 8px; }
+.header .score { font-size: 10px; color: rgba(255,255,255,0.4); margin-left: 8px; }
+
+/* Tabs */
+.tabs { display: flex; align-items: center; height: 36px; border-bottom: 1px solid rgba(255,255,255,0.05); padding: 0 16px; gap: 16px; background: rgba(10,10,11,0.6); }
+.tab { font-size: 11px; font-weight: 500; cursor: pointer; padding: 8px 0; color: rgba(255,255,255,0.4); border: none; background: none; font-family: inherit; }
+.tab:hover { color: rgba(255,255,255,0.7); }
+.tab.active { color: rgba(255,255,255,0.9); border-bottom: 2px solid rgba(168,85,247,0.4); }
+.tab .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+.tab .dot.active { background: #a855f7; box-shadow: 0 0 6px rgba(168,85,247,0.3); }
+
+/* Workspace panels */
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* Develop */
+.develop-bg { background: linear-gradient(135deg, #1a1a1a, #121212); min-height: calc(100vh - 77px); }
+.develop-bg .ladder { display: flex; align-items: center; height: 40px; border-bottom: 1px solid rgba(255,255,255,0.05); padding: 0 24px; gap: 4px; font-size: 10px; overflow-x: auto; }
+.develop-bg .ladder .done { color: #34d399; display: flex; align-items: center; gap: 4px; }
+.develop-bg .ladder .current { color: #a855f7; display: flex; align-items: center; gap: 4px; }
+.develop-bg .ladder .future { color: rgba(255,255,255,0.2); }
+.develop-bg .ladder .sep { color: rgba(255,255,255,0.1); margin: 0 4px; }
+.develop-bg .content { display: flex; }
+.develop-bg .doc { flex: 1; padding: 32px; max-width: 720px; margin: 0 auto; }
+.develop-bg .doc h2 { font-size: 10px; color: #a855f7; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+.develop-bg .doc h1 { font-size: 20px; font-family: Georgia, serif; color: white; margin-bottom: 24px; }
+.develop-bg .doc p { font-size: 15px; font-family: Georgia, serif; line-height: 1.7; color: rgba(255,255,255,0.65); margin-bottom: 16px; }
+.develop-bg .doc .score { display: inline-block; font-family: monospace; font-size: 14px; color: #34d399; background: rgba(52,211,153,0.1); padding: 4px 10px; border-radius: 6px; margin-bottom: 24px; }
+.develop-bg .rail { width: 240px; border-left: 1px solid rgba(255,255,255,0.05); padding: 16px; flex-shrink: 0; }
+.develop-bg .rail h3 { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.develop-bg .rail .card { padding: 10px; border-radius: 8px; background: rgba(255,255,255,0.04); margin-bottom: 8px; }
+.develop-bg .rail .card .avatar { width: 20px; height: 20px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.develop-bg .rail .card .name { font-size: 12px; color: white; }
+.develop-bg .rail .card .desc { font-size: 10px; color: rgba(255,255,255,0.3); margin-top: 2px; }
+.develop-bg .tools { display: flex; align-items: center; height: 48px; border-top: 1px solid rgba(255,255,255,0.05); padding: 0 16px; gap: 8px; background: rgba(10,10,11,0.8); }
+.develop-bg .tools .btn { padding: 6px 16px; border-radius: 8px; font-size: 12px; font-weight: 500; border: none; cursor: pointer; }
+.develop-bg .tools .btn-primary { background: #9333ea; color: white; }
+.develop-bg .tools .btn-approve { background: #059669; color: white; margin-left: auto; }
+
+/* Visualize */
+.visualize-bg { background: #050505; min-height: calc(100vh - 77px); }
+.visualize-bg .etabs { display: flex; height: 40px; border-bottom: 1px solid rgba(255,255,255,0.05); padding: 0 16px; align-items: center; gap: 16px; background: rgba(5,5,5,0.6); }
+.visualize-bg .etab { font-size: 12px; cursor: pointer; padding: 9px 0; color: rgba(255,255,255,0.3); border: none; background: none; font-family: inherit; border-bottom: 2px solid transparent; }
+.visualize-bg .etab:hover { color: rgba(255,255,255,0.6); }
+.visualize-bg .etab.active { color: #a855f7; border-bottom-color: rgba(168,85,247,0.4); }
+.visualize-bg .grid { padding: 24px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; max-width: 900px; margin: 0 auto; }
+.visualize-bg .card { border-radius: 12px; overflow: hidden; cursor: pointer; }
+.visualize-bg .card .img { aspect-ratio: 3/4; display: flex; align-items: center; justify-content: center; font-size: 32px; font-family: Georgia, serif; color: rgba(255,255,255,0.15); border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+.visualize-bg .card .img .badge { font-size: 10px; padding: 2px 6px; border-radius: 6px; margin-left: auto; align-self: flex-start; margin: 8px; }
+.visualize-bg .card .img .badge.approved { background: rgba(52,211,153,0.2); color: #34d399; border: 1px solid rgba(52,211,153,0.2); }
+.visualize-bg .card .img .badge.review { background: rgba(251,191,36,0.2); color: #fbbf24; border: 1px solid rgba(251,191,36,0.2); }
+.visualize-bg .card .name { font-size: 12px; color: rgba(255,255,255,0.8); margin-top: 8px; }
+.visualize-bg .card .meta { font-size: 10px; color: rgba(255,255,255,0.25); }
+.visualize-bg .gentools { display: flex; align-items: center; height: 56px; border-top: 1px solid rgba(255,255,255,0.05); padding: 0 24px; gap: 8px; background: rgba(5,5,5,0.8); }
+.visualize-bg .gentools .btn { padding: 8px 20px; border-radius: 8px; font-size: 12px; border: none; cursor: pointer; font-family: inherit; }
+.visualize-bg .gentools .btn-primary { background: #9333ea; color: white; }
+.visualize-bg .gentools .btn-ghost { background: transparent; color: rgba(255,255,255,0.3); border: 1px solid rgba(255,255,255,0.1); }
+.visualize-bg .gentools .legacy { font-size: 10px; color: rgba(255,255,255,0.15); margin-left: auto; text-decoration: underline; }
+
+/* Cast */
+.cast-bg { background: linear-gradient(135deg, #1c1c1c, #141414); min-height: calc(100vh - 77px); padding: 24px; display: flex; gap: 24px; max-width: 960px; margin: 0 auto; }
+.cast-bg .left { width: 220px; flex-shrink: 0; }
+.cast-bg .left h3 { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.cast-bg .left .char { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; }
+.cast-bg .left .char.active { background: rgba(168,85,247,0.1); border: 1px solid rgba(168,85,247,0.2); }
+.cast-bg .left .char .dot { width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0; }
+.cast-bg .left .char .status { font-size: 9px; padding: 2px 6px; border-radius: 10px; margin-left: auto; }
+.cast-bg .left .char .status.bound { background: rgba(52,211,153,0.2); color: #34d399; }
+.cast-bg .left .char .status.candidates { background: rgba(96,165,250,0.15); color: #93c5fd; }
+.cast-bg .left .char .status.uncast { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.3); }
+.cast-bg .right { flex: 1; }
+.cast-bg .right h3 { font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+.cast-bg .right .candidates { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.cast-bg .right .cand { padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); }
+.cast-bg .right .cand .headshot { aspect-ratio: 3/4; border-radius: 8px; margin-bottom: 8px; }
+.cast-bg .right .cand .match { font-size: 10px; margin-top: 4px; }
+.cast-bg .right .cand .match .high { color: #34d399; }
+.cast-bg .right .cand .match .mid { color: #fbbf24; }
+.cast-bg .right .cand .shortlist { width: 100%; padding: 6px; border-radius: 6px; border: none; background: #9333ea; color: white; font-size: 10px; cursor: pointer; margin-top: 8px; }
+
+/* Produce */
+.produce-bg { background: linear-gradient(135deg, #18181b, #111113); min-height: calc(100vh - 77px); padding: 24px; max-width: 800px; margin: 0 auto; }
+.produce-bg .ptabs { display: flex; gap: 1px; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.produce-bg .ptab { font-size: 12px; padding: 8px 16px; cursor: pointer; color: rgba(255,255,255,0.3); border: none; background: none; font-family: inherit; border-bottom: 2px solid transparent; }
+.produce-bg .ptab.active { color: #a855f7; border-bottom-color: rgba(168,85,247,0.4); }
+.produce-bg .pgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.produce-bg .pcard { padding: 16px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); }
+.produce-bg .pcard .thumb { aspect-ratio: 16/9; border-radius: 8px; margin-bottom: 8px; background: rgba(168,85,247,0.1); }
+.produce-bg .pcard .thumb.empty { background: rgba(255,255,255,0.03); display: flex; align-items: center; justify-content: center; font-size: 20px; color: rgba(255,255,255,0.08); border: 1px dashed rgba(255,255,255,0.08); }
+.produce-bg .pcard .title { font-size: 12px; color: rgba(255,255,255,0.8); }
+.produce-bg .pcard .meta { font-size: 10px; color: rgba(255,255,255,0.25); }
+
+/* Package */
+.pkg-bg { background: linear-gradient(135deg, #1a1a1a, #121212); min-height: calc(100vh - 77px); display: flex; align-items: center; justify-content: center; }
+.pkg-bg .box { width: 440px; }
+.pkg-bg .box h2 { font-size: 14px; font-family: Georgia, serif; color: white; margin-bottom: 24px; }
+.pkg-bg .box .item { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); margin-bottom: 8px; }
+.pkg-bg .box .item .check { width: 20px; height: 20px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.15); display: flex; align-items: center; justify-content: center; font-size: 10px; flex-shrink: 0; }
+.pkg-bg .box .item .check.done { border-color: #34d399; color: #34d399; }
+.pkg-bg .box .item .check.pending { border-color: #fbbf24; color: #fbbf24; }
+.pkg-bg .box .item .label { flex: 1; font-size: 12px; color: rgba(255,255,255,0.8); }
+.pkg-bg .box .item .gen { padding: 4px 12px; border-radius: 6px; border: none; background: #9333ea; color: white; font-size: 10px; cursor: pointer; }
+.pkg-bg .box .item .ready { font-size: 10px; color: #34d399; }
+.pkg-bg .box .actions { display: flex; gap: 8px; margin-top: 24px; }
+.pkg-bg .box .actions .btn { flex: 1; padding: 8px; border-radius: 8px; font-size: 12px; border: none; cursor: pointer; font-family: inherit; }
+.pkg-bg .box .actions .btn-primary { background: #9333ea; color: white; }
+.pkg-bg .box .actions .btn-ghost { background: transparent; color: rgba(255,255,255,0.4); border: 1px solid rgba(255,255,255,0.1); }
+
+/* Deliver */
+.del-bg { background: linear-gradient(135deg, #1a1a1a, #121212); min-height: calc(100vh - 77px); display: flex; align-items: center; justify-content: center; }
+.del-bg .box { width: 440px; }
+.del-bg .box h2 { font-size: 14px; font-family: Georgia, serif; color: white; margin-bottom: 24px; }
+.del-bg .box .item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.03); margin-bottom: 6px; }
+.del-bg .box .item .left { display: flex; align-items: center; gap: 12px; }
+.del-bg .box .item .icon { font-size: 20px; }
+.del-bg .box .item .text .name { font-size: 12px; color: white; }
+.del-bg .box .item .text .size { font-size: 10px; color: rgba(255,255,255,0.25); }
+.del-bg .box .item .dl { padding: 5px 12px; border-radius: 6px; border: none; background: #9333ea; color: white; font-size: 10px; cursor: pointer; }
+.del-bg .box .share { margin-top: 16px; display: flex; align-items: center; justify-content: space-between; padding: 12px; border-radius: 8px; border: 1px solid rgba(168,85,247,0.2); background: rgba(168,85,247,0.05); }
+.del-bg .box .share .icon { font-size: 20px; margin-right: 12px; }
+.del-bg .box .share .text .name { font-size: 12px; color: white; }
+.del-bg .box .share .text .size { font-size: 10px; color: rgba(255,255,255,0.25); }
+.del-bg .box .share .btn { padding: 5px 12px; border-radius: 6px; border: none; background: #9333ea; color: white; font-size: 10px; cursor: pointer; }
+
+/* Progression bar */
+.prog { display: flex; align-items: center; height: 32px; border-top: 1px solid rgba(255,255,255,0.05); padding: 0 16px; gap: 12px; background: rgba(10,10,11,0.6); font-size: 11px; }
+.prog .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: rgba(255,255,255,0.15); }
+.prog .dots { display: flex; gap: 4px; }
+.prog .dot { width: 8px; height: 8px; border-radius: 50%; }
+.prog .dot.filled { background: rgba(255,255,255,0.25); }
+.prog .dot.current { background: #a855f7; box-shadow: 0 0 6px rgba(168,85,247,0.3); }
+.prog .dot.empty { background: transparent; border: 1px solid rgba(255,255,255,0.12); }
+.prog .count { color: rgba(255,255,255,0.25); }
+.prog .arrow { color: rgba(255,255,255,0.1); }
+.prog .next { color: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">I</div>
+  <span class="title">Past Lives</span>
+  <span class="badge">Feature Film</span>
+  <span class="score">78%</span>
+</div>
+
+<div class="tabs" id="mainTabs">
+  <button class="tab active" onclick="showPanel('develop', this)"><span class="dot active"></span>Develop</button>
+  <button class="tab" onclick="showPanel('visualize', this)">Visualize</button>
+  <button class="tab" onclick="showPanel('cast', this)">Cast</button>
+  <button class="tab" onclick="showPanel('produce', this)">Produce</button>
+  <button class="tab" onclick="showPanel('package', this)">Package</button>
+  <button class="tab" onclick="showPanel('deliver', this)">Deliver</button>
+</div>
+
+<!-- DEVELOP -->
+<div class="panel active develop-bg" id="panel-develop">
+  <div class="ladder">
+    <span class="done">✓ Idea</span><span class="sep">→</span>
+    <span class="done">✓ Concept</span><span class="sep">→</span>
+    <span class="current">◉ Treatment</span><span class="sep">→</span>
+    <span class="future">Outline</span><span class="sep">→</span>
+    <span class="future">Bible</span><span class="sep">→</span>
+    <span class="future">Script</span>
+  </div>
+  <div class="content">
+    <div class="doc">
+      <h2>Treatment</h2>
+      <h1>Past Lives</h1>
+      <div class="score">82</div>
+      <p>Nora and Hae Sung, two deeply connected childhood friends, are forced apart after Nora's family emigrates from South Korea. Twenty years later, they are reunited in New York for one fateful week that will determine the course of their lives.</p>
+      <p>Nora Young (born Na Young) is a playwright on the verge of her biggest breakthrough. Her marriage to Arthur, a fellow writer, is loving but has settled into the quiet rhythm of companionship rather than passion. When Hae Sung contacts her, she agrees to meet him during his first visit to New York.</p>
+      <p>What begins as a polite reunion between old friends quickly deepens. Over seven days, Nora finds herself torn between the life she has built and the life she left behind. Hae Sung, still carrying the memory of their childhood connection, represents a path not taken.</p>
+    </div>
+    <div class="rail">
+      <h3>Canon</h3>
+      <div class="card">
+        <div class="avatar" style="background:linear-gradient(135deg,#fbbf24,#f43f5e)"></div><span class="name">Nora Young</span>
+        <div class="desc">Korean-American playwright, late 30s</div>
+      </div>
+      <div class="card">
+        <div class="avatar" style="background:linear-gradient(135deg,#60a5fa,#4f46e5)"></div><span class="name">Hae Sung</span>
+        <div class="desc">Childhood friend, never left Korea</div>
+      </div>
+      <div class="card">
+        <div class="avatar" style="background:linear-gradient(135deg,#34d399,#059669)"></div><span class="name">Arthur</span>
+        <div class="desc">Nora's husband, writer</div>
+      </div>
+    </div>
+  </div>
+  <div class="tools">
+    <button class="btn btn-primary">Generate</button>
+    <button class="btn" style="background:transparent;border:1px solid rgba(255,255,255,0.1);color:rgba(255,255,255,0.5)">Improve</button>
+    <button class="btn btn-approve">Approve & Advance →</button>
+  </div>
+</div>
+
+<!-- VISUALIZE -->
+<div class="panel visualize-bg" id="panel-visualize">
+  <div class="etabs">
+    <button class="etab active" onclick="showEntity('chars', this)">Characters</button>
+    <button class="etab" onclick="showEntity('locs', this)">Locations</button>
+    <span style="font-size:12px;color:rgba(255,255,255,0.15);pointer-events:none">Costumes</span>
+    <span style="font-size:12px;color:rgba(255,255,255,0.15);pointer-events:none">Style</span>
+    <span style="font-size:12px;color:rgba(255,255,255,0.15);pointer-events:none">Lookbook</span>
+  </div>
+  
+  <div id="entity-chars">
+    <div class="grid">
+      <div class="card">
+        <div class="img" style="background:linear-gradient(135deg,rgba(217,119,6,0.3),rgba(190,24,93,0.2))">
+          <span class="badge approved">✓ 3</span>
+        </div>
+        <div class="name">Nora Young</div>
+        <div class="meta">3 images · Approved</div>
+      </div>
+      <div class="card">
+        <div class="img" style="background:linear-gradient(135deg,rgba(37,99,235,0.3),rgba(79,70,229,0.2))">
+          <span class="badge review">◷ 1</span>
+        </div>
+        <div class="name">Hae Sung</div>
+        <div class="meta">1 image · In Review</div>
+      </div>
+      <div class="card">
+        <div class="img" style="background:linear-gradient(135deg,rgba(52,211,153,0.1),rgba(5,150,105,0.05));border:1px dashed rgba(255,255,255,0.1)">
+          <span style="font-size:24px;color:rgba(255,255,255,0.08)">+</span>
+        </div>
+        <div class="name" style="color:rgba(255,255,255,0.4)">Arthur</div>
+        <div class="meta">No images yet</div>
+      </div>
+    </div>
+  </div>
+  
+  <div id="entity-locs" style="display:none">
+    <div class="grid" style="grid-template-columns:repeat(2,1fr);max-width:600px">
+      <div class="card">
+        <div class="img" style="aspect-ratio:16/9;background:linear-gradient(135deg,rgba(180,83,9,0.3),rgba(234,88,12,0.15))">
+          <span style="font-size:20px">☕</span>
+          <span class="badge approved">✓ 2</span>
+        </div>
+        <div class="name">Koreatown Coffee Shop</div>
+        <div class="meta">Act 1 · Warm amber lighting</div>
+      </div>
+      <div class="card">
+        <div class="img" style="aspect-ratio:16/9;background:linear-gradient(135deg,rgba(51,65,85,0.4),rgba(30,58,138,0.15))">
+          <span style="font-size:20px">🌉</span>
+          <span class="badge review">◷ 1</span>
+        </div>
+        <div class="name">Brooklyn Bridge</div>
+        <div class="meta">Act 2 · Twilight blue hour</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="gentools">
+    <button class="btn btn-primary">+ Generate</button>
+    <button class="btn btn-ghost">New Angle</button>
+    <button class="btn btn-ghost">New Lighting</button>
+    <button class="btn btn-ghost">New Outfit</button>
+    <span class="legacy">Open in Classic View</span>
+  </div>
+</div>
+
+<!-- CAST -->
+<div class="panel cast-bg" id="panel-cast">
+  <div class="left">
+    <h3>Characters</h3>
+    <div class="char active">
+      <div class="dot" style="background:linear-gradient(135deg,#fbbf24,#f43f5e)"></div>
+      <span style="font-size:12px;color:white">Nora Young</span>
+      <span class="status bound">Bound</span>
+    </div>
+    <div class="char">
+      <div class="dot" style="background:linear-gradient(135deg,#60a5fa,#4f46e5)"></div>
+      <span style="font-size:12px;color:rgba(255,255,255,0.7)">Hae Sung</span>
+      <span class="status candidates">Candidates</span>
+    </div>
+    <div class="char">
+      <div class="dot" style="background:linear-gradient(135deg,#34d399,#059669)"></div>
+      <span style="font-size:12px;color:rgba(255,255,255,0.7)">Arthur</span>
+      <span class="status uncast">Uncast</span>
+    </div>
+  </div>
+  <div class="right">
+    <h3>Candidates — Nora Young</h3>
+    <div class="candidates">
+      <div class="cand">
+        <div class="headshot" style="background:linear-gradient(135deg,rgba(244,63,94,0.3),rgba(239,68,68,0.15))"></div>
+        <div style="font-size:12px;color:white">Greta Lee</div>
+        <div class="match"><span class="high">★★★★★ 98%</span></div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.25)">Drama, Romance</div>
+        <button class="shortlist">Shortlist</button>
+      </div>
+      <div class="cand">
+        <div class="headshot" style="background:linear-gradient(135deg,rgba(59,130,246,0.3),rgba(99,102,241,0.15))"></div>
+        <div style="font-size:12px;color:white">Ali Wong</div>
+        <div class="match"><span class="mid">★★★★☆ 84%</span></div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.25)">Drama, Indie</div>
+        <button class="shortlist">Shortlist</button>
+      </div>
+      <div class="cand">
+        <div class="headshot" style="background:linear-gradient(135deg,rgba(168,85,247,0.3),rgba(217,70,239,0.15))"></div>
+        <div style="font-size:12px;color:white">Sandra Oh</div>
+        <div class="match"><span class="mid">★★★★☆ 79%</span></div>
+        <div style="font-size:10px;color:rgba(255,255,255,0.25)">Drama, Veteran</div>
+        <button class="shortlist">Shortlist</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PRODUCE -->
+<div class="panel produce-bg" id="panel-produce">
+  <div class="ptabs">
+    <span class="ptab active">Storyboards</span>
+    <span class="ptab" style="pointer-events:none">Shot List</span>
+    <span class="ptab" style="pointer-events:none">Trailers</span>
+    <span class="ptab" style="pointer-events:none">Audio</span>
+  </div>
+  <div class="pgrid">
+    <div class="pcard">
+      <div class="thumb"></div>
+      <div class="title">Scene 14 — Coffee Shop</div>
+      <div class="meta">6 panels · Generated</div>
+    </div>
+    <div class="pcard">
+      <div class="thumb"></div>
+      <div class="title">Scene 23 — Brooklyn Bridge</div>
+      <div class="meta">4 panels · Generated</div>
+    </div>
+    <div class="pcard">
+      <div class="thumb empty">+</div>
+      <div class="title" style="color:rgba(255,255,255,0.4)">Scene 31 — Apartment</div>
+      <div class="meta">Not started</div>
+    </div>
+  </div>
+</div>
+
+<!-- PACKAGE -->
+<div class="panel pkg-bg" id="panel-package">
+  <div class="box">
+    <h2>Package Checklist</h2>
+    <div class="item">
+      <div class="check done">✓</div>
+      <span class="label">Pitch Deck</span>
+      <span class="ready">Ready</span>
+    </div>
+    <div class="item">
+      <div class="check pending">◷</div>
+      <span class="label">Market Sheet</span>
+      <button class="gen">Generate</button>
+    </div>
+    <div class="item">
+      <div class="check"></div>
+      <span class="label" style="color:rgba(255,255,255,0.5)">Lookbook Export</span>
+      <button class="gen">Generate</button>
+    </div>
+    <div class="item">
+      <div class="check"></div>
+      <span class="label" style="color:rgba(255,255,255,0.5)">Share Pack</span>
+      <button class="gen">Generate</button>
+    </div>
+    <div class="actions">
+      <button class="btn btn-primary">Generate All</button>
+      <button class="btn btn-ghost">Export Bundle</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELIVER -->
+<div class="panel del-bg" id="panel-deliver">
+  <div class="box">
+    <h2>Export Project</h2>
+    <div class="item">
+      <div class="left"><span class="icon">📄</span><div class="text"><div class="name">PDF Script</div><div class="size">~240 KB</div></div></div>
+      <button class="dl">Download</button>
+    </div>
+    <div class="item">
+      <div class="left"><span class="icon">📄</span><div class="text"><div class="name">FDX Export</div><div class="size">~180 KB</div></div></div>
+      <button class="dl">Download</button>
+    </div>
+    <div class="item">
+      <div class="left"><span class="icon">📅</span><div class="text"><div class="name">ICS Calendar</div><div class="size">~2 KB</div></div></div>
+      <button class="dl">Download</button>
+    </div>
+    <div class="item">
+      <div class="left"><span class="icon">📊</span><div class="text"><div class="name">XLS Budget</div><div class="size">~56 KB</div></div></div>
+      <button class="dl">Download</button>
+    </div>
+    <div class="share">
+      <div style="display:flex;align-items:center"><span class="icon">📦</span><div class="text"><div class="name">Share Pack</div><div class="size">Shareable link</div></div></div>
+      <button class="btn" style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Create Link</button>
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESSION BAR -->
+<div class="prog">
+  <span class="label">Pipeline</span>
+  <div class="dots">
+    <div class="dot filled"></div>
+    <div class="dot filled"></div>
+    <div class="dot current"></div>
+    <div class="dot empty"></div>
+    <div class="dot empty"></div>
+    <div class="dot empty"></div>
+    <div class="dot empty"></div>
+  </div>
+  <span class="count">2/7 ·</span>
+  <span style="color:rgba(255,255,255,0.4);font-weight:500">Treatment</span>
+  <span class="arrow">→</span>
+  <span class="next">Next: Story Outline</span>
+</div>
+
+<script>
+function showPanel(name, btn) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  btn.classList.add('active');
+}
+
+function showEntity(name, btn) {
+  document.querySelectorAll('.etab').forEach(t => t.classList.remove('active'));
+  document.getElementById('entity-chars').style.display = 'none';
+  document.getElementById('entity-locs').style.display = 'none';
+  document.getElementById('entity-' + name).style.display = 'block';
+  btn.classList.add('active');
+}
+</script>
+
+</body>
+</html>

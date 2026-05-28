@@ -128,13 +128,22 @@ export function resolveFlag(name: keyof FeatureFlags): boolean {
  * Resolve ALL feature flags.
  *
  * Each flag follows the priority chain independently.
+ * Dev mode (localhost): all flags default to true unless explicitly overridden.
  */
 export function resolveAllFlags(): FeatureFlags {
   try {
     const urlFlags = parseUrlFlags()
     const lsFlags = parseLocalStorageFlags()
+    
+    // Dev mode: all flags start as true (url/localStorage can still override)
+    const isDev = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    
+    const base = isDev
+      ? Object.fromEntries(FLAG_NAMES.map(k => [k, true])) as FeatureFlags
+      : { ...DEFAULT_FLAGS }
 
-    const result = { ...DEFAULT_FLAGS }
+    const result = { ...base }
 
     // Apply localStorage overrides (priority 2)
     for (const key of FLAG_NAMES) {

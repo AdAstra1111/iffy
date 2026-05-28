@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { resolveImageGenerationConfig, buildImageRepositoryMeta, resolveImageApiKey } from "../_shared/imageGenerationResolver.ts";
+import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
 import { resolveVisualStyleProfile } from "../_shared/visualStyleAuthority.ts";
 import { resolveFormatToLane, resolvePrestigeStyle, assemblePrestigePrompt } from "../_shared/prestigeStyleSystem.ts";
 const corsHeaders = {
@@ -925,7 +925,7 @@ serve(async (req)=>{
       }).select().single();
       if (insertErr) throw new Error(`Failed to create refresh record: ${insertErr.message}`);
       try {
-        const imageResult = await generateImage(OPENROUTER_API_KEY, refreshPrompt, refreshGenConfig.model, refreshGenConfig.gatewayUrl);
+        const imageResult = await generateImage(refreshGenConfig.providerApiKey || '', refreshPrompt, refreshGenConfig.model, refreshGenConfig.gatewayUrl);
         const keyArtPath = `${project_id}/key-art/v${nextVersion}-refresh.${imageResult.format}`;
         const { error: uploadErr } = await supabase.storage.from("project-posters").upload(keyArtPath, imageResult.rawBytes, {
           contentType: `image/${imageResult.format}`,
@@ -1093,7 +1093,7 @@ serve(async (req)=>{
             const aiResponse = await fetchWithTimeout(editGenConfig.gatewayUrl, {
               method: "POST",
               headers: {
-                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+                Authorization: `Bearer ${editGenConfig.providerApiKey}`,
                 "Content-Type": "application/json"
               },
               body: JSON.stringify({
@@ -1138,7 +1138,7 @@ serve(async (req)=>{
           if (editLastError) throw editLastError;
         } else {
           // No source image available — generate fresh with edit context
-          imageResult = await generateImage(OPENROUTER_API_KEY, editFullPrompt, editGenConfig.model, editGenConfig.gatewayUrl);
+          imageResult = await generateImage(editGenConfig.providerApiKey || '', editFullPrompt, editGenConfig.model, editGenConfig.gatewayUrl);
         }
         const keyArtPath = `${project_id}/key-art/v${nextVersion}-edit.${imageResult.format}`;
         const { error: uploadErr } = await supabase.storage.from("project-posters").upload(keyArtPath, imageResult.rawBytes, {
@@ -1278,7 +1278,7 @@ serve(async (req)=>{
           continue;
         }
         try {
-          const imageResult = await generateImage(OPENROUTER_API_KEY, prompt, genConfig.model, genConfig.gatewayUrl);
+          const imageResult = await generateImage(genConfig.providerApiKey || '', prompt, genConfig.model, genConfig.gatewayUrl);
           const keyArtPath = `${project_id}/key-art/v${versionNum}-${strategy.key}.${imageResult.format}`;
           const { error: uploadErr } = await supabase.storage.from("project-posters").upload(keyArtPath, imageResult.rawBytes, {
             contentType: `image/${imageResult.format}`,
@@ -1387,7 +1387,7 @@ serve(async (req)=>{
     }).select().single();
     if (insertErr) throw new Error(`Failed to create poster record: ${insertErr.message}`);
     try {
-      const imageResult = await generateImage(OPENROUTER_API_KEY, prompt, primaryGenConfig.model, primaryGenConfig.gatewayUrl);
+      const imageResult = await generateImage(primaryGenConfig.providerApiKey || '', prompt, primaryGenConfig.model, primaryGenConfig.gatewayUrl);
       const keyArtPath = `${project_id}/key-art/v${nextVersion}.${imageResult.format}`;
       const { error: uploadErr } = await supabase.storage.from("project-posters").upload(keyArtPath, imageResult.rawBytes, {
         contentType: `image/${imageResult.format}`,

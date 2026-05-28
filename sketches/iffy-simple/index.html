@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>IFFY Workspaces</title>
+<style>
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0b;color:#f0f0f0}
+.header{display:flex;align-items:center;height:40px;border-bottom:1px solid rgba(255,255,255,0.05);padding:0 16px}
+.nav{display:flex;height:36px;border-bottom:1px solid rgba(255,255,255,0.05);padding:0 16px;align-items:center;gap:16px;font-size:11px}
+.nav a{color:rgba(255,255,255,0.4);text-decoration:none;padding:8px 0;cursor:pointer;border-bottom:2px solid transparent}
+.nav a:hover{color:rgba(255,255,255,0.7)}
+.nav a.active{color:#f0f0f0;border-bottom-color:rgba(168,85,247,0.4)}
+.panel{display:none;padding:24px}
+.prog{display:flex;align-items:center;height:32px;border-top:1px solid rgba(255,255,255,0.05);padding:0 16px;gap:12px;font-size:11px;background:rgba(10,10,11,0.6)}
+a{color:#a855f7}
+.ws{min-height:calc(100vh - 150px)}
+.reader{max-width:700px;margin:0 auto;font-family:Georgia,serif;font-size:15px;line-height:1.8;color:rgba(255,255,255,0.65)}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;max-width:800px;margin:0 auto}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:600px;margin:0 auto}
+.card{aspect-ratio:3/4;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:32px;color:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.05);cursor:pointer}
+.card.loc{aspect-ratio:16/9}
+.cand{padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03)}
+.cand .head{aspect-ratio:3/4;border-radius:8px;margin-bottom:8px}
+</style>
+</head>
+<body>
+
+<div class=header>
+  <div style="width:24px;height:24px;border-radius:6px;background:linear-gradient(135deg,#a855f7,#4f46e5);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:white;margin-right:8px">I</div>
+  <span style="font-size:14px;font-family:Georgia,serif">Past Lives</span>
+  <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:rgba(59,130,246,0.15);color:#93c5fd;border:1px solid rgba(59,130,246,0.2);margin-left:8px">Feature Film</span>
+  <span style="font-size:10px;color:rgba(255,255,255,0.4);margin-left:8px">78%</span>
+</div>
+
+<div class=nav id=navBar>
+  <a href="#" onclick="showPanel('develop',this)" class="active">● Develop</a>
+  <a href="#" onclick="showPanel('visualize',this)">Visualize</a>
+  <a href="#" onclick="showPanel('cast',this)">Cast</a>
+  <a href="#" onclick="showPanel('produce',this)">Produce</a>
+  <a href="#" onclick="showPanel('pkg',this)">Package</a>
+  <a href="#" onclick="showPanel('deliver',this)">Deliver</a>
+</div>
+
+<!-- DEVELOP -->
+<div id=panel-develop class="panel ws" style=display:block>
+<div style="display:flex;align-items:center;gap:8px;font-size:10px;margin-bottom:24px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+<span style=color:#34d399>✓ Idea</span><span style=color:rgba(255,255,255,0.1)>→</span>
+<span style=color:#34d399>✓ Concept</span><span style=color:rgba(255,255,255,0.1)>→</span>
+<span style="color:#a855f7;font-weight:500">◉ Treatment</span><span style=color:rgba(255,255,255,0.08)>→</span>
+<span style=color:rgba(255,255,255,0.2)>Outline</span><span style=color:rgba(255,255,255,0.08)>→</span>
+<span style=color:rgba(255,255,255,0.2)>Bible</span><span style=color:rgba(255,255,255,0.08)>→</span>
+<span style=color:rgba(255,255,255,0.2)>Script</span>
+</div>
+<div style=margin-bottom:16px><span style="font-size:10px;color:#a855f7;letter-spacing:0.05em;text-transform:uppercase">Treatment</span><h1 style="font-size:20px;font-family:Georgia,serif;margin:4px 0 16px">Past Lives</h1><span style="display:inline-block;font-family:monospace;font-size:14px;color:#34d399;background:rgba(52,211,153,0.1);padding:4px 10px;border-radius:6px">82</span></div>
+<div class=reader>
+<p style="color:rgba(255,255,255,0.8)"><b>Nora and Hae Sung, two deeply connected childhood friends, are forced apart after Nora's family emigrates from South Korea. Twenty years later, they are reunited in New York for one fateful week.</b></p>
+<p>Nora Young is a playwright on the verge of her biggest breakthrough. Her marriage to Arthur is loving but has settled into quiet companionship. When Hae Sung — her childhood first love — contacts her, she agrees to meet him in New York.</p>
+<p>Over seven days, Nora finds herself torn between the life she has built and the life she left behind. Each meeting peels back another layer of their shared history and unexplored feelings.</p>
+</div></div>
+
+<!-- VISUALIZE -->
+<div id=panel-visualize class="panel ws">
+<div style="display:flex;gap:16px;margin-bottom:20px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:8px;font-size:12px">
+<span style="color:#a855f7;font-weight:500">Characters</span>
+<span style=color:rgba(255,255,255,0.3)>Locations</span>
+<span style=color:rgba(255,255,255,0.15)>Costumes</span>
+<span style=color:rgba(255,255,255,0.15)>Style</span>
+<span style=color:rgba(255,255,255,0.15)>Lookbook</span>
+</div>
+<div class=grid3>
+<div><div class=card style="background:linear-gradient(135deg,rgba(217,119,6,0.3),rgba(190,24,93,0.2))"><span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(52,211,153,0.2);color:#34d399;align-self:start;margin:8px">✓ 3</span></div><div style=font-size:12px;margin-top:8px>Nora Young</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>3 images · Approved</div></div>
+<div><div class=card style="background:linear-gradient(135deg,rgba(37,99,235,0.3),rgba(79,70,229,0.2))"><span style="font-size:10px;padding:2px 6px;border-radius:6px;background:rgba(251,191,36,0.2);color:#fbbf24;align-self:start;margin:8px">◷ 1</span></div><div style=font-size:12px;margin-top:8px>Hae Sung</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>1 image · In Review</div></div>
+<div><div class=card style="background:linear-gradient(135deg,rgba(52,211,153,0.1),rgba(5,150,105,0.05));border:1px dashed rgba(255,255,255,0.1)"><span style=color:rgba(255,255,255,0.08)>+</span></div><div style=font-size:12px;margin-top:8px;color:rgba(255,255,255,0.4)>Arthur</div><div style=font-size:10px;color:rgba(255,255,255,0.2)>No images yet</div></div>
+</div>
+<div style="margin-top:24px;display:flex;gap:8px">
+<button style="padding:8px 16px;border-radius:8px;background:#9333ea;color:white;border:none;font-size:12px;cursor:pointer">+ Generate</button>
+<button style="padding:8px 16px;border-radius:8px;background:transparent;color:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.1);font-size:12px;cursor:pointer">New Angle</button>
+<button style="padding:8px 16px;border-radius:8px;background:transparent;color:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.1);font-size:12px;cursor:pointer">New Lighting</button>
+<button style="padding:8px 16px;border-radius:8px;background:transparent;color:rgba(255,255,255,0.3);border:1px solid rgba(255,255,255,0.1);font-size:12px;cursor:pointer">New Outfit</button>
+</div></div>
+
+<!-- CAST -->
+<div id=panel-cast class="panel ws">
+<div style=display:flex;gap:24px;max-width:900px;margin:0 auto>
+<div style=width:220px;flex-shrink:0><h3 style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Characters</h3>
+<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);margin-bottom:4px"><div style="width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#fbbf24,#f43f5e);flex-shrink:0"></div><span style=font-size:12px;color:white;flex:1>Nora Young</span><span style="font-size:9px;padding:2px 6px;border-radius:10px;background:rgba(52,211,153,0.2);color:#34d399">Bound</span></div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px"><div style="width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#60a5fa,#4f46e5);flex-shrink:0"></div><span style=font-size:12px;color:rgba(255,255,255,0.7);flex:1>Hae Sung</span><span style="font-size:9px;padding:2px 6px;border-radius:10px;background:rgba(96,165,250,0.15);color:#93c5fd">Candidates</span></div>
+<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;margin-bottom:4px"><div style="width:20px;height:20px;border-radius:50%;background:linear-gradient(135deg,#34d399,#059669);flex-shrink:0"></div><span style=font-size:12px;color:rgba(255,255,255,0.7);flex:1>Arthur</span><span style="font-size:9px;padding:2px 6px;border-radius:10px;background:rgba(255,255,255,0.06);color:rgba(255,255,255,0.3)">Uncast</span></div></div>
+<div style=flex:1><h3 style="font-size:10px;color:rgba(255,255,255,0.3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px">Candidates — Nora Young</h3>
+<div style=display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px>
+<div class=cand><div class=head style="background:linear-gradient(135deg,rgba(244,63,94,0.3),rgba(239,68,68,0.15))"></div><div style=font-size:12px;color:white>Greta Lee</div><div style=font-size:10px;margin-top:4px><span style=color:#34d399>★★★★★ 98%</span></div><div style=font-size:10px;color:rgba(255,255,255,0.25)>Drama, Romance</div><button style="width:100%;padding:6px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer;margin-top:8px">Shortlist</button></div>
+<div class=cand><div class=head style="background:linear-gradient(135deg,rgba(59,130,246,0.3),rgba(99,102,241,0.15))"></div><div style=font-size:12px;color:white>Ali Wong</div><div style=font-size:10px;margin-top:4px><span style=color:#fbbf24>★★★★☆ 84%</span></div><div style=font-size:10px;color:rgba(255,255,255,0.25)>Drama, Indie</div><button style="width:100%;padding:6px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer;margin-top:8px">Shortlist</button></div>
+<div class=cand><div class=head style="background:linear-gradient(135deg,rgba(168,85,247,0.3),rgba(217,70,239,0.15))"></div><div style=font-size:12px;color:white>Sandra Oh</div><div style=font-size:10px;margin-top:4px><span style=color:#fbbf24>★★★★☆ 79%</span></div><div style=font-size:10px;color:rgba(255,255,255,0.25)>Drama, Veteran</div><button style="width:100%;padding:6px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer;margin-top:8px">Shortlist</button></div>
+</div></div></div></div>
+
+<!-- PRODUCE -->
+<div id=panel-produce class="panel ws" style=max-width:800px;margin:0 auto>
+<div style="display:flex;gap:16px;margin-bottom:24px;border-bottom:1px solid rgba(255,255,255,0.05);padding-bottom:8px;font-size:12px">
+<span style="color:#a855f7;font-weight:500">Storyboards</span>
+<span style=color:rgba(255,255,255,0.3)>Shot List</span>
+<span style=color:rgba(255,255,255,0.3)>Trailers</span>
+<span style=color:rgba(255,255,255,0.3)>Audio</span>
+</div>
+<div class=grid3>
+<div style="padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03)"><div style="aspect-ratio:16/9;border-radius:8px;margin-bottom:8px;background:rgba(168,85,247,0.1)"></div><div style=font-size:12px;color:rgba(255,255,255,0.8)>Scene 14 — Coffee Shop</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>6 panels · Generated</div></div>
+<div style="padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03)"><div style="aspect-ratio:16/9;border-radius:8px;margin-bottom:8px;background:rgba(168,85,247,0.1)"></div><div style=font-size:12px;color:rgba(255,255,255,0.8)>Scene 23 — Brooklyn Bridge</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>4 panels · Generated</div></div>
+<div style="padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.02)"><div style="aspect-ratio:16/9;border-radius:8px;margin-bottom:8px;background:rgba(255,255,255,0.03);display:flex;align-items:center;justify-content:center;font-size:20px;color:rgba(255,255,255,0.08);border:1px dashed rgba(255,255,255,0.08)">+</div><div style=font-size:12px;color:rgba(255,255,255,0.4)>Scene 31 — Apartment</div><div style=font-size:10px;color:rgba(255,255,255,0.2)>Not started</div></div>
+</div></div>
+
+<!-- PACKAGE -->
+<div id=panel-pkg class="panel ws">
+<div style=width:440px>
+<h2 style="font-size:14px;font-family:Georgia,serif;margin-bottom:24px">Package Checklist</h2>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:8px"><div style="width:20px;height:20px;border-radius:50%;border:2px solid #34d399;display:flex;align-items:center;justify-content:center;font-size:10px;color:#34d399;flex-shrink:0">✓</div><span style="flex:1;font-size:12px;color:rgba(255,255,255,0.8)">Pitch Deck</span><span style=font-size:10px;color:#34d399>Ready</span></div>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:8px"><div style="width:20px;height:20px;border-radius:50%;border:2px solid #fbbf24;display:flex;align-items:center;justify-content:center;font-size:10px;color:#fbbf24;flex-shrink:0">◷</div><span style="flex:1;font-size:12px;color:rgba(255,255,255,0.8)">Market Sheet</span><button style="padding:4px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Generate</button></div>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:8px"><div style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);flex-shrink:0"></div><span style="flex:1;font-size:12px;color:rgba(255,255,255,0.5)">Lookbook Export</span><button style="padding:4px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Generate</button></div>
+<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:24px"><div style="width:20px;height:20px;border-radius:50%;border:2px solid rgba(255,255,255,0.15);flex-shrink:0"></div><span style="flex:1;font-size:12px;color:rgba(255,255,255,0.5)">Share Pack</span><button style="padding:4px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Generate</button></div>
+<div style=display:flex;gap:8px><button style="flex:1;padding:8px;border-radius:8px;background:#9333ea;color:white;border:none;font-size:12px;cursor:pointer">Generate All</button><button style="flex:1;padding:8px;border-radius:8px;background:transparent;color:rgba(255,255,255,0.4);border:1px solid rgba(255,255,255,0.1);font-size:12px;cursor:pointer">Export Bundle</button></div>
+</div></div>
+
+<!-- DELIVER -->
+<div id=panel-deliver class="panel ws">
+<div style=width:440px>
+<h2 style="font-size:14px;font-family:Georgia,serif;margin-bottom:24px">Export Project</h2>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:6px"><div style=display:flex;align-items:center;gap:12px><span style=font-size:20px>📄</span><div><div style=font-size:12px;color:white>PDF Script</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>~240 KB</div></div></div><button style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Download</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:6px"><div style=display:flex;align-items:center;gap:12px><span style=font-size:20px>📄</span><div><div style=font-size:12px;color:white>FDX Export</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>~180 KB</div></div></div><button style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Download</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:6px"><div style=display:flex;align-items:center;gap:12px><span style=font-size:20px>📅</span><div><div style=font-size:12px;color:white>ICS Calendar</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>~2 KB</div></div></div><button style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Download</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;border:1px solid rgba(255,255,255,0.05);background:rgba(255,255,255,0.03);margin-bottom:6px"><div style=display:flex;align-items:center;gap:12px><span style=font-size:20px>📊</span><div><div style=font-size:12px;color:white>XLS Budget</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>~56 KB</div></div></div><button style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Download</button></div>
+<div style="display:flex;align-items:center;justify-content:space-between;padding:12px;border-radius:8px;margin-top:16px;border:1px solid rgba(168,85,247,0.2);background:rgba(168,85,247,0.05)"><div style=display:flex;align-items:center;gap:12px><span style=font-size:20px>📦</span><div><div style=font-size:12px;color:white>Share Pack</div><div style=font-size:10px;color:rgba(255,255,255,0.25)>Shareable link</div></div></div><button style="padding:5px 12px;border-radius:6px;border:none;background:#9333ea;color:white;font-size:10px;cursor:pointer">Create Link</button></div>
+</div></div>
+
+<div class=prog>
+<span style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:rgba(255,255,255,0.15)">Pipeline</span>
+<div style=display:flex;gap:4px>
+<div style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.25)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,0.25)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:#a855f7;box-shadow:0 0 6px rgba(168,85,247,0.3)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.12)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.12)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.12)"></div>
+<div style="width:8px;height:8px;border-radius:50%;background:transparent;border:1px solid rgba(255,255,255,0.12)"></div>
+</div>
+<span style=color:rgba(255,255,255,0.25)>2/7 ·</span><span style="color:rgba(255,255,255,0.4);font-weight:500">Treatment</span><span style=color:rgba(255,255,255,0.1)>→</span><span style=color:rgba(255,255,255,0.25)>Next: Story Outline</span>
+</div>
+
+<script>
+function showPanel(name, el) {
+  document.querySelectorAll('.panel').forEach(p => p.style.display = 'none');
+  document.getElementById('panel-' + name).style.display = 'block';
+  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+  el.classList.add('active');
+}
+</script>
+</body>
+</html>
