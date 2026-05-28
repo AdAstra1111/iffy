@@ -20,6 +20,8 @@ import {
   summarizeSlotValidation,
   type SceneDemoSlotValidation,
 } from '@/lib/visual/sceneDemoValidation';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string | undefined;
@@ -29,13 +31,14 @@ export function SceneDemoGeneratorPanel({ projectId }: Props) {
   const gen = useSceneDemoGenerator(projectId);
 
   if (gen.plannerLoading || gen.runsLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading scene demo generator...</div>;
+    return <VisualSkeleton variant="form" lines={4} />;
   }
 
   const purposeLabel = (key: string) =>
     SCENE_DEMO_PURPOSES.find(p => p.key === key)?.label || key;
 
   return (
+    <VisualPanelErrorBoundary panelLabel="SceneDemoGeneratorPanel" compact>
     <div className="space-y-4">
       <div className="flex items-center gap-2 mb-2">
         <Image className="h-5 w-5 text-primary" />
@@ -101,6 +104,7 @@ export function SceneDemoGeneratorPanel({ projectId }: Props) {
         </div>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

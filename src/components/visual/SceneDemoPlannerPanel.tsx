@@ -15,6 +15,9 @@ import {
   User, MapPin, Shirt, Sparkles,
 } from 'lucide-react';
 import { SCENE_DEMO_PURPOSES } from '@/lib/visual/sceneDemoPlanner';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string | undefined;
@@ -24,29 +27,15 @@ export function SceneDemoPlannerPanel({ projectId }: Props) {
   const { plans, summary, isLoading, hasScenes, hasWardrobe } = useSceneDemoPlanner(projectId);
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-muted-foreground">Loading scene demo plans...</div>;
+    return <VisualSkeleton variant="panel" lines={4} />;
   }
 
   if (!hasScenes) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          <Film className="mx-auto mb-2 h-8 w-8 opacity-40" />
-          <p>No scenes available. Extract scenes from script first.</p>
-        </CardContent>
-      </Card>
-    );
+    return <VisualEmptyState icon={<Film className="h-8 w-8" />} title="No scenes available" description="Extract scenes from script first." />;
   }
 
   if (!hasWardrobe) {
-    return (
-      <Card className="border-dashed">
-        <CardContent className="p-6 text-center text-sm text-muted-foreground">
-          <Shirt className="mx-auto mb-2 h-8 w-8 opacity-40" />
-          <p>Extract wardrobe profiles first to enable scene demo planning.</p>
-        </CardContent>
-      </Card>
-    );
+    return <VisualEmptyState icon={<Shirt className="h-8 w-8" />} title="Wardrobe profiles required" description="Extract wardrobe profiles first to enable scene demo planning." />;
   }
 
   const purposeLabel = (key: string) =>
@@ -59,6 +48,7 @@ export function SceneDemoPlannerPanel({ projectId }: Props) {
   };
 
   return (
+    <VisualPanelErrorBoundary panelLabel="SceneDemoPlannerPanel">
     <div className="space-y-4">
       {/* Summary */}
       <div className="flex items-center gap-2 mb-2">
@@ -181,5 +171,6 @@ export function SceneDemoPlannerPanel({ projectId }: Props) {
         </Collapsible>
       ))}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }

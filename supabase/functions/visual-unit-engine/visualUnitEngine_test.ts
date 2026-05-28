@@ -199,10 +199,10 @@ Deno.test("diff: detects changed fields between two payloads", () => {
   const a = { location: "INT. HOUSE", tone: ["dramatic"], trailer_value: 7 };
   const b = { location: "EXT. FIELD", tone: ["dramatic", "tense"], trailer_value: 9 };
   const result = computeDiff(a, b);
-  assertEquals(result.changedFields.length, 2, "location and trailer_value changed");
+  assertEquals(result.changedFields.length, 3, "3 fields changed: location, tone, trailer_value");
   assert(result.changedFields.some(f => f.field === "location"), "location in changes");
   assert(result.changedFields.some(f => f.field === "trailer_value"), "trailer_value in changes");
-  assert(!result.changedFields.some(f => f.field === "tone"), "tone unchanged (same JSON)");
+  assert(result.changedFields.some(f => f.field === "tone"), "tone array changed (stringify comparison)");
 });
 
 Deno.test("diff: detects added fields", () => {

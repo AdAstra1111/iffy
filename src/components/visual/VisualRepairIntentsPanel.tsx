@@ -5,6 +5,8 @@ import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Check, X, Loader2, Shield, Clock, Plus, Eye, FileText, Play } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 // ── Props ──
 
@@ -209,6 +211,7 @@ export function VisualRepairIntentsPanel({
   const showCreateButton = selectedStageState?.staleRisk?.isStale;
 
   return (
+    <VisualPanelErrorBoundary panelLabel="VisualRepairIntentsPanel">
     <div className="border-t border-border/30 mt-4">
       <div className="p-4 md:p-6 space-y-3">
         {/* Header */}
@@ -220,7 +223,7 @@ export function VisualRepairIntentsPanel({
               {stageIntents.length}
             </Badge>
           </div>
-          {loading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
+          {loading && <VisualSkeleton variant="panel" lines={1} />}
           {error && (
             <span className="text-[9px] text-destructive flex items-center gap-1">
               <AlertCircle className="h-2.5 w-2.5" /> {error}
@@ -460,6 +463,7 @@ export function VisualRepairIntentsPanel({
         )}
       </div>
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

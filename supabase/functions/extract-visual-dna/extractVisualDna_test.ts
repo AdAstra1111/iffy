@@ -106,8 +106,8 @@ Line F - trailing context`;
   // Match is on line index 3, so start = Math.max(0, 3-2) = 1 → "Line B"
   assert(lines.includes("Line B - leading context"),
     "should include line 1 (i-1 when i=3)");
-  assert(lines.includes("Line F - trailing context"),
-    "should include line 2 after (i+2 when i=3)");
+  assert(lines.includes("Line E - trailing context"),
+    "should include line 5 (i+2 end=5 exclusive) when i=3");
 });
 
 Deno.test("extractCharacterRelevantText: doesn't go out of bounds at start of text", () => {

@@ -33,6 +33,7 @@ import { toast } from 'sonner';
 import type { ProjectImage, CurationState } from '@/lib/images/types';
 import { isCharacterIdentityImage, IDENTITY_SHOT_TYPES } from '@/lib/images/types';
 import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 interface CharacterBaseLookPanelProps {
   projectId: string;
@@ -251,6 +252,7 @@ export function CharacterBaseLookPanel({ projectId }: CharacterBaseLookPanelProp
   const eligibleForBootstrap = coverageData.filter(c => c.identityAnchored && c.dnaStatus === 'none');
 
   return (
+    <VisualPanelErrorBoundary panelLabel="CharacterBaseLookPanel">
     <div className="space-y-1">
       <div className="flex items-center gap-2 mb-2">
         <User className="h-4 w-4 text-primary" />
@@ -368,6 +370,7 @@ export function CharacterBaseLookPanel({ projectId }: CharacterBaseLookPanelProp
         );
       })}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

@@ -22,6 +22,8 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { validateNoteAgainstCanon, type NoteValidationResult } from '@/lib/visual/canonNoteValidator';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 
 // ── Types ──
 
@@ -226,6 +228,7 @@ export function VisualImageDetailDrawer({
   const hasPrompt = !!data?.prompt_used;
 
   return (
+    <VisualPanelErrorBoundary panelLabel="VisualImageDetailDrawer">
     <Sheet open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <SheetContent side="right" className="w-full sm:max-w-lg p-0">
         <ScrollArea className="h-full">
@@ -261,7 +264,7 @@ export function VisualImageDetailDrawer({
             )}
 
             {loading && (
-              <div className="text-xs text-muted-foreground text-center py-4">Loading…</div>
+              <VisualSkeleton variant="panel" lines={3} />
             )}
 
             {data && !loading && (
@@ -539,5 +542,6 @@ export function VisualImageDetailDrawer({
         </ScrollArea>
       </SheetContent>
     </Sheet>
+    </VisualPanelErrorBoundary>
   );
 }
