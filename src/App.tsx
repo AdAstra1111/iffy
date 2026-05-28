@@ -111,9 +111,20 @@ const ProjectImageLibrary = lazy(() => import("./pages/ProjectImageLibrary"));
 const ActorLibrary = lazy(() => import("./pages/ActorLibrary"));
 const CharacterEntityMergePage = lazy(() => import("./pages/CharacterEntityMergePage"));
 
+// Workspace routes (A5 — workspace stubs)
+const ConceptWorkspace = lazy(() => import("./pages/workspaces/ConceptWorkspace"));
+const DevelopWorkspace = lazy(() => import("./pages/workspaces/DevelopWorkspace"));
+const VisualizeWorkspace = lazy(() => import("./pages/workspaces/VisualizeWorkspace"));
+const CastWorkspace = lazy(() => import("./pages/workspaces/CastWorkspace"));
+const ProduceWorkspace = lazy(() => import("./pages/workspaces/ProduceWorkspace"));
+const PackageWorkspace = lazy(() => import("./pages/workspaces/PackageWorkspace"));
+const DeliverWorkspace = lazy(() => import("./pages/workspaces/DeliverWorkspace"));
 
 // ProjectShell — new unified workspace frame (Week 1 refactor)
 import { ProjectShell } from "@/components/project/ProjectShell";
+
+// PlatformShell — cinematic OS shell wrapper (A1)
+import { PlatformShell } from "@/components/shell/PlatformShell";
 
 // Trailer redirect helper — maps old trailer routes to canonical /projects/:id/trailer?tab=
 function TrailerRedirect({ tab }: { tab?: string }) {
@@ -163,6 +174,7 @@ const AnimatedRoutes = () => {
     <>
       <SafeRouteBoundary>
       <Suspense fallback={<PageFallback />}>
+        <PlatformShell>
         <Routes location={location} key={location.pathname}>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -247,6 +259,14 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/lookbook" element={<ProtectedRoute><ProjectShell><LookBookPage /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/images" element={<ProtectedRoute><ProjectShell><ProjectImageLibrary /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/character-merge" element={<ProtectedRoute><ProjectShell><CharacterEntityMergePage /></ProjectShell></ProtectedRoute>} />
+          {/* A5 workspace stubs — placeholder routes for the new workspace taxonomy */}
+          <Route path="/projects/:id/concept" element={<ProtectedRoute><ProjectShell><ConceptWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/develop" element={<ProtectedRoute><ProjectShell><DevelopWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/visualize" element={<ProtectedRoute><ProjectShell><VisualizeWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/cast" element={<ProtectedRoute><ProjectShell><CastWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/produce" element={<ProtectedRoute><ProjectShell><ProduceWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/package" element={<ProtectedRoute><ProjectShell><PackageWorkspace /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/deliver" element={<ProtectedRoute><ProjectShell><DeliverWorkspace /></ProjectShell></ProtectedRoute>} />
           <Route path="/showcase" element={<ProtectedRoute><Showcase /></ProtectedRoute>} />
           <Route path="/narrative-dna" element={<ProtectedRoute><NarrativeDna /></ProtectedRoute>} />
           <Route path="/narrative-engines" element={<ProtectedRoute><NarrativeEngines /></ProtectedRoute>} />
@@ -258,6 +278,7 @@ const AnimatedRoutes = () => {
           <Route path="/pitch" element={<Suspense fallback={null}><Pitch /></Suspense>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </PlatformShell>
       </Suspense>
     </SafeRouteBoundary>
     </>
