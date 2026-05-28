@@ -220,17 +220,17 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/series-writer" element={<ProtectedRoute><SeriesWriterPage /></ProtectedRoute>} />
           <Route path="/projects/:id/feature-script" element={<ProtectedRoute><FeatureScript /></ProtectedRoute>} />
           <Route path="/projects/:id/cockpit" element={<ProtectedRoute><ProducerCockpit /></ProtectedRoute>} />
-          <Route path="/projects/:id/shot-list" element={<ProtectedRoute><ShotListPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/storyboards" element={<ProtectedRoute><StoryboardsPage /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-references" element={<ProtectedRoute><VisualReferencesPage /></ProtectedRoute>} />
+          <Route path="/projects/:id/shot-list" element={<ProtectedRoute><ProjectShell><ShotListPage /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/storyboards" element={<ProtectedRoute><ProjectShell><StoryboardsPage /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-references" element={<ProtectedRoute><ProjectShell><VisualReferencesPage /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/script-intake" element={<ProtectedRoute><ScriptIntakePage /></ProtectedRoute>} />
           <Route path="/projects/:id/ai-trailer" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-units" element={<ProtectedRoute><VisualUnits /></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-units" element={<ProtectedRoute><ProjectShell><VisualUnits /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/storyboard-pipeline" element={<ProtectedRoute><StoryboardPipeline /></ProtectedRoute>} />
           <Route path="/projects/:id/trailer-pipeline" element={<ProtectedRoute><TrailerRedirect tab="blueprints" /></ProtectedRoute>} />
           <Route path="/projects/:id/trailer-clips" element={<ProtectedRoute><TrailerRedirect tab="clips" /></ProtectedRoute>} />
           <Route path="/projects/:id/trailer-assemble" element={<ProtectedRoute><TrailerRedirect tab="assemble" /></ProtectedRoute>} />
-          <Route path="/projects/:id/visual-dev" element={<ProtectedRoute><VisualDevHub /></ProtectedRoute>} />
+          <Route path="/projects/:id/visual-dev" element={<ProtectedRoute><ProjectShell><VisualDevHub /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/visual-dev/trailer/*" element={<ProtectedRoute><TrailerRedirect /></ProtectedRoute>} />
           <Route path="/projects/:id/script" element={<ProtectedRoute><ProjectShell><ProjectDevelopmentEngine /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/canon" element={<ProtectedRoute><ProjectShell><CanonPlaceholder /></ProjectShell></ProtectedRoute>} />

@@ -17,6 +17,8 @@ import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import type { ProjectImage, ShotType } from '@/lib/images/types';
 import type { StatePreset } from '@/lib/images/statePresets';
 import { CHARACTER_STATE_PRESETS, LOCATION_STATE_PRESETS } from '@/lib/images/statePresets';
@@ -90,6 +92,7 @@ export function EntityStateVariantsPanel({
   }
 
   return (
+    <VisualPanelErrorBoundary panelLabel="EntityStateVariantsPanel">
     <div className="space-y-1 mt-2">
       <div className="flex items-center gap-1.5 mb-1">
         <Layers className="h-3 w-3 text-muted-foreground" />
@@ -150,6 +153,7 @@ export function EntityStateVariantsPanel({
         onStateCreated={() => {}}
       />
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

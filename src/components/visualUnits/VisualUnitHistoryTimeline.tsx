@@ -1,7 +1,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import type { VisualUnitEvent } from '@/lib/types/visualUnits';
 
 interface Props {

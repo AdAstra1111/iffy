@@ -44,6 +44,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import type { ProjectImage, AssetGroup } from '@/lib/images/types';
 import { checkGenerationGuard } from '@/hooks/useVisualGenerationGuard';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 interface VisualCanonResetPanelProps {
   projectId: string;
   /** Optional callback to trigger lookbook rebuild after full canon rebuild */
@@ -734,6 +735,7 @@ export function VisualCanonResetPanel({ projectId, onLookbookRebuild }: VisualCa
   }
 
   return (
+    <VisualPanelErrorBoundary panelLabel="VisualCanonResetPanel">
     <div className="space-y-3">
       {/* ── Legacy Surface Warning Banner ── */}
       <div className="flex items-start gap-2 p-2.5 rounded-md border border-amber-500/40 bg-amber-500/10">
@@ -1373,6 +1375,7 @@ export function VisualCanonResetPanel({ projectId, onLookbookRebuild }: VisualCa
         </Card>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
 

@@ -6,8 +6,6 @@ import { useState, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Header } from '@/components/Header';
-import { PageTransition } from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -185,9 +183,7 @@ export default function VisualUnits() {
   }, [canonicalUnits, projectId]);
 
   return (
-    <PageTransition>
-      <Header />
-      <div className="container mx-auto px-4 py-6 max-w-7xl">
+    <div className="container mx-auto px-4 py-6 max-w-7xl">
         <div className="flex items-center gap-3 mb-6">
           <Link to={`/projects/${projectId}`}>
             <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -434,6 +430,5 @@ export default function VisualUnits() {
           </TabsContent>
         </Tabs>
       </div>
-    </PageTransition>
   );
 }

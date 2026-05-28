@@ -380,10 +380,7 @@ export function CharacterVisualDNAPanel({ projectId, characterName, canonCharact
   
   if (!dna) {
     return (
-      <div className="flex items-center gap-2 py-3 text-muted-foreground">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        <span className="text-[10px]">Resolving Visual DNA...</span>
-      </div>
+      <VisualSkeleton variant="panel" lines={3} />
     );
   }
   
@@ -397,6 +394,7 @@ export function CharacterVisualDNAPanel({ projectId, characterName, canonCharact
   const pendingMarkers = bindingMarkers.filter(m => m.status === 'detected' || m.status === 'pending_resolution');
   
   return (
+    <VisualPanelErrorBoundary panelLabel="CharacterVisualDNAPanel">
     <Card className="border-border/60 bg-muted/10">
       <CardContent className="p-3 space-y-2">
         {/* Header */}
@@ -710,5 +708,6 @@ export function CharacterVisualDNAPanel({ projectId, characterName, canonCharact
         )}
       </CardContent>
     </Card>
+    </VisualPanelErrorBoundary>
   );
 }

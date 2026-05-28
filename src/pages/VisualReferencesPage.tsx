@@ -5,8 +5,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { Header } from '@/components/Header';
-import { PageTransition } from '@/components/PageTransition';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -111,8 +109,7 @@ export default function VisualReferencesPage() {
   };
 
   return (
-    <PageTransition>
-      <Header />
+    <>
       <div className="min-h-screen bg-background pt-16">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="flex items-center gap-3 mb-6">
@@ -188,7 +185,7 @@ export default function VisualReferencesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageTransition>
+    </>
   );
 }
 

@@ -211,7 +211,6 @@ export function VisualExecutionHistoryPanel({ projectId, stageId }: Props) {
 
   return (
     <VisualPanelErrorBoundary panelLabel="VisualExecutionHistoryPanel">
-      <div className="border-t border-border/30 mt-4">
       <div className="p-4 md:p-6 space-y-3">
         {/* Header */}
         <div className="flex items-center gap-2">

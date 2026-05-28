@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import { X } from 'lucide-react';
 import type { DiffJson } from '@/lib/types/visualUnits';
 
@@ -12,7 +13,8 @@ interface Props {
 
 export function VisualUnitDiffPanel({ diffSummary, diffJson, onClose }: Props) {
   return (
-    <Card>
+    <VisualPanelErrorBoundary panelLabel="VisualUnitDiffPanel">
+      <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle className="text-xs">Diff Comparison</CardTitle>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onClose}>
@@ -70,5 +72,6 @@ export function VisualUnitDiffPanel({ diffSummary, diffJson, onClose }: Props) {
         </ScrollArea>
       </CardContent>
     </Card>
+    </VisualPanelErrorBoundary>
   );
 }

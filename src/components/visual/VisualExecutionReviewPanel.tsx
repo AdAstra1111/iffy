@@ -213,5 +213,6 @@ export function VisualExecutionReviewPanel({ execution, onReviewComplete }: Prop
         </div>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }

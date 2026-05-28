@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import {
   ArrowLeft, CheckCircle2, XCircle, Edit3, GitCompare,
   Lock, Unlock, Loader2,
@@ -40,7 +41,7 @@ export function VisualUnitCandidateCard({
   const p = candidate.candidate_payload;
 
   return (
-    <>
+    <VisualPanelErrorBoundary panelLabel="VisualUnitCandidateCard">
       <Card>
         <CardHeader className="flex flex-row items-center gap-2 pb-2">
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onBack}>
@@ -215,7 +216,7 @@ export function VisualUnitCandidateCard({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </VisualPanelErrorBoundary>
   );
 }
 

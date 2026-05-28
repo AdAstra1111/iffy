@@ -1,6 +1,8 @@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
+import { VisualSkeleton } from '@/components/visual/VisualSkeleton';
+import { VisualEmptyState } from '@/components/visual/VisualEmptyState';
+import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import type { VisualUnitCandidate } from '@/lib/types/visualUnits';
 
 interface Props {
@@ -19,15 +21,16 @@ const statusColors: Record<string, string> = {
 
 export function VisualUnitCandidatesList({ candidates, isLoading, onSelect }: Props) {
   if (isLoading) {
-    return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
+    return <VisualSkeleton variant="list" />;
   }
 
   if (candidates.length === 0) {
-    return <p className="text-[10px] text-muted-foreground text-center py-8 px-3">No candidates. Select a run or create one.</p>;
+    return <VisualEmptyState compact title="No candidates" description="Select a run or create one." />;
   }
 
   return (
-    <ScrollArea className="h-[65vh]">
+    <VisualPanelErrorBoundary panelLabel="VisualUnitCandidatesList">
+      <ScrollArea className="h-[65vh]">
       <div className="space-y-1 px-3 pb-3">
         {candidates.map(c => (
           <button
@@ -52,5 +55,6 @@ export function VisualUnitCandidatesList({ candidates, isLoading, onSelect }: Pr
         ))}
       </div>
     </ScrollArea>
+    </VisualPanelErrorBoundary>
   );
 }

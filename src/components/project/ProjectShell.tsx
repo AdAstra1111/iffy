@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { useParams, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import {
   LayoutGrid, FileText, BookOpen, Image, Film, Briefcase, Sparkles, Users, UserPlus,
-  PanelRightOpen, PanelRightClose, ArrowLeft, Loader2,
+  PanelRightOpen, PanelRightClose, ArrowLeft, Loader2, Layers, Clapperboard, Palette,
   CheckCircle2, AlertTriangle, ArrowRight, X, ImagePlus, BookOpenCheck, Volume2,
 } from 'lucide-react';
 import { ProcessingCenterButton } from '@/components/system/ProcessingCenter';
@@ -54,6 +54,9 @@ function buildRailLinks(projectId: string): RailLink[] {
     { icon: FileText,   label: 'Script',      to: `${p}/script`,      modes: ['develop'] },
     { icon: BookOpen,   label: 'Canon',       to: `${p}/canon`,       modes: ['develop'] },
     { icon: Image,      label: 'Visual Dev',  to: `${p}/visual-dev`,  modes: ['produce'] },
+    { icon: Layers,     label: 'Storyboards', to: `${p}/storyboards`, modes: ['produce'] },
+    { icon: Clapperboard, label: 'Shot List', to: `${p}/shot-list`,   modes: ['produce'] },
+    { icon: Palette,    label: 'Visual Ref',  to: `${p}/visual-references`, modes: ['produce'] },
     { icon: Film,       label: 'Trailer',     to: `${p}/trailer`,     modes: ['produce'] },
     { icon: Sparkles,   label: 'AI Content',  to: `${p}/ai-content`,  modes: ['produce'] },
     { icon: Volume2,   label: 'Audio Export', to: `${p}/audio-export`, modes: ['produce'] },

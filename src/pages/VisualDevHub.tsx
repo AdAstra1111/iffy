@@ -25,7 +25,6 @@ import { ReviewStudio } from '@/components/images/ReviewStudio';
 import { StoryIngestionPanel } from '@/components/project/StoryIngestionPanel';
 import { VisualStyleAuthorityPanel, VisualStyleChip } from '@/components/images/VisualStyleAuthorityPanel';
 import { supabase } from '@/integrations/supabase/client';
-import { VisualPipelineErrorBoundary } from '@/components/VisualPipelineErrorBoundary';
 
 const PRODUCTION_TOOLS = [
   {
@@ -189,35 +188,8 @@ export default function VisualDevHub() {
   }
 
   return (
-    <VisualPipelineErrorBoundary stageLabel="Visual Production Hub">
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-[1200px] mx-auto px-4 py-3 flex items-center gap-3">
-          <Link to={`/projects/${projectId}`}>
-            <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
-          </Link>
-          <div className="flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold">Visual Production Hub</h1>
-              {projectId && <VisualStyleChip projectId={projectId} />}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Cast photos, character identity, world references, visual canon management.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-[10px] flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Eligibility: Read-only
-            </Badge>
-            <Badge variant="outline" className="text-[10px] flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              Stale risk: Monitored
-            </Badge>
-          </div>
-        </div>
-      </header>
-        <main className="max-w-[1200px] mx-auto px-4 py-6 space-y-4">
+      <main className="max-w-[1200px] mx-auto px-4 py-6 space-y-4">
         {/* ── Workflow guidance ── */}
         <div className="rounded-lg border border-border/50 bg-muted/20 px-4 py-2.5 flex items-center gap-3">
           <BookOpen className="h-4 w-4 text-primary shrink-0" />
@@ -377,6 +349,5 @@ export default function VisualDevHub() {
         </motion.div>
       </main>
     </div>
-    </VisualPipelineErrorBoundary>
   );
 }
