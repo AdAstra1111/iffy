@@ -12,6 +12,8 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Sparkles, ChevronDown, ChevronUp, Eye } from 'lucide-react';
 import { useVisualCanonExtraction } from '@/hooks/useVisualCanonExtraction';
 import { VISUAL_CANON_CATEGORIES, type VisualCanonPrimitive, type VisualCanonCategory } from '@/lib/visual/visualCanonExtractor';
+import { VisualSkeleton } from './VisualSkeleton';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 interface Props {
   projectId: string;
@@ -117,15 +119,12 @@ export function VisualCanonExtractionPanel({ projectId }: Props) {
   } = useVisualCanonExtraction(projectId);
 
   if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-xs text-muted-foreground p-4">
-        <Loader2 className="h-3 w-3 animate-spin" /> Loading visual canon…
-      </div>
-    );
+    return <VisualSkeleton variant="panel" />;
   }
 
   return (
-    <div className="space-y-4">
+    <VisualPanelErrorBoundary panelLabel="VisualCanonExtractionPanel">
+      <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

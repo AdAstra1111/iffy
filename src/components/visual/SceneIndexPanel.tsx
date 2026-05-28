@@ -9,6 +9,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MapPin, Users, RefreshCw } from 'lucide-react';
+import { VisualSkeleton } from './VisualSkeleton';
+import { VisualEmptyState } from './VisualEmptyState';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 interface SceneIndexPanelProps {
   projectId: string;
@@ -22,40 +25,33 @@ export const SceneIndexPanel: React.FC<SceneIndexPanelProps> = ({ projectId }) =
   };
 
   if (isLoading) {
-    return (
-      <div className="flex items-center justify-center p-8">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Loading scene index…</span>
-      </div>
-    );
+    return <VisualSkeleton variant="table-row" />;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-foreground">Scene Index</h3>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleExtract}
-          disabled={isExtracting}
-        >
-          {isExtracting ? (
-            <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Extracting…</>
-          ) : (
-            <><RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Extract Scenes</>
-          )}
-        </Button>
-      </div>
+    <VisualPanelErrorBoundary panelLabel="SceneIndexPanel">
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">Scene Index</h3>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleExtract}
+            disabled={isExtracting}
+          >
+            {isExtracting ? (
+              <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Extracting…</>
+            ) : (
+              <><RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Extract Scenes</>
+            )}
+          </Button>
+        </div>
 
       {scenes.length === 0 ? (
-        <Card>
-          <CardContent className="py-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              No scene index yet. Click "Extract Scenes" to generate from your script.
-            </p>
-          </CardContent>
-        </Card>
+        <VisualEmptyState
+          title="No scene index yet"
+          description='Click "Extract Scenes" to generate from your script.'
+        />
       ) : (
         <div className="space-y-2">
           {scenes.map((scene) => (
@@ -98,5 +94,6 @@ export const SceneIndexPanel: React.FC<SceneIndexPanelProps> = ({ projectId }) =
         </div>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 };

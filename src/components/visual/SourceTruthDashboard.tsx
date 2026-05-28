@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { CharacterWardrobeProfile, WardrobeStateDefinition } from '@/lib/visual/characterWardrobeExtractor';
+import { VisualPanelErrorBoundary } from './VisualPanelErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -550,7 +551,8 @@ export function SourceTruthDashboard({ projectId }: { projectId: string }) {
   const isAnyExtracting = wardrobe.extracting || sceneIdx.isExtracting || visualCanon.extracting || locationExtracting || temporal.extracting;
 
   return (
-    <div className="space-y-6">
+    <VisualPanelErrorBoundary panelLabel="SourceTruthDashboard">
+      <div className="space-y-6">
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
         <div>
@@ -1059,9 +1061,10 @@ export function SourceTruthDashboard({ projectId }: { projectId: string }) {
         </Card>
       )}
     </div>
+    </VisualPanelErrorBoundary>
   );
 }
-
+  
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 function OverviewCard({ icon, label, value, sub, status }: {

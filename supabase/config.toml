@@ -281,6 +281,12 @@ verify_jwt = false
 [functions.evaluate-visual-similarity]
 verify_jwt = false
 
+[functions.comps-engine]
+verify_jwt = false
+
+[functions.comps-style-fingerprint]
+verify_jwt = false
+
 [functions.extract-scene-index]
 verify_jwt = false
 
