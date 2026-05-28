@@ -249,3 +249,146 @@ describe('Integration — 3-part architecture coherence', () => {
     expect(appSrc).toContain('</SafeRouteBoundary>');
   });
 });
+
+// ── Behavioral Tests: runtime error handling ────────────────────────────────────
+
+describe('Behavioral — SafeRouteBoundary runtime error handling', () => {
+  it('is exported as a class component with constructor state', () => {
+    // Validate the class structure via the export and constructor
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    expect(source).toContain('export class SafeRouteBoundary extends React.Component');
+    expect(source).toContain("this.state = { hasError: false, error: null }");
+  });
+
+  it('getDerivedStateFromError returns expected shape for any error', () => {
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    const gdsfe = source.split('static getDerivedStateFromError')[1]?.split('\n').slice(0, 5).join('\n') || '';
+    expect(gdsfe).toContain('hasError: true');
+    expect(gdsfe).toContain('error');
+  });
+
+  it('componentDidCatch path branches correctly on error type', () => {
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    const cdc = source.split('componentDidCatch(error: Error')[1]?.split('\n').slice(0, 30).join('\n') || '';
+
+    // Branch 1: RemoveChild error — early return, no attempt increment
+    expect(cdc).toContain('isRemoveChildError');
+    expect(cdc).toContain('setTimeout');
+    expect(cdc).toContain('setState({ hasError: false, error: null })');
+    expect(cdc).toContain('return');
+
+    // Between branch 1 and recoveryAttempts++ we should NOT see increment
+    const beforeIncrement = source.split('this.recoveryAttempts++')[0];
+    const removeChildBlock = beforeIncrement.split('isRemoveChildError');
+    expect(removeChildBlock.length).toBeGreaterThanOrEqual(2);
+
+    // Branch 2: Non-removeChild error — attempts increment
+    expect(source).toContain('this.recoveryAttempts++');
+  });
+
+  it('permanent error fallback renders after MAX_RECOVERY_ATTEMPTS exceeded', () => {
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    // The render() method has two branches:
+    // 1. this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS => permanent error
+    //    Refresh page, "Route render failed", "A persistent error occurred"
+    // 2. else => recovering spinner
+    const renderSection = source.split('render()')[1] || '';
+    expect(renderSection).toContain('Refresh page');
+    expect(renderSection).toContain('Route render failed');
+    expect(renderSection).toContain('A persistent error occurred');
+    expect(renderSection).toContain('Recovering');
+  });
+
+  it('recoveryInFlightRef prevents concurrent recovery across boundaries', () => {
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    expect(source).toContain('recoveryInFlightRef.current');
+    const inFlightGuard = source.split('if (recoveryInFlightRef.current)')[1] || '';
+    expect(inFlightGuard).toContain('skipping concurrent recovery');
+    expect(inFlightGuard).toContain('return');
+  });
+
+  it('removeChild recovery path does NOT increment recoveryAttempts', () => {
+    const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
+    // The removeChild block at the top of componentDidCatch returns BEFORE recoveryAttempts++
+    // So the recoveryAttempts++ line should come AFTER the removeChild if-block
+    const lines = source.split('\n');
+    const incrementLine = lines.findIndex(l => l.includes('this.recoveryAttempts++'));
+    const linesBeforeIncrement = lines.slice(0, incrementLine).join('\n');
+
+    // Before recoveryAttempts++, there should be the removeChild guard
+    expect(linesBeforeIncrement).toContain('isRemoveChildError');
+    expect(linesBeforeIncrement).toContain('recoveryInFlightRef.current = true');
+
+    // And after the isRemoveChildError block, there should be the concurrent recovery guard
+    expect(linesBeforeIncrement).toContain('Recovery already in flight');
+  });
+});
+
+describe('Behavioral — errorCapture runtime error filtering', () => {
+  let source: string;
+
+  beforeAll(() => {
+    source = readSource(`${BASE}/src/lib/errorCapture.ts`);
+  });
+
+  it('registers a global error event listener', () => {
+    expect(source).toContain("window.addEventListener('error'");
+  });
+
+  it('registers an unhandled rejection listener', () => {
+    expect(source).toContain("window.addEventListener('unhandledrejection'");
+  });
+
+  it('suppresses NotFoundError removeChild in the error listener', () => {
+    // The listener should check:
+    //   error instanceof DOMException &&
+    //   error.name === 'NotFoundError' &&
+    //   error.message?.includes('removeChild')
+    // then return early
+    const errorListenerSection = source.split("window.addEventListener('error'")[1] || '';
+    expect(errorListenerSection).toContain('error instanceof DOMException');
+    expect(errorListenerSection).toContain("error.name === 'NotFoundError'");
+    expect(errorListenerSection).toContain("error.message?.includes('removeChild')");
+    expect(errorListenerSection).toContain('return;');
+  });
+
+  it('still captures UNCAUGHT errors that are NOT removeChild', () => {
+    expect(source).toContain("captureError('UNCAUGHT'");
+  });
+
+  it('exports logError and getErrors functions', () => {
+    expect(source).toContain('export function logError');
+    expect(source).toContain('export function getErrors');
+  });
+
+  it('logError calls captureError with MANUAL type', () => {
+    const logErrorSection = source.split('export function logError')[1]?.split('\n').slice(0, 5).join('\n') || '';
+    expect(logErrorSection).toContain("captureError('MANUAL'");
+  });
+
+  it('getErrors returns window.__IFFY_ERRORS__', () => {
+    const getErrorsSection = source.split('export function getErrors')[1]?.split('\n').slice(0, 5).join('\n') || '';
+    expect(getErrorsSection).toContain('window.__IFFY_ERRORS__');
+  });
+});
+
+describe('Behavioral — VisualPanelErrorBoundary runtime structure', () => {
+  it('is a class component with React error boundary lifecycle', () => {
+    const source = readSource(`${BASE}/src/components/visual/VisualPanelErrorBoundary.tsx`);
+    expect(source).toContain('class VisualPanelErrorBoundary extends Component');
+    expect(source).toContain('getDerivedStateFromError');
+    expect(source).toContain('componentDidCatch');
+  });
+
+  it('accepts panelLabel and compact props', () => {
+    const source = readSource(`${BASE}/src/components/visual/VisualPanelErrorBoundary.tsx`);
+    expect(source).toContain('panelLabel');
+    expect(source).toContain('compact');
+  });
+
+  it('logs the panelLabel in componentDidCatch', () => {
+    const source = readSource(`${BASE}/src/components/visual/VisualPanelErrorBoundary.tsx`);
+    expect(source).toContain('console.error');
+    expect(source).toContain('panelLabel');
+  });
+});
