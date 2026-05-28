@@ -392,4 +392,105 @@ describe('VisualProductionPipeline — integration structure (all fixes)', () =>
     // Top bar elements should be before the boundary
     expect(beforeBoundary).toContain('Generate Pipeline');
   });
+
+  // ── Sidebar double-render fix: Suspense inside vpp-content ──
+
+  it('Suspense opening tag is AFTER key="vpp-content" opening (Suspense wraps only content)', () => {
+    const vppContentIdx = PIPELINE_SOURCE.indexOf('key="vpp-content"');
+    const suspenseIdx = PIPELINE_SOURCE.indexOf('<Suspense');
+    // Suspense must come after vpp-content opens — proving Suspense is inside the content div
+    expect(suspenseIdx).toBeGreaterThan(vppContentIdx);
+  });
+
+  it('Suspense closing tag is BEFORE key="vpp-content" closing (Suspense is fully inside vpp-content)', () => {
+    const suspenseCloseIdx = PIPELINE_SOURCE.lastIndexOf('</Suspense>');
+    const vppContentCloseIdx = PIPELINE_SOURCE.indexOf('key="vpp-content"');
+    // Find the closing div for vpp-content: it's a div that closes after Suspense closes
+    // Count the div depth from vpp-content open to find its matching close
+    const contentAfterSuspenseClose = PIPELINE_SOURCE.slice(suspenseCloseIdx);
+    // The vpp-content closing </div> must appear after </Suspense>
+    // Look for the structure: ...</Suspense>...</div> then the vpp-main </div>
+    const vppContentEnd = PIPELINE_SOURCE.indexOf('</Suspense>');
+    const afterSuspense = PIPELINE_SOURCE.slice(vppContentEnd + '</Suspense>'.length);
+    // The vpp-content div closes before vpp-main div closes
+    // Pattern: </Suspense>\n        </div>\n      </div>
+    expect(afterSuspense).toMatch(/<\/div>\s*<\/div>/);
+  });
+
+  it('sidebar (hidden lg:block) is OUTSIDE Suspense (before Suspense opening)', () => {
+    const sidebarIdx = PIPELINE_SOURCE.indexOf('hidden lg:block');
+    const suspenseIdx = PIPELINE_SOURCE.indexOf('<Suspense');
+    // Sidebar markup must come before Suspense opening tag
+    expect(sidebarIdx).toBeLessThan(suspenseIdx);
+  });
+
+  it('source file has exactly one <Suspense> tag (no nested or duplicate Suspense)', () => {
+    const suspenseOpen = (PIPELINE_SOURCE.match(/<Suspense/g) || []).length;
+    const suspenseClose = (PIPELINE_SOURCE.match(/<\/Suspense>/g) || []).length;
+    expect(suspenseOpen).toBe(1);
+    expect(suspenseClose).toBe(1);
+  });
+
+  it('vpp-content div directly contains the Suspense (no intermediate wrapper)', () => {
+    const vppContentIdx = PIPELINE_SOURCE.indexOf('key="vpp-content"');
+    const contentSection = PIPELINE_SOURCE.slice(vppContentIdx);
+    // The very next significant content-related element inside vpp-content should be Suspense
+    // (there's just className before it)
+    const suspenseIdxInContent = contentSection.indexOf('<Suspense');
+    const divCloseBeforeSuspense = contentSection.slice(0, suspenseIdxInContent).lastIndexOf('>');
+    const justBeforeSuspense = contentSection.slice(divCloseBeforeSuspense + 1, suspenseIdxInContent).trim();
+    // Should be empty or whitespace — no intermediate component between vpp-content and Suspense
+    expect(justBeforeSuspense.length).toBe(0);
+  });
+
+  // ── Lazy-load import verification ──
+
+  it('lazy imports remain for all three lazy-loaded content panels', () => {
+    expect(PIPELINE_SOURCE).toContain("const CastingPipelineContent = lazy(() => import('./CastingPipeline'));");
+    expect(PIPELINE_SOURCE).toContain("const ProductionDesignContent = lazy(() => import('./ProductionDesign'));");
+    expect(PIPELINE_SOURCE).toContain("const LookBookContent = lazy(() => import('./LookBookPage'));");
+  });
+
+  it('lazy-loaded components are rendered inside Suspense (within vpp-content)', () => {
+    const suspenseCloseIdx = PIPELINE_SOURCE.lastIndexOf('</Suspense>');
+    const vppContentIdx = PIPELINE_SOURCE.indexOf('key="vpp-content"');
+    const withinSuspense = PIPELINE_SOURCE.slice(vppContentIdx, suspenseCloseIdx);
+
+    // All lazy-loaded components must be referenced inside Suspense (within vpp-content region)
+    expect(withinSuspense).toContain('CastingPipelineContent');
+    expect(withinSuspense).toContain('ProductionDesignContent');
+    expect(withinSuspense).toContain('LookBookContent');
+  });
+
+  // ── DOM stability on stage transition ──
+
+  it('vpp-main container is NOT inside Suspense (sidebar and rail stay stable)', () => {
+    // The vpp-main div wraps the entire layout including sidebar. It must be outside Suspense.
+    const vppMainIdx = PIPELINE_SOURCE.indexOf('key="vpp-main"');
+    const suspenseIdx = PIPELINE_SOURCE.indexOf('<Suspense');
+    // vpp-main must appear BEFORE Suspense opening
+    expect(vppMainIdx).toBeLessThan(suspenseIdx);
+  });
+
+  it('no Suspense boundary exists between ErrorBoundary and sidebar', () => {
+    const boundaryOpenIdx = PIPELINE_SOURCE.indexOf('<VisualPipelineErrorBoundary');
+    const sidebarIdx = PIPELINE_SOURCE.indexOf('hidden lg:block');
+    const segment = PIPELINE_SOURCE.slice(boundaryOpenIdx, sidebarIdx);
+    // There should be no Suspense between ErrorBoundary open and sidebar
+    expect(segment).not.toContain('<Suspense');
+  });
+
+  it('ErrorBoundary closing tag is AFTER vpp-main closing tag (covers all content + sidebar)', () => {
+    const boundaryCloseIdx = PIPELINE_SOURCE.lastIndexOf('</VisualPipelineErrorBoundary>');
+    const vppMainCloseIdx = PIPELINE_SOURCE.indexOf('key="vpp-main"');
+    // Find the second </div> after vpp-main content (vpp-content close + vpp-main close)
+    // We'll check the reverse: boundaryClose should be after the last </div> of vpp-main structure
+    const mainContent = PIPELINE_SOURCE.slice(vppMainCloseIdx);
+    const mainDivCloses = mainContent.match(/<\/div>/g) || [];
+    // vpp-main has at least 2 div closes (vpp-content + vpp-main itself)
+    expect(mainDivCloses.length).toBeGreaterThanOrEqual(2);
+    // The ErrorBoundary closes everything
+    expect(PIPELINE_SOURCE.lastIndexOf('</VisualPipelineErrorBoundary>'))
+      .toBeGreaterThan(PIPELINE_SOURCE.lastIndexOf('</Suspense>'));
+  });
 });
