@@ -41,9 +41,9 @@ interface DecisionCardProps {
 }
 
 const RISK_COLORS: Record<string, string> = {
-  low: 'text-emerald-400 border-emerald-500/30',
-  med: 'text-amber-400 border-amber-500/30',
-  high: 'text-destructive border-destructive/30',
+  low: 'text-muted-foreground border-border/30',
+  med: 'text-muted-foreground border-border/30',
+  high: 'text-muted-foreground border-border/30',
 };
 
 function OptionRow({
@@ -72,8 +72,8 @@ function OptionRow({
         </div>
         <span className="text-[11px] font-medium text-foreground">{option.title}</span>
         {isRecommended && (
-          <Badge variant="outline" className="text-[8px] px-1 py-0 border-primary/40 text-primary bg-primary/10">
-            Recommended
+          <Badge variant="outline" className="text-[8px] px-1 py-0 bg-muted/20 text-muted-foreground border-border/30">
+            AI suggestion
           </Badge>
         )}
         {option.creative_risk && (
@@ -82,8 +82,8 @@ function OptionRow({
           </Badge>
         )}
         {option.commercial_lift > 0 && (
-          <Badge variant="outline" className="text-[8px] px-1 py-0 border-emerald-500/30 text-emerald-500">
-            +{option.commercial_lift} GP
+          <Badge variant="outline" className="text-[8px] px-1 py-0 border-border/30 text-muted-foreground">
+            +{option.commercial_lift} GP (est.)
           </Badge>
         )}
       </div>

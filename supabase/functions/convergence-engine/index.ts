@@ -368,7 +368,7 @@ serve(async (req) => {
 
     // Enforce CI 2× arithmetic — this is the canonical calculation
     const ciScore = Math.round(avgCI * 2);
-    const gpScore = Math.round(avgGP);
+    const gpScore = Math.round(avgGP * 10); // scale from 0-10 sub-score average to 0-100
     const gap = Math.abs(ciScore - gpScore);
 
     // Calculate allowed gap

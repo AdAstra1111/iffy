@@ -280,6 +280,7 @@ Generate a JSON object with ALL of the following fields:
   "casting_suggestions": "age range, actor type, relevant comparables (actors or character archetypes)",
   "cultural_context": "background, nationality, accent guidance, cultural sensitivity notes",
   "casting_type_tags": ["action-lead", "comic-relief", "villain", "mentor"],
+  "species": "human — or 'creature', 'animal', 'alien', 'monster', 'supernatural' if the character is non-human",
   "visual_complexity": "simple|moderate|complex — based on costume/makeup/prosthetic requirements"
 }
 

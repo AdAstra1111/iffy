@@ -4078,7 +4078,8 @@ async function persistPlateauDiagnosis(supabase: any, input: DiagInput): Promise
       console.error(`[auto-run][DIAG] persist_failed { job_id: "${input.jobId}", error: "${error.message}" }`);
     } else {
       console.log(`[auto-run][DIAG] DEVSEED_PLATEAU_DIAGNOSIS_CREATED { job_id: "${input.jobId}", project_id: "${job.project_id}", primary_cause: "${diag.primary_cause}", seed_limited: ${diag.seed_limited}, recommendation: "${diag.recommendation_bundle.recommendation_type}" }`);
-    }
+
+      console.log("[auto-run][TEL] PLATEAU_ACCEPTED job_id=" + input.jobId + " doc=" + input.currentDoc + " ci=" + input.detectedCi + " note: OBSERVATION ONLY");    }
   } catch (e: any) {
     console.error(`[auto-run][DIAG] persist_error { job_id: "${input.jobId}", error: "${e?.message}" }`);
   }
@@ -4131,7 +4132,22 @@ async function tryPlateauForcePromote(
   // ── EXCEPTIONAL PLATEAU: route through recoverable plateau handler instead of hard-stopping ──
   if (isExceptionalObjective(job) && (typeof detectedBestCi === "number" ? detectedBestCi : detectedCi) < targetCi) {
     console.log(`[auto-run][PLATEAU_RECOVERY] exceptional_plateau_detected { job_id: "${jobId}", doc_type: "${currentDoc}", ci: ${detectedCi}, best_ci: ${detectedBestCi}, target: ${targetCi}, plateau_version: "${plateauVersion}", source: "tryPlateauForcePromote" }`);
-    return routePlateauRecovery(supabase, {
+
+    // Deno-safe telemetry: PLATEAU_CANDIDATE
+    try {
+      const { data: platNotes } = await supabase
+        .from("development_notes")
+        .select("note_key, severity")
+        .eq("document_id", doc ? doc.id : "unknown")
+        .eq("resolved", false);
+      var bCount = platNotes ? platNotes.filter(function(n) { return n.severity === "blocker"; }).length : 0;
+      var hCount = platNotes ? platNotes.filter(function(n) { return n.severity === "high"; }).length : 0;
+      if (bCount === 0 && hCount > 0) {
+        console.log("[auto-run][TEL] PLATEAU_CANDIDATE job_id=" + jobId + " doc=" + currentDoc + " ci=" + detectedCi + " blockers=" + bCount + " high=" + hCount + " note: OBSERVATION ONLY");
+      }
+    } catch(pe) {
+      console.error("[auto-run] PLATEAU_CANDIDATE check failed", pe ? pe.message : "");
+    }    return routePlateauRecovery(supabase, {
       jobId, job, currentDoc, format, stepCount, targetCi,
       detectedCi, detectedBestCi, plateauVersion,
       escalationSource: `tryPlateauForcePromote_${plateauVersion}`,
@@ -4637,8 +4653,9 @@ function tryAutoAcceptDecisions(decisions: NormalizedDecision[], allowDefaults: 
     if (d.recommended) {
       selections[d.id] = d.recommended;
     } else if (d.options && d.options.length > 0) {
-      // Auto-decide: pick first option when no recommendation exists
-      selections[d.id] = d.options[0].value;
+      // PHASE 2: No positional fallback. Pause for human if no recommended choice.
+      console.warn("PHASE 2: auto-accept blocked — decision " + d.id + " has options but no recommendation. Pausing.");
+      return null;
     } else {
       // Full Autopilot: never block — synthesize a "force_promote" fallback
       console.warn(`[auto-run] tryAutoAcceptDecisions: decision ${d.id} has no options, auto-selecting force_promote`);
@@ -11247,7 +11264,8 @@ Deno.serve(async (req) => {
               "You MUST apply ALL of the above fixes in this rewrite. Do not ignore them.",
             ];
             console.log(`[auto-run] injected_accepted_decisions count=${decisionBundle.accepted_decisions.length} hash=${decisionBundle.accepted_decisions_hash} doc=${currentDoc} job=${jobId}`);
-            await logStep(supabase, jobId, null, currentDoc, "decisions_injected",
+
+      console.log("[auto-run][TEL] OPTION_SELECTED count=" + decisionBundle.accepted_decisions.length + " doc=" + currentDoc + " note: Observing decisions.");            await logStep(supabase, jobId, null, currentDoc, "decisions_injected",
               `Injected ${decisionBundle.accepted_decisions.length} accepted decisions into rewrite (hash=${decisionBundle.accepted_decisions_hash})`,
               { ci: baselineCI, gp: baselineGP }, undefined, {
                 accepted_decisions_hash: decisionBundle.accepted_decisions_hash,
@@ -12602,7 +12620,48 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
           if (postJob && postJob.status === "running" && !postJob.awaiting_approval && !postJob.is_processing) {
             // Guard: don't chain if step budget exhausted
             if (postJob.step_count < postJob.max_total_steps) {
-              console.log("[auto-run] self-chaining run-next after bg task", { jobId, step: postJob.step_count, max: postJob.max_total_steps });
+              // PHASE 1A: Diminishing Returns Gate — stop if CI delta flat for 2 iterations
+              let shouldContinue = true;
+              if (postJob.step_count >= 3) {
+                try {
+                  const { data: recentSteps } = await supabase
+                    .from("auto_run_steps")
+                    .select("step_number, output_json")
+                    .eq("job_id", jobId)
+                    .not("output_json", "is", null)
+                    .order("step_number", { ascending: false })
+                    .limit(3);
+                  if (recentSteps && recentSteps.length >= 3) {
+                    const ciScores = recentSteps.map(function(s) {
+                      try {
+                        var out = typeof s.output_json === "string" ? JSON.parse(s.output_json) : s.output_json;
+                        return out ? (out.ci_score || (out.scores && out.scores.ci_score) || (out.analysis && out.analysis.ci_score) || null) : null;
+                      } catch(e) { return null; }
+                    }).filter(function(c) { return c !== null; });
+                    if (ciScores.length >= 3) {
+                      var delta1 = Math.abs(ciScores[0] - ciScores[1]);
+                      var delta2 = Math.abs(ciScores[1] - ciScores[2]);
+                      if (delta1 < 2 && delta2 < 2) {
+                        console.warn("[auto-run] DIMINISHING_RETURNS: CI delta=" + delta1.toFixed(1) + "," + delta2.toFixed(1) + " below threshold. Breaking self-chain. jobId=" + jobId);
+                        shouldContinue = false;
+                        await updateJob(supabase, jobId, {
+                          status: "paused",
+                          stop_reason: "DIMINISHING_RETURNS",
+                          error: "CI delta < 2 for 2 consecutive iterations. No meaningful improvement. Human review required.",
+                          awaiting_approval: true,
+                          approval_type: "review",
+                        });
+                        var dimStepIdx = await nextStepIndex(supabase, jobId);
+                        await logStep(supabase, jobId, dimStepIdx, currentDoc, "plateau_meaningful", "CI delta=" + delta1.toFixed(1) + "," + delta2.toFixed(1) + " < threshold. Human review required.");
+                      }
+                    }
+                  }
+                } catch(dimErr) {
+                  console.error("[auto-run] DIMINISHING_RETURNS check failed", dimErr ? dimErr.message : "unknown");
+                }
+              }
+              if (shouldContinue) {
+                console.log("[auto-run] self-chaining run-next after bg task", { jobId, step: postJob.step_count, max: postJob.max_total_steps });
               const selfUrl = `${supabaseUrl}/functions/v1/auto-run`;
               const chainPromise = fetch(selfUrl, {
                 method: "POST",
@@ -12617,6 +12676,7 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
               }).catch((e: any) => console.error("[auto-run] self-chain fetch failed", { jobId, error: e?.message }));
               // Track the chain fetch in waitUntil so isolate stays alive
               waitUntilSafe(chainPromise);
+              }
             } else {
               console.log("[auto-run] self-chain skipped: step budget exhausted", { jobId, step: postJob.step_count, max: postJob.max_total_steps });
             }

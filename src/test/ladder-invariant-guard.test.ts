@@ -46,7 +46,7 @@ function getCanonicalNextStage(params: {
 }
 
 function assertFeatureFilmOrder(ladder: string[]) {
-  const stages = ['treatment', 'story_outline', 'character_bible', 'beat_sheet', 'feature_script', 'production_draft'] as const;
+  const stages = ['character_bible', 'treatment', 'story_outline', 'beat_sheet', 'feature_script', 'production_draft'] as const;
   const indices = stages.map(s => {
     const idx = ladder.indexOf(s);
     if (idx === -1) throw new Error(`[ladder-invariant] feature-film ladder missing stage: ${s}`);
@@ -69,14 +69,14 @@ describe('Ladder invariant guard — core logic', () => {
       .toBe('story_outline');
   });
 
-  it('story_outline → character_bible', () => {
+  it('story_outline → beat_sheet', () => {
     expect(getCanonicalNextStage({ ladder: FILM_LADDER, currentStage: 'story_outline', format: 'film', source: 'test' }))
-      .toBe('character_bible');
+      .toBe('beat_sheet');
   });
 
-  it('concept_brief → treatment', () => {
+  it('concept_brief → character_bible', () => {
     expect(getCanonicalNextStage({ ladder: FILM_LADDER, currentStage: 'concept_brief', format: 'film', source: 'test' }))
-      .toBe('treatment');
+      .toBe('character_bible');
   });
 
   // ── 2. End-of-ladder handling ──

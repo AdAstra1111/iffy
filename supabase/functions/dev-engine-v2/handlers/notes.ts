@@ -402,7 +402,7 @@ ${(() => {
 
       // Deduplicate by note_key within this version — only keep first occurrence
       const seenNoteKeys = new Set<string>();
-      const noteInserts = allTieredNotes
+      let noteInserts = allTieredNotes
         .filter((n: any) => n.id)
         .filter((n: any) => {
           if (seenNoteKeys.has(n.id)) return false;
@@ -433,7 +433,139 @@ ${(() => {
           };
         });
       if (noteInserts.length > 0) {
-        await supabase.from("development_notes").insert(noteInserts);
+        // ── PHASE 1A — CROSS-VERSION NOTE KEY DEDUPLICATION ──
+        // Prevent the same note_key from appearing at multiple severity levels.
+        const { data: existingNotes } = await supabase
+          .from("development_notes")
+          .select("note_key, severity")
+          .eq("document_id", documentId)
+          .eq("resolved", false);
+        
+        const existingSeverityByKey: Record<string, string> = {};
+        if (existingNotes) {
+          for (const en of existingNotes) {
+            const key = en.note_key;
+            const existingSev = existingSeverityByKey[key];
+            if (!existingSev || severityWeight(en.severity) > severityWeight(existingSev)) {
+              existingSeverityByKey[key] = en.severity;
+            }
+          }
+        }
+
+        const SEVERITY_ORDER = ["blocker", "high", "polish"];
+        function severityWeight(s: string): number {
+          const idx = SEVERITY_ORDER.indexOf(s);
+          return idx >= 0 ? idx : 99;
+        }
+
+        // Filter out duplicates that are lower or equal severity than existing
+        const dedupedInserts: typeof noteInserts = [];
+        let dupCount = 0;
+        for (const note of noteInserts) {
+          const existingSev = existingSeverityByKey[note.note_key];
+          if (existingSev && severityWeight(note.severity) <= severityWeight(existingSev)) {
+            dupCount++;
+            console.log(`[notes] NOTE_DEDUP: skipping ${note.note_key} (${note.severity}) — existing ${existingSev} unresolved for document ${documentId}`);
+          } else {
+            dedupedInserts.push(note);
+          }
+        }
+        if (dupCount > 0) {
+          console.log(`[notes] NOTE_DEDUP: suppressed ${dupCount} duplicate note inserts for document ${documentId}`);
+        }
+        noteInserts = dedupedInserts;
+      }
+
+      // ── PHASE 1B — UNIVERSAL NOTE DETECTION & BLOCKER NORMALIZATION ──
+      if (noteInserts.length > 0) {
+        const UNIVERSAL_PATTERNS = [
+          /could be more (distinctive|specific|vivid|detailed|developed|pronounced)/i,
+          /could be (clarified|deepened|strengthened|sharpened|enhanced|refined)/i,
+          /could be further (elaborated|developed|explored|expanded)/i,
+          /(could|would) benefit from (more|additional|further)/i,
+          /could be (tightened|trimmed|streamlined)/i,
+          /could (strengthen|deepen|enhance|improve|sharpen)/i,
+          /consider (deepening|strengthening|enhancing|clarifying|expanding)/i,
+          /might benefit from (more|additional|greater)/i,
+          /^(enhance|strengthen|deepen|sharpen|refine|tighten|increase|improve) (the|this|its|character|scene|script|visual|dialogue|pacing|thematic)/i,
+          /^(increase|improve) (the|its|this)/i,
+        ];
+        
+        const NOT_A_BLOCKER_PATTERNS = [
+          /formatting|formatti?n?g/i,
+          /(minor|slight).*(format|style)/i,
+          /could be more (distinctive|specific)/i,
+        ];
+
+        let universalCount = 0;
+        let blockerDemotedCount = 0;
+        
+        const normalizedInserts: typeof noteInserts = [];
+        for (const note of noteInserts) {
+          const desc = note.description || "";
+          let severity = note.severity;
+          let modified = false;
+
+          for (const pat of UNIVERSAL_PATTERNS) {
+            if (pat.test(desc)) {
+              if (severity === "blocker") {
+                severity = "high";
+                blockerDemotedCount++;
+                modified = true;
+                console.log(`[notes] UNIVERSAL_NOTE_DEMOTION: ${note.note_key} (blocker→high)`);
+              } else if (severity === "high") {
+                severity = "polish";
+                modified = true;
+                console.log(`[notes] UNIVERSAL_NOTE_DEMOTION: ${note.note_key} (high→polish)`);
+              } else {
+                console.log(`[notes] UNIVERSAL_NOTE_DISCARDED: ${note.note_key} (polish) — matched universal pattern`);
+                universalCount++;
+                modified = true;
+                continue;
+              }
+              universalCount++;
+            }
+          }
+
+          if (!modified && severity === "blocker") {
+            for (const pat of NOT_A_BLOCKER_PATTERNS) {
+              if (pat.test(desc)) {
+                severity = "high";
+                blockerDemotedCount++;
+                modified = true;
+                console.log(`[notes] BLOCKER_DEMOTED: ${note.note_key} (→high)`);
+              }
+            }
+          }
+
+          normalizedInserts.push({ ...note, severity });
+        }
+        
+        if (universalCount > 0) {
+          console.log(`[notes] UNIVERSAL_NOTE_SUPPRESSED: ${universalCount} universal notes demoted/discarded`);
+        }
+        if (blockerDemotedCount > 0) {
+          console.log(`[notes] BLOCKER_DEMOTION_COUNT: ${blockerDemotedCount} blockers demoted to high`);
+        }
+        
+        // ── PHASE 2A — NOTE CHURN TELEMETRY ──
+        const churnCountByKey: Record<string, number> = {};
+        if (existingNotes) {
+          for (const en of existingNotes) {
+            churnCountByKey[en.note_key] = (churnCountByKey[en.note_key] || 0) + 1;
+          }
+        }
+        for (const n of normalizedInserts) {
+          if (existingSeverityByKey[n.note_key]) {
+            churnCountByKey[n.note_key] = (churnCountByKey[n.note_key] || 0) + 1;
+          }
+        }
+        const churningKeys = Object.entries(churnCountByKey).filter(([,c]) => c >= 3);
+        if (churningKeys.length > 0) {
+          console.log(`[notes][TEL] NOTE_CHURN { document_id: \"${documentId}\", churning_keys: [${churningKeys.map(([k,c]) => `\"${k}\":${c}`).join(', ')}], total_churning: ${churningKeys.length} }`);
+        }
+        
+        noteInserts = normalizedInserts;
       }
 
       // ── CONSTRAINT SOLVER: Upsert note states + detect conflicts + decision sets ──
@@ -1014,7 +1146,8 @@ RULES:
 - what_changes: list 2-4 specific story elements affected.
 - tradeoffs: honest one-sentence assessment of creative cost/benefit.
 - creative_risk: "low", "med", or "high" — how much creative DNA changes.
-- commercial_lift: integer 0-20 estimating GP improvement.
+- commercial_lift: integer 0-20 estimating GP improvement. (This is an estimate — actual lift may differ. Verify after application.)
+- pressure_tradeoff (OPTIONAL): {"gains": ["clarity"|"propulsion"|"atmosphere"|"structural"|"emotional"|"commercial"], "risks": [...]} — which narrative pressure dimension this option improves and which it may compress. Include only for dimensional tradeoffs, not trivial fixes.
 - recommended_option_id: best balance of creative integrity and commercial viability.
 - global_directions: 1-3 overarching tonal/strategic directions.
 - Keep options genuinely distinct — not minor variations of the same fix.

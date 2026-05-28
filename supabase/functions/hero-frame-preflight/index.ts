@@ -158,7 +158,23 @@ async function checkCastBindings(
   }
 
   const bound = bindingCount ?? 0;
-  const allBound = charTotal > 0 && bound >= charTotal;
+  
+  // PHASE 3: Deduct creatures from character total — they don't need AI actor bindings
+  let effectiveCharTotal = charTotal;
+  if (bound < charTotal && charTotal > 0) {
+    try {
+      const { count: creatureCount } = await supabase
+        .from("atoms")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId)
+        .eq("atom_type", "creature");
+      if (creatureCount && creatureCount > 0) {
+        effectiveCharTotal = Math.max(0, charTotal - creatureCount);
+      }
+    } catch { /* fail open — continue with original count */ }
+  }
+  
+  const allBound = charTotal > 0 && bound >= effectiveCharTotal;
 
   return {
     characterCount: charTotal,

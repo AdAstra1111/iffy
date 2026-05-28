@@ -10,6 +10,33 @@
 import React, { useState, useMemo } from 'react';
 import { useRewriteTrajectory, type ObservatoryState } from '@/hooks/useRewriteTrajectory';
 import { Badge } from '@/components/ui/badge';
+
+// ── Phase 4 — Pressure type badges ───────────────────────────
+// Maps note categories to pressure dimensions for UI display.
+// Read-only. Does not change behavior.
+const CATEGORY_TO_PRESSURE: Record<string, { primary: string; risk?: string }> = {
+  structural: { primary: 'structural' },
+  character: { primary: 'emotional', risk: 'atmosphere' },
+  escalation: { primary: 'propulsion' },
+  pacing: { primary: 'propulsion', risk: 'atmosphere' },
+  hook: { primary: 'commercial', risk: 'propulsion' },
+  cliffhanger: { primary: 'propulsion' },
+  lane: { primary: 'commercial' },
+  packaging: { primary: 'commercial' },
+  risk: { primary: 'commercial' },
+  spine_alignment: { primary: 'structural' },
+  spine_drift: { primary: 'structural' },
+};
+function PressureBadge({ category }: { category?: string | null }) {
+  if (!category) return null;
+  const mapping = CATEGORY_TO_PRESSURE[category];
+  if (!mapping) return null;
+  return (
+    <span className="text-[6px] text-muted-foreground/60 ml-0.5">
+      [{mapping.primary}{mapping.risk ? ` → risk: ${mapping.risk}` : ''}]
+    </span>
+  );
+}
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -367,6 +394,7 @@ export function RewriteTrajectoryObservatory({ projectId, documentId }: Props) {
                               {n.severity}
                             </Badge>
                           )}
+                          <PressureBadge category={n.category} />
                           {n.regressed && (
                             <Badge variant="outline" className="text-[6px] px-0.5 py-0 bg-destructive/15 text-destructive border-destructive/30">
                               REGRESSED

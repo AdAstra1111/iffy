@@ -69,7 +69,7 @@ describe("LLM MODELS drift guard: CIK vs General", () => {
 
     // Guard the specific known values so any change is caught
     expect(cikBalanced).toBe("google/gemini-2.5-pro");
-    expect(llmBalanced).toBe("google/gemini-3-flash-preview");
+    expect(llmBalanced).toBe("google/gemini-2.5-flash");
   });
 
   /* ── D) PRO: LLM.PRO matches CIK BALANCED (both gemini-2.5-pro) ── */
