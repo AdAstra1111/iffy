@@ -788,8 +788,7 @@ serve(async (req)=>{
     headers: corsHeaders
   });
   try {
-    const OPENROUTER_API_KEY=***: undefined;
-    if (!OPENROUTER_API_KEY) throw new Error("No AI gateway API key configured");
+
     const authHeader = req.headers.get("Authorization");
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

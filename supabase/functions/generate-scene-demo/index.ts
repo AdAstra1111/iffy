@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
       qualityTarget: "standard",
     });
 
-    const apiKey=***d) || '';
+    const apiKey = genConfig.providerApiKey || resolveImageApiKey() || '';
     if (!apiKey) {
       await updateRunStatus(run_id, "failed", "No API key configured");
       return new Response(

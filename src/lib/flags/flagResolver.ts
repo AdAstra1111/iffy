@@ -116,7 +116,11 @@ export function resolveFlag(name: keyof FeatureFlags): boolean {
       return lsFlags[name] as boolean
     }
 
-    // Priority 3: Config defaults
+    // Priority 3: Config defaults (dev mode: true, production: DEFAULT_FLAGS)
+    const isDev = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    if (isDev) return true
+
     return DEFAULT_FLAGS[name]
   } catch {
     // Fail-closed: any error → false
