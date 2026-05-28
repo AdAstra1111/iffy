@@ -175,7 +175,7 @@ const AnimatedRoutes = () => {
       <SafeRouteBoundary>
       <Suspense fallback={<PageFallback />}>
         <PlatformShell>
-        <Routes location={location} key={location.pathname}>
+        <Routes location={location} >
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/about" element={<ProtectedRoute><About /></ProtectedRoute>} />
