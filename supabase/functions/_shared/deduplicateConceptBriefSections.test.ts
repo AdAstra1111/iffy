@@ -503,3 +503,29 @@ Deno.test("dedup: ## inside code blocks are not treated as headings", () => {
   assertEquals(result.includes('print("hello")'), true);
   assertEquals(result.includes("## this is not a heading"), true);
 });
+
+// ─── 23. Preamble content before first ## heading is preserved ───
+
+Deno.test("dedup: preamble content before first ## heading is preserved", () => {
+  const text = [
+    "# Concept Brief",
+    "",
+    "Some intro text.",
+    "",
+    "## Logline",
+    "A logline.",
+    "",
+    "## Premise",
+    "A premise.",
+  ].join("\n");
+
+  const result = deduplicateConceptBriefSections(text);
+  // Preamble content (# Concept Brief + intro text) must be preserved
+  assertEquals(result.startsWith("# Concept Brief"), true);
+  assertEquals(result.includes("Some intro text."), true);
+  // Section headings still present
+  assertEquals(result.includes("## Logline"), true);
+  assertEquals(result.includes("## Premise"), true);
+  assertEquals(result.includes("A logline."), true);
+  assertEquals(result.includes("A premise."), true);
+});

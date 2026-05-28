@@ -63,6 +63,9 @@ export function deduplicateConceptBriefSections(text: string): string {
 
   if (headingMatches.length === 0) return text; // No ## headings found
 
+  // Capture preamble: any text before the first ## heading (e.g. "# Concept Brief\n\nSome intro text")
+  const preamble = text.slice(0, headingMatches[0].index).trim();
+
   // Build sections from heading boundaries
   for (let i = 0; i < headingMatches.length; i++) {
     const start = headingMatches[i].index;
@@ -118,9 +121,11 @@ export function deduplicateConceptBriefSections(text: string): string {
     .map((sec) => sec.header + "\n" + sec.content)
     .join("\n\n");
 
+  const result = preamble ? preamble + "\n\n" + assembled : assembled;
+
   console.log(
     `[deduplicateConceptBriefSections] deduped ${folded.length} sections from ${validKeys.size} known keys (${sections.length} raw → ${deduped.length} deduped → ${folded.length} folded)`
   );
 
-  return assembled;
+  return result;
 }
