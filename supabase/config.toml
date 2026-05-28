@@ -319,3 +319,6 @@ verify_jwt = false
 
 [functions.reverse-engineer-script]
 verify_jwt = false
+
+[functions.tmdb-lookup]
+verify_jwt = false

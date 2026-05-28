@@ -23,7 +23,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
+import { useSafeAuth } from '@/hooks/useAuth';
 import { aiCastApi } from '@/lib/aiCast/aiCastApi';
 import { bindActorToProjectCharacter } from '@/lib/aiCast/projectCastBindings';
 import { normalizeCharacterKey } from '@/lib/aiCast/normalizeCharacterKey';
@@ -140,7 +140,7 @@ async function runWithConcurrency<T>(items: T[], limit: number, worker: (item: T
 
 export default function CastingPipeline() {
   const { id: projectId } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user } = useSafeAuth();
   const qc = useQueryClient();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingChars, setGeneratingChars] = useState<Set<string>>(new Set());
