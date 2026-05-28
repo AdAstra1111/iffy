@@ -143,6 +143,7 @@ export function resolveImageGenerationConfig(input: ImageGenResolverInput): Imag
     },
     rationale,
     fallbackUsed,
+    providerApiKey: apiKey ?? '',
   };
 }
 
