@@ -3,8 +3,17 @@
 -- but did NOT include an UPDATE policy, causing upsert re-saves to fail (403).
 -- This migration closes the gap.
 
-CREATE POLICY "Project members can update own score history"
-  ON public.readiness_score_history FOR UPDATE
-  TO authenticated
-  USING (public.has_project_access(auth.uid(), project_id))
-  WITH CHECK (auth.uid() = user_id AND public.has_project_access(auth.uid(), project_id));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE tablename = 'readiness_score_history'
+      AND policyname = 'Project members can update own score history'
+  ) THEN
+    EXECUTE 'CREATE POLICY "Project members can update own score history"
+      ON public.readiness_score_history FOR UPDATE
+      TO authenticated
+      USING (public.has_project_access(auth.uid(), project_id))
+      WITH CHECK (auth.uid() = user_id AND public.has_project_access(auth.uid(), project_id))';
+  END IF;
+END $$;
