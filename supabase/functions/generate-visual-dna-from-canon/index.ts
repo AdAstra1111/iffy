@@ -616,6 +616,52 @@ async function handleProjectStyle(
     report.blocked++;
   }
 
+  // ── G6: Auto-populate project_visual_language.style_profile_json ──
+  // Populates the style_profile_json from derived style data (era, cultural
+  // context, tone/atmosphere). This feeds into generate-hero-frames
+  // resolveVisualStyleProfile() which reads style_profile_json for the
+  // [VISUAL STYLE AUTHORITY] block in hero frame prompts.
+  try {
+    const styleProfile = {
+      era: derivedStyle.period || canon_era || "",
+      cultural_context: derivedStyle.cultural_context || "",
+      tone_atmosphere: derivedStyle.lighting_philosophy || "",
+      color_palette: derivedStyle.color_response || "",
+      texture_materiality: derivedStyle.texture_materiality || "",
+      camera_style: derivedStyle.camera_philosophy || "",
+      composition_style: derivedStyle.composition_philosophy || "",
+      environment_realism: derivedStyle.environment_realism || "",
+      generated_at: new Date().toISOString(),
+      source: "generate-visual-dna-from-canon::handleProjectStyle",
+    };
+
+    // Filter out empty strings
+    const cleanProfile: Record<string, string> = {};
+    for (const [k, v] of Object.entries(styleProfile)) {
+      if (v && typeof v === "string" && v.length > 0) {
+        cleanProfile[k] = v;
+      }
+    }
+
+    if (Object.keys(cleanProfile).length > 1) {
+      const { error: vlError } = await sb
+        .from("project_visual_language")
+        .upsert({
+          project_id: projectId,
+          style_profile_json: cleanProfile,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "project_id",
+        });
+
+      if (vlError) {
+        report.errors.push(`project_visual_language upsert failed: ${vlError.message}`);
+      }
+    }
+  } catch (vlErr: any) {
+    report.errors.push(`Visual language enrichment failed: ${vlErr.message}`);
+  }
+
   return respond(report);
 }
 
@@ -901,36 +947,124 @@ async function handleLocation(
     : null;
 
   // Create entity_visual_states for the location
-  if (locationData) {
-    const stateKey = `location_${locationName.toLowerCase().replace(/\s+/g, "_")}`;
-    const description = typeof locationData === "string"
-      ? locationData
-      : locationData.description || locationData.summary || "";
+    if (locationData) {
+      const stateKey = `location_${locationName.toLowerCase().replace(/\s+/g, "_")}`;
+      const description = typeof locationData === "string"
+        ? locationData
+        : locationData.description || locationData.summary || "";
 
-    const { error: evsError } = await sb
-      .from("entity_visual_states")
-      .upsert({
-        project_id: projectId,
-        entity_type: "location",
-        entity_name: locationName,
-        state_key: stateKey,
-        state_label: locationName,
-        state_category: "location",
-        canonical_description: typeof description === "string" ? description.slice(0, 2000) : "",
-        source_reason: "generated from canon",
-        confidence: "proposed",
-        active: true,
-      }, {
-        onConflict: "project_id, entity_type, entity_name, state_key",
-      });
+      const { error: evsError } = await sb
+        .from("entity_visual_states")
+        .upsert({
+          project_id: projectId,
+          entity_type: "location",
+          entity_name: locationName,
+          state_key: stateKey,
+          state_label: locationName,
+          state_category: "location",
+          canonical_description: typeof description === "string" ? description.slice(0, 2000) : "",
+          source_reason: "generated from canon",
+          confidence: "proposed",
+          active: true,
+        }, {
+          onConflict: "project_id, entity_type, entity_name, state_key",
+        });
 
-    if (evsError) {
-      report.errors.push(`entity_visual_states insert failed: ${evsError.message}`);
+      if (evsError) {
+        report.errors.push(`entity_visual_states insert failed: ${evsError.message}`);
+      } else {
+        report.created++;
+      }
+
+      // ── G3: Enrich location_visual_datasets from canon context ──
+      try {
+        const locationContext = typeof locationData === "object"
+          ? JSON.stringify(locationData, null, 2).slice(0, 3000)
+          : description.slice(0, 2000);
+
+        const { apiKey: llmApiKey } = resolveGateway();
+
+        const enrichResult = await callLLM({
+          apiKey: llmApiKey,
+          model: MODELS.FAST,
+          system: `You are a Production Designer AI assistant for film/TV.
+Your task: Enrich the location data with structured Production Design truth fields
+for the location_visual_datasets table.
+
+Output ONLY valid JSON in this exact schema:
+{
+  "structural_substrate": {"primary": ["arr1","arr2"], "secondary": [], "notes": "..."},
+  "surface_condition": {"primary": ["arr1","arr2"], "secondary": [], "notes": "..."},
+  "atmosphere_behavior": {"primary": ["arr1","arr2"], "secondary": [], "notes": "..."},
+  "spatial_character": {"primary": ["arr1","arr2"], "secondary": [], "notes": "..."},
+  "contextual_dressing": {"primary": ["arr1","arr2"], "secondary": [], "notes": "..."},
+  "material_notes": "...",
+  "density_notes": "..."
+}
+
+Rules:
+- "primary" = the most dominant visual traits (1-3 items)
+- "secondary" = background/less dominant traits (0-3 items)
+- "notes" = brief architectural or production design note (1-2 sentences)
+- Be specific, not generic. "Weathered oak floorboards" not just "wood floor"
+- If data is absent, use empty arrays with notes noting "insufficient canon"`,
+          user: `Enrich Production Design truth for location "${locationName}" from this canon data:\n\n${locationContext}`,
+          temperature: 0.2,
+          maxTokens: 3000,
+        });
+
+        const enrichJson = JSON.parse(extractJSON(enrichResult.content));
+        if (enrichJson && typeof enrichJson === "object") {
+          const { data: canonLoc } = await sb
+            .from("canon_locations")
+            .select("id, canonical_name")
+            .eq("project_id", projectId)
+            .eq("active", true)
+            .ilike("normalized_name", locationName.toLowerCase().replace(/[^a-z0-9]+/g, '_'))
+            .limit(1)
+            .maybeSingle();
+
+          const { error: dsError } = await sb
+            .from("location_visual_datasets")
+            .upsert({
+              project_id: projectId,
+              canon_location_id: canonLoc?.id || null,
+              location_name: locationName,
+              source_mode: "reverse_engineered",
+              completeness_score: 0.70,
+              is_current: true,
+              location_class: "primary_space",
+              structural_substrate: enrichJson.structural_substrate || { primary: [], secondary: [], notes: "" },
+              surface_condition: enrichJson.surface_condition || { primary: [], secondary: [], notes: "" },
+              atmosphere_behavior: enrichJson.atmosphere_behavior || { primary: [], secondary: [], notes: "" },
+              spatial_character: enrichJson.spatial_character || { primary: [], secondary: [], notes: "" },
+              contextual_dressing: enrichJson.contextual_dressing || { primary: [], secondary: [], notes: "" },
+              slot_establishing: enrichJson.structural_substrate
+                ? { primary_truths: (enrichJson.structural_substrate.primary || []).slice(0, 3), secondary_truths: (enrichJson.structural_substrate.secondary || []).slice(0, 2), contextual: [], forbidden_dominance: [], hard_negatives: [], notes: enrichJson.structural_substrate.notes || "" }
+                : undefined,
+              slot_atmosphere: enrichJson.atmosphere_behavior
+                ? { primary_truths: (enrichJson.atmosphere_behavior.primary || []).slice(0, 3), secondary_truths: (enrichJson.atmosphere_behavior.secondary || []).slice(0, 2), contextual: [], forbidden_dominance: [], hard_negatives: [], notes: enrichJson.atmosphere_behavior.notes || "" }
+                : undefined,
+              provenance: {
+                generated_at: new Date().toISOString(),
+                source: "generate-visual-dna-from-canon::handleLocation",
+                method: "llm_enrichment",
+              },
+            }, {
+              onConflict: "project_id, location_name, is_current",
+            });
+
+          if (dsError) {
+            report.errors.push(`location_visual_datasets upsert failed: ${dsError.message}`);
+          } else {
+            report.updated = (report.updated || 0) + 1;
+          }
+        }
+      } catch (enrichErr: any) {
+        report.errors.push(`Location dataset enrichment failed: ${enrichErr.message}`);
+      }
     } else {
-      report.created++;
-    }
-  } else {
-    report.skipped++;
+      report.skipped++;
     report.errors.push(`Location "${locationName}" not found in project canon`);
   }
 

@@ -15,6 +15,7 @@
 import {
   getRequiredDecisions,
   classifyDecision,
+  classifyQualityDecision,
   buildPendingDecisionKey,
   DECISION_DEFS,
   SEMANTIC_KEYS,
@@ -250,11 +251,13 @@ export async function checkQualityPlateau(
   previousCi: number,
   previousGp: number,
   consecutiveHighScoreAttempts: number,
+  decisionMode?: string,
 ): Promise<{ isPlateaued: boolean; decisionId?: string }> {
   if (!isQualityPlateau({ ci, gp, previousCi, previousGp, consecutiveHighScoreAttempts })) {
     return { isPlateaued: false };
   }
 
+  const qualityCls = classifyQualityDecision(decisionMode);
   const wfKey = workflowKey(format, docType, "QUALITY_PLATEAU");
   const def = DECISION_DEFS["QUALITY_PLATEAU"];
 
@@ -267,7 +270,8 @@ export async function checkQualityPlateau(
       question: def.question,
       options: def.options,
       recommendation: { value: "proceed", reason: "Scores stagnating" },
-      classification: "DEFERRABLE",
+      classification: qualityCls,
+      decision_mode: decisionMode || null,
       required_evidence: [],
       revisit_stage: null,
       scope_json: { format, doc_type: docType, ci, gp },
@@ -278,7 +282,7 @@ export async function checkQualityPlateau(
     status: "workflow_pending",
   }).select("id").single();
 
-  console.log(`[decision-gate] QUALITY_PLATEAU workflow_pending created for ${format}:${docType} CI=${ci} GP=${gp}`);
+  console.log(`[decision-gate] QUALITY_PLATEAU workflow_pending created for ${format}:${docType} CI=${ci} GP=${gp} mode=${decisionMode || "strict"} class=${qualityCls}`);
   return { isPlateaued: true, decisionId: inserted?.id };
 }
 
@@ -295,12 +299,14 @@ export async function checkQualityCeiling(
   currentCI: number,
   estimatedCeiling: number,
   ceilingDiagnostic: string,
+  decisionMode?: string,
 ): Promise<{ isCeilingHit: boolean; decisionId?: string }> {
   if (!DECISION_DEFS["QUALITY_CEILING"]) {
     console.warn(`[decision-gate] QUALITY_CEILING not in DECISION_DEFS — skipping`);
     return { isCeilingHit: false };
   }
 
+  const qualityCls = classifyQualityDecision(decisionMode);
   const wfKey = workflowKey(format, docType, "QUALITY_CEILING");
   const def = DECISION_DEFS["QUALITY_CEILING"];
 
@@ -313,7 +319,8 @@ export async function checkQualityCeiling(
       question: def.question,
       options: def.options,
       recommendation: { value: "promote_anyway", reason: "Content at structural ceiling" },
-      classification: "DEFERRABLE",
+      classification: qualityCls,
+      decision_mode: decisionMode || null,
       required_evidence: [],
       revisit_stage: null,
       scope_json: { format, doc_type: docType, current_ci: currentCI, estimated_ceiling: estimatedCeiling, ceiling_diagnostic: ceilingDiagnostic },
@@ -324,7 +331,7 @@ export async function checkQualityCeiling(
     status: "workflow_pending",
   }).select("id").single();
 
-  console.log(`[decision-gate] QUALITY_CEILING workflow_pending created for ${format}:${docType} CI=${currentCI} ceiling=${estimatedCeiling}`);
+  console.log(`[decision-gate] QUALITY_CEILING workflow_pending created for ${format}:${docType} CI=${currentCI} ceiling=${estimatedCeiling} mode=${decisionMode || "strict"} class=${qualityCls}`);
   return { isCeilingHit: true, decisionId: inserted?.id };
 }
 

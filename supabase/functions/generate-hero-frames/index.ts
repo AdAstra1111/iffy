@@ -33,7 +33,7 @@ const corsHeaders = {
 const PHOTOREAL_DIRECTIVES = "Photorealistic cinematic imagery. Live-action film still. Shot on ARRI Alexa with premium anamorphic lenses (Panavision C-Series or Cooke S7). Real-world materials, textures, surfaces. Believable natural or motivated cinematic lighting. Real lens behaviour including subtle flares, bokeh, and depth of field. Premium theatrical realism. Film grain present. Imperfect real-world skin texture with pores and natural variation. No illustration, no concept art, no digital painting, no CGI render look. MUST be landscape orientation with cinematic width.";
 const PHOTOREAL_NEGATIVES = "painterly, illustrative, cartoon, anime, graphic-novel style, concept art, abstract, surreal, watercolor, oil painting, sketch, line art, cel-shaded, digital painting, CGI render, stock photo, 3D render, Unreal Engine, video game screenshot, airbrushed skin, poster layout, typography, text overlay, title card, slate, clapperboard, credits, watermark, logo, collage, grid layout, multi-panel, composite image, portrait orientation, vertical framing, square format, 1:1 aspect ratio, moodboard, contact sheet";
 async function resolveCharacterTruth(sb, projectId) {
-  const { data: dnaRows } = await sb.from("character_visual_dna").select("id, character_name, locked_invariants, identity_signature").eq("project_id", projectId).eq("is_current", true).order("character_name").limit(10);
+  const { data: dnaRows } = await sb.from("character_visual_dna").select("id, character_name, locked_invariants, identity_signature, biological_sex, gender_presentation, age_range, ethnicity, body_type, height_class, facial_archetype, voice_quality, wardrobe_signals, social_class, role_archetype").eq("project_id", projectId).eq("is_current", true).order("character_name").limit(10);
   if (!dnaRows?.length) return [];
   const characterNames = dnaRows.map((d)=>d.character_name.toLowerCase().trim().replace(/\s+/g, " "));
   const { data: castBindings } = await sb.from("project_ai_cast").select("character_key, ai_actor_id, ai_actor_version_id").eq("project_id", projectId).in("character_key", characterNames);
@@ -114,6 +114,31 @@ async function resolveCharacterTruth(sb, projectId) {
         "wardrobe"
       ]){
         if (sig[k]) parts.push(`${k}: ${typeof sig[k] === "string" ? sig[k] : JSON.stringify(sig[k])}`);
+      }
+    }
+    // ── G4: Include structured identity columns from character_visual_dna ──
+    // These columns (biological_sex, age_range, ethnicity, etc.) were added
+    // in migration 20260527000000 and populated by generate-visual-dna-from-canon.
+    // Reading them alongside identity_signature ensures hero frame prompts
+    // receive the most complete identity data available.
+    const structuredFields = [
+      { key: "biological_sex", label: "Sex", val: dna.biological_sex },
+      { key: "gender_presentation", label: "Gender", val: dna.gender_presentation },
+      { key: "age_range", label: "Age", val: dna.age_range },
+      { key: "ethnicity", label: "Ethnicity", val: dna.ethnicity },
+      { key: "body_type", label: "Body Type", val: dna.body_type },
+      { key: "height_class", label: "Height", val: dna.height_class },
+      { key: "facial_archetype", label: "Face", val: dna.facial_archetype },
+      { key: "voice_quality", label: "Voice", val: dna.voice_quality },
+      { key: "social_class", label: "Class", val: dna.social_class },
+      { key: "role_archetype", label: "Role", val: dna.role_archetype },
+    ];
+    for (const f of structuredFields) {
+      if (f.val && (Array.isArray(f.val) ? f.val.length > 0 : true)) {
+        const val = Array.isArray(f.val) ? f.val.join(", ") : f.val;
+        if (!parts.some(p => p.startsWith(`${f.label}:`) || p.includes(`"${f.key}"`))) {
+          parts.push(`${f.label}: ${val}`);
+        }
       }
     }
     if (locked) {

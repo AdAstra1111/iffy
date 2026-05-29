@@ -16,7 +16,7 @@ import { isLargeRiskDocType } from "../_shared/largeRiskRouter.ts";
 import { isDurationEligibleDocType, isDeprecatedTargetDocType } from "../_shared/eligibilityRegistry.ts";
 import { getWritingLaneGroup, getDefaultWritingVoiceForLane } from "../_shared/writingVoiceResolver.ts";
 import { ensureDocSlot, createVersion } from "../_shared/doc-os.ts";
-import { runPendingDecisionGate, checkQualityPlateau } from "../_shared/pendingDecisionGate.ts";
+import { runPendingDecisionGate, checkQualityPlateau, checkQualityCeiling } from "../_shared/pendingDecisionGate.ts";
 import { isAggregate, getRegressionThreshold, getExploreThreshold, getMaxFrontierAttempts, requireDocPolicy, validateLadderIntegrity, runCanonAlignmentGate, buildCanonEntitiesFromDB } from "../_shared/docPolicyRegistry.ts";
 import {
   isCIBlockerGateEnabled, isPlateauV2Enabled, isRewriteTargetingEnabled,
@@ -7656,11 +7656,13 @@ Deno.serve(async (req) => {
               targetCi, targetGp: extractTargetGP(job), haltReason: "CEILING_HIT",
               stepCount, stageLoopCount: job.stage_loop_count ?? 0,
             }).then(undefined, (e: any) => console.error(`[auto-run][DIAG] fire_forget: ${e?.message}`));
-            // ── Create QUALITY_CEILING workflow decision for human review ──
+            // ── Create QUALITY_CEILING workflow decision ──
             try {
-              const { checkQualityCeiling } = await import("../_shared/pendingDecisionGate.ts");
+              const decisionMode = (job.allow_defaults === true || job.meta_json?.auto_decide_all === true || job.full_autopilot === true)
+                ? "autonomous" : "strict";
               await checkQualityCeiling(supabase, job.project_id, jobId, format, currentDoc,
-                plateauV2.currentCI, plateauV2.estimatedCeiling ?? 85, plateauV2.ceilingDiagnostic ?? "Content at structural CI ceiling");
+                plateauV2.currentCI, plateauV2.estimatedCeiling ?? 85, plateauV2.ceilingDiagnostic ?? "Content at structural CI ceiling",
+                decisionMode);
             } catch (e: any) {
               console.error(`[auto-run][IEL] checkQualityCeiling error: ${e.message}`);
             }
@@ -7981,6 +7983,12 @@ Deno.serve(async (req) => {
       }
 
       // ── PRE-STAGE DECISION GATE (workflow_pending in decision_ledger) ──
+      //
+      // RULE ORDERING INVARIANT: The empty-options check (Rule 5 in classifyDecision)
+      // comes AFTER blocking+strict (Rule 3) and blocking+autonomous (Rule 4) checks.
+      // CONTRACT_LOGIC now has options (accept/reject) so decisions with options fall
+      // through to mode-specific rules, enabling BLOCKING_NOW in strict mode.
+      // Decisions with no options (e.g. CAST_LOCK) get NEVER_BLOCKING via Rule 5.
       {
         const runLadder = getLadderForJob(format) || [];
         const gateResult = await runPendingDecisionGate(

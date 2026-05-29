@@ -18,6 +18,17 @@ import { getCanonicalNextStage } from "./ladder-invariant.ts";
 
 export type DecisionClassification = "BLOCKING_NOW" | "DEFERRABLE" | "NEVER_BLOCKING";
 
+// ── Quality Decision Autonomy ───────────────────────────────────────────────
+// Quality decisions (plateau + ceiling) are NEVER_BLOCKING in all modes.
+// This helper reads autonomy from DECISION_DEFS for forward compatibility
+// with any future mode-specific quality rules.
+export function classifyQualityDecision(decisionMode?: string): DecisionClassification {
+  // Quality decisions are non-blocking regardless of mode.
+  // In strict mode, we silently log the condition but never block the pipeline.
+  // In autonomous mode, quality signals are purely informational.
+  return "NEVER_BLOCKING";
+}
+
 export interface ClassificationResult {
   classification: DecisionClassification;
   reason: string;
@@ -29,6 +40,14 @@ export interface DecisionDef {
   options?: Array<{ value: string; label: string }>;
   required_evidence_template: RequiredEvidence[];
   default_revisit_stage: string | null;
+  /** Autonomy level determines behavior in strict vs autonomous mode:
+   *  - "blocking": strict→BLOCKING_NOW (pauses), autonomous→NEVER_BLOCKING (auto-resolved)
+   *  - "advisory": strict→BLOCKING_NOW (pauses), autonomous→DEFERRABLE (noted, never blocks)
+   *  - "informational": NEVER_BLOCKING in both modes
+   */
+  autonomy?: "blocking" | "advisory" | "informational";
+  /** Default value for informational decisions (auto-resolved without user input) */
+  default_value?: string;
 }
 
 export interface RequiredEvidence {
@@ -129,6 +148,10 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   CONTRACT_LOGIC: {
     question: "Is the central narrative contract/premise logically grounded?",
+    options: [
+      { value: "accept", label: "Accept — contract is logically grounded" },
+      { value: "reject", label: "Reject — contract needs revision" },
+    ],
     required_evidence_template: [
       { doc_type: "story_outline", requires_approval: true },
     ],
@@ -250,8 +273,16 @@ export const REQUIRED_DECISIONS_BY_STAGE: Record<string, StageDecisionMap> = {
  * Rules (fail-closed):
  * 1. If semantic_key is not in DECISION_DEFS → NEVER_BLOCKING (unknown key).
  * 2. If evidence is missing → DEFERRABLE (can't decide yet).
- * 3. If evidence exists but decision unresolved → BLOCKING_NOW.
- * 4. QUALITY_PLATEAU is always DEFERRABLE.
+ * 3. If evidence exists but decision unresolved → BLOCKING_NOW (strict mode).
+ * 4. If evidence exists but decision unresolved → DEFERRABLE (autonomous mode).
+ * 5. If decision has no options → NEVER_BLOCKING (empty-options rule).
+ *
+ * RULE ORDERING INVARIANT: Rule 5 (empty-options check) must come AFTER
+ * Rules 3 and 4 (blocking+strict, blocking+autonomous). This ensures that
+ * decisions with no options (e.g. CAST_LOCK) are NEVER_BLOCKING only after
+ * the mode-specific rules have had their say. CONTRACT_LOGIC now has options
+ * (accept/reject) so it falls through to Rules 3/4 as expected, enabling
+ * BLOCKING_NOW in strict mode.
  */
 export function classifyDecision(
   semanticKey: string,
@@ -266,14 +297,14 @@ export function classifyDecision(
     };
   }
 
-  // Quality plateau and quality ceiling are always deferrable — human decisions
+  // Quality plateau and quality ceiling are never blocking — they proceed silently
   if (semanticKey === "QUALITY_PLATEAU" || semanticKey === "QUALITY_CEILING") {
     return {
-      classification: "DEFERRABLE",
+      classification: "NEVER_BLOCKING",
       reason: semanticKey === "QUALITY_CEILING"
-        ? "Content at structural CI ceiling — human must decide promote, abandon, or adjust target"
-        : "Quality plateau — proceed to next stage or user decides",
-      revisit_stage: getNextStage(ctx.doc_type, ctx.ladder),
+        ? "Content at structural CI ceiling — quality decisions are non-blocking"
+        : "Quality plateau — quality decisions are non-blocking",
+      revisit_stage: null,
     };
   }
 
