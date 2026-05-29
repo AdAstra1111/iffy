@@ -182,7 +182,7 @@ export function useAutoRun(projectId: string | undefined) {
     if (existingJob?.job) {
       setJob(existingJob.job);
       setSteps(existingJob.latest_steps || []);
-const isRunning = existingJob.job.status === 'running' && !existingJob.job.awaiting_approval;
+const shouldBeRunning = existingJob.job.status === 'running' && !existingJob.job.awaiting_approval;
 
       // ── Self-chain freeze recovery: if recovery_needed flag is set, fire recover ──
       if (existingJob.recovery_needed && existingJob.job.id) {
@@ -199,13 +199,13 @@ const isRunning = existingJob.job.status === 'running' && !existingJob.job.await
         }).catch((e: any) => {
           console.error('[useAutoRun] recover failed', e?.message);
           // Even if recover HTTP call fails, try runLoop — polling may be enough
-          if (isRunning) {
+          if (shouldBeRunning) {
             abortRef.current = false;
             setIsRunning(true);
             runLoopRef.current?.(existingJob.job.id);
           }
         });
-      } else if (isRunning) {
+      } else if (shouldBeRunning) {
         // ── Auto-start runLoop on mount for running jobs (e.g. after navigation back) ──
         abortRef.current = false;
         setIsRunning(true);
