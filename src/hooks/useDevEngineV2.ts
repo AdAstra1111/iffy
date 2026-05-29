@@ -82,6 +82,15 @@ const ENGINE_V2_MAX_CONCURRENT = 3;
 let engineV2InFlight = 0;
 const engineV2Queue: (() => void)[] = [];
 
+// Polling pause flag — set when ERR_INSUFFICIENT_RESOURCES is detected
+// to stop aggressive polling until the next explicit user action.
+let engineV2PollingPaused = false;
+export function resumeEngineV2Polling() { engineV2PollingPaused = false; }
+export function isEngineV2PollingPaused() { return engineV2PollingPaused; }
+
+// Poll interval — returns false (stop polling) when resource exhaustion is detected
+function pollInterval(): number | false { return engineV2PollingPaused ? false : 10_000; }
+
 // Single-flight guard — prevents duplicate in-flight calls for the same
 // (action, documentId, versionId) tuple. When the same request is already
 // in-flight, subsequent attempts are silently blocked with an IEL warning.
@@ -104,7 +113,7 @@ function releaseEngineV2Slot(): void {
   if (next) next();
 }
 
-async function callEngineV2(action: string, extra: Record<string, any> = {}) {
+export async function callEngineV2(action: string, extra: Record<string, any> = {}) {
   // ── Single-flight guard ─────────────────────────────────────────
   // Prevent duplicate in-flight calls for the same (action, docId, verId)
   const flightKey = makeFlightKey(action, extra);
@@ -167,6 +176,11 @@ async function callEngineV2(action: string, extra: Record<string, any> = {}) {
       throw err;
     }
     const errMsg = typeof result?.error === 'string' ? result.error : 'Engine error';
+    // Detect resource exhaustion and pause polling
+    if (errMsg.includes('ERR_INSUFFICIENT_RESOURCES') || errMsg.includes('insufficient resources')) {
+      engineV2PollingPaused = true;
+      console.warn(`[dev-engine-v2][IEL] polling_paused resource_exhausted { action: \"${action}\" }`);
+    }
     throw new Error(errMsg);
   }
   // Stale version — surface as a user-friendly error rather than a blank screen
@@ -214,7 +228,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       });
     },
     enabled: !!projectId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // Approved version map: doc_id -> version_id (one approved per doc)
@@ -238,7 +252,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return map;
     },
     enabled: !!projectId && documents.length > 0,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // Versions for selected document
@@ -260,7 +274,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     },
     enabled: !!selectedDocId,
     staleTime: 0,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // Runs for selected version
@@ -277,7 +291,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DevRun[];
     },
     enabled: !!selectedVersionId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // All runs for document (for history across versions)
@@ -294,7 +308,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DevRun[];
     },
     enabled: !!selectedDocId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // Convergence history — scoped to selected version when available, else document
@@ -314,7 +328,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as ConvergencePoint[];
     },
     enabled: !!selectedDocId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   // ── Stage Readiness (SR) — latest CONVERGENCE run for selected version ──
@@ -334,7 +348,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return data || [];
     },
     enabled: !!selectedVersionId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   const latestConvergence = convergenceRuns[0]?.output_json || null;
@@ -353,7 +367,7 @@ export function useDevEngineV2(projectId: string | undefined) {
       return (data || []) as DriftEvent[];
     },
     enabled: !!selectedVersionId,
-    refetchInterval: 10_000,
+    refetchInterval: pollInterval,
   });
 
   const latestDrift = driftEvents.length > 0 ? driftEvents[0] : null;

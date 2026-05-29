@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { isValidUUID } from '@/lib/validation/uuid';
 import { supabase } from '@/integrations/supabase/client';
-import { useDevEngineV2 } from '@/hooks/useDevEngineV2';
+import { useDevEngineV2, callEngineV2 } from '@/hooks/useDevEngineV2';
 import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
@@ -178,21 +178,15 @@ export default function ProjectDevelopmentEngine() {
   const qc = useQueryClient();
 
   // Generate decision options mutation (used by Rewrite Plan card fallback)
+  // Uses callEngineV2 instead of raw fetch to benefit from the single-flight guard
+  // preventing duplicate in-flight calls for the same (action, docId, verId) tuple.
   const generateOptionsMutation = useMutation({
     mutationFn: async () => {
-      const { data: { session } } = await import('@/integrations/supabase/client').then(m => m.supabase.auth.getSession());
-      if (!session) throw new Error('Not authenticated');
       if (!selectedDocId || !selectedVersionId) throw new Error('No document or version selected');
-      const resp = await fetch(`https://hdfderbphdobomkdjypc.supabase.co/functions/v1/dev-engine-v2`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({ action: 'options', projectId, documentId: selectedDocId, versionId: selectedVersionId }),
-      });
-      const result = await resp.json();
-      if (!resp.ok) throw new Error(result.error || 'Options generation failed');
-      return result;
+      return callEngineV2('options', { projectId, documentId: selectedDocId, versionId: selectedVersionId });
     },
     retry: false,
+    retryDelay: 0,
     onSuccess: () => {
       // Targeted invalidation — only dev-v2-doc-runs + dev-v2-runs + dev-v2-convergence
       // for the current doc/version. Avoids blanket refetch of ALL dev-v2-* queries
@@ -634,6 +628,8 @@ export default function ProjectDevelopmentEngine() {
   const postOperationVersionId = useRef<string | null>(null);
   const pendingOptionsTriggerRef = useRef<string | null>(null);
   const prevVersionId = useRef(selectedVersionId);
+  const rewriteOptionsTriggeredRef = useRef(false);
+  const convertOptionsTriggeredRef = useRef(false);
   const pendingPostOpAutoReview = useRef(false);
 
   // Re-resolve when version changes (always safe — never triggers review)
@@ -676,19 +672,26 @@ export default function ProjectDevelopmentEngine() {
   }, [rewritePipeline.status, rewritePipeline.newVersionId]);
 
   // After small rewrite or convert completes → mark upcoming version as post-operation
+  // GUARD: use rewriteOptionsTriggeredRef to fire only ONCE per success state,
+  // preventing the render loop where isSuccess (persistent in React Query) keeps
+  // setting pendingOptionsTriggerRef on every render, triggering repeated options
+  // generation calls, invalidations, refetches, and cascading re-renders.
   useEffect(() => {
-    if (rewrite.isSuccess) {
-      // The new version will arrive via query invalidation; mark it when it appears
+    if (rewrite.isSuccess && !rewriteOptionsTriggeredRef.current) {
+      rewriteOptionsTriggeredRef.current = true;
       postOperationVersionId.current = '__next__';
       pendingOptionsTriggerRef.current = '__next__';
     }
+    if (!rewrite.isSuccess) rewriteOptionsTriggeredRef.current = false;
   }, [rewrite.isSuccess]);
 
   useEffect(() => {
-    if (convert.isSuccess) {
+    if (convert.isSuccess && !convertOptionsTriggeredRef.current) {
+      convertOptionsTriggeredRef.current = true;
       postOperationVersionId.current = '__next__';
       pendingOptionsTriggerRef.current = '__next__';
     }
+    if (!convert.isSuccess) convertOptionsTriggeredRef.current = false;
   }, [convert.isSuccess]);
 
   // When a new version arrives and we have a pending '__next__' marker, resolve it
@@ -2947,12 +2950,12 @@ export default function ProjectDevelopmentEngine() {
                             doc_type: selectedDoc?.doc_type,
                             version_id: selectedVersionId,
                           });
+                          // Telemetry: promotion visibility — only on state transition
+                          console.log('[ui][promotion_visibility]', result.eligible ? 'eligible' : 'hidden_reason:' + result.reason, {
+                            doc_type: selectedDoc?.doc_type,
+                            version_id: selectedVersionId,
+                          });
                         }
-                        // Telemetry: promotion visibility
-                        console.log('[ui][promotion_visibility]', result.eligible ? 'eligible' : 'hidden_reason:' + result.reason, {
-                          doc_type: selectedDoc?.doc_type,
-                          version_id: selectedVersionId,
-                        });
                         if (!result.eligible) {
                           return (
                             <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 border border-border/50">

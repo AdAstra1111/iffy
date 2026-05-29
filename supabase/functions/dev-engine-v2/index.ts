@@ -42588,6 +42588,19 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
     // DEPLOY: beat-rewrite
     if (action === "beat-rewrite") {
       const { projectId, documentId, versionId, beatId, approvedNotes, protectItems } = body;
+      // Validate required fields before any DB queries
+      if (!versionId || !projectId || !documentId || !beatId) {
+        const allFields = { versionId, projectId, documentId, beatId };
+        const missing = ['versionId', 'projectId', 'documentId', 'beatId'].filter(f => !allFields[f]).join(', ');
+        return new Response(JSON.stringify({
+          error: 'Missing required fields',
+          missing_fields: missing,
+          hint: 'beat-rewrite requires all of: versionId, projectId, documentId, beatId'
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
       // 1. Load current beat sheet version
       const { data: version } = await supabase.from("project_document_versions").select("plaintext, version_number").eq("id", versionId).single();
       if (!version) throw new Error("Version not found");

@@ -206,16 +206,16 @@ async function canGenerateCostumeOnActor(
     } else {
       try {
         const { data: binding } = await supabase
-          .from("character_actor_bindings")
-          .select("id")
-          .eq("character_id", payload.character_id)
-          .eq("actor_id", payload.actor_id)
+          .from("project_ai_cast")
+          .select("id, ai_actor_version_id")
+          .eq("character_key", payload.character_id)
+          .eq("ai_actor_id", payload.actor_id)
           .maybeSingle();
         if (!binding) {
           blockers.push({
             code: "VALID_CHARACTER_BINDING",
             severity: "fatal",
-            message: "No valid actor binding found for this character",
+            message: "No valid actor binding found for this character — character must be cast to an actor in project_ai_cast",
             missing_dependency: `actor=${payload.actor_id}/character=${payload.character_id}`,
           });
         }
@@ -223,7 +223,7 @@ async function canGenerateCostumeOnActor(
         blockers.push({
           code: "VALID_CHARACTER_BINDING",
           severity: "fatal",
-          message: "Failed to verify character binding",
+          message: "Failed to verify character binding in project_ai_cast",
         });
       }
     }

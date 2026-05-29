@@ -696,6 +696,11 @@ function RewriteModal({
   }, [beat.scene, projectId, supabase]);
 
   const handleRewrite = async () => {
+    if (!versionId) { setError('No version selected'); setLoading(false); return; }
+    // Compute global beat index — beat.id is per-act, backend expects flat 1-indexed position
+    const allBeatsFlat = acts.flatMap(a => a.beats);
+    const globalBeatIndex = allBeatsFlat.findIndex(b => b.id === beat.id && b.act === beat.act);
+    if (globalBeatIndex === -1) { setError('Beat not found in beat sheet'); setLoading(false); return; }
     setLoading(true);
     setError('');
     try {
@@ -710,7 +715,7 @@ function RewriteModal({
           projectId,
           documentId,
           versionId,
-          beatId: beat.id,
+          beatId: String(globalBeatIndex + 1),
           approvedNotes: approvedNotes.filter(n => !beat.id || String(n.target_beat_id) === String(beat.id)),
           protectItems: [],
         }),
@@ -877,13 +882,18 @@ export default function BeatRewritePanel({
   };
 
   const handleApplyAll = async () => {
+    if (!versionId) {
+      console.error('[beat-rewrite] versionId is null — cannot batch rewrite');
+      return;
+    }
     const allBeats = acts.flatMap(a => a.beats);
     if (allBeats.length === 0) return;
     setBatchRewriteActive(true);
     setBeatStatuses(Object.fromEntries(allBeats.map(b => [b.id, 'queued'])));
 
     let latestVid = versionId;
-    for (const beat of allBeats) {
+    for (let beatIdx = 0; beatIdx < allBeats.length; beatIdx++) {
+      const beat = allBeats[beatIdx];
       setBeatStatuses(prev => ({ ...prev, [beat.id]: 'running' }));
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -895,7 +905,7 @@ export default function BeatRewritePanel({
             projectId,
             documentId,
             versionId: latestVid,
-            beatId: beat.id,
+            beatId: String(beatIdx + 1), // Global flat index, not per-act beat.id
             approvedNotes: approvedNotes.filter(n => !n.target_beat_id || String(n.target_beat_id) === String(beat.id)),
             protectItems: protectItems || [],
           }),
@@ -905,9 +915,13 @@ export default function BeatRewritePanel({
           latestVid = result.versionId;
           setBeatStatuses(prev => ({ ...prev, [beat.id]: 'done' }));
         } else {
+          console.error('[beat-rewrite] Batch beat failed:', beat.id, result.error || resp.status, result);
           setBeatStatuses(prev => ({ ...prev, [beat.id]: 'failed' }));
+          // Stop the loop on 400: subsequent beats with stale versionId will also fail
+          if (resp.status === 400) break;
         }
-      } catch {
+      } catch (err) {
+        console.error('[beat-rewrite] Batch beat failed:', beat.id, err);
         setBeatStatuses(prev => ({ ...prev, [beat.id]: 'failed' }));
       }
     }
