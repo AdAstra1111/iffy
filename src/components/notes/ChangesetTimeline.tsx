@@ -12,8 +12,6 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WritersRoomChangeset, ChangesetDiffSummary } from '@/lib/types/writers-room';
-import { assertRuntimeBindingEligible } from '@/lib/versionBinding/assertRuntimeBindingEligible';
-import type { RuntimeBinding } from '@/lib/versionBinding/documentRuntimeBindingTypes';
 
 interface ChangesetTimelineProps {
   projectId: string;

@@ -263,9 +263,6 @@ export function useDevEngineV2(projectId: string | undefined) {
     refetchInterval: 10_000,
   });
 
-  // Derive the "current" version from render binding (prefers authoritative, fallback to selected, fallback to latest)
-  const currentVersion = render?.versionId || null;
-
   // Runs for selected version
   const { data: runs = [] } = useQuery({
     queryKey: ['dev-v2-runs', selectedVersionId],
@@ -692,6 +689,9 @@ export function useDevEngineV2(projectId: string | undefined) {
     pipeline: pipelineBinding,
     assertEligible,
   } = useDocumentRuntimeBinding(selectedDocType, versions, selectedVersionId);
+
+  // Derive the "current" version from render binding (prefers authoritative, fallback to selected, fallback to latest)
+  const currentVersion = render?.versionId || null;
 
   // Auto-select version when versions load (uses render binding for consistent selection)
   useEffect(() => {
