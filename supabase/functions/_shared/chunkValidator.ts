@@ -90,6 +90,23 @@ const BANNED_PATTERNS = [
 const SCREENPLAY_SLUGLINE_RE = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s+[A-Z]/m;
 const SCREENPLAY_CHARACTER_CUE_RE = /^[A-Z][A-Z\s'()]+\n[A-Za-z"'(]/m; // ALL-CAPS name followed by dialogue line
 
+
+// ── Doc-Type-Aware Exclusions ──────────────────────────────────
+// Some banned phrases are legitimate in specific document types.
+// Map: docType → phrases to exclude from scanning
+const BANNED_PHRASE_EXCLUSIONS: Record<string, string[]> = {
+  "beat_sheet": [
+    "dramatic function",
+    "dramatic_function",
+    "subtext scene",
+    "meaning shift",
+  ],
+  "story_outline": [
+    "dramatic function",
+    "dramatic_function",
+  ],
+};
+
 const PROSE_ONLY_DOC_TYPES = new Set([
   "story_outline", "architecture", "treatment", "beat_sheet",
   "concept_brief", "market_sheet", "character_bible", "deck",
@@ -101,6 +118,27 @@ export function hasScreenplayFormat(content: string, docType: string): boolean {
   // Trigger if 2+ sluglines found (one might be a quote or example)
   return sluglineCount >= 2;
 }
+
+
+/**
+ * Get banned phrases for a specific doc type, excluding phrases that
+ * are legitimate for that type.
+ */
+export function getBannedPhrasesForDocType(docType: string): typeof BANNED_PHRASES {
+  const exclusions = BANNED_PHRASE_EXCLUSIONS[docType] || [];
+  if (exclusions.length === 0) return BANNED_PHRASES;
+  const lowerExclusions = exclusions.map(e => e.toLowerCase());
+  return BANNED_PHRASES.filter(p => !lowerExclusions.includes(p.toLowerCase()));
+}
+
+/**
+ * Get banned patterns for a specific doc type, excluding patterns that
+ * contain excluded phrases.
+ */
+export function getBannedPatternsForDocType(docType: string): typeof BANNED_PATTERNS {
+  return BANNED_PATTERNS;
+}
+
 
 // ── Topline Content Detection ──
 
@@ -191,14 +229,15 @@ export function validateEpisodicContent(
     });
   }
 
-  // 2. Banned phrase scan
+  // 2. Banned phrase scan (doc-type-aware)
   const lowerContent = content.toLowerCase();
-  for (const phrase of BANNED_PHRASES) {
+  const bp = getBannedPhrasesForDocType(docType);
+  for (const phrase of bp) {
     if (lowerContent.includes(phrase.toLowerCase())) {
       bannedHits.push(phrase);
     }
   }
-  for (const pattern of BANNED_PATTERNS) {
+  for (const pattern of getBannedPatternsForDocType(docType)) {
     const match = content.match(pattern);
     if (match) {
       bannedHits.push(match[0]);
@@ -283,7 +322,8 @@ export function validateEpisodicChunk(
   }
 
   const lowerContent = chunkContent.toLowerCase();
-  for (const phrase of BANNED_PHRASES) {
+  const bp = getBannedPhrasesForDocType(docType);
+  for (const phrase of bp) {
     if (lowerContent.includes(phrase.toLowerCase())) {
       bannedHits.push(phrase);
     }
@@ -318,9 +358,10 @@ export function validateSectionedContent(
   const bannedHits: string[] = [];
   const missingSections: string[] = [];
 
-  // 1. Check for banned phrases
+  // 1. Check for banned phrases (doc-type-aware)
   const lowerContent = content.toLowerCase();
-  for (const phrase of BANNED_PHRASES) {
+  const bp = getBannedPhrasesForDocType(docType);
+  for (const phrase of bp) {
     if (lowerContent.includes(phrase.toLowerCase())) {
       bannedHits.push(phrase);
     }
@@ -403,12 +444,14 @@ export function validateSectionedContent(
 /**
  * Quick check: does content contain banned summarization language?
  */
-export function hasBannedSummarizationLanguage(content: string): boolean {
+export function hasBannedSummarizationLanguage(content: string, docType?: string): boolean {
   const lower = content.toLowerCase();
-  for (const phrase of BANNED_PHRASES) {
+  const phrases = docType ? getBannedPhrasesForDocType(docType) : BANNED_PHRASES;
+  for (const phrase of phrases) {
     if (lower.includes(phrase.toLowerCase())) return true;
   }
-  for (const pattern of BANNED_PATTERNS) {
+  const patterns = docType ? getBannedPatternsForDocType(docType) : BANNED_PATTERNS;
+  for (const pattern of patterns) {
     if (pattern.test(content)) return true;
   }
   return false;
@@ -440,15 +483,16 @@ export function validateEpisodicProgress(
   const found = foundSet.size;
   const progress = expectedCount > 0 ? found / expectedCount : 0;
 
-  // 2. Banned phrase scan — always a BLOCKER (indicates AI summarization)
+  // 2. Banned phrase scan — always a BLOCKER (indicates AI summarization) [doc-type-aware]
   const lowerContent = content.toLowerCase();
   const bannedHits: string[] = [];
-  for (const phrase of BANNED_PHRASES) {
+  const bp = getBannedPhrasesForDocType(docType);
+  for (const phrase of bp) {
     if (lowerContent.includes(phrase.toLowerCase())) {
       bannedHits.push(phrase);
     }
   }
-  for (const pattern of BANNED_PATTERNS) {
+  for (const pattern of getBannedPatternsForDocType(docType)) {
     const match = content.match(pattern);
     if (match) bannedHits.push(match[0]);
   }
@@ -590,14 +634,15 @@ export function validateBeatSequentialChunk(
     }
   }
 
-  // 3. Banned phrase scan
+  // 3. Banned phrase scan (doc-type-aware)
   const lowerContent = chunkContent.toLowerCase();
-  for (const phrase of BANNED_PHRASES) {
+  const bp = getBannedPhrasesForDocType(docType);
+  for (const phrase of bp) {
     if (lowerContent.includes(phrase.toLowerCase())) {
       bannedHits.push(phrase);
     }
   }
-  for (const pattern of BANNED_PATTERNS) {
+  for (const pattern of getBannedPatternsForDocType(docType)) {
     const match = chunkContent.match(pattern);
     if (match) {
       bannedHits.push(match[0]);

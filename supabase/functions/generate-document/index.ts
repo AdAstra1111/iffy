@@ -212,6 +212,147 @@ async function resolveBeatsFromBeatSheet(
   }
 }
 
+
+// ── Scene Plan Generator for feature_script scene_indexed strategy ──
+// Generates a structured Scene Plan JSON array that bridges beat_sheet structure
+// into individual screenplay scenes. Each scene has dramatic purpose, turn, and outcome.
+interface ScenePlanEntry {
+  scene_number: number;
+  act: number;
+  slugline: string;
+  location: string;
+  time_of_day: string;
+  characters_present: string[];
+  source_beat_number: number;
+  source_beat_title: string;
+  summary: string;
+  dramatic_purpose: string;
+  scene_turn: string;
+  scene_outcome: string;
+  estimated_pages?: number;
+  pov_character?: string;
+}
+
+async function generateScenePlan(
+  apiKey: string,
+  gatewayUrl: string,
+  projectTitle: string,
+  beatSheet: string,
+  treatment: string,
+  storyOutline: string,
+  characterBible: string,
+  formatRules: string
+): Promise<ScenePlanEntry[]> {
+  const GL = "\n"; // Template literal helper to avoid escaping in heredoc
+  const maxChars = 8000;
+  
+  const systemPrompt = `You are a professional screenwriter creating a Scene Plan for a feature film.
+A Scene Plan bridges the structural Beat Sheet into individual screenplay scenes.
+
+Your task:
+1. Analyze the Beat Sheet - each beat is a structural unit (Opening Image, Theme Stated, etc.)
+2. Break each beat into 2-4 individual scenes that fulfill the beat's dramatic function
+3. For each scene, define its dramatic movement
+
+CRITICAL STRUCTURAL RULES:
+- Beat 1-15 → Act 1 (Opening Image through Break into Two)
+- Beat 16-25 → Act 2A (B Story through Midpoint)
+- Beat 26-40 → Act 2B (Bad Guys Close In through Dark Night of the Soul)
+- Beat 41+ → Act 3 (Break into Three through Final Image)
+- Typical feature film: 40-60 beats, resulting in 90-130 scenes
+
+For each scene, you MUST provide:
+- slugline: Standard INT./EXT. format (e.g., "INT. SARAH'S APARTMENT - DAY")
+- location: Where it takes place (e.g., "Sarah's Apartment")
+- time_of_day: DAY, NIGHT, DAWN, DUSK, CONTINUOUS, LATER, MOMENTS LATER
+- characters_present: Array of character names who appear
+- source_beat_number: The beat number this scene belongs to
+- source_beat_title: The beat title
+- summary: 2-3 sentences describing what happens
+- dramatic_purpose: Why this scene exists — what it reveals, establishes, or advances in the story
+- scene_turn: The emotional/story shift within this scene — how the situation changes from its beginning to its end
+- scene_outcome: The state left behind — how the world or character is changed by this scene
+
+Optional (include when relevant):
+- estimated_pages: Rough page count (1 page = ~1 minute screen time)
+- pov_character: Whose perspective this scene is told from
+
+Output ONLY valid JSON. No markdown. No preamble. No code fences. Start directly with [.`;
+
+  const userPrompt = `Project: "${projectTitle}"
+
+BEAT SHEET:
+${beatSheet.slice(0, maxChars)}
+
+${treatment ? `TREATMENT (for narrative context):\n${treatment.slice(0, 6000)}\n\n` : ""}
+${storyOutline ? `STORY OUTLINE:\n${storyOutline.slice(0, 4000)}\n\n` : ""}
+${characterBible ? `CHARACTER BIBLE (for character names and arcs):\n${characterBible.slice(0, 4000)}\n\n` : ""}
+${formatRules ? `FORMAT RULES:\n${formatRules.slice(0, 2000)}\n\n` : ""}
+
+Generate the complete Scene Plan JSON array. Every beat must be expanded into 2-4 scenes.
+Total scenes should be 90-130 for a standard feature film.`;
+
+  const response = await fetch(gatewayUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      max_tokens: 32000,
+      temperature: 0.3,
+    }),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "unknown");
+    throw new Error(`Scene Plan generation failed: ${response.status} ${errText.slice(0, 200)}`);
+  }
+
+  const data = await response.json();
+  const rawContent = data.choices?.[0]?.message?.content || "";
+  if (!rawContent.trim()) throw new Error("Scene Plan generation returned empty content");
+
+  // Clean and parse JSON — handle code fences if present
+  const cleanJson = rawContent
+    .replace(/^\s*\\`\\`\\`(?:json)?\\s*/gm, "")
+    .replace(/\\`\\`\\`\\s*$/gm, "")
+    .trim();
+
+  const parsed: ScenePlanEntry[] = JSON.parse(cleanJson);
+  if (!Array.isArray(parsed) || parsed.length < 5) {
+    throw new Error(`Scene Plan generated ${parsed.length} scenes — expected at least 5`);
+  }
+
+  // Validate each entry has required fields
+  for (let i = 0; i < parsed.length; i++) {
+    const entry = parsed[i];
+    const missing: string[] = [];
+    if (!entry.scene_number) missing.push("scene_number");
+    if (!entry.act) missing.push("act");
+    if (!entry.slugline) missing.push("slugline");
+    if (!entry.summary) missing.push("summary");
+    if (!entry.dramatic_purpose) missing.push("dramatic_purpose");
+    if (!entry.scene_turn) missing.push("scene_turn");
+    if (!entry.scene_outcome) missing.push("scene_outcome");
+    if (!entry.source_beat_number) missing.push("source_beat_number");
+    if (missing.length > 0) {
+      console.warn(`[generate-document] Scene Plan entry ${i} missing: ${missing.join(", ")}`);
+    }
+  }
+
+  // Normalize scene numbers sequentially
+  parsed.forEach((entry, i) => { entry.scene_number = i + 1; });
+
+  console.log(`[generate-document] Scene Plan generated: ${parsed.length} scenes from beat sheet`);
+  return parsed;
+}
+
 interface ResolvedScene {
   number: number;
   heading: string;
@@ -2068,9 +2209,13 @@ ${existingCBContent.slice(0, 30000)}`;
           .eq("id", resumeVersionId);
 
         const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
+        const estimatedSceneCount = (docType === "feature_script" && beats && beats.length > 0)
+          ? Math.max(beats.length * 3, 90)
+          : null;
         const resumePlan = chunkPlanFor(docType, {
           episodeCount: resolvedQuals?.season_episode_count,
           scenes: resolvedScenes,
+          sceneCount: estimatedSceneCount ?? undefined,
           beats,
         });
         const resumeDocId = resumeVer.document_id || chunkDocRecord!.id;
@@ -2080,10 +2225,52 @@ ${existingCBContent.slice(0, 30000)}`;
           // Use serviceClient throughout: rlsClient silently blocks writes on
           // project_document_versions and project_document_chunks via RLS.
           try {
+            // ── SCENE PLAN GENERATION (feature_script resume) ──
+            let resumeScenePlanForMeta: any = null;
+            let resumeScenePlanBlock = "";
+            if (docType === "feature_script") {
+              try {
+                const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
+                const treatmentText = upstreamBlocks.get("treatment") || "";
+                const storyOutlineText = upstreamBlocks.get("story_outline") || "";
+                const charBibleText = upstreamBlocks.get("character_bible") || "";
+                const formatRulesText = upstreamBlocks.get("format_rules") || "";
+                
+                if (beatSheetText) {
+                  const sp = await generateScenePlan(
+                    apiKey, gw.url, project.title || "Untitled",
+                    beatSheetText, treatmentText, storyOutlineText, charBibleText, formatRulesText
+                  );
+                  resumeScenePlanForMeta = sp;
+                  
+                  const planBlocks = sp.map((scene, i) => {
+                    return `SCENE ${scene.scene_number} - ${scene.slugline}
+  Act: ${scene.act} | Beat: ${scene.source_beat_number} (${scene.source_beat_title})
+  Characters: ${(scene.characters_present || []).join(", ")}
+  Summary: ${scene.summary}
+  Dramatic Purpose: ${scene.dramatic_purpose}
+  Scene Turn: ${scene.scene_turn}
+  Scene Outcome: ${scene.scene_outcome}${scene.estimated_pages ? `\n  Est. Pages: ${scene.estimated_pages}` : ""}${scene.pov_character ? `\n  POV: ${scene.pov_character}` : ""}`;
+                  }).join("\n\n");
+                  
+                  resumeScenePlanBlock = `\n\n=== SCENE PLAN (${sp.length} scenes) ===\n${planBlocks}\n=== END SCENE PLAN ===`;
+                  console.log(`[generate-document] Scene Plan generated for resume: ${sp.length} scenes`);
+                }
+              } catch (spErr: any) {
+                console.warn(`[generate-document] Scene Plan generation for resume failed (non-fatal): ${spErr?.message?.slice(0, 200)}`);
+                resumeScenePlanBlock = "";
+                resumeScenePlanForMeta = null;
+              }
+            }
+            
+            const finalUpstreamContent = resumeScenePlanBlock
+              ? upstreamContent + resumeScenePlanBlock
+              : upstreamContent;
+            
             const resumeResult = await resumeChunkedGeneration({
               supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
               documentId: resumeDocId, versionId: resumeVersionId,
-              docType, plan: resumePlan, systemPrompt: system, upstreamContent,
+              docType, plan: resumePlan, systemPrompt: system, upstreamContent: finalUpstreamContent,
               projectTitle: project.title || "Untitled",
               additionalContext, model: "google/gemini-2.5-flash",
               episodeCount: resolvedQuals?.season_episode_count,
@@ -2163,7 +2350,7 @@ ${existingCBContent.slice(0, 30000)}`;
           is_current: true,
           is_stale: false,
           stale_reason: null,
-          meta_json: { bg_generating: true, bg_started_at: new Date().toISOString(), doc_type: docType, episode_count: resolvedQuals?.season_episode_count ?? null },
+          meta_json: { bg_generating: true, bg_started_at: new Date().toISOString(), doc_type: docType, episode_count: resolvedQuals?.season_episode_count ?? null, scene_plan_generating: docType === "feature_script" ? true : undefined },
         }).select("id").single();
       if (chunkVerErr) throw new Error(`Failed to create chunk version: ${chunkVerErr.message}`);
 
@@ -2177,9 +2364,15 @@ ${existingCBContent.slice(0, 30000)}`;
       // latest_version_id will be set on successful completion in the bg task below.
 
       const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
+      // Scene Plan: estimate scene count from beats for chunk plan sizing
+      // beats.length * 3 ~ typical scene count (2-4 scenes per beat)
+      const estimatedSceneCount = (docType === "feature_script" && beats && beats.length > 0)
+        ? Math.max(beats.length * 3, 90)
+        : null;
       const plan = chunkPlanFor(docType, {
         episodeCount: resolvedQuals?.season_episode_count,
         scenes: resolvedScenes,
+        sceneCount: estimatedSceneCount ?? undefined,
         batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
         beats,
       });
@@ -2208,10 +2401,56 @@ ${existingCBContent.slice(0, 30000)}`;
         // Use serviceClient throughout: rlsClient silently blocks writes on
         // project_document_versions and project_document_chunks via RLS.
         try {
+          // ── SCENE PLAN GENERATION (feature_script only) ──
+          // Generate a structured Scene Plan before the chunk runner produces screenplay.
+          // The Scene Plan is injected into upstreamContent as dramatic guidance.
+          let scenePlanForMeta: any = null;
+          let scenePlanUpstreamBlock = "";
+          if (docType === "feature_script") {
+            try {
+              const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
+              const treatmentText = upstreamBlocks.get("treatment") || "";
+              const storyOutlineText = upstreamBlocks.get("story_outline") || "";
+              const charBibleText = upstreamBlocks.get("character_bible") || "";
+              const formatRulesText = upstreamBlocks.get("format_rules") || "";
+              
+              if (beatSheetText) {
+                const scenePlan = await generateScenePlan(
+                  apiKey, gw.url, project.title || "Untitled",
+                  beatSheetText, treatmentText, storyOutlineText, charBibleText, formatRulesText
+                );
+                scenePlanForMeta = scenePlan;
+                
+                // Build SCENE PLAN block for upstream context
+                const planBlocks = scenePlan.map((scene, i) => {
+                  return `SCENE ${scene.scene_number} - ${scene.slugline}
+  Act: ${scene.act} | Beat: ${scene.source_beat_number} (${scene.source_beat_title})
+  Characters: ${(scene.characters_present || []).join(", ")}
+  Summary: ${scene.summary}
+  Dramatic Purpose: ${scene.dramatic_purpose}
+  Scene Turn: ${scene.scene_turn}
+  Scene Outcome: ${scene.scene_outcome}${scene.estimated_pages ? `\n  Est. Pages: ${scene.estimated_pages}` : ""}${scene.pov_character ? `\n  POV: ${scene.pov_character}` : ""}`;
+                }).join("\n\n");
+                
+                scenePlanUpstreamBlock = `\n\n=== SCENE PLAN (${scenePlan.length} scenes) ===\n${planBlocks}\n=== END SCENE PLAN ===`;
+                console.log(`[generate-document] Scene Plan generated: ${scenePlan.length} scenes for feature_script`);
+              }
+            } catch (spErr: any) {
+              // Scene Plan generation failure is NOT fatal — fall back to beat-level generation
+              console.warn(`[generate-document] Scene Plan generation failed (non-fatal): ${spErr?.message?.slice(0, 200)}`);
+              scenePlanUpstreamBlock = "";
+              scenePlanForMeta = null;
+            }
+          }
+          
+          const finalUpstreamContent = scenePlanUpstreamBlock
+            ? upstreamContent + scenePlanUpstreamBlock
+            : upstreamContent;
+          
           const chunkResult = await runChunkedGeneration({
             supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
             documentId: chunkDocRecord!.id, versionId: chunkVersion!.id,
-            docType, plan, systemPrompt: system, upstreamContent,
+            docType, plan, systemPrompt: system, upstreamContent: finalUpstreamContent,
             projectTitle: project.title || "Untitled",
             additionalContext, model: "google/gemini-2.5-flash",
             episodeCount: resolvedQuals?.season_episode_count,
@@ -2307,7 +2546,13 @@ ${existingCBContent.slice(0, 30000)}`;
 
           if (chunkResult.success) {
             await serviceClient.from("project_document_versions")
-              .update({ is_current: true, meta_json: { bg_generating: false, bg_completed_at: new Date().toISOString(), chunks_total: chunkResult.totalChunks, chunks_completed: chunkResult.completedChunks } })
+              .update({ is_current: true, meta_json: { 
+                bg_generating: false, 
+                bg_completed_at: new Date().toISOString(), 
+                chunks_total: chunkResult.totalChunks, 
+                chunks_completed: chunkResult.completedChunks,
+                scene_plan: scenePlanForMeta || undefined,
+              } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid
             await serviceClient.from("project_documents")
@@ -2399,7 +2644,13 @@ ${existingCBContent.slice(0, 30000)}`;
                 });
                 if (resumeResult.success) {
                   await serviceClient.from("project_document_versions")
-                    .update({ is_current: true, meta_json: { bg_generating: false, bg_completed_at: new Date().toISOString(), chunks_total: resumeResult.totalChunks, chunks_completed: resumeResult.completedChunks } })
+                    .update({ is_current: true, meta_json: { 
+                      bg_generating: false, 
+                      bg_completed_at: new Date().toISOString(), 
+                      chunks_total: resumeResult.totalChunks, 
+                      chunks_completed: resumeResult.completedChunks,
+                      scene_plan: scenePlanForMeta || undefined,
+                    } })
                     .eq("id", chunkVersion!.id);
                   await serviceClient.from("project_documents")
                     .update({ latest_version_id: chunkVersion!.id, updated_at: new Date().toISOString() })

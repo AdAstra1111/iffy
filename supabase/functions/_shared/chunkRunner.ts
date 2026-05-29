@@ -432,13 +432,16 @@ ${upstreamContent}
 
 Generate the screenplay content for ${beatLabel} now. Full screenplay format. Complete scenes.`;
   } else if (plan.strategy === "scene_indexed") {
-    // ── scene_indexed: Generate screenplay from feature_script scene-by-scene ──
-    // production_draft uses scene_indexed — expand feature_script scenes into
-    // full feature screenplay format.
+    // ── scene_indexed: Generate screenplay scene-by-scene ──
+    // Two modes:
+    //   feature_script:     Generate screenplay from Scene Plan entries
+    //   production_draft:   Expand existing feature_script scenes into full screenplay
 
-    // ── Format reinforcement for production_draft ──
     let formatReinforcement = "";
+    let scenePlanBlock = "";
+
     if (docType === "production_draft") {
+      // production_draft mode: expand feature_script scenes into full screenplay
       const fmt = (opts as any).projectFormat || "";
       const fmtLower = fmt.toLowerCase();
       const isSeriesFmt = ["tv-series","limited-series","digital-series","anim-series","reality"].includes(fmtLower);
@@ -450,18 +453,30 @@ FORMAT LOCK — FEATURE FILM:
 - Do NOT use Episode headings, episode numbers, or any episodic structure.
 - Write standard feature film screenplay format: continuous narrative, Act 1/2/3 structure.`;
       }
+    } else if (docType === "feature_script") {
+      // feature_script mode: generate screenplay from Scene Plan
+      // Each scene in the SCENE PLAN section of upstream context has:
+      // summary (what happens), dramatic_purpose (why it matters), scene_turn (how it shifts), scene_outcome (result)
+      scenePlanBlock = `
+SCENE PLAN CONTEXT — Each scene has been designed with specific dramatic movement:
+- DRAMATIC PURPOSE: Why this scene exists — what it reveals, establishes, or advances
+- SCENE TURN: The emotional/story shift — how the situation changes from start to end
+- SCENE OUTCOME: What is left behind — how the world/character is changed
+Generate each scene according to its assigned dramatic purpose. Let the scene turn drive the emotional arc within the scene. The outcome must land as described.`;
     }
 
     const sceneRangeKey = chunk.chunkKey;
     const sceneRangeLabel = chunk.label;
+    const modeLabel = docType === "production_draft" ? "expanding feature_script scenes" : "generating from Scene Plan";
     chunkPrompt = `You are generating screenplay content for ${sceneRangeLabel} of "$${projectTitle}".
 Document type: ${docType.replace(/_/g, " ")}
-Strategy: Scene-by-scene expansion — writing full screenplay format for a contiguous batch of scenes.
+Strategy: Scene-by-scene — ${modeLabel}.
 
-${formatReinforcement ? formatReinforcement.trim() + "\n" : ""}CRITICAL RULES:
+${formatReinforcement ? formatReinforcement.trim() + "\n" : ""}${scenePlanBlock.trim()}
+CRITICAL RULES:
 - Output ONLY screenplay content for ${sceneRangeLabel}.
 - Write COMPLETE scenes: INT./EXT. slugline, action paragraphs, character names, dialogue.
-- Each scene from the upstream feature_script must be expanded into full screenplay format.
+- Every scene in this batch must be expanded into full screenplay format.
 |- Output SCENE N markers (SCENE 1, SCENE 2...) before each scene for consistent numbering across the assembled document.
 - Do NOT compress, summarise, or skip any scene in this batch.
 - Maintain consistent character voice, tone, and story continuity.
@@ -472,7 +487,7 @@ ${formatReinforcement ? formatReinforcement.trim() + "\n" : ""}CRITICAL RULES:
 
 ${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
 ${previousChunkEnding ? `PREVIOUS SCENE BATCH ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}
-UPSTREAM CONTEXT (from feature_script):
+UPSTREAM CONTEXT:
 ${upstreamContent}
 
 Generate the screenplay content for ${sceneRangeLabel} now. Full screenplay format. Complete scenes. Complete dialogue.`;
@@ -1619,6 +1634,15 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         const owningChunk = plan.chunks.find(c => c.chunkKey === missingSec || c.sectionId === missingSec);
         if (owningChunk && !chunksToRegen.includes(owningChunk.chunkIndex)) {
           chunksToRegen.push(owningChunk.chunkIndex);
+        }
+      }
+    } else if (validationResult.repairAction === "regen_all") {
+      // repairAction === "regen_all" with no specific missing indices/sections means
+      // all content is suspect (e.g. banned summarization language throughout).
+      // Regenerate ALL chunks to break the pattern.
+      for (const chunk of plan.chunks) {
+        if (!chunksToRegen.includes(chunk.chunkIndex)) {
+          chunksToRegen.push(chunk.chunkIndex);
         }
       }
     }
