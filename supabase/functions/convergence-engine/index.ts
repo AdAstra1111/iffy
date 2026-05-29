@@ -366,8 +366,8 @@ serve(async (req) => {
     const avgCI = hasInvalidSubScores ? 0 : CI_COMPONENTS.reduce((sum, k) => sum + Number(ciSubScores[k]), 0) / CI_COMPONENTS.length;
     const avgGP = hasInvalidSubScores ? 0 : GP_COMPONENTS.reduce((sum, k) => sum + Number(gpSubScores[k]), 0) / GP_COMPONENTS.length;
 
-    // Enforce CI 2× arithmetic — this is the canonical calculation
-    const ciScore = Math.round(avgCI * 2);
+    // Enforce CI 10× arithmetic — scale from 0-10 average to 0-100
+    const ciScore = Math.round(avgCI * 10);
     const gpScore = Math.round(avgGP * 10); // scale from 0-10 sub-score average to 0-100
     const gap = Math.abs(ciScore - gpScore);
 
