@@ -2752,7 +2752,12 @@ export default function ProjectDevelopmentEngine() {
                       approvedNotes={beatSheetApprovedNotes}
                       protectItems={protectItems}
                       applyAllTrigger={beatRewriteTrigger}
-                      onApplyAll={() => handleRewrite()}
+                      onApplyAll={() => {
+                        // Run post-operation review (analysis + notes) on the new version
+                        // WITHOUT calling handleRewrite(), which would re-increment
+                        // beatRewriteTrigger and trigger another batch loop.
+                        setTimeout(() => runAnalysisWithContext(), 500);
+                      }}
                       onComplete={(newVersionId) => {
                         postOperationVersionId.current = newVersionId;
                         pendingOptionsTriggerRef.current = newVersionId;

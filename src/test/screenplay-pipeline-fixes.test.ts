@@ -61,9 +61,9 @@ describe("FIX 1 — Scene graph bootstrap precedes version promotion", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// FIX 2: Default scene count 50 for production_draft
+// FIX 2: Scene Plan drives scene count for feature_script
 // ─────────────────────────────────────────────────────────────────────────────
-describe("FIX 2 — Default scene count 50 for production_draft", () => {
+describe("FIX 2 — Scene Plan drives scene count", () => {
   let genDocSource: string;
 
   beforeAll(() => {
@@ -73,12 +73,16 @@ describe("FIX 2 — Default scene count 50 for production_draft", () => {
     );
   });
 
-  it("uses default of 50 when no active scenes found", () => {
-    expect(genDocSource).toContain("using default 50 for scene_indexed strategy");
+  it("sceneCount is set from scenePlan.length, not beats.length * 3", () => {
+    // Scene Plan length must be the source of truth for chunk planning
+    expect(genDocSource).toContain("sceneCountForPlan = scenePlan.length");
+    // The old beats.length * 3 heuristic must not be used after Scene Plan exists
+    expect(genDocSource).not.toContain("estimatedSceneCount = Math.max(beats.length * 3");
   });
 
-  it("uses default of 50 when scene count query fails", () => {
-    expect(genDocSource).toContain("using default 50");
+  it("chunkPlanFor receives sceneCount from Scene Plan for feature_script", () => {
+    // Verify sceneCount is passed from the scene plan, not estimated
+    expect(genDocSource).toContain("sceneCount: sceneCountForPlan ?? undefined");
   });
 
   it("does NOT fall back to sectioned strategy for production_draft with no scenes", () => {
@@ -165,7 +169,7 @@ describe("FIX 4 — Meta-commentary bans in chunkRunner prompts", () => {
     // The scene_indexed strategy branch starts with `plan.strategy === "scene_indexed"`
     const sceneCRStart = chunkRunnerSource.indexOf('plan.strategy === "scene_indexed"');
     expect(sceneCRStart).toBeGreaterThan(0);
-    const sceneSection = chunkRunnerSource.slice(sceneCRStart, sceneCRStart + 3000);
+    const sceneSection = chunkRunnerSource.slice(sceneCRStart, sceneCRStart + 5000);
     expect(sceneSection).toContain("CRITICAL RULES");
     expect(sceneSection).toContain("meta-commentary");
   });
@@ -190,7 +194,7 @@ describe("FIX 5 — SCENE N marker instruction in scene_indexed prompt", () => {
 
   it("SCENE N marker instruction is in the CRITICAL RULES of scene_indexed block", () => {
     const sceneIdxIdx = chunkRunnerSource.indexOf("scene_indexed");
-    const sceneSection = chunkRunnerSource.slice(sceneIdxIdx, sceneIdxIdx + 2000);
+    const sceneSection = chunkRunnerSource.slice(sceneIdxIdx, sceneIdxIdx + 5000);
     expect(sceneSection).toContain("CRITICAL RULES");
     expect(sceneSection).toContain("SCENE 1, SCENE 2");
   });

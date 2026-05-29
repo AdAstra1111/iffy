@@ -42714,8 +42714,11 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
         "## Constraints:",
         constraintPackBlock
       ].join("\n\n");
-      // 6. Call LLM to rewrite only that beat
-      const rewrittenBeat = await callGoogleGemini(systemPrompt, beatPrompt, 0.3, 4000);
+      // 6. Call LLM to rewrite only that beat — use OpenRouter via callAI instead of
+      // broken Gemini direct path (GOOGLE_AI_API_KEY removed 2026-05-29T20:34).
+      // This matches all other rewrite/analysis handlers in dev-engine-v2.
+      const gw = resolveGateway();
+      const rewrittenBeat = await callAI(gw.apiKey, BALANCED_MODEL, systemPrompt, beatPrompt, 0.3, 4000);
       // 7. Simple string replacement — splice rewritten beat into original document
       const updatedDocument = fullText.slice(0, targetBeatEntry.start) + rewrittenBeat.trim() + "\n" + fullText.slice(targetBeatEntry.end);
       const newVersionNumber = (version.version_number || 1) + 1;
@@ -42724,7 +42727,7 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
         version_number: newVersionNumber,
         plaintext: updatedDocument,
         is_current: false,
-        created_by: body.user?.id || null,
+        created_by: user?.id || null,
         meta_json: {
           run_type: "BEAT_REWRITE",
           updated_beat_id: beatId
