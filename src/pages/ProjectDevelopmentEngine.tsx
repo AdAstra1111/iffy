@@ -1081,7 +1081,7 @@ export default function ProjectDevelopmentEngine() {
     prevPromotionSignatureRef.current = promotionState.signature;
 
     // ── Version mismatch / stale gate diagnostics ──
-    const convergenceVersionId = render?.versionId || null;
+    const convergenceVersionId = promotionGateVersionId || null;
     const prevDocType = lastPromotionGateVersionRef.current.docType;
     const currDocType = selectedDeliverableType;
     const prevVersionId = lastPromotionGateVersionRef.current.versionId;
