@@ -11804,6 +11804,32 @@ INSTRUCTIONS:
         allSections.push(...folded);
         console.log(`[dev-engine-v2][concept-brief] deduped ${allSections.length} sections from ${deduped.length} unique keys`);
       }
+
+      // ── BEAT SHEET SECTION DEDUP ──
+      // Prior single-pass rewrites can duplicate beat sheet act sections.
+      // Dedup by label (NOT sk — section registry labels don't match beat sheet ACT labels).
+      if (doc.doc_type === "beat_sheet") {
+        const bsLabels = new Set(["ACT 1", "ACT 2A", "ACT 2B", "ACT 3"]);
+        // Pass 1: keep only the LAST occurrence of each known beat sheet label
+        const seenLabels = new Set<string>();
+        const deduped: typeof allSections = [];
+        for (let i = allSections.length - 1; i >= 0; i--) {
+          const sec = allSections[i];
+          const labelUpper = (sec.label || "").toUpperCase();
+          if (bsLabels.has(labelUpper)) {
+            if (!seenLabels.has(labelUpper)) {
+              seenLabels.add(labelUpper);
+              deduped.unshift(sec);
+            }
+          } else {
+            deduped.unshift(sec);
+          }
+        }
+        allSections.length = 0;
+        allSections.push(...deduped);
+        console.log(`[dev-engine-v2][beat-sheet] deduped ${allSections.length} sections from ${deduped.length} unique labels`);
+      }
+
       console.log(`[dev-engine-v2][${action}] sections_found=${allSections.length}`);
       // ── BEAT SHEET JSON PATH: build flatSections directly from parsed beats ──
       let flatSections;
