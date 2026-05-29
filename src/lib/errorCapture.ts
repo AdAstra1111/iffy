@@ -3,6 +3,50 @@
 
 window.__IFFY_ERRORS__ = window.__IFFY_ERRORS__ || [];
 
+// ── React 18 removeChild race guard ────────────────────────────────────
+// In React 18, when a portal component's container is removed from the DOM
+// during commit phase (e.g., Suspense resolution, sibling portal cleanup, or
+// a rapid open/close cycle), React may call Node.removeChild on a node that
+// is no longer a child of the intended parent. The browser throws:
+//
+//   NotFoundError: Failed to execute 'removeChild' on 'Node'
+//
+// This is a React 18 runtime issue, not a component bug. The SafeRouteBoundary
+// catches the error and retries, but the retry itself can trigger the SAME race
+// (re-creating portals during recovery), causing a loop.
+//
+// FIX: Wrap Node.prototype.removeChild to gracefully handle the NotFoundError
+// case. When the child is not found, the DOM state is already what React
+// wanted (the node is not a child), so the operation is a no-op. We log a
+// diagnostic trace but never throw — the error is fundamentally harmless
+// because it means the DOM cleanup already happened.
+//
+// This zero-cost fix prevents thousands of error boundary recoveries and the
+// cascade of portal re-creation that follows each recovery.
+(function() {
+  // Only patch once
+  if ((Node.prototype as any).__removeChildPatched) return;
+  (Node.prototype as any).__removeChildPatched = true;
+
+  const origRemoveChild = Node.prototype.removeChild;
+  Node.prototype.removeChild = function(child: Node) {
+    // Fast path: normal case — child exists, removeChild succeeds
+    if (child.parentNode === this) {
+      return origRemoveChild.call(this, child);
+    }
+    // Slow path: child is already orphaned. This is the React 18 portal
+    // race — the container was removed from the DOM before React could
+    // unmount the children. The DOM is already in the desired state
+    // (child is not attached to this parent), so we log a diagnostic
+    // trace and skip the operation.
+    const err = new Error('removeChild race (harmless — DOM already in desired state)');
+    console.warn('[removeChild-safe] Parent hasChild:', this.hasChildNodes?.());
+    console.warn('[removeChild-safe] Child parentNode:', child.parentNode);
+    console.warn('[removeChild-safe] Stack:', err.stack?.split('\n').slice(1, 6).join('\n'));
+    return child; // Return the child node as removeChild normally does
+  };
+})();
+
 function captureError(type: string, message: string, details?: any) {
   const entry = {
     type,
@@ -18,7 +62,10 @@ function captureError(type: string, message: string, details?: any) {
 
 // Global error handlers
 window.addEventListener('error', (e) => {
-  // Suppress transient removeChild errors — handled by SafeRouteBoundary, noise in diagnostics
+  // Suppress transient removeChild errors — handled at DOM API level by
+  // the Node.prototype.removeChild patch above, which prevents the error
+  // from ever reaching the error boundary / window handler.
+  // Also suppressed here as a safety net in case the patch has a gap.
   if (e.error instanceof DOMException &&
       e.error.name === 'NotFoundError' &&
       e.error.message?.includes('removeChild')) {

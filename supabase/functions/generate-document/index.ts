@@ -200,7 +200,7 @@ async function resolveBeatsFromBeatSheet(
     if (!beatVersion?.plaintext) return null;
 
     const beats: ResolvedBeat[] = [];
-    const beatRe = /^##\s+Beat\s+(\d+):\s*(.+)$/gm;
+    const beatRe = /^###\s+(\d+)\.\s+(.+)$/gm;
     let match: RegExpExecArray | null;
     while ((match = beatRe.exec(beatVersion.plaintext)) !== null) {
       beats.push({ number: parseInt(match[1], 10), title: match[2].trim() });
