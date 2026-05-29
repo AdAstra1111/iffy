@@ -16863,6 +16863,12 @@ Return ONLY valid JSON:
           o.scene_id,
           o
         ]));
+      // Load existing spine links to merge (not overwrite) axis_key/threads/arc_steps
+      const { data: existingLinks } = await supabase.from("scene_spine_links").select("scene_id, axis_key, threads, arc_steps").eq("project_id", projectId);
+      const existingLinkMap = new Map((existingLinks || []).map((l)=>[
+          l.scene_id,
+          l
+        ]));
       const perScene = [];
       let upserted = 0;
       let noRolesCount = 0;
@@ -16879,16 +16885,17 @@ Return ONLY valid JSON:
           // so the scene shows up in spineCount even before role classification
           const order = orderMap.get(scene.id);
           if (order) {
+            const existing = existingLinkMap.get(scene.id);
             const { error: upsErr } = await supabase.from("scene_spine_links").upsert({
               project_id: projectId,
               scene_id: scene.id,
               order_key: order.order_key,
               act: order.act ?? null,
               sequence: order.sequence ?? null,
-              axis_key: null,
+              axis_key: existing?.axis_key ?? null,
               roles: [],
-              threads: [],
-              arc_steps: [],
+              threads: existing?.threads ?? [],
+              arc_steps: existing?.arc_steps ?? [],
               updated_at: new Date().toISOString()
             }, {
               onConflict: "project_id,scene_id"
@@ -16914,16 +16921,17 @@ Return ONLY valid JSON:
           // Still create a spine link row with null axis but preserved roles
           const order = orderMap.get(scene.id);
           if (order) {
+            const existing = existingLinkMap.get(scene.id);
             const { error: upsErr } = await supabase.from("scene_spine_links").upsert({
               project_id: projectId,
               scene_id: scene.id,
               order_key: order.order_key,
               act: order.act ?? null,
               sequence: order.sequence ?? null,
-              axis_key: null,
+              axis_key: existing?.axis_key ?? null,
               roles: sceneRoles,
-              threads: [],
-              arc_steps: [],
+              threads: existing?.threads ?? [],
+              arc_steps: existing?.arc_steps ?? [],
               updated_at: new Date().toISOString()
             }, {
               onConflict: "project_id,scene_id"
@@ -16948,16 +16956,17 @@ Return ONLY valid JSON:
           });
           continue;
         }
+        const existing = existingLinkMap.get(scene.id);
         const { error: upsErr } = await supabase.from("scene_spine_links").upsert({
           project_id: projectId,
           scene_id: scene.id,
           order_key: order.order_key,
           act: order.act ?? null,
           sequence: order.sequence ?? null,
-          axis_key: primaryAxis,
+          axis_key: existing?.axis_key ?? primaryAxis,
           roles: sceneRoles,
-          threads: [],
-          arc_steps: [],
+          threads: existing?.threads ?? [],
+          arc_steps: existing?.arc_steps ?? [],
           updated_at: new Date().toISOString()
         }, {
           onConflict: "project_id,scene_id"
