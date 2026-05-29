@@ -31,8 +31,6 @@ const SCENE_INDEXED_DOC_TYPES = new Set([
 const BEAT_SEQUENTIAL_DOC_TYPES = new Set([
   "production_draft",
 ]);
-
-]);
 const ALL_LARGE_RISK = new Set([
   ...EPISODIC_DOC_TYPES,
   ...SECTIONED_DOC_TYPES,
