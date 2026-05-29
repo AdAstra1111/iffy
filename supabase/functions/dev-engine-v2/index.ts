@@ -10227,6 +10227,22 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
               resolved_in_version: newVersion.id
             }).eq("document_id", documentId).eq("resolved", false).in("note_key", approvedNoteIds);
             console.log(`[dev-engine-v2] rewrite: marked ${approvedNoteIds.length} approved notes resolved`, approvedNoteIds);
+
+            // Also sync project_dev_note_state.status for matching dev notes
+            // note_key (development_notes) === note_fingerprint (project_dev_note_state)
+            // for dev-engine-v2 generated notes. This is the write-side sync.
+            try {
+              await supabase.from("project_dev_note_state").update({
+                status: "resolved"
+              })
+              .eq("project_id", projectId)
+              .eq("doc_type", effectiveDeliverable)
+              .eq("status", "open")
+              .in("note_fingerprint", approvedNoteIds);
+              console.log(`[dev-engine-v2] rewrite: synced project_dev_note_state for ${approvedNoteIds.length} notes`);
+            } catch (stateSyncErr) {
+              console.warn("[dev-engine-v2] rewrite: project_dev_note_state sync failed (non-fatal):", stateSyncErr?.message);
+            }
           } catch (resolveErr) {
             console.warn("[dev-engine-v2] rewrite: mark-resolved failed (non-fatal):", resolveErr?.message);
           }

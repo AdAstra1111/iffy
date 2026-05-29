@@ -183,6 +183,42 @@ export async function getUnifiedUpstreamNoteBlockers(
     }
   }
 
+  // ── Read-side defense: verify project_dev_note_state entries aren't stale ──
+  // If the write-side sync (dev-engine-v2) hasn't updated project_dev_note_state.status,
+  // stale "open" entries could block downstream docs indefinitely.
+  // Cross-check against development_notes: if the corresponding note is already
+  // resolved, filter out the stale state entry.
+  const staleDevNoteBlockers = blockers.filter(b => b.source_table === "project_dev_note_state");
+  if (staleDevNoteBlockers.length > 0) {
+    const fps = staleDevNoteBlockers.map(b => b.note_key_or_fingerprint).filter(Boolean) as string[];
+    if (fps.length > 0) {
+      try {
+        const { data: resolvedNotes } = await supabase
+          .from("development_notes")
+          .select("note_key")
+          .eq("resolved", true)
+          .in("note_key", fps);
+        if (resolvedNotes && resolvedNotes.length > 0) {
+          const resolvedFps = new Set(resolvedNotes.map(r => r.note_key));
+          const staleCount = blockers.filter(b =>
+            b.source_table === "project_dev_note_state" && resolvedFps.has(b.note_key_or_fingerprint)
+          ).length;
+          if (staleCount > 0) {
+            // Remove stale items by splice in reverse (safe mutation)
+            for (let i = blockers.length - 1; i >= 0; i--) {
+              if (blockers[i].source_table === "project_dev_note_state" && resolvedFps.has(blockers[i].note_key_or_fingerprint)) {
+                blockers.splice(i, 1);
+              }
+            }
+            console.log(`[unified-note-control] read-side defense: filtered ${staleCount} stale project_dev_note_state blockers (resolved in development_notes)`);
+          }
+        }
+      } catch (crossErr) {
+        console.warn("[unified-note-control] read-side defense cross-check failed:", crossErr?.message);
+      }
+    }
+  }
+
   // ── IEL Logging ──
   const byTable = {
     project_deferred_notes: blockers.filter(b => b.source_table === "project_deferred_notes").length,
