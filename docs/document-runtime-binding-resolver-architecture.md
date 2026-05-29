@@ -119,7 +119,7 @@ Each binding type has a deterministic resolution priority:
 #### `authoritative` (Promotion gate analysis, lock/unlock decisions)
 ```
 Rule 1: versions.find(v => v.approval_status === 'approved' && v.is_current === true)
-Rule 2: filter(approved).sort(created_at DESC)[last]    // newest approved by created_at
+Rule 2: filter(approved).sort(created_at DESC)[0]     // newest approved by created_at
 Rule 3: null  // no approved versions → lifecyclePhase: 'pending_approval'
 ```
 
@@ -301,9 +301,9 @@ type BindingStore = Map<string, RuntimeBinding[]>;
    // BEFORE (BUG):
    const convergenceVersionId = selectedVersionId || null;
    // AFTER (FIXED):
-   const convergenceVersionId = render?.versionId || null;
+   const convergenceVersionId = promotionGateVersionId || null;
    ```
-   `convergenceVersionId` should track the rendered version, not the raw `selectedVersionId`. This was the root cause of cross-doc stale invalidation.
+   `convergenceVersionId` should track the promotion gate version, not the rendered version (which can fall through to `selectedVersionId`). This was the root cause of cross-doc stale invalidation.
 
 4. Update `handlePromote` (line ~1930) to wrap in `assertEligible('promote', ...)` guard
 
@@ -469,7 +469,7 @@ Add `assertRuntimeBindingEligible` guard before ALL `set_current_version` call s
 - [ ] `useDocumentRuntimeBinding(...)` returns `promotionGate` matching current `stablePromotionVersion` PDE.tsx:851 behavior (version_number DESC sort)
 - [ ] `render` binding produces `authoritativeVersion?.id \|\| selectedVersionId \|\| versions[-1].id` — matches current `effectiveVersionId` + fallback
 - [ ] `promotion_gate` binding NEVER resolves to `selectedVersionId` — eliminates oscillation
-- [ ] `convergenceVersionId` uses `render?.versionId` (promotion_gate binding), NOT raw `selectedVersionId`
+- [ ] `convergenceVersionId` uses `promotionGateVersionId` (promotion_gate binding), NOT raw `selectedVersionId` or `render?.versionId`
 - [ ] Auto-rebind effect (PDE.tsx:869-878) is **unchanged** — no regressions
 - [ ] `assertRuntimeBindingEligible({ type: 'authoritative' }, 'render')` → `eligible: false` (Invariant 1)
 - [ ] `assertRuntimeBindingEligible({ type: 'render' }, 'promote')` → `eligible: false` (Invariant 2)

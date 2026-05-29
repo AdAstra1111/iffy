@@ -20,6 +20,38 @@ export interface BackendVersion {
   meta_json?: Record<string, any> | null;
 }
 
+/**
+ * Log an IEL warning when a set_current_version call targets a version
+ * that doesn't match the authoritative binding. Lightweight guard — logs
+ * but does not block the operation (backend callers own their error handling).
+ */
+export async function logBindingGuardWarning(
+  supabase: any,
+  documentId: string,
+  targetVersionId: string,
+  context: { caller: string; docType?: string; projectId?: string },
+): Promise<void> {
+  try {
+    const { data: versions } = await supabase
+      .from('project_document_versions')
+      .select('id, version_number, approval_status, is_current, created_at, meta_json')
+      .eq('document_id', documentId)
+      .order('version_number', { ascending: false });
+
+    if (!versions || versions.length === 0) return;
+
+    const authoritative = resolveBackendBinding('authoritative', versions);
+    if (authoritative.versionId && authoritative.versionId !== targetVersionId) {
+      console.warn(
+        `[binding-guard][IEL] set_current_version_binding_mismatch { caller: "${context.caller}", document_id: "${documentId}", target_version_id: "${targetVersionId}", authoritative_version_id: "${authoritative.versionId}", authoritative_reason: "${authoritative.reason}", doc_type: "${context.docType || 'unknown'}" }`
+      );
+    }
+  } catch (e: any) {
+    // Fail-open: guard is advisory only, never block the caller
+    console.warn(`[binding-guard] logBindingGuardWarning failed: ${e?.message}`);
+  }
+}
+
 function toNumericScore(val: any): number | null {
   if (typeof val === 'number' && !isNaN(val)) return val;
   if (typeof val === 'string') {

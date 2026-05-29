@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { callLLM, extractJSON, MODELS } from "../_shared/llm.ts";
 import { createVersion } from "../_shared/doc-os.ts";
+import { logBindingGuardWarning } from "../_shared/documentRuntimeBinding.ts";
 
 const WRITERS_ROOM_BUILD_ID = "2026-02-25_scoped_shrink_v2";
 
@@ -1185,6 +1186,11 @@ Direction: ${changePlan.direction_summary || ''}`;
         // newVer created via doc-os, no separate error check needed
 
         try {
+          // ── Binding guard: IEL warning if new version doesn't match authoritative binding ──
+          await logBindingGuardWarning(admin, sourceVer.document_id, newVer.id, {
+            caller: "notes-writers-room/episode-rewrite",
+            projectId: plan.project_id,
+          }).catch(() => {});
           await admin.rpc("set_current_version", {
             p_document_id: sourceVer.document_id,
             p_new_version_id: newVer.id,
@@ -1441,6 +1447,12 @@ Do NOT summarize or compress any part of the script. Maintain the original lengt
       });
 
       try {
+        // ── Binding guard: IEL warning if new version doesn't match authoritative binding ──
+        await logBindingGuardWarning(admin, sourceVer.document_id, newVer.id, {
+          caller: "notes-writers-room/rewrite",
+          docType: srcDocRow2?.doc_type || undefined,
+          projectId: plan.project_id,
+        }).catch(() => {});
         await admin.rpc("set_current_version", {
           p_document_id: sourceVer.document_id,
           p_new_version_id: newVer.id,

@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { emitTransition, TRANSITION_EVENTS } from "../_shared/transitionLedger.ts";
 import { extractCanonConstraints, detectCanonDrift, logDriftResult } from "../_shared/canonConstraintEnforcement.ts";
 import { lockNarrativeSpine } from "../_shared/narrativeSpine.ts";
+import { logBindingGuardWarning } from "../_shared/documentRuntimeBinding.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
@@ -345,6 +346,12 @@ Deno.serve(async (req) => {
       // IEL: Also set as current version so ABVR picks it up as authoritative
       // This ensures Auto-Run rebinds to the user-approved version
       try {
+        // ── Binding guard: IEL warning if this version doesn't match authoritative binding ──
+        await logBindingGuardWarning(db, version.document_id, documentVersionId, {
+          caller: "project-folder-engine",
+          docType: docTypeKey || undefined,
+          projectId,
+        }).catch(() => {});
         await db.rpc("set_current_version", {
           p_document_id: version.document_id,
           p_new_version_id: documentVersionId,

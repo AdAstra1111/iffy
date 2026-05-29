@@ -25,6 +25,7 @@ function containsFailedPlaceholders(text) {
   return FAILED_CHUNK_PLACEHOLDER_RE.test(text);
 }
 import { fetchCoreDocs } from "../_shared/coreDocs.ts";
+import { logBindingGuardWarning } from "../_shared/documentRuntimeBinding.ts";
 import { validateEpisodicChunk } from "../_shared/chunkValidator.ts";
 import { extractFingerprint, computeDeviation, buildTargetFromTeamVoice, buildTargetFromWritingVoice, buildStyleEvalMeta, STYLE_ENGINE_VERSION } from "../_shared/styleDeviation.ts";
 import { buildEffectiveProfileContextBlock } from "../_shared/effective-profile-context.ts";
@@ -34108,6 +34109,12 @@ CRITICAL:
           newVersion.meta_json = mergedMeta;
         }
         if (auto_promote !== false) {
+          // ── Binding guard: IEL warning if this version doesn't match authoritative binding ──
+          await logBindingGuardWarning(supabase, sourceDocId, newVersion.id, {
+            caller: "dev-engine-v2/story-outline-assemble",
+            docType: docTypeKey || undefined,
+            projectId,
+          }).catch(() => {});
           const { error: rpcErr } = await supabase.rpc("set_current_version", { p_document_id: sourceDocId, p_new_version_id: newVersion.id });
           if (rpcErr) {
             try { await supabase.from("project_document_versions").delete().eq("id", newVersion.id); } catch (delErr) { console.error("[scene-rewrite] Failed to rollback version after RPC error:", delErr.message); }
@@ -34342,6 +34349,12 @@ CRITICAL:
       }
       // Only auto-promote if auto_promote !== false (default: true for backward compat)
       if (auto_promote !== false) {
+        // ── Binding guard: IEL warning if this version doesn't match authoritative binding ──
+        await logBindingGuardWarning(supabase, sourceDocId, newVersion.id, {
+          caller: "dev-engine-v2/scene-rewrite",
+          docType: docTypeKey || undefined,
+          projectId,
+        }).catch(() => {});
         const { error: rpcErr } = await supabase.rpc("set_current_version", {
           p_document_id: sourceDocId,
           p_new_version_id: newVersion.id

@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { WritersRoomChangeset, ChangesetDiffSummary } from '@/lib/types/writers-room';
+import { assertRuntimeBindingEligible } from '@/lib/versionBinding/assertRuntimeBindingEligible';
+import type { RuntimeBinding } from '@/lib/versionBinding/documentRuntimeBindingTypes';
 
 interface ChangesetTimelineProps {
   projectId: string;
@@ -38,6 +40,11 @@ export function ChangesetTimeline({ projectId, documentId }: ChangesetTimelinePr
 
   const rollbackMutation = useMutation({
     mutationFn: async (changeset: WritersRoomChangeset) => {
+      // ── Binding guard: log IEL warning if rolling back to a version that won't be authoritative ──
+      console.info(
+        `[ui][IEL] changeset_rollback_initiated { document_id: "${changeset.document_id}", before_version_id: "${changeset.before_version_id}", after_version_id: "${changeset.after_version_id}" }`
+      );
+
       // Restore before_version_id as current
       const { error: rpcErr } = await supabase.rpc('set_current_version', {
         p_document_id: changeset.document_id,
