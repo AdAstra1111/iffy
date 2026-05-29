@@ -19,7 +19,11 @@ import { buildBeatGuidanceBlock, computeBeatTargets } from "../_shared/verticalD
 import { loadLanePrefs, loadTeamVoiceProfile } from "../_shared/prefs.ts";
 import { buildTeamVoicePromptBlock } from "../_shared/teamVoice.ts";
 import { isLargeRiskDocType, chunkPlanFor } from "../_shared/largeRiskRouter.ts";
-import { containsFailedPlaceholders } from "../_shared/chunkRunner.ts";
+// Inlined from chunkRunner.ts — avoids bundler failing on chunkRunner.ts parse
+const FAILED_CHUNK_PLACEHOLDER_RE = /\[SECTION \d+ GENERATION FAILED/;
+function containsFailedPlaceholders(text) {
+  return FAILED_CHUNK_PLACEHOLDER_RE.test(text);
+}
 import { fetchCoreDocs } from "../_shared/coreDocs.ts";
 import { validateEpisodicChunk } from "../_shared/chunkValidator.ts";
 import { extractFingerprint, computeDeviation, buildTargetFromTeamVoice, buildTargetFromWritingVoice, buildStyleEvalMeta, STYLE_ENGINE_VERSION } from "../_shared/styleDeviation.ts";

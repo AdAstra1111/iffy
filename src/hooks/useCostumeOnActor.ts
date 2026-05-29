@@ -817,6 +817,12 @@ export function useCostumeOnActor(projectId: string | undefined) {
                 identity_mode: true,
                 actor_id: char.actorId,
                 actor_version_id: char.actorVersionId,
+                generation_surface: "costume_on_actor",
+                slot_type: slot.slot_key,
+                identity_lock: slotBrief.requiresIdentityLock,
+                scoring_policy: (slot.convergence_state as any)?.scoring_policy || null,
+                package_strength: statePackage.packageStrength,
+                character_id: characterKey,
                 // ── ACTOR IDENTITY ANCHORS: image-based reference for identity preservation ──
                 identity_anchor_paths: {
                   headshot: actorAnchors!.headshot || undefined,
@@ -835,6 +841,14 @@ export function useCostumeOnActor(projectId: string | undefined) {
             // 403 = governance block — not transient, break the retry loop
             if ((genError as any)?.context?.status === 403) {
               console.warn(`[Costume] 403 on ${slot.slot_key} — governance blocking generation, breaking retry loop`);
+              // Structured blocker parsing for UI messaging
+              try {
+                const body = JSON.parse((genError as any).context?.body || "{}");
+                if (body.blocked && body.surface === "costume_on_actor") {
+                  console.log(`[Costume] Governance blocked slot=${slot.slot_key} codes=${JSON.stringify(body.blocker_codes)}`);
+                  body.blockers?.forEach((b: any) => console.log(`  [${b.severity}] ${b.code}: ${b.message}`));
+                }
+              } catch {}
               break;
             }
             convState = { ...convState, attempt_count: convState.attempt_count + 1 };
@@ -1655,6 +1669,12 @@ export function useCostumeOnActor(projectId: string | undefined) {
               identity_mode: true,
               actor_id: char.actorId,
               actor_version_id: char.actorVersionId,
+              generation_surface: "costume_on_actor",
+              slot_type: slot.slot_key,
+              identity_lock: slotBrief.requiresIdentityLock,
+              scoring_policy: (slot.convergence_state as any)?.scoring_policy || null,
+              package_strength: statePackage.packageStrength,
+              character_id: characterKey,
               // ── ACTOR IDENTITY ANCHORS ──
               identity_anchor_paths: {
                 headshot: actorAnchors!.headshot || undefined,
@@ -1671,6 +1691,14 @@ export function useCostumeOnActor(projectId: string | undefined) {
           // 403 = governance block — not transient, break the retry loop
           if ((genError as any)?.context?.status === 403) {
             console.warn(`[Costume] 403 on ${slotKey} — governance blocking generation, breaking retry loop`);
+            // Structured blocker parsing for UI messaging
+            try {
+              const body = JSON.parse((genError as any).context?.body || "{}");
+              if (body.blocked && body.surface === "costume_on_actor") {
+                console.log(`[Costume] Governance blocked slot=${slotKey} codes=${JSON.stringify(body.blocker_codes)}`);
+                body.blockers?.forEach((b: any) => console.log(`  [${b.severity}] ${b.code}: ${b.message}`));
+              }
+            } catch {}
             break;
           }
           convState = { ...convState, attempt_count: convState.attempt_count + 1 };

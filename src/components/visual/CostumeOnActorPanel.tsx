@@ -1613,6 +1613,61 @@ export function CostumeOnActorPanel({ projectId }: Props) {
                   )}
                 </div>
 
+                {/* Governance Blocker Banner — shows when generation was blocked by surface-aware gate */}
+                {(() => {
+                  // Check for governance blocks in slot convergence_state
+                  const allSlots = Object.values(slotsForChar).flat();
+                  const governanceBlockedSlots = allSlots.filter(s => {
+                    const cs = (s.convergence_state || {}) as Record<string, any>;
+                    return cs.governance_blocked === true;
+                  });
+                  if (governanceBlockedSlots.length === 0) return null;
+
+                  const hasFatal = governanceBlockedSlots.some(s => {
+                    const cs = (s.convergence_state || {}) as Record<string, any>;
+                    return cs.governance_severity === 'fatal';
+                  });
+
+                  return (
+                    <div className={`rounded border ${hasFatal ? 'border-destructive/40 bg-destructive/5' : 'border-amber-500/40 bg-amber-500/5'} p-2.5 space-y-1.5`}>
+                      <div className="flex items-center gap-1.5 text-[10px] font-medium">
+                        {hasFatal ? (
+                          <X className="h-3.5 w-3.5 text-destructive shrink-0" />
+                        ) : (
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        )}
+                        <span className={hasFatal ? 'text-destructive' : 'text-amber-600'}>
+                          {hasFatal ? 'Generation blocked' : 'Generation paused'}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {governanceBlockedSlots.map(slot => {
+                          const cs = (slot.convergence_state || {}) as Record<string, any>;
+                          const code = cs.governance_code || '';
+                          const message = cs.governance_message || '';
+                          const nextActions: string[] = cs.governance_next_actions || [];
+                          const severity = cs.governance_severity || 'recoverable';
+                          return (
+                            <div key={slot.id} className="text-[10px] pl-4">
+                              <span className="font-medium text-foreground">{slot.slot_label}</span>
+                              <span className="text-muted-foreground ml-1">
+                                — {code}: {message}
+                              </span>
+                              {nextActions.length > 0 && (
+                                <ul className="list-disc list-inside text-[9px] text-muted-foreground/70 mt-0.5 space-y-0.5 pl-2">
+                                  {nextActions.map((action, i) => (
+                                    <li key={i}>{action}</li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Lock Gap Summary — canonical slot-level blocking visibility */}
                 {lockGap && !lockGap.lock_ready && lockGap.blocking_slots.length > 0 && displayStatus !== 'blocked' && (
                   <div className="rounded-md border border-border/30 bg-muted/10 p-2.5 space-y-1.5">

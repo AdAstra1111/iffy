@@ -168,6 +168,16 @@ export interface CostumeLookDiagnostics {
   version: string;
 }
 
+// ── Type for governance payload passed to generate-lookbook-image ────────────
+
+export interface CostumeOnActorGovernancePayload {
+  generation_surface: "costume_on_actor";
+  slot_type: string;
+  identity_lock: boolean;
+  scoring_policy: "strict_identity" | "occluded_identity" | "detail_texture";
+  package_strength: WardrobePackageStrength;
+}
+
 // ── Prompt Builder ──────────────────────────────────────────────────────────
 
 /**

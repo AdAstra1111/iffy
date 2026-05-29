@@ -1371,26 +1371,37 @@ serve(async (req)=>{
         }
       });
     }
-    // ── Governance gate: respect persisted lookbook stage blockers ──
-    const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
-    const lookbookGate = await readVisualGovernanceGate(supabase, project_id, "lookbook");
-    if (lookbookGate.blocked) {
+    // ── Surface-aware governance gate ──
+    const { readGovernanceGateForSurface } = await import("../_shared/governanceGate.ts");
+    const surfaceGate = await readGovernanceGateForSurface(supabase, {
+      project_id,
+      generation_surface: body.generation_surface || "lookbook",
+      slot_type: body.slot_type,
+      identity_lock: body.identity_lock,
+      scoring_policy: body.scoring_policy,
+      package_strength: body.package_strength,
+      actor_id: body.actor_id,
+      character_id: body.character_id,
+    });
+    if (surfaceGate.blocked) {
+      const status = surfaceGate.blockers.some(b => b.severity === "fatal") ? 403 : 409;
       return new Response(JSON.stringify({
-        error: `lookbook blocked by visual governance`,
-        stage_id: "lookbook",
-        blocker_codes: lookbookGate.blockers,
-        computed_status: lookbookGate.computed_status,
-        governance_source: lookbookGate.source
+        error: `generation blocked by ${surfaceGate.surface} governance`,
+        surface: surfaceGate.surface,
+        blocker_codes: surfaceGate.blocker_codes,
+        blockers: surfaceGate.blockers,
+        next_actions: surfaceGate.next_actions,
+        governance_source: surfaceGate.source,
       }), {
-        status: 403,
+        status,
         headers: {
           ...corsHeaders,
           "Content-Type": "application/json"
         }
       });
     }
-    if (lookbookGate.source === "missing_snapshot") {
-      console.warn(`[governanceGate] Missing governance snapshot for lookbook/${project_id} — allowing by default`);
+    if (surfaceGate.source === "missing_snapshot") {
+      console.warn(`[governanceGate] Missing governance snapshot for ${surfaceGate.surface}/${project_id} — allowing by default`);
     }
     const validSections = [
       "world",

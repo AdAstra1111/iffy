@@ -383,6 +383,7 @@ export class CostumeWorkerPool {
               identity_mode: true,
               actor_id: job.actor_id,
               actor_version_id: job.actor_version_id,
+              generation_surface: "costume_on_actor",
               identity_anchor_paths: {
                 headshot: anchors!.headshot || undefined,
                 fullBody: anchors!.fullBody || undefined,
