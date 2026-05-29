@@ -160,6 +160,17 @@ function extractConvergenceGuidance(upstreamBlocks: Map<string, string>): string
   return `=== CONVERGENCE GUIDANCE EXTRACT (FROM DOCS) ===\n${combined}\n=== END CONVERGENCE GUIDANCE EXTRACT ===`;
 }
 
+/**
+ * Counts the number of act sections found in a treatment document.
+ * Acts are identified by headers matching "## Act N:" pattern.
+ * Returns { found: number, total: number, foundActs: string[] }.
+ */
+function countTreatmentActSections(treatmentText: string): { found: number; total: number; foundActs: string[] } {
+  const actHeaders = ["## Act 1:", "## Act 2A:", "## Act 2B:", "## Act 3:"];
+  const foundActs = actHeaders.filter(h => treatmentText.includes(h));
+  return { found: foundActs.length, total: actHeaders.length, foundActs };
+}
+
 // ── Beat sheet data resolver for feature_script beat_sequential strategy ──
 // Reads the latest approved beat_sheet version and parses beat numbers + titles.
 interface ResolvedBeat {
@@ -460,6 +471,30 @@ Deno.serve(async (req) => {
     }
 
     console.log(`[generate-document] context: docType=${docType} upstreamTypes=${upstreamTypes.length} totalChars=${upstreamContent.length} guidanceExtracted=${!!guidanceExtract}`);
+
+    // ── Validate Treatment sections for story_outline ──
+    // story_outline depends on treatment. If treatment is missing act sections,
+    // the LLM will have insufficient structural context. Warn and inject fallback.
+    if (docType === "story_outline") {
+      const treatmentText = upstreamBlocks.get("treatment") || "";
+      if (treatmentText) {
+        const { found, total, foundActs } = countTreatmentActSections(treatmentText);
+        if (found < 3) {
+          console.warn(`[generate-document] validateTreatmentSections: treatment has ${found}/${total} act sections (found: ${foundActs.join(", ") || "none"}) — injecting fallback instruction`);
+          upstreamContent += `\n\n### TREATMENT ACT STRUCTURE FALLBACK\n` +
+            `The upstream treatment may be missing some act sections. The project should follow a standard 4-act structure:\n` +
+            `- Act 1: Setup — introduces characters, world, and central conflict\n` +
+            `- Act 2A: Rising Action — complications escalate, stakes increase\n` +
+            `- Act 2B: Complications — midpoint turn, darkest moment, preparing for climax\n` +
+            `- Act 3: Climax & Resolution — final confrontation and resolution\n` +
+            `Use the available treatment content as the primary source. Fill structural gaps with this fallback guide.`;
+        } else {
+          console.log(`[generate-document] validateTreatmentSections: treatment has ${found}/${total} act sections — OK`);
+        }
+      } else {
+        console.warn(`[generate-document] validateTreatmentSections: no treatment content found for story_outline — story outline will lack treatment context`);
+      }
+    }
 
     // 4) Build prompt with HARD BINDING
     const durMin = resolvedQuals.episode_target_duration_min_seconds || resolvedQuals.episode_target_duration_seconds || null;

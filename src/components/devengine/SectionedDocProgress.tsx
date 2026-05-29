@@ -39,6 +39,7 @@ interface ChunkRow {
   content: string | null;
   char_count: number | null;
   meta_json: Record<string, any> | null;
+  error: string | null;
 }
 
 interface SectionedDocProgressProps {
@@ -293,13 +294,35 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
+  // ── P4: versionId staleness guard ──
+  // Poll the version's meta_json to check if it's still being actively generated
+  const { data: versionMeta } = useQuery<Record<string, any> | null>({
+    queryKey: ['sectioned-doc-version', versionId],
+    queryFn: async () => {
+      if (!versionId) return null;
+      const { data, error } = await (supabase as any)
+        .from('project_document_versions')
+        .select('meta_json')
+        .eq('id', versionId)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.meta_json ?? null;
+    },
+    enabled: !!versionId,
+    refetchInterval: 8000,
+  });
+
+  const versionBgGenerating = versionMeta?.bg_generating !== false; // default to true if not set
+  const versionChunksTotal = versionMeta?.chunks_total;
+  const versionChunksCompleted = versionMeta?.chunks_completed;
+
   const { data: chunks = [], isLoading } = useQuery<ChunkRow[]>({
     queryKey: ['sectioned-doc-chunks', versionId],
     queryFn: async () => {
       if (!versionId) return [];
       const { data, error } = await (supabase as any)
         .from('project_document_chunks')
-        .select('id, chunk_index, chunk_key, status, content, char_count, meta_json')
+        .select('id, chunk_index, chunk_key, status, content, char_count, meta_json, error')
         .eq('version_id', versionId)
         .order('chunk_index', { ascending: true });
       if (error) throw error;
@@ -323,16 +346,26 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
   const failedChunks = safeChunks.filter(c => isSectionFailed(c.status));
   const runningChunks = safeChunks.filter(c => c.status === 'running');
   const pendingChunks = safeChunks.filter(c => c.status === 'pending');
-  const isStillActive = runningChunks.length > 0 || pendingChunks.length > 0;
+  // P4: regenerating chunks (needs_regen status triggered by retry or repair loop)
+  const regeneratingChunks = safeChunks.filter(c => c.status === 'needs_regen');
+  const isStillActive = runningChunks.length > 0 || pendingChunks.length > 0 || regeneratingChunks.length > 0;
   const runningChunk = runningChunks[0];
-  const pct = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  // P4: authoritative progress from version meta_json if available, else derive from chunks
+  const authoritativeTotal = versionChunksTotal ?? total;
+  const authoritativeDone = versionChunksCompleted ?? doneCount;
+  const pct = authoritativeTotal > 0 ? Math.round((authoritativeDone / authoritativeTotal) * 100) : 0;
   const label = DOC_TYPE_LABELS[docType] || docType.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
+  // P4: staleness — version is done but chunks still show active statuses
+  const isStale = !versionBgGenerating && isStillActive && safeChunks.length > 0;
+
   const progressLabel = runningChunk
-    ? `Writing ${runningChunk.meta_json?.label || runningChunk.chunk_key.replace(/_/g, ' ')} (${doneCount + 1} of ${total})…`
-    : doneCount < total
-      ? `Preparing section ${doneCount + 1} of ${total}…`
-      : 'Assembling final document…';
+    ? `Writing ${runningChunk.meta_json?.label || runningChunk.chunk_key.replace(/_/g, ' ')} (${doneCount + 1} of ${authoritativeTotal})…`
+    : regeneratingChunks.length > 0
+      ? `Regenerating ${regeneratingChunks.length} section(s)…`
+      : doneCount < authoritativeTotal
+        ? `Preparing section ${doneCount + 1} of ${authoritativeTotal}…`
+        : 'Assembling final document…';
 
   const handleRetrySection = async (chunk: ChunkRow) => {
     if (!projectId || !documentId) {
@@ -381,7 +414,19 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
         <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <span className="font-medium text-foreground">Generating {label}</span>
-            {isStillActive && (
+            {isStale && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-red-500/10 text-red-400 border-red-500/20 gap-1">
+                <AlertTriangle className="h-2.5 w-2.5" />
+                Stale
+              </Badge>
+            )}
+            {regeneratingChunks.length > 0 && (
+              <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-amber-500/10 text-amber-400 border-amber-500/20 gap-1">
+                <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                Regenerating
+              </Badge>
+            )}
+            {isStillActive && regeneratingChunks.length === 0 && !isStale && (
               <Badge variant="outline" className="text-[9px] px-1.5 py-0 bg-blue-500/10 text-blue-400 border-blue-500/20 gap-1">
                 <RefreshCw className="h-2.5 w-2.5 animate-spin" />
                 Live
@@ -399,7 +444,7 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
             )}
           </div>
           <span className="text-muted-foreground font-mono text-xs">
-            {doneCount} / {total || '?'} sections
+            {doneCount} / {authoritativeTotal || '?'} sections
           </span>
         </div>
         <Progress value={pct} className="h-2" />
@@ -470,7 +515,7 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
                         </div>
                       </div>
 
-                      {/* Retryable failure: softer messaging */}
+                      {/* Retryable failure: softer messaging + error detail */}
                       {canRetry && (
                         <div className="space-y-2">
                           <p className="text-xs text-amber-500/80 italic">
@@ -479,6 +524,9 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
                               : isStillActive ? 'Section failed — may recover automatically'
                               : 'Section failed — tap retry to regenerate'}
                           </p>
+                          {chunk.error && (
+                            <p className="text-[10px] text-amber-400/60 font-mono truncate max-w-full">{chunk.error}</p>
+                          )}
                           {projectId && documentId && (
                             <Button
                               variant="outline"
@@ -497,9 +545,14 @@ function SectionedDocProgressChunks({ versionId, docType, projectId, documentId 
                         </div>
                       )}
 
-                      {/* Terminal failure (skipped) — no retry */}
+                      {/* Terminal failure (skipped) — no retry, show error if available */}
                       {isFailed && !canRetry && (
-                        <p className="text-xs text-destructive/80 italic">Skipped</p>
+                        <div>
+                          <p className="text-xs text-destructive/80 italic">Skipped</p>
+                          {chunk.error && (
+                            <p className="text-[10px] text-destructive/60 font-mono truncate max-w-full mt-1">{chunk.error}</p>
+                          )}
+                        </div>
                       )}
 
                       {/* Done: preview or expanded content */}

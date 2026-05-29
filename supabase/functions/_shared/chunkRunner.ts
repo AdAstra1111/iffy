@@ -64,6 +64,15 @@ function chunkLLMTimeoutMs(docType: string): number {
 const STALE_RUNNING_THRESHOLD_MS = 120_000; // 2 minutes — running chunk considered stale
 
 /**
+ * Exponential backoff delay: 500ms × 2^attempt, capped at 4s.
+ * Returns a promise that resolves after the delay.
+ */
+function backoffDelay(attempt: number): Promise<void> {
+  const ms = Math.min(500 * Math.pow(2, attempt), 4000);
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * Pattern used in assembled text when a chunk fails generation.
  * Exported for fail-closed guards: callers MUST check for this before
  * promoting assembled content to is_current.
@@ -682,6 +691,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
 
     let content = "";
     let chunkPassed = false;
+    let validationError = "";
 
     for (let attempt = 0; attempt <= maxChunkRepairs; attempt++) {
       try {
@@ -697,16 +707,46 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
 
           if (!validation.pass && attempt < maxChunkRepairs) {
             console.warn(`[chunkRunner] Chunk ${chunk.chunkKey} failed validation (attempt ${attempt}): ${validation.failures.map(f => f.detail).join("; ")}`);
+            validationError = validation.failures.map(f => f.detail).join("; ");
+            await backoffDelay(attempt);
             continue;
           }
           chunkPassed = validation.pass;
+          if (!chunkPassed) {
+            validationError = validation.failures.map(f => f.detail).join("; ");
+          }
         } else if (plan.strategy === "beat_sequential") {
           const validation = validateBeatSequentialChunk(content, docType);
           if (!validation.pass && attempt < maxChunkRepairs) {
             console.warn(`[chunkRunner] Beat chunk ${chunk.chunkKey} failed validation (attempt ${attempt}): ${validation.failures.map(f => f.detail).join("; ")}`);
+            validationError = validation.failures.map(f => f.detail).join("; ");
+            await backoffDelay(attempt);
             continue;
           }
           chunkPassed = validation.pass;
+          if (!chunkPassed) {
+            validationError = validation.failures.map(f => f.detail).join("; ");
+          }
+        } else if (docType === "story_outline") {
+          // story_outline chunks are JSON fragments — validate JSON parseability + entries array
+          let storyOutlineValid = false;
+          try {
+            const parsed = JSON.parse(content);
+            storyOutlineValid = parsed && Array.isArray(parsed.entries);
+          } catch {
+            storyOutlineValid = false;
+          }
+          if (!storyOutlineValid && attempt < maxChunkRepairs) {
+            console.warn(`[chunkRunner] Story outline chunk ${chunk.chunkKey} failed JSON validation (attempt ${attempt}) — retrying with stronger JSON instruction`);
+            validationError = "story_outline chunk produced unparseable JSON";
+            systemPrompt = systemPrompt + `\n\nCRITICAL RETRY INSTRUCTION: Your previous attempt did NOT produce valid JSON. Output ONLY a JSON object with an "entries" array. Each entry has: "number" (integer), "title" (string), "description" (string). NO markdown. NO code fences. NO preamble. Start directly with {`;
+            await backoffDelay(attempt);
+            continue;
+          }
+          chunkPassed = storyOutlineValid;
+          if (!chunkPassed) {
+            validationError = "story_outline chunk failed JSON validation after max retries";
+          }
         } else {
           // Check for banned summarization language
           const hasBanned = hasBannedSummarizationLanguage(content);
@@ -716,12 +756,20 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           if (!chunkPassed && attempt < maxChunkRepairs) {
             if (hasScript) {
               console.warn(`[chunkRunner] Chunk ${chunk.chunkKey} contains screenplay format (INT./EXT. sluglines) in prose doc type "${docType}" — retrying with stronger instruction`);
+              validationError = "chunk contains screenplay format (unparseable for prose doc type)";
               // Inject a stronger instruction on retry to override screenplay habit
               systemPrompt = systemPrompt + `\n\nCRITICAL RETRY INSTRUCTION: Your previous attempt used INT./EXT. scene headings (screenplay format). This is STRICTLY FORBIDDEN for a ${docType}. Write ONLY in prose narrative paragraphs. No sluglines. No character cues. No dialogue blocks. Start directly with descriptive prose.`;
             } else {
               console.warn(`[chunkRunner] Chunk ${chunk.chunkKey} contains banned language, retrying`);
+              validationError = "chunk contains banned summarization language";
             }
+            await backoffDelay(attempt);
             continue;
+          }
+          if (!chunkPassed) {
+            if (hasScript) validationError = "chunk contains screenplay format (unparseable for prose doc type)";
+            else if (hasBanned) validationError = "chunk contains banned summarization language";
+            else validationError = "chunk validation failed (unknown reason)";
           }
         }
         break;
@@ -767,7 +815,28 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           status: finalStatus,
           content,
           char_count: content.length,
-          error: chunkPassed ? null : "Chunk validation failed (banned language or missing episodes)",
+          error: chunkPassed ? null : (() => {
+            if (docType === "story_outline") return "Chunk validation failed — JSON entries array missing or malformed";
+            if (plan.strategy === "episodic_indexed") return "Chunk validation failed — missing or malformed episodes";
+            if (plan.strategy === "beat_sequential") return "Chunk validation failed — beat structure invalid";
+            return validationError || "Chunk validation failed (unknown reason)";
+          })(),
+          ...(chunkPassed ? {} : {
+            meta_json: {
+              ...existingMeta,
+              failure_reason: docType === "story_outline" ? "invalid_json_structure"
+                : plan.strategy === "episodic_indexed" ? "episode_validation_failed"
+                : plan.strategy === "beat_sequential" ? "beat_validation_failed"
+                : "validation_failed",
+              failed_at: new Date().toISOString(),
+              last_error: (() => {
+                if (docType === "story_outline") return "JSON entries array missing or malformed";
+                if (plan.strategy === "episodic_indexed") return "Missing or malformed episodes";
+                if (plan.strategy === "beat_sequential") return "Beat structure invalid";
+                return validationError || "Banned language or screenplay format";
+              })(),
+            },
+          }),
         })
         .eq("document_id", documentId)
         .eq("version_id", versionId)
@@ -986,10 +1055,31 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       // JSON merge path — validate JSON parseability instead of section headings
       try {
         const parsed = JSON.parse(assembledContent);
-        const pass = parsed && Array.isArray(parsed.entries) && parsed.entries.length > 0;
+        const failures: any[] = [];
+        if (!parsed || !Array.isArray(parsed.entries)) {
+          failures.push({ type: "invalid_json", detail: "story_outline assembly failed — missing entries array" });
+        } else if (parsed.entries.length === 0) {
+          failures.push({ type: "invalid_json", detail: "story_outline assembly produced empty entries array" });
+        } else {
+          // Per-entry JSON schema validation — each entry must have {number, title, description}
+          for (let ei = 0; ei < parsed.entries.length; ei++) {
+            const e = parsed.entries[ei];
+            const missing: string[] = [];
+            if (e.number == null) missing.push("number");
+            if (!e.title) missing.push("title");
+            if (!e.description) missing.push("description");
+            if (missing.length > 0) {
+              failures.push({
+                type: "invalid_entry_schema",
+                detail: `Entry ${ei + 1} (number=${e.number ?? "undefined"}) missing required fields: ${missing.join(", ")}`,
+              });
+            }
+          }
+        }
+        const pass = failures.length === 0;
         validationResult = {
           pass,
-          failures: pass ? [] : [{ type: "invalid_json", detail: "story_outline assembly failed to produce valid JSON entries array" }],
+          failures,
           missingIndices: [],
           missingSections: [],
           bannedPhraseHits: [],
@@ -1236,6 +1326,51 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
 
   if (!storyOutlineCompletionPass) {
     console.error(`[chunkRunner][IEL] STORY_OUTLINE_COMPLETION_GATE_FAILED: story_outline completed ${completedChunks}/${plan.totalChunks} — marking as incomplete, NOT success`);
+  }
+
+  // ── STORY_OUTLINE ENTRY BALANCE DETECTION ──
+  // After assembly, check that entries are reasonably distributed across the 4 acts.
+  // Highly skewed distribution (e.g. 2 entries in Act 1, 20 in Act 3) suggests
+  // one or more chunks malformed/empty even if validation.pass = true.
+  if (docType === "story_outline" && validationResult.pass) {
+    const entriesPerChunk: number[] = [];
+    for (let i = 0; i < plan.totalChunks; i++) {
+      const c = chunkContents[i];
+      if (!c) { entriesPerChunk.push(0); continue; }
+      try {
+        const parsed = JSON.parse(c);
+        if (parsed.entries && Array.isArray(parsed.entries)) {
+          entriesPerChunk.push(parsed.entries.length);
+        } else {
+          entriesPerChunk.push(0);
+        }
+      } catch {
+        entriesPerChunk.push(0);
+      }
+    }
+    const minEntries = Math.min(...entriesPerChunk);
+    const maxEntries = Math.max(...entriesPerChunk);
+    const totalEntries = entriesPerChunk.reduce((a, b) => a + b, 0);
+    const expectedPerChunk = totalEntries / plan.totalChunks;
+    const balanceRatio = expectedPerChunk > 0 ? minEntries / expectedPerChunk : 0;
+    if (balanceRatio < 0.3 && totalEntries >= 8) {
+      console.warn(`[chunkRunner] Story outline entry balance WARNING: per-chunk counts=${JSON.stringify(entriesPerChunk)}, min/expected=${balanceRatio.toFixed(2)} — distribution is highly skewed, some acts may have missing entries`);
+      mergedMeta.story_outline_entry_balance = {
+        entries_per_chunk: entriesPerChunk,
+        min_entries: minEntries,
+        max_entries: maxEntries,
+        total_entries: totalEntries,
+        balance_ratio: balanceRatio,
+        unbalanced: true,
+      };
+    } else {
+      mergedMeta.story_outline_entry_balance = {
+        entries_per_chunk: entriesPerChunk,
+        total_entries: totalEntries,
+        balance_ratio: balanceRatio,
+        unbalanced: false,
+      };
+    }
   }
 
   const isSuccess = validationResult.pass && failedChunks === 0 && episodeCompletionPass && storyOutlineCompletionPass;
