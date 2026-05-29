@@ -5377,6 +5377,7 @@ Deno.serve(async (req) => {
         current_document: effectiveStartDoc,
         max_stage_loops: effectiveMaxLoops,
         max_total_steps: effectiveMaxSteps,
+        decision_mode: body.decision_mode || "strict",
         converge_target_json: (() => {
           const ct = body.converge_target_json;
           if (ct && typeof ct === "object") {
@@ -7992,7 +7993,7 @@ Deno.serve(async (req) => {
       {
         const runLadder = getLadderForJob(format) || [];
         const gateResult = await runPendingDecisionGate(
-          supabase, job.project_id, jobId, format, currentDoc, runLadder, job.allow_defaults !== false,
+          supabase, job.project_id, jobId, format, currentDoc, runLadder, job.allow_defaults !== false, job.decision_mode || "strict",
         );
         if (gateResult.shouldPause) {
           await logStep(supabase, jobId, stepCount + 1, currentDoc, "pending_decisions",
@@ -12820,6 +12821,11 @@ async function respondWithJob(supabase: any, jobId: string, hint?: string): Prom
       }
       return d;
     });
+  }
+
+  // ── Post-run summary emission at completion ──
+  if (job && job.status === "completed") {
+    console.log(`[auto-run][POST-RUN] job_summary { job_id: "${jobId}", format: "${job.pipeline_key || job.mode || 'unknown'}", target: "${job.target_document}", decision_mode: "${job.decision_mode || 'strict'}", status: "${job.status}", stop_reason: "${job.stop_reason || 'unknown'}", step_count: ${job.step_count || 0} }`);
   }
 
   return respond({

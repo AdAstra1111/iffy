@@ -54,6 +54,7 @@ export async function runPendingDecisionGate(
   docType: string,
   ladder: string[],
   allowDefaults: boolean,
+  decisionMode?: "strict" | "autonomous",
 ): Promise<PendingDecisionGateResult> {
   const required = getRequiredDecisions(format, docType);
   const allRequired = [
@@ -77,6 +78,7 @@ export async function runPendingDecisionGate(
     allow_defaults: allowDefaults,
     approvals_state: approvals,
     canon_state: canonState,
+    decision_mode: decisionMode || "strict",
   };
 
   // Check which decisions are already resolved as canon (status='active')

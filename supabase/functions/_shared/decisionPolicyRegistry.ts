@@ -18,6 +18,32 @@ import { getCanonicalNextStage } from "./ladder-invariant.ts";
 
 export type DecisionClassification = "BLOCKING_NOW" | "DEFERRABLE" | "NEVER_BLOCKING";
 
+// ── classifyByAutonomy ──────────────────────────────────────────────────────
+// Determines decision classification based on autonomy level and decision mode.
+// This is the canonical helper used for ALL decisions (quality, blocking, advisory).
+//
+// Rules:
+// 1. "informational" → NEVER_BLOCKING (silent, no pause)
+// 2. "blocking" + "strict"  → BLOCKING_NOW (pauses pipeline for human review)
+// 3. "blocking" + "autonomous" → NEVER_BLOCKING (auto-resolved, never blocks)
+// 4. "advisory" + "strict"  → BLOCKING_NOW (pauses pipeline for human review)
+// 5. "advisory" + "autonomous" → DEFERRABLE (noted, never blocks)
+// 6. undefined (no autonomy set) → BLOCKING_NOW in strict, DEFERRABLE in autonomous
+export function classifyByAutonomy(
+  autonomy: "blocking" | "advisory" | "informational" | undefined,
+  decisionMode: "strict" | "autonomous" = "strict",
+): DecisionClassification {
+  if (autonomy === "informational") return "NEVER_BLOCKING";
+  if (autonomy === "blocking") {
+    return decisionMode === "autonomous" ? "NEVER_BLOCKING" : "BLOCKING_NOW";
+  }
+  if (autonomy === "advisory") {
+    return decisionMode === "autonomous" ? "DEFERRABLE" : "BLOCKING_NOW";
+  }
+  // No autonomy set — fall back to mode-sensitive default
+  return decisionMode === "autonomous" ? "DEFERRABLE" : "BLOCKING_NOW";
+}
+
 // ── Quality Decision Autonomy ───────────────────────────────────────────────
 // Quality decisions (plateau + ceiling) are NEVER_BLOCKING in all modes.
 // This helper reads autonomy from DECISION_DEFS for forward compatibility
@@ -154,9 +180,9 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
     default_revisit_stage: null,
   },
   CONTRACT_LOGIC: {
-    question: "Is the central narrative contract/premise logically grounded?",
-    autonomy: "blocking",
-    options: [
+      question: "Is the central narrative contract/premise logically grounded?",
+      autonomy: "advisory",
+      options: [
       { value: "accept", label: "Accept — contract is logically grounded" },
       { value: "reject", label: "Reject — contract needs revision" },
     ],
@@ -285,17 +311,22 @@ export const REQUIRED_DECISIONS_BY_STAGE: Record<string, StageDecisionMap> = {
  *
  * RULES (fail-closed, in order):
  * 1. If semantic_key is not in DECISION_DEFS → NEVER_BLOCKING (unknown key).
- * 2. If decision has no options → NEVER_BLOCKING (empty-options guard, fixes CAST_LOCK stall).
- * 3. If autonomy === "informational" → NEVER_BLOCKING in both modes.
- * 4. If evidence is missing → DEFERRABLE (can't decide yet).
- * 5. If evidence exists but decision unresolved:
- *    - strict mode: BLOCKING_NOW (regardless of blocking/advisory)
- *    - autonomous + blocking → NEVER_BLOCKING (auto-resolved)
- *    - autonomous + advisory → DEFERRABLE (noted, never blocks)
+ * 2. If evidence is missing → DEFERRABLE (can't decide yet).
+ * 3. Autonomy override — evaluate based on autonomy + decision_mode:
+ *    - "informational" → NEVER_BLOCKING (silent, both modes)
+ *    - "blocking" + "autonomous" → NEVER_BLOCKING (auto-resolved, never blocks)
+ *    - "advisory" + "autonomous" → DEFERRABLE (noted, never blocks)
+ *    - "blocking" + "strict" → continue to Rule 4
+ *    - "advisory" + "strict" → continue to Rule 4
+ * 4. Empty-options check: If decision has no options → DEFERRABLE + IEL warning.
+ * 5. Otherwise → BLOCKING_NOW (evidence exists, unresolved, has options).
  *
- * EMPTY-OPTIONS INVARIANT: CAST_LOCK has no options → Rule 2 catches it early,
- * returning NEVER_BLOCKING. This prevents the CAST_LOCK stall that occurred when
- * classifyDecision returned BLOCKING_NOW for decisions with no UI-renderable options.
+ * RULE ORDERING INVARIANT: Rule 3 (autonomy override) runs BEFORE Rule 4
+ * (empty-options guard). This ensures that informational decisions bypass
+ * all blocking paths, and that autonomous-mode decisions are not passed
+ * through to the empty-options check. CAST_LOCK (blocking, no options) in
+ * strict mode: autonomy returns BLOCKING_NOW → empty-options falls through
+ * → DEFERRABLE + IEL warning (instead of stalling with no UI options).
  */
 export function classifyDecision(
   semanticKey: string,
@@ -310,27 +341,7 @@ export function classifyDecision(
     };
   }
 
-  // Rule 2: Empty options → NEVER_BLOCKING (regardless of autonomy/mode)
-  // CAST_LOCK has no options — this prevents the CAST_LOCK stall that blocked
-  // the pipeline with no UI-renderable options for the user to act on.
-  if (!def.options || def.options.length === 0) {
-    return {
-      classification: "NEVER_BLOCKING",
-      reason: `Decision '${semanticKey}' has no configurable options — auto-resolved as non-blocking`,
-      revisit_stage: null,
-    };
-  }
-
-  // Rule 3: Informational autonomy → NEVER_BLOCKING in both modes
-  if (def.autonomy === "informational") {
-    return {
-      classification: "NEVER_BLOCKING",
-      reason: `Decision '${semanticKey}' is informational — never blocks pipeline`,
-      revisit_stage: null,
-    };
-  }
-
-  // Rule 4: Check required evidence availability
+  // Rule 2: Check required evidence availability
   const evidenceMissing = def.required_evidence_template.some((ev) => {
     const state = ctx.approvals_state[ev.doc_type];
     if (!state || !state.exists) return true;
@@ -339,7 +350,6 @@ export function classifyDecision(
   });
 
   if (evidenceMissing) {
-    // Determine revisit stage: earliest stage where evidence becomes available
     const revisitStage = def.default_revisit_stage || getNextStage(ctx.doc_type, ctx.ladder);
     return {
       classification: "DEFERRABLE",
@@ -348,35 +358,36 @@ export function classifyDecision(
     };
   }
 
-  // Rule 5: Evidence exists but decision unresolved — mode-aware
-  const decisionMode = ctx.decision_mode || "strict";
+  // Rule 3: Autonomy override — evaluate based on autonomy + decision_mode
+  if (def.autonomy) {
+    const autoClass = classifyByAutonomy(def.autonomy, ctx.decision_mode);
+    if (autoClass !== "BLOCKING_NOW") {
+      return {
+        classification: autoClass,
+        reason: autoClass === "NEVER_BLOCKING"
+          ? `Autonomy=${def.autonomy} in ${ctx.decision_mode} mode — auto-resolved, never blocks`
+          : `Autonomy=${def.autonomy} in ${ctx.decision_mode} mode — deferred`,
+        revisit_stage: autoClass === "DEFERRABLE" ? (def.default_revisit_stage || null) : null,
+      };
+    }
+    // BLOCKING_NOW from autonomy — continue to empty-options check
+  }
 
-  if (decisionMode === "strict") {
-    // blocking+strict → BLOCKING_NOW (pauses)
-    // advisory+strict → BLOCKING_NOW (pauses)
-    // (informational already handled above)
+  // Rule 4: Empty-options guard — decision has no selectable options
+  if (!def.options || def.options.length === 0) {
+    console.warn(`[decision-registry][IEL] empty_options_fallthrough { semantic_key: "${semanticKey}", autonomy: "${def.autonomy || "unset"}", mode: "${ctx.decision_mode}", doc_type: "${ctx.doc_type}", format: "${ctx.format}", action: "DEFERRABLE" }`);
     return {
-      classification: "BLOCKING_NOW",
-      reason: `Required evidence is available but decision has not been made`,
-      revisit_stage: null,
+      classification: "DEFERRABLE",
+      reason: `Decision '${semanticKey}' has no options and requires human assessment — deferring for manual review`,
+      revisit_stage: def.default_revisit_stage || null,
     };
   }
 
-  // Autonomous mode
-  if (def.autonomy === "blocking") {
-    // blocking+autonomous → NEVER_BLOCKING (downgrade, auto-resolved)
-    return {
-      classification: "NEVER_BLOCKING",
-      reason: `Decision '${semanticKey}' is blocking but mode=autonomous — auto-resolved as non-blocking`,
-      revisit_stage: null,
-    };
-  }
-
-  // advisory+autonomous → DEFERRABLE (never blocks, but noted for user awareness)
+  // Rule 5: Evidence exists, has options, blocking mode — pause
   return {
-    classification: "DEFERRABLE",
-    reason: `Decision '${semanticKey}' is advisory and mode=autonomous — deferred (never blocks pipeline)`,
-    revisit_stage: def.default_revisit_stage || null,
+    classification: "BLOCKING_NOW",
+    reason: `Required evidence is available but decision has not been made`,
+    revisit_stage: null,
   };
 }
 
