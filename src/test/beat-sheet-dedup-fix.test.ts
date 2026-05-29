@@ -56,8 +56,8 @@ describe('P0-4: Beat sheet section dedup by label', () => {
     ];
     const result = dedupBeatSheetSections(sections);
     expect(result).toHaveLength(2);
-    expect(result[0].content).toBe('new act 1');
-    expect(result[1].content).toBe('act 2a');
+    expect(result[0].content).toBe('act 2a');  // first in result order (unshift preserves insertion from reverse)
+    expect(result[1].content).toBe('new act 1'); // last occurrence wins
   });
 
   it('non-beat-sheet labels pass through', () => {

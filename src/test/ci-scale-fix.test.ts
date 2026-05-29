@@ -35,12 +35,13 @@ function computeGPScore(
 }
 
 describe('P0-1: CI score scaling (2× → 10×)', () => {
-  it('scales avgCI 5.5 to 55 (not 11)', () => {
+  it('scales avgCI 5.4 to 54', () => {
     const scores: Record<string, number> = {
       narrative_clarity: 5, character_authenticity: 6,
       structural_integrity: 5, stylistic_voice: 5, audience_accessibility: 6,
     };
-    expect(computeCIScore(scores, false)).toBe(55);
+    // avg = (5+6+5+5+6)/5 = 5.4 → * 10 = 54
+    expect(computeCIScore(scores, false)).toBe(54);
   });
 
   it('all zeros → 0', () => {
