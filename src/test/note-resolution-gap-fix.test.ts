@@ -11,7 +11,7 @@
  *   development_notes to filter stale entries.
  *
  * Invariants:
- * 1. approvedNoteIds converts n.id || n.note_key
+ * 1. approvedNoteIds extracts note_fingerprint (matches dev-engine-v2/index.ts:10222)
  * 2. note_key (development_notes) matches note_fingerprint (project_dev_note_state)
  * 3. Read-side defense removes blockers for resolved development_notes
  * 4. Stale entries don't block downstream docs
@@ -21,8 +21,7 @@ import { describe, it, expect } from 'vitest';
 // ── Types ──
 
 interface ApprovedNote {
-  id?: string;
-  note_key?: string;
+  note_fingerprint?: string;
 }
 
 interface DevNoteStateEntry {
@@ -38,11 +37,11 @@ interface Blocker {
 // ── Pure logic extractors ──
 
 /**
- * Part A extractor: Maps approved notes to their IDs/keys.
+ * Part A extractor: Maps approved notes to their fingerprints.
  * Mirrors dev-engine-v2/index.ts:10222.
  */
 function extractApprovedNoteIds(approvedNotes: ApprovedNote[]): string[] {
-  return approvedNotes.map((n) => n.id || n.note_key).filter(Boolean) as string[];
+  return approvedNotes.map((n) => n.note_fingerprint).filter(Boolean) as string[];
 }
 
 /**
@@ -65,35 +64,33 @@ function filterStaleDevNoteBlockers(
 // ── Tests ──
 
 describe('P0-5 Part A: Write-side sync (dev-engine-v2)', () => {
-  it('extracts n.id when available', () => {
+  it('extracts note_fingerprint values from approved notes', () => {
     const notes: ApprovedNote[] = [
-      { id: 'note-1', note_key: 'fp-1' },
-      { id: 'note-2', note_key: 'fp-2' },
+      { note_fingerprint: 'a1b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef12' },
+      { note_fingerprint: 'b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef1234' },
     ];
-    expect(extractApprovedNoteIds(notes)).toEqual(['note-1', 'note-2']);
+    expect(extractApprovedNoteIds(notes)).toEqual([
+      'a1b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef12',
+      'b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef1234',
+    ]);
   });
 
-  it('falls back to note_key when id is missing', () => {
+  it('filters out entries with no note_fingerprint', () => {
     const notes: ApprovedNote[] = [
-      { note_key: 'fp-1' },
-      { note_key: 'fp-2' },
-    ];
-    expect(extractApprovedNoteIds(notes)).toEqual(['fp-1', 'fp-2']);
-  });
-
-  it('filters out entries with neither id nor note_key', () => {
-    const notes: ApprovedNote[] = [
-      { id: 'note-1' },
+      { note_fingerprint: 'a1b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef12' },
       {},
-      { note_key: 'fp-2' },
+      { note_fingerprint: 'b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef1234' },
     ];
-    expect(extractApprovedNoteIds(notes)).toEqual(['note-1', 'fp-2']);
+    expect(extractApprovedNoteIds(notes)).toEqual([
+      'a1b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef12',
+      'b2c3d4e5f678901234567890abcdef1234567890abcdef1234567890abcdef1234',
+    ]);
   });
 
-  it('note_key (development_notes) matches note_fingerprint (project_dev_note_state)', () => {
+  it('note_fingerprint values pass through to query', () => {
     // dev-engine-v2 generates notes where note_key === note_fingerprint
     const approvedNotes: ApprovedNote[] = [
-      { note_key: 'scene-3-character-depth' },
+      { note_fingerprint: 'scene-3-character-depth' },
     ];
     const ids = extractApprovedNoteIds(approvedNotes);
 
