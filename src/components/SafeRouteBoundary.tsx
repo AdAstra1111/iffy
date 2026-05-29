@@ -43,7 +43,17 @@ export class SafeRouteBoundary extends React.Component<
       error.name === 'NotFoundError' &&
       error.message.includes('removeChild');
     if (isRemoveChildError) {
-      console.warn('[SafeRouteBoundary] Transient removeChild error (Suspense+portal race) — recovering without counting attempt');
+      this.recoveryAttempts++;
+      if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) {
+        console.error(
+          `[SafeRouteBoundary] Max recovery attempts (${MAX_RECOVERY_ATTEMPTS}) reached for removeChild errors. Showing permanent error. Refresh the page to retry.`,
+          error,
+        );
+        return;
+      }
+      console.warn(
+        `[SafeRouteBoundary] Transient removeChild error (Suspense+portal race) — recovering (attempt ${this.recoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})`,
+      );
       recoveryInFlightRef.current = true;
       setTimeout(() => {
         recoveryInFlightRef.current = false;

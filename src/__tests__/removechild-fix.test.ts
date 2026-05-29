@@ -75,22 +75,27 @@ describe('Part B — SafeRouteBoundary: removeChild (NotFoundError) detection', 
     expect(source).toContain("error.message.includes('removeChild')");
   });
 
-  it('does NOT count removeChild errors against recovery attempts', () => {
-    // The fix recovers without incrementing recoveryAttempts
-    // The removeChild block (isRemoveChildError) returns early BEFORE recoveryAttempts++
-    const beforeIncrement = source.split('this.recoveryAttempts++')[0];
-    expect(beforeIncrement).toContain('isRemoveChildError');
-    expect(beforeIncrement).toContain('recoveryInFlightRef.current = true');
+  it('counts removeChild errors against recovery attempts (circuit-breaking)', () => {
+    // The fix: removeChild errors NOW increment recoveryAttempts (up to MAX_RECOVERY_ATTEMPTS)
+    // to prevent infinite crash loops on recurring removeChild errors
+    const lines = source.split('\n');
+    const firstIncrementLine = lines.findIndex(l => l.includes('this.recoveryAttempts++'));
+    const linesBeforeFirst = lines.slice(0, firstIncrementLine).join('\n');
+    // The first this.recoveryAttempts++ in the file is inside the isRemoveChildError block
+    expect(linesBeforeFirst).toContain('isRemoveChildError');
 
-    // After the removeChild block, check that isRemoveChildError handling
-    // sets state back to normal WITHOUT incrementing
-    const isRemoveChildLines = source.split('\n').filter(l => l.includes('isRemoveChildError'));
-    expect(isRemoveChildLines.length).toBeGreaterThanOrEqual(1);
+    // The removeChild if-block now contains recoveryAttempts++ and MAX_RECOVERY_ATTEMPTS
+    // Use the if-block opening as split point
+    const afterIfBlock = source.split('if (isRemoveChildError)')[1] || '';
+    const removeChildBlock = afterIfBlock.split('\n').slice(0, 20).join('\n');
+    expect(removeChildBlock).toContain('this.recoveryAttempts++');
+    expect(removeChildBlock).toContain('MAX_RECOVERY_ATTEMPTS');
   });
 
   it('logs a specific warning when a removeChild error is detected', () => {
     expect(source).toContain('Transient removeChild error');
-    expect(source).toContain('recovering without counting attempt');
+    expect(source).toContain('recovering (attempt');
+    expect(source).toContain('MAX_RECOVERY_ATTEMPTS');
   });
 
   // ── MAX_RECOVERY_ATTEMPTS ──
@@ -271,13 +276,14 @@ describe('Behavioral — SafeRouteBoundary runtime error handling', () => {
     const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
     const cdc = source.split('componentDidCatch(error: Error')[1]?.split('\n').slice(0, 30).join('\n') || '';
 
-    // Branch 1: RemoveChild error — early return, no attempt increment
+    // Branch 1: RemoveChild error — early return, NOW increments recoveryAttempts (circuit-breaking)
     expect(cdc).toContain('isRemoveChildError');
     expect(cdc).toContain('setTimeout');
     expect(cdc).toContain('setState({ hasError: false, error: null })');
     expect(cdc).toContain('return');
 
-    // Between branch 1 and recoveryAttempts++ we should NOT see increment
+    // The first recoveryAttempts++ in the file is now inside the removeChild block
+    // verify isRemoveChildError appears before it
     const beforeIncrement = source.split('this.recoveryAttempts++')[0];
     const removeChildBlock = beforeIncrement.split('isRemoveChildError');
     expect(removeChildBlock.length).toBeGreaterThanOrEqual(2);
@@ -307,20 +313,23 @@ describe('Behavioral — SafeRouteBoundary runtime error handling', () => {
     expect(inFlightGuard).toContain('return');
   });
 
-  it('removeChild recovery path does NOT increment recoveryAttempts', () => {
+  it('removeChild recovery path NOW increments recoveryAttempts (circuit-breaking)', () => {
     const source = readSource(`${BASE}/src/components/SafeRouteBoundary.tsx`);
-    // The removeChild block at the top of componentDidCatch returns BEFORE recoveryAttempts++
-    // So the recoveryAttempts++ line should come AFTER the removeChild if-block
+    // The fix: removeChild block at the top of componentDidCatch NOW increments recoveryAttempts
+    // to prevent infinite crash loops by circuit-breaking after MAX_RECOVERY_ATTEMPTS
     const lines = source.split('\n');
     const incrementLine = lines.findIndex(l => l.includes('this.recoveryAttempts++'));
-    const linesBeforeIncrement = lines.slice(0, incrementLine).join('\n');
+    const linesBeforeFirst = lines.slice(0, incrementLine).join('\n');
 
-    // Before recoveryAttempts++, there should be the removeChild guard
-    expect(linesBeforeIncrement).toContain('isRemoveChildError');
-    expect(linesBeforeIncrement).toContain('recoveryInFlightRef.current = true');
+    // Before the first recoveryAttempts++, there should be the isRemoveChildError guard
+    expect(linesBeforeFirst).toContain('isRemoveChildError');
 
-    // And after the isRemoveChildError block, there should be the concurrent recovery guard
-    expect(linesBeforeIncrement).toContain('Recovery already in flight');
+    // The removeChild if-block now has recoveryAttempts++ before recovery
+    // and checks MAX_RECOVERY_ATTEMPTS before proceeding
+    const afterIfBlock = source.split('if (isRemoveChildError)')[1] || '';
+    const firstRemoveChildBlock = afterIfBlock.split('\n').slice(0, 20).join('\n');
+    expect(firstRemoveChildBlock).toContain('this.recoveryAttempts++');
+    expect(firstRemoveChildBlock).toContain('MAX_RECOVERY_ATTEMPTS');
   });
 });
 

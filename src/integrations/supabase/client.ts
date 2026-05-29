@@ -25,6 +25,16 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
 }
 
 function createProxiedClient(url: string, key: string) {
+  // ── GoTrueClient singleton guard ──────────────────────────────────────────
+  // Lazy-loaded route chunks can re-execute module scope, creating duplicate
+  // GoTrueClient instances. Guard on window.__IFFY_SUPABASE_SINGLETON__ with
+  // ?.auth check to prevent false positives from stale window references.
+  const existingSingleton = (window as any).__IFFY_SUPABASE_SINGLETON__;
+  if (existingSingleton?.auth) {
+    try { captureErr('CLIENT_INIT', 'returning existing singleton (lazy chunk dedup)', {}); } catch (_) {}
+    return existingSingleton;
+  }
+
   try {
     captureErr('CLIENT_INIT', 'createProxiedClient starting', { url, keyLen: key.length });
   } catch (_) { /* if window not available yet */ }
@@ -87,6 +97,7 @@ function createProxiedClient(url: string, key: string) {
     captureErr('CLIENT_INIT', 'createProxiedClient complete', {});
   } catch (_) {}
 
+  (window as any).__IFFY_SUPABASE_SINGLETON__ = client;
   return client;
 }
 
