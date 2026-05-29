@@ -10219,7 +10219,7 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       // Without this, approved notes are never marked resolved in development_notes,
       // so the next notes run sees them as still-open and re-raises them indefinitely.
       if (approvedNotes && approvedNotes.length > 0) {
-        const approvedNoteIds = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
+        const approvedNoteIds = approvedNotes.map((n)=>n.note_fingerprint).filter(Boolean);
         if (approvedNoteIds.length > 0) {
           try {
             await supabase.from("development_notes").update({
