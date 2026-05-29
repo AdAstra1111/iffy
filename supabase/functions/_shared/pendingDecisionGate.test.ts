@@ -32,6 +32,8 @@ function createMockSupabase(overrides: {
   workflowDecisions?: any[];
   insertResult?: any;
   projectData?: any;
+  /** Pre-populated decisions keyed by id for SECOND PASS lookups */
+  storedDecisions?: Record<string, any>;
 } = {}) {
   const {
     projectDocs = [],
@@ -41,11 +43,22 @@ function createMockSupabase(overrides: {
     workflowDecisions = [],
     insertResult = { data: [{ id: "inserted-new-id" }], error: null },
     projectData = null,
+    storedDecisions = {},
   } = overrides;
 
   function buildDecisionLedgerHandlers(ops: any[]) {
     const hasEq = (field: string, val: any) =>
       ops.some((o: any) => o.method === "eq" && o.args[0] === field && o.args[1] === val);
+
+    // maybeSingle() with eq("id", ...) — find decision by id
+    if (ops.some((o: any) => o.method === "maybeSingle")) {
+      const idMatch = ops.find((o: any) => o.method === "eq" && o.args[0] === "id");
+      if (idMatch) {
+        const found = storedDecisions[idMatch.args[1]];
+        return { data: found || null, error: null };
+      }
+    }
+
     if (hasEq("status", "active")) {
       return { data: activeDecisions, error: null };
     }
@@ -59,6 +72,7 @@ function createMockSupabase(overrides: {
     const chain: any = {};
     const ops: any[] = [];
     let _pendingInsert: any = null;
+    let _pendingUpdate: any = null;
 
     const methods = ["eq", "neq", "in", "not", "order", "limit", "maybeSingle", "single", "select"];
     for (const m of methods) {
@@ -73,10 +87,30 @@ function createMockSupabase(overrides: {
       return chain;
     };
 
+    chain.update = (data: any) => {
+      _pendingUpdate = data;
+      return chain;
+    };
+
     chain.then = (resolve: any) => {
+      // Handle update chains (update().eq().then(() => {}))
+      if (_pendingUpdate !== null) {
+        return resolve({ data: null, error: null });
+      }
       // Handle insert chains (insert().select().single())
       if (_pendingInsert !== null) {
-        return resolve({ data: { id: "inserted-decision-id" }, error: null });
+        const insertData = _pendingInsert;
+        // If insertData has default_value, store it for SECOND PASS lookups
+        const dv = insertData.decision_value || {};
+        const newId = "inserted-decision-id";
+        if (dv.default_value) {
+          storedDecisions[newId] = {
+            id: newId,
+            decision_key: insertData.decision_key || "wf:key",
+            decision_value: dv,
+          };
+        }
+        return resolve({ data: { id: newId }, error: null });
       }
 
       // Handle select queries
@@ -84,7 +118,6 @@ function createMockSupabase(overrides: {
       if (table === "project_documents") {
         const isCountLookup = ops.some((o: any) => o.method === "limit" && o.args[0] === 1);
         if (isCountLookup) {
-          // Used for .limit(1).maybeSingle() — return first doc
           return resolve({ data: projectDocs.length > 0 ? projectDocs[0] : null, error: null });
         }
         return resolve({ data: projectDocs, error: null });
@@ -100,7 +133,6 @@ function createMockSupabase(overrides: {
             error: null,
           });
         }
-        // Generic query
         return resolve({ data: versionApprovals.map((id: string) => ({ id, approval_status: "approved" })), error: null });
       }
       if (table === "canon_facts") {
@@ -303,4 +335,121 @@ Deno.test("checkQualityCeiling | works without decisionMode", async () => {
   );
 
   assertEquals(result.isCeilingHit, true);
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. SECOND PASS Auto-Resolve (autonomous mode + allowDefaults)
+// ══════════════════════════════════════════════════════════════════════════════
+
+Deno.test("SECOND PASS | autonomous + default_value auto-resolves QUALITY_PLATEAU (informational, has default_value)", async () => {
+  // QUALITY_PLATEAU has autonomy=informational + default_value="proceed"
+  // In autonomous mode + allowDefaults, informational decisions skip blocking
+  // entirely (they're NEVER_BLOCKING). The SECOND PASS only fires for
+  // blocking decisions with autonomy + default_value.
+  // QUALITY_PLATEAU is NEVER_BLOCKING so it shouldn't enter the blocking list.
+  const supabase = createMockSupabase({
+    projectDocs: [
+      { doc_type: "treatment", latest_version_id: "v1" },
+      { doc_type: "beat_sheet", latest_version_id: "v2" },
+    ],
+    versionApprovals: ["v1", "v2"],
+    canonFacts: ["character", "world_rule"],
+    activeDecisions: [],
+    workflowDecisions: [],
+  });
+
+  // Run decision gate for a stage that requires QUALITY decisions
+  const result = await runPendingDecisionGate(
+    supabase, "proj-1", "job-1", "tv-series", "treatment",
+    ["treatment", "character_bible", "beat_sheet", "episode_script"],
+    true,   // allowDefaults = true
+    "autonomous",  // decisionMode
+  );
+
+  // No blocking decisions because quality decisions are NEVER_BLOCKING
+  assertEquals(result.shouldPause, false);
+});
+
+Deno.test("SECOND PASS | autonomous + no_autonomy_on_decision → skip without error", async () => {
+  // Test that autonomous mode with a decision that has no explicit autonomy
+  // classification falls through gracefully (Rule 6: undefined → DEFERRABLE)
+  const supabase = createMockSupabase({
+    projectDocs: [
+      { doc_type: "format_rules", latest_version_id: "v1" },
+    ],
+    versionApprovals: ["v1"],
+    canonFacts: [],
+    activeDecisions: [],
+    workflowDecisions: [],
+  });
+
+  // FORMAT_RUNTIME has autonomy=advisory — it will be DEFERRABLE in autonomous mode
+  // so no blocking decisions → no SECOND PASS needed
+  const result = await runPendingDecisionGate(
+    supabase, "proj-1", "job-1", "vertical-drama", "format_rules",
+    ["format_rules", "character_bible", "season_arc", "episode_grid", "season_script"],
+    true,
+    "autonomous",
+  );
+
+  assertEquals(result.shouldPause, false);
+});
+
+Deno.test("SECOND PASS | strict mode never triggers auto-resolve (allowDefaults+strict → pending)", async () => {
+  // In strict mode, the SECOND PASS auto-resolve code path is skipped
+  // (it only runs when decisionMode === 'autonomous'). Verifying:
+  // blocking decisions remain blocking, shouldPause = false (due to allowDefaults)
+  const supabase = createMockSupabase({
+    projectDocs: [
+      { doc_type: "treatment", latest_version_id: "v1" },
+      { doc_type: "beat_sheet", latest_version_id: "v2" },
+    ],
+    versionApprovals: ["v1", "v2"],
+    canonFacts: ["character", "world_rule"],
+    activeDecisions: [],
+    workflowDecisions: [],
+  });
+
+  const result = await runPendingDecisionGate(
+    supabase, "proj-1", "job-1", "tv-series", "beat_sheet",
+    ["treatment", "character_bible", "beat_sheet", "episode_script"],
+    true,   // allowDefaults = true
+    "strict",
+  );
+
+  // EPISODE_COUNT is advisory in strict mode → BLOCKING_NOW
+  // But allowDefaults=true means shouldPause=false
+  assertEquals(result.shouldPause, false);
+});
+
+Deno.test("SECOND PASS | existing workflow decisions with 'workflow_pending' status are re-evaluated", async () => {
+  // When a workflow_pending decision already exists in the DB, the gate
+  // should re-use it instead of creating a duplicate
+  const supabase = createMockSupabase({
+    projectDocs: [
+      { doc_type: "treatment", latest_version_id: "v1" },
+      { doc_type: "character_bible", latest_version_id: "v2" },
+    ],
+    versionApprovals: ["v1", "v2"],
+    canonFacts: ["character"],
+    activeDecisions: [],
+    workflowDecisions: [
+      {
+        id: "existing-wf-decision",
+        decision_key: "workflow:tv-series:character_bible:CAST_LOCK",
+        decision_value: { classification: "DEFERRABLE" },
+        status: "workflow_pending",
+      },
+    ],
+  });
+
+  const result = await runPendingDecisionGate(
+    supabase, "proj-1", "job-1", "tv-series", "character_bible",
+    ["treatment", "character_bible", "beat_sheet", "episode_script"],
+    false, "strict",
+  );
+
+  // Existing workflow_pending decision is DEFERRABLE → no blocking
+  assertEquals(result.blockingIds.length, 0);
+  assertEquals(result.deferrableIds.length, 1);
 });

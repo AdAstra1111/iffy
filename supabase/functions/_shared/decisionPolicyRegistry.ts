@@ -109,6 +109,7 @@ export const SEMANTIC_KEYS = {
   CONTRACT_LOGIC: "CONTRACT_LOGIC",
   TENTPOLE_MAPPING: "TENTPOLE_MAPPING",
   QUALITY_PLATEAU: "QUALITY_PLATEAU",
+  QUALITY_CEILING: "QUALITY_CEILING",
 } as const;
 
 // ── Decision Key Builder ───────────────────────────────────────────────────

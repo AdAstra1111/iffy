@@ -444,3 +444,111 @@ Deno.test("E2E INVARIANT | EPISODE_COUNT + autonomous = DEFERRABLE", () => {
   const result = classifyDecision(SEMANTIC_KEYS.EPISODE_COUNT, ctx);
   assertEquals(result.classification, "DEFERRABLE");
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 8. All 9 Decisions × Both Modes — Exhaustive Matrix
+// ══════════════════════════════════════════════════════════════════════════════
+
+function matrixCtx(overrides: Partial<ClassificationContext> = {}): ClassificationContext {
+  return makeCtx({
+    decision_mode: "strict",
+    approvals_state: {
+      treatment: { exists: true, approved: true },
+      character_bible: { exists: true, approved: true },
+      beat_sheet: { exists: true, approved: true },
+      story_outline: { exists: true, approved: true },
+      concept_brief: { exists: true, approved: false },
+      season_arc: { exists: true, approved: true },
+      format_rules: { exists: true, approved: true },
+      episode_grid: { exists: true, approved: true },
+    },
+    ...overrides,
+  });
+}
+
+// Each decision's expected classification in strict vs autonomous mode
+// Based on: autonomy + decision_mode → classifyByAutonomy result
+const DECISION_MATRIX: Array<{
+  key: string;
+  autonomy: "blocking" | "advisory" | "informational" | undefined;
+  hasOptions: boolean;
+  strictExpected: DecisionClassification;
+  autonomousExpected: DecisionClassification;
+}> = [
+  // blocking: strict→BLOCKING_NOW, autonomous→NEVER_BLOCKING
+  { key: SEMANTIC_KEYS.CAST_LOCK,       autonomy: "blocking",    hasOptions: false, strictExpected: "DEFERRABLE",    autonomousExpected: "NEVER_BLOCKING" },
+  { key: SEMANTIC_KEYS.WORLD_RULE_ANCHOR, autonomy: "blocking",  hasOptions: false, strictExpected: "DEFERRABLE",    autonomousExpected: "NEVER_BLOCKING" },
+  // advisory: strict→BLOCKING_NOW, autonomous→DEFERRABLE
+  { key: SEMANTIC_KEYS.EPISODE_COUNT,    autonomy: "advisory",   hasOptions: true,  strictExpected: "BLOCKING_NOW",  autonomousExpected: "DEFERRABLE" },
+  { key: SEMANTIC_KEYS.TONE_POLARITY,    autonomy: "advisory",   hasOptions: true,  strictExpected: "BLOCKING_NOW",  autonomousExpected: "DEFERRABLE" },
+  { key: SEMANTIC_KEYS.FORMAT_RUNTIME,   autonomy: "advisory",   hasOptions: true,  strictExpected: "BLOCKING_NOW",  autonomousExpected: "DEFERRABLE" },
+  { key: SEMANTIC_KEYS.CONTRACT_LOGIC,   autonomy: "advisory",   hasOptions: true,  strictExpected: "BLOCKING_NOW",  autonomousExpected: "DEFERRABLE" },
+  { key: SEMANTIC_KEYS.TENTPOLE_MAPPING, autonomy: "advisory",   hasOptions: false, strictExpected: "DEFERRABLE",    autonomousExpected: "DEFERRABLE" },
+  // informational: NEVER_BLOCKING in both modes
+  { key: SEMANTIC_KEYS.QUALITY_PLATEAU,  autonomy: "informational", hasOptions: true,  strictExpected: "NEVER_BLOCKING", autonomousExpected: "NEVER_BLOCKING" },
+  { key: SEMANTIC_KEYS.QUALITY_CEILING,  autonomy: "informational", hasOptions: true,  strictExpected: "NEVER_BLOCKING", autonomousExpected: "NEVER_BLOCKING" },
+];
+
+Deno.test("MATRIX INVARIANT | all 9 decisions produce correct classification in strict mode", () => {
+  for (const entry of DECISION_MATRIX) {
+    const ctx = matrixCtx({ decision_mode: "strict" });
+    const result = classifyDecision(entry.key, ctx);
+    assertEquals(
+      result.classification,
+      entry.strictExpected,
+      `${entry.key} in strict mode: expected ${entry.strictExpected}, got ${result.classification}`
+    );
+  }
+});
+
+Deno.test("MATRIX INVARIANT | all 9 decisions produce correct classification in autonomous mode", () => {
+  for (const entry of DECISION_MATRIX) {
+    const ctx = matrixCtx({ decision_mode: "autonomous" });
+    const result = classifyDecision(entry.key, ctx);
+    assertEquals(
+      result.classification,
+      entry.autonomousExpected,
+      `${entry.key} in autonomous mode: expected ${entry.autonomousExpected}, got ${result.classification}`
+    );
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 9. Backward Compatibility & Edge Cases
+// ══════════════════════════════════════════════════════════════════════════════
+
+Deno.test("BACKWARD COMPAT | undefined decisionMode defaults to strict in classifyByAutonomy", () => {
+  assertEquals(classifyByAutonomy("blocking", undefined), "BLOCKING_NOW");
+  assertEquals(classifyByAutonomy("advisory", undefined), "BLOCKING_NOW");
+  assertEquals(classifyByAutonomy("informational", undefined), "NEVER_BLOCKING");
+});
+
+Deno.test("BACKWARD COMPAT | classifyDecision with undefined decision_mode in ctx defaults to strict", () => {
+  const ctx = makeCtx({ decision_mode: undefined as any });
+  const result = classifyDecision(SEMANTIC_KEYS.CAST_LOCK, ctx);
+  // undefined decision_mode → default to "strict" → blocking+strict→BLOCKING_NOW→empty-options→DEFERRABLE
+  assertEquals(result.classification, "DEFERRABLE");
+});
+
+Deno.test("EDGE | empty approvals_state → decisions with evidence requirements become DEFERRABLE", () => {
+  const ctx = makeCtx({ approvals_state: {} });
+  const castLock = classifyDecision(SEMANTIC_KEYS.CAST_LOCK, ctx);
+  assertEquals(castLock.classification, "DEFERRABLE");
+  assertStringIncludes(castLock.reason, "evidence");
+
+  const episodeCount = classifyDecision(SEMANTIC_KEYS.EPISODE_COUNT, ctx);
+  assertEquals(episodeCount.classification, "DEFERRABLE");
+});
+
+Deno.test("EDGE | empty canon_state should not affect classification (canon_state is advisory only)", () => {
+  const ctx = makeCtx({ canon_state: { has_characters: false, has_world_rules: false } });
+  // CAST_LOCK with approved evidence should still classify based on autonomy+mode
+  const castLock = classifyDecision(SEMANTIC_KEYS.CAST_LOCK, ctx);
+  assertEquals(castLock.classification, "DEFERRABLE"); // strict + blocking + no options
+});
+
+Deno.test("EDGE | QUALITY_CEILING with SEMANTIC_KEYS reference (regression test for missing SEMANTIC_KEYS entry)", () => {
+  const ctx = makeCtx({ decision_mode: "strict" });
+  const result = classifyDecision(SEMANTIC_KEYS.QUALITY_CEILING, ctx);
+  assertEquals(result.classification, "NEVER_BLOCKING");
+});
