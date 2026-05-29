@@ -33548,7 +33548,7 @@ CRITICAL:
           const notesCtx = allNotes.length > 0
             ? "\\n\\nAPPROVED NOTES & DECISIONS:\\n" + allNotes.map(n => "- " + (n.description || n.note || "")).join("\\n")
             : "";
-          const systemMsg = "You are rewriting ONE moment of a story outline.\\n\\nINSTRUCTIONS:\\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\\n- Keep the Number and Title EXACTLY as they are.\\n- Write vivid present-tense prose. 2-5 sentences.\\n- Output ONLY valid JSON: {\\"number\\": " + (entryNum + 1) + ", \\"title\\": \\"...\\", \\"description\\": \\"...\\"}" + notesCtx;
+          const systemMsg = `You are rewriting ONE moment of a story outline.\\n\\nINSTRUCTIONS:\\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\\n- Keep the Number and Title EXACTLY as they are.\\n- Write vivid present-tense prose. 2-5 sentences.\\n- Output ONLY valid JSON: {"number": ${entryNum + 1}, "title": "...", "description": "..."}` + notesCtx;
           const userMsg = "MOMENT TO REWRITE:" +
             (prevCtx ? "\\nPREVIOUS MOMENT:\\n" + prevCtx : "") +
             "\\nCURRENT MOMENT:\\nTitle: " + (job.scene_heading || "") +
