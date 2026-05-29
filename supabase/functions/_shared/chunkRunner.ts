@@ -731,7 +731,9 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           // story_outline chunks are JSON fragments — validate JSON parseability + entries array
           let storyOutlineValid = false;
           try {
-            const parsed = JSON.parse(content);
+            // Strip markdown code fences that the LLM often wraps around JSON
+            const cleanContent = content.replace(/^```(?:json)?\s*/gm, '').replace(/\s*```\s*$/gm, '').trim();
+            const parsed = JSON.parse(cleanContent);
             storyOutlineValid = parsed && Array.isArray(parsed.entries);
           } catch {
             storyOutlineValid = false;
@@ -963,7 +965,9 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         continue;
       }
       try {
-        const parsed = JSON.parse(c);
+        // Strip markdown code fences that the LLM often wraps around JSON
+        const cleanStr = c.replace(/^```(?:json)?\s*/gm, '').replace(/\s*```\s*$/gm, '').trim();
+        const parsed = JSON.parse(cleanStr);
         if (parsed.entries && Array.isArray(parsed.entries)) {
           allEntries.push(...parsed.entries);
         }
@@ -1218,7 +1222,9 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         const c = chunkContents[i];
         if (!c) continue;
         try {
-          const parsed = JSON.parse(c);
+          // Strip markdown code fences that the LLM often wraps around JSON
+          const cleanStr = c.replace(/^```(?:json)?\s*/gm, '').replace(/\s*```\s*$/gm, '').trim();
+          const parsed = JSON.parse(cleanStr);
           if (parsed.entries && Array.isArray(parsed.entries)) {
             allEntries.push(...parsed.entries);
           }
@@ -1338,7 +1344,9 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       const c = chunkContents[i];
       if (!c) { entriesPerChunk.push(0); continue; }
       try {
-        const parsed = JSON.parse(c);
+        // Strip markdown code fences that the LLM often wraps around JSON
+        const cleanStr = c.replace(/^```(?:json)?\s*/gm, '').replace(/\s*```\s*$/gm, '').trim();
+        const parsed = JSON.parse(cleanStr);
         if (parsed.entries && Array.isArray(parsed.entries)) {
           entriesPerChunk.push(parsed.entries.length);
         } else {
