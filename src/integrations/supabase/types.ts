@@ -10,51 +10,35 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.1"
+    PostgrestVersion: "14.5"
+  }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
   public: {
     Tables: {
-      actor_marketplace_listings: {
-        Row: {
-          actor_id: string
-          id: string
-          is_active: boolean
-          listed_at: string
-          listed_by: string | null
-          pricing_tier: string
-          updated_at: string
-          visibility: string
-        }
-        Insert: {
-          actor_id: string
-          id?: string
-          is_active?: boolean
-          listed_at?: string
-          listed_by?: string | null
-          pricing_tier?: string
-          updated_at?: string
-          visibility?: string
-        }
-        Update: {
-          actor_id?: string
-          id?: string
-          is_active?: boolean
-          listed_at?: string
-          listed_by?: string | null
-          pricing_tier?: string
-          updated_at?: string
-          visibility?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "actor_marketplace_listings_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: true
-            referencedRelation: "ai_actors"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       actor_promotion_decisions: {
         Row: {
           actor_id: string
@@ -72,8 +56,6 @@ export type Database = {
           policy_version: string
           review_required: boolean
           scoring_model: string
-          validation_result_id: string | null
-          validation_run_id: string | null
         }
         Insert: {
           actor_id: string
@@ -91,8 +73,6 @@ export type Database = {
           policy_version?: string
           review_required?: boolean
           scoring_model?: string
-          validation_result_id?: string | null
-          validation_run_id?: string | null
         }
         Update: {
           actor_id?: string
@@ -110,8 +90,6 @@ export type Database = {
           policy_version?: string
           review_required?: boolean
           scoring_model?: string
-          validation_result_id?: string | null
-          validation_run_id?: string | null
         }
         Relationships: [
           {
@@ -123,174 +101,6 @@ export type Database = {
           },
           {
             foreignKeyName: "actor_promotion_decisions_actor_version_id_fkey"
-            columns: ["actor_version_id"]
-            isOneToOne: false
-            referencedRelation: "ai_actor_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "actor_promotion_decisions_validation_result_id_fkey"
-            columns: ["validation_result_id"]
-            isOneToOne: false
-            referencedRelation: "actor_validation_results"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "actor_promotion_decisions_validation_run_id_fkey"
-            columns: ["validation_run_id"]
-            isOneToOne: false
-            referencedRelation: "actor_validation_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      actor_validation_images: {
-        Row: {
-          created_at: string
-          error: string | null
-          generation_config: Json | null
-          id: string
-          public_url: string | null
-          slot_key: string
-          status: string
-          storage_path: string | null
-          validation_run_id: string
-          variant_index: number
-        }
-        Insert: {
-          created_at?: string
-          error?: string | null
-          generation_config?: Json | null
-          id?: string
-          public_url?: string | null
-          slot_key: string
-          status?: string
-          storage_path?: string | null
-          validation_run_id: string
-          variant_index?: number
-        }
-        Update: {
-          created_at?: string
-          error?: string | null
-          generation_config?: Json | null
-          id?: string
-          public_url?: string | null
-          slot_key?: string
-          status?: string
-          storage_path?: string | null
-          validation_run_id?: string
-          variant_index?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "actor_validation_images_validation_run_id_fkey"
-            columns: ["validation_run_id"]
-            isOneToOne: false
-            referencedRelation: "actor_validation_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      actor_validation_results: {
-        Row: {
-          advisory_penalty_codes: string[] | null
-          axis_scores: Json | null
-          confidence: string | null
-          created_at: string
-          failure_reasons: string[] | null
-          hard_fail_codes: string[] | null
-          id: string
-          overall_score: number | null
-          promotable: boolean
-          score_band: string | null
-          scoring_model: string | null
-          validation_run_id: string
-        }
-        Insert: {
-          advisory_penalty_codes?: string[] | null
-          axis_scores?: Json | null
-          confidence?: string | null
-          created_at?: string
-          failure_reasons?: string[] | null
-          hard_fail_codes?: string[] | null
-          id?: string
-          overall_score?: number | null
-          promotable?: boolean
-          score_band?: string | null
-          scoring_model?: string | null
-          validation_run_id: string
-        }
-        Update: {
-          advisory_penalty_codes?: string[] | null
-          axis_scores?: Json | null
-          confidence?: string | null
-          created_at?: string
-          failure_reasons?: string[] | null
-          hard_fail_codes?: string[] | null
-          id?: string
-          overall_score?: number | null
-          promotable?: boolean
-          score_band?: string | null
-          scoring_model?: string | null
-          validation_run_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "actor_validation_results_validation_run_id_fkey"
-            columns: ["validation_run_id"]
-            isOneToOne: true
-            referencedRelation: "actor_validation_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      actor_validation_runs: {
-        Row: {
-          actor_id: string
-          actor_version_id: string | null
-          completed_at: string | null
-          created_at: string
-          error: string | null
-          id: string
-          pack_coverage: Json | null
-          status: string
-          triggered_by: string | null
-          validation_phase: string
-        }
-        Insert: {
-          actor_id: string
-          actor_version_id?: string | null
-          completed_at?: string | null
-          created_at?: string
-          error?: string | null
-          id?: string
-          pack_coverage?: Json | null
-          status?: string
-          triggered_by?: string | null
-          validation_phase?: string
-        }
-        Update: {
-          actor_id?: string
-          actor_version_id?: string | null
-          completed_at?: string | null
-          created_at?: string
-          error?: string | null
-          id?: string
-          pack_coverage?: Json | null
-          status?: string
-          triggered_by?: string | null
-          validation_phase?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "actor_validation_runs_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "ai_actors"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "actor_validation_runs_actor_version_id_fkey"
             columns: ["actor_version_id"]
             isOneToOne: false
             referencedRelation: "ai_actor_versions"
@@ -383,11 +193,8 @@ export type Database = {
           current_promotion_decision_id: string | null
           description: string
           id: string
-          is_listed: boolean
-          licensing_mode: string
           name: string
           negative_prompt: string
-          pricing_tier: string
           promotion_policy_version: string | null
           promotion_status: string | null
           promotion_updated_at: string | null
@@ -396,7 +203,6 @@ export type Database = {
           tags: string[]
           updated_at: string
           user_id: string
-          visibility: string
         }
         Insert: {
           anchor_coherence_status?: string
@@ -406,11 +212,8 @@ export type Database = {
           current_promotion_decision_id?: string | null
           description?: string
           id?: string
-          is_listed?: boolean
-          licensing_mode?: string
           name?: string
           negative_prompt?: string
-          pricing_tier?: string
           promotion_policy_version?: string | null
           promotion_status?: string | null
           promotion_updated_at?: string | null
@@ -419,7 +222,6 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           user_id: string
-          visibility?: string
         }
         Update: {
           anchor_coherence_status?: string
@@ -429,11 +231,8 @@ export type Database = {
           current_promotion_decision_id?: string | null
           description?: string
           id?: string
-          is_listed?: boolean
-          licensing_mode?: string
           name?: string
           negative_prompt?: string
-          pricing_tier?: string
           promotion_policy_version?: string | null
           promotion_status?: string | null
           promotion_updated_at?: string | null
@@ -442,7 +241,6 @@ export type Database = {
           tags?: string[]
           updated_at?: string
           user_id?: string
-          visibility?: string
         }
         Relationships: [
           {
@@ -493,20 +291,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "ai_generated_media_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "ai_generated_media_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "ai_generated_media_shot_id_fkey"
             columns: ["shot_id"]
             isOneToOne: false
@@ -556,20 +340,6 @@ export type Database = {
             columns: ["animatic_run_id"]
             isOneToOne: false
             referencedRelation: "animatic_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "animatic_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "animatic_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -712,22 +482,7 @@ export type Database = {
           storyboard_run_id?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "animatic_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "animatic_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       animatics: {
         Row: {
@@ -776,20 +531,6 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "animatics_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "animatics_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "animatics_shot_list_id_fkey"
             columns: ["shot_list_id"]
@@ -881,16 +622,140 @@ export type Database = {
           source?: string | null
           user_id?: string
         }
+        Relationships: []
+      }
+      atoms: {
+        Row: {
+          atom_type: string
+          attributes: Json
+          canonical_name: string
+          confidence: number | null
+          created_at: string
+          curated_at: string | null
+          do_not_resolve: boolean | null
+          entity_id: string | null
+          generated_image_ref: string | null
+          generation_status: string | null
+          id: string
+          narrative_role: string | null
+          origin_doc_id: string | null
+          priority: number | null
+          project_id: string
+          readiness_state: string | null
+          scene_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          atom_type: string
+          attributes?: Json
+          canonical_name: string
+          confidence?: number | null
+          created_at?: string
+          curated_at?: string | null
+          do_not_resolve?: boolean | null
+          entity_id?: string | null
+          generated_image_ref?: string | null
+          generation_status?: string | null
+          id?: string
+          narrative_role?: string | null
+          origin_doc_id?: string | null
+          priority?: number | null
+          project_id: string
+          readiness_state?: string | null
+          scene_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          atom_type?: string
+          attributes?: Json
+          canonical_name?: string
+          confidence?: number | null
+          created_at?: string
+          curated_at?: string | null
+          do_not_resolve?: boolean | null
+          entity_id?: string | null
+          generated_image_ref?: string | null
+          generation_status?: string | null
+          id?: string
+          narrative_role?: string | null
+          origin_doc_id?: string | null
+          priority?: number | null
+          project_id?: string
+          readiness_state?: string | null
+          scene_id?: string | null
+          updated_at?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "archive_assets_project_id_fkey"
+            foreignKeyName: "atoms_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "narrative_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "atoms_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "archive_assets_project_id_fkey"
+            foreignKeyName: "atoms_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audio_jobs: {
+        Row: {
+          created_at: string
+          id: string
+          message: string | null
+          options: Json
+          output_url: string | null
+          owner_id: string
+          progress_pct: number
+          project_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          options?: Json
+          output_url?: string | null
+          owner_id: string
+          progress_pct?: number
+          project_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string | null
+          options?: Json
+          output_url?: string | null
+          owner_id?: string
+          progress_pct?: number
+          project_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audio_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "audio_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -1100,22 +965,7 @@ export type Database = {
           updated_at?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "auto_run_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "auto_run_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       auto_run_steps: {
         Row: {
@@ -1182,45 +1032,6 @@ export type Database = {
           },
         ]
       }
-      brand_assets: {
-        Row: {
-          asset_type: string
-          created_at: string
-          height: number | null
-          id: string
-          label: string
-          mime_type: string
-          storage_path: string
-          updated_at: string
-          user_id: string
-          width: number | null
-        }
-        Insert: {
-          asset_type?: string
-          created_at?: string
-          height?: number | null
-          id?: string
-          label?: string
-          mime_type?: string
-          storage_path: string
-          updated_at?: string
-          user_id: string
-          width?: number | null
-        }
-        Update: {
-          asset_type?: string
-          created_at?: string
-          height?: number | null
-          id?: string
-          label?: string
-          mime_type?: string
-          storage_path?: string
-          updated_at?: string
-          user_id?: string
-          width?: number | null
-        }
-        Relationships: []
-      }
       broadcaster_fit_scores: {
         Row: {
           broadcaster_name: string
@@ -1267,22 +1078,7 @@ export type Database = {
           tone_match?: number | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "broadcaster_fit_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "broadcaster_fit_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       budget_assumptions: {
         Row: {
@@ -1339,22 +1135,7 @@ export type Database = {
           version?: number | null
           vfx_level?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "budget_assumptions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "budget_assumptions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       buyer_contacts: {
         Row: {
@@ -1455,20 +1236,6 @@ export type Database = {
             referencedRelation: "buyer_contacts"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "buyer_meetings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "buyer_meetings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       buyer_profiles: {
@@ -1498,62 +1265,53 @@ export type Database = {
         }
         Relationships: []
       }
-      candidate_groups: {
+      canon_cascade_jobs: {
         Row: {
-          asset_group: string | null
-          character_name: string | null
-          created_at: string
-          created_by: string | null
-          created_from_task_type: string | null
+          created_at: string | null
+          direction: string
           id: string
-          lane: string | null
           project_id: string
-          ranking_policy_key: string
-          run_context_id: string | null
-          run_context_type: string
-          slot_key: string | null
+          safe_target_limit: number | null
           status: string
+          trigger_doc_id: string
+          trigger_doc_type: string
+          trigger_version_id: string
+          updated_at: string | null
         }
         Insert: {
-          asset_group?: string | null
-          character_name?: string | null
-          created_at?: string
-          created_by?: string | null
-          created_from_task_type?: string | null
+          created_at?: string | null
+          direction?: string
           id?: string
-          lane?: string | null
           project_id: string
-          ranking_policy_key?: string
-          run_context_id?: string | null
-          run_context_type?: string
-          slot_key?: string | null
+          safe_target_limit?: number | null
           status?: string
+          trigger_doc_id: string
+          trigger_doc_type: string
+          trigger_version_id: string
+          updated_at?: string | null
         }
         Update: {
-          asset_group?: string | null
-          character_name?: string | null
-          created_at?: string
-          created_by?: string | null
-          created_from_task_type?: string | null
+          created_at?: string | null
+          direction?: string
           id?: string
-          lane?: string | null
           project_id?: string
-          ranking_policy_key?: string
-          run_context_id?: string | null
-          run_context_type?: string
-          slot_key?: string | null
+          safe_target_limit?: number | null
           status?: string
+          trigger_doc_id?: string
+          trigger_doc_type?: string
+          trigger_version_id?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "candidate_groups_project_id_fkey"
+            foreignKeyName: "canon_cascade_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "candidate_groups_project_id_fkey"
+            foreignKeyName: "canon_cascade_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -1561,169 +1319,83 @@ export type Database = {
           },
         ]
       }
-      candidate_rankings: {
+      canon_cascade_targets: {
         Row: {
-          candidate_version_id: string
-          group_id: string
+          cascade_job_id: string
+          cascade_order: number
+          ci_score: number | null
+          composite_score: number | null
+          created_at: string | null
+          direction: string
+          error_message: string | null
+          gp_score: number | null
           id: string
-          rank_position: number
-          rank_score: number
-          ranked_at: string
-          ranking_inputs_json: Json
-          ranking_version_key: string
-          round_id: string | null
-          score_json: Json
+          new_version_id: string | null
+          override_allowed: boolean | null
+          promotion_allowed: boolean | null
+          retry_count: number | null
+          sr_score: number | null
+          sr_status: string | null
+          status: string
+          target_doc_id: string
+          target_doc_type: string
+          updated_at: string | null
         }
         Insert: {
-          candidate_version_id: string
-          group_id: string
+          cascade_job_id: string
+          cascade_order: number
+          ci_score?: number | null
+          composite_score?: number | null
+          created_at?: string | null
+          direction: string
+          error_message?: string | null
+          gp_score?: number | null
           id?: string
-          rank_position?: number
-          rank_score?: number
-          ranked_at?: string
-          ranking_inputs_json?: Json
-          ranking_version_key?: string
-          round_id?: string | null
-          score_json?: Json
+          new_version_id?: string | null
+          override_allowed?: boolean | null
+          promotion_allowed?: boolean | null
+          retry_count?: number | null
+          sr_score?: number | null
+          sr_status?: string | null
+          status?: string
+          target_doc_id: string
+          target_doc_type: string
+          updated_at?: string | null
         }
         Update: {
-          candidate_version_id?: string
-          group_id?: string
+          cascade_job_id?: string
+          cascade_order?: number
+          ci_score?: number | null
+          composite_score?: number | null
+          created_at?: string | null
+          direction?: string
+          error_message?: string | null
+          gp_score?: number | null
           id?: string
-          rank_position?: number
-          rank_score?: number
-          ranked_at?: string
-          ranking_inputs_json?: Json
-          ranking_version_key?: string
-          round_id?: string | null
-          score_json?: Json
+          new_version_id?: string | null
+          override_allowed?: boolean | null
+          promotion_allowed?: boolean | null
+          retry_count?: number | null
+          sr_score?: number | null
+          sr_status?: string | null
+          status?: string
+          target_doc_id?: string
+          target_doc_type?: string
+          updated_at?: string | null
         }
         Relationships: [
           {
-            foreignKeyName: "candidate_rankings_candidate_version_id_fkey"
-            columns: ["candidate_version_id"]
+            foreignKeyName: "canon_cascade_targets_cascade_job_id_fkey"
+            columns: ["cascade_job_id"]
             isOneToOne: false
-            referencedRelation: "candidate_versions"
+            referencedRelation: "canon_cascade_jobs"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "candidate_rankings_group_id_fkey"
-            columns: ["group_id"]
+            foreignKeyName: "canon_cascade_targets_target_doc_id_fkey"
+            columns: ["target_doc_id"]
             isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "candidate_rankings_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      candidate_selections: {
-        Row: {
-          group_id: string
-          id: string
-          rationale: string | null
-          round_id: string | null
-          selected_at: string
-          selected_by: string | null
-          selected_candidate_version_id: string
-          selection_mode: string
-        }
-        Insert: {
-          group_id: string
-          id?: string
-          rationale?: string | null
-          round_id?: string | null
-          selected_at?: string
-          selected_by?: string | null
-          selected_candidate_version_id: string
-          selection_mode?: string
-        }
-        Update: {
-          group_id?: string
-          id?: string
-          rationale?: string | null
-          round_id?: string | null
-          selected_at?: string
-          selected_by?: string | null
-          selected_candidate_version_id?: string
-          selection_mode?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "candidate_selections_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "candidate_selections_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "candidate_selections_selected_candidate_version_id_fkey"
-            columns: ["selected_candidate_version_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_versions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      candidate_versions: {
-        Row: {
-          candidate_index: number
-          created_at: string
-          creation_mode: string
-          group_id: string
-          id: string
-          source_candidate_version_id: string | null
-          source_run_id: string | null
-          version_ref_id: string
-          version_ref_type: string
-        }
-        Insert: {
-          candidate_index?: number
-          created_at?: string
-          creation_mode?: string
-          group_id: string
-          id?: string
-          source_candidate_version_id?: string | null
-          source_run_id?: string | null
-          version_ref_id: string
-          version_ref_type?: string
-        }
-        Update: {
-          candidate_index?: number
-          created_at?: string
-          creation_mode?: string
-          group_id?: string
-          id?: string
-          source_candidate_version_id?: string | null
-          source_run_id?: string | null
-          version_ref_id?: string
-          version_ref_type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "candidate_versions_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "candidate_versions_source_candidate_version_id_fkey"
-            columns: ["source_candidate_version_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_versions"
+            referencedRelation: "project_documents"
             referencedColumns: ["id"]
           },
         ]
@@ -1780,22 +1452,7 @@ export type Database = {
           subject?: string
           value?: Json
         }
-        Relationships: [
-          {
-            foreignKeyName: "canon_facts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "canon_facts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       canon_locations: {
         Row: {
@@ -1897,22 +1554,7 @@ export type Database = {
           project_id?: string
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "canon_overrides_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "canon_overrides_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       canon_snapshots: {
         Row: {
@@ -1963,22 +1605,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "canon_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "canon_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       canon_unit_mentions: {
         Row: {
@@ -2068,20 +1695,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "canon_unit_relations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "canon_unit_relations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "canon_unit_relations_unit_id_from_fkey"
             columns: ["unit_id_from"]
             isOneToOne: false
@@ -2142,20 +1755,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "canon_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "canon_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "canon_units_source_document_id_fkey"
             columns: ["source_document_id"]
             isOneToOne: false
@@ -2167,66 +1766,6 @@ export type Database = {
             columns: ["source_version_id"]
             isOneToOne: false
             referencedRelation: "project_document_versions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      cast_regen_jobs: {
-        Row: {
-          character_key: string
-          completed_at: string | null
-          created_at: string
-          error_message: string | null
-          id: string
-          output_id: string
-          output_type: string
-          project_id: string
-          reason: string
-          requested_by: string | null
-          started_at: string | null
-          status: string
-        }
-        Insert: {
-          character_key: string
-          completed_at?: string | null
-          created_at?: string
-          error_message?: string | null
-          id?: string
-          output_id: string
-          output_type?: string
-          project_id: string
-          reason: string
-          requested_by?: string | null
-          started_at?: string | null
-          status?: string
-        }
-        Update: {
-          character_key?: string
-          completed_at?: string | null
-          created_at?: string
-          error_message?: string | null
-          id?: string
-          output_id?: string
-          output_type?: string
-          project_id?: string
-          reason?: string
-          requested_by?: string | null
-          started_at?: string | null
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "cast_regen_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "cast_regen_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -2399,47 +1938,63 @@ export type Database = {
           },
         ]
       }
-      character_identity_notes: {
+      character_performance_bible_jobs: {
         Row: {
-          canon_check_messages: Json
-          canon_check_status: string
-          character_name: string
+          character_id: string
+          created_at: string
+          error: string | null
           id: string
-          notes: string
           project_id: string
+          result_bible_id: string | null
+          result_content: Json | null
+          result_hash: string | null
+          result_version: number | null
+          status: string
           updated_at: string
-          user_id: string
         }
         Insert: {
-          canon_check_messages?: Json
-          canon_check_status?: string
-          character_name: string
-          id?: string
-          notes?: string
+          character_id: string
+          created_at?: string
+          error?: string | null
+          id: string
           project_id: string
+          result_bible_id?: string | null
+          result_content?: Json | null
+          result_hash?: string | null
+          result_version?: number | null
+          status?: string
           updated_at?: string
-          user_id: string
         }
         Update: {
-          canon_check_messages?: Json
-          canon_check_status?: string
-          character_name?: string
+          character_id?: string
+          created_at?: string
+          error?: string | null
           id?: string
-          notes?: string
           project_id?: string
+          result_bible_id?: string | null
+          result_content?: Json | null
+          result_hash?: string | null
+          result_version?: number | null
+          status?: string
           updated_at?: string
-          user_id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "character_identity_notes_project_id_fkey"
+            foreignKeyName: "character_performance_bible_jobs_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "narrative_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "character_performance_bible_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "character_identity_notes_project_id_fkey"
+            foreignKeyName: "character_performance_bible_jobs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -2447,171 +2002,219 @@ export type Database = {
           },
         ]
       }
-      character_visual_datasets: {
+      character_performance_bibles: {
         Row: {
-          age_band: string | null
-          ai_actor_id: string | null
-          allowed_variation: Json
-          anti_confusion: Json
-          beauty_mode: string | null
-          canonical_character_id: string | null
-          canonical_name: string
-          casting_labels: string[]
-          completeness_score: number
+          character_id: string
+          content: Json
           created_at: string
-          created_by: string | null
-          cultural_context: string | null
-          dataset_version: number
-          ethnicity_ancestry_expression: string | null
-          forbidden_drift: Json
-          freshness_status: string
+          depends_on_resolver_hash: string | null
           id: string
-          identity_core: Json
-          identity_invariants: Json
-          identity_type: string
+          invalidated_at: string | null
           is_current: boolean
-          lighting_response: Json
-          narrative_read: Json
-          presence_behavior: Json
           project_id: string
-          proportion_silhouette: Json
-          provenance: Json
-          reusable_scope: string
-          sex_gender_presentation: string | null
-          slot_expression: Json
-          slot_full_body: Json
-          slot_lighting_response: Json
-          slot_portrait: Json
-          slot_profile: Json
-          slot_three_quarter: Json
-          source_canon_hash: string | null
-          source_mode: string
-          stale_reason: string | null
-          styling_affinity: Json
-          surface_identity: Json
           updated_at: string
-          validation_requirements: Json
+          version_number: number
         }
         Insert: {
-          age_band?: string | null
-          ai_actor_id?: string | null
-          allowed_variation?: Json
-          anti_confusion?: Json
-          beauty_mode?: string | null
-          canonical_character_id?: string | null
-          canonical_name: string
-          casting_labels?: string[]
-          completeness_score?: number
+          character_id: string
+          content: Json
           created_at?: string
-          created_by?: string | null
-          cultural_context?: string | null
-          dataset_version?: number
-          ethnicity_ancestry_expression?: string | null
-          forbidden_drift?: Json
-          freshness_status?: string
+          depends_on_resolver_hash?: string | null
           id?: string
-          identity_core?: Json
-          identity_invariants?: Json
-          identity_type?: string
+          invalidated_at?: string | null
           is_current?: boolean
-          lighting_response?: Json
-          narrative_read?: Json
-          presence_behavior?: Json
           project_id: string
-          proportion_silhouette?: Json
-          provenance?: Json
-          reusable_scope?: string
-          sex_gender_presentation?: string | null
-          slot_expression?: Json
-          slot_full_body?: Json
-          slot_lighting_response?: Json
-          slot_portrait?: Json
-          slot_profile?: Json
-          slot_three_quarter?: Json
-          source_canon_hash?: string | null
-          source_mode?: string
-          stale_reason?: string | null
-          styling_affinity?: Json
-          surface_identity?: Json
           updated_at?: string
-          validation_requirements?: Json
+          version_number?: number
         }
         Update: {
-          age_band?: string | null
-          ai_actor_id?: string | null
-          allowed_variation?: Json
-          anti_confusion?: Json
-          beauty_mode?: string | null
-          canonical_character_id?: string | null
-          canonical_name?: string
-          casting_labels?: string[]
-          completeness_score?: number
+          character_id?: string
+          content?: Json
           created_at?: string
-          created_by?: string | null
-          cultural_context?: string | null
-          dataset_version?: number
-          ethnicity_ancestry_expression?: string | null
-          forbidden_drift?: Json
-          freshness_status?: string
+          depends_on_resolver_hash?: string | null
           id?: string
-          identity_core?: Json
-          identity_invariants?: Json
-          identity_type?: string
+          invalidated_at?: string | null
           is_current?: boolean
-          lighting_response?: Json
-          narrative_read?: Json
-          presence_behavior?: Json
           project_id?: string
-          proportion_silhouette?: Json
-          provenance?: Json
-          reusable_scope?: string
-          sex_gender_presentation?: string | null
-          slot_expression?: Json
-          slot_full_body?: Json
-          slot_lighting_response?: Json
-          slot_portrait?: Json
-          slot_profile?: Json
-          slot_three_quarter?: Json
-          source_canon_hash?: string | null
-          source_mode?: string
-          stale_reason?: string | null
-          styling_affinity?: Json
-          surface_identity?: Json
           updated_at?: string
-          validation_requirements?: Json
+          version_number?: number
         }
         Relationships: [
           {
-            foreignKeyName: "character_visual_datasets_ai_actor_id_fkey"
-            columns: ["ai_actor_id"]
+            foreignKeyName: "character_performance_bibles_character_id_fkey"
+            columns: ["character_id"]
             isOneToOne: false
-            referencedRelation: "ai_actors"
+            referencedRelation: "narrative_entities"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "character_visual_datasets_project_id_fkey"
+            foreignKeyName: "character_performance_bibles_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "character_visual_datasets_project_id_fkey"
+            foreignKeyName: "character_performance_bibles_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
+      }
+      character_scene_context_cache: {
+        Row: {
+          cached_at: string
+          character_id: string
+          content_hash: string
+          context: Json
+          id: string
+          invalidated_at: string | null
+          project_id: string
+          relations_hash: string
+          scene_id: string
+          scene_version_id: string
+          ttl_expires_at: string
+        }
+        Insert: {
+          cached_at?: string
+          character_id: string
+          content_hash: string
+          context: Json
+          id?: string
+          invalidated_at?: string | null
+          project_id: string
+          relations_hash: string
+          scene_id: string
+          scene_version_id: string
+          ttl_expires_at?: string
+        }
+        Update: {
+          cached_at?: string
+          character_id?: string
+          content_hash?: string
+          context?: Json
+          id?: string
+          invalidated_at?: string | null
+          project_id?: string
+          relations_hash?: string
+          scene_id?: string
+          scene_version_id?: string
+          ttl_expires_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "character_scene_context_cache_character_id_fkey"
+            columns: ["character_id"]
+            isOneToOne: false
+            referencedRelation: "narrative_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "character_scene_context_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "character_scene_context_cache_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      character_scene_contexts: {
+        Row: {
+          allies_in_scene: string[] | null
+          antagonists_in_scene: string[] | null
+          cached_at: string | null
+          character_id: string
+          character_name: string
+          content_hash: string
+          emotional_arc: string | null
+          emotional_beat: string | null
+          emotional_state: string | null
+          id: string
+          is_protagonist: boolean | null
+          project_id: string
+          protagonist_id: string | null
+          protagonist_name: string | null
+          protagonist_name_ref: string | null
+          relationship_context: string | null
+          scene_id: string
+          scene_number: string | null
+          tension_level: number | null
+          thematic_tags: string[] | null
+        }
+        Insert: {
+          allies_in_scene?: string[] | null
+          antagonists_in_scene?: string[] | null
+          cached_at?: string | null
+          character_id: string
+          character_name: string
+          content_hash: string
+          emotional_arc?: string | null
+          emotional_beat?: string | null
+          emotional_state?: string | null
+          id?: string
+          is_protagonist?: boolean | null
+          project_id: string
+          protagonist_id?: string | null
+          protagonist_name?: string | null
+          protagonist_name_ref?: string | null
+          relationship_context?: string | null
+          scene_id: string
+          scene_number?: string | null
+          tension_level?: number | null
+          thematic_tags?: string[] | null
+        }
+        Update: {
+          allies_in_scene?: string[] | null
+          antagonists_in_scene?: string[] | null
+          cached_at?: string | null
+          character_id?: string
+          character_name?: string
+          content_hash?: string
+          emotional_arc?: string | null
+          emotional_beat?: string | null
+          emotional_state?: string | null
+          id?: string
+          is_protagonist?: boolean | null
+          project_id?: string
+          protagonist_id?: string | null
+          protagonist_name?: string | null
+          protagonist_name_ref?: string | null
+          relationship_context?: string | null
+          scene_id?: string
+          scene_number?: string | null
+          tension_level?: number | null
+          thematic_tags?: string[] | null
+        }
+        Relationships: []
       }
       character_visual_dna: {
         Row: {
+          age_range: string | null
+          binding_markers: Json | null
+          biological_sex: string | null
+          body_type: string | null
           character_name: string
           contradiction_flags: Json
           created_at: string
           created_by: string | null
+          ethnicity: string[] | null
+          facial_archetype: string | null
           flexible_axes: Json
+          gender_presentation: string | null
+          height_class: string | null
           id: string
+          identity_confidence: Json | null
+          identity_evidence: Json | null
+          identity_inference_type: Json | null
           identity_signature: Json | null
           identity_strength: string | null
           inferred_guidance: Json
@@ -2619,18 +2222,36 @@ export type Database = {
           locked_invariants: Json
           missing_clarifications: Json
           narrative_markers: Json
+          physical_categories: Json | null
           producer_guidance: Json
           project_id: string
+          role_archetype: string | null
           script_truth: Json
+          social_class: string | null
+          traits_json: Json | null
+          user_override: boolean | null
           version_number: number
+          voice_quality: string | null
+          wardrobe_signals: Json | null
         }
         Insert: {
+          age_range?: string | null
+          binding_markers?: Json | null
+          biological_sex?: string | null
+          body_type?: string | null
           character_name: string
           contradiction_flags?: Json
           created_at?: string
           created_by?: string | null
+          ethnicity?: string[] | null
+          facial_archetype?: string | null
           flexible_axes?: Json
+          gender_presentation?: string | null
+          height_class?: string | null
           id?: string
+          identity_confidence?: Json | null
+          identity_evidence?: Json | null
+          identity_inference_type?: Json | null
           identity_signature?: Json | null
           identity_strength?: string | null
           inferred_guidance?: Json
@@ -2638,18 +2259,36 @@ export type Database = {
           locked_invariants?: Json
           missing_clarifications?: Json
           narrative_markers?: Json
+          physical_categories?: Json | null
           producer_guidance?: Json
           project_id: string
+          role_archetype?: string | null
           script_truth?: Json
+          social_class?: string | null
+          traits_json?: Json | null
+          user_override?: boolean | null
           version_number?: number
+          voice_quality?: string | null
+          wardrobe_signals?: Json | null
         }
         Update: {
+          age_range?: string | null
+          binding_markers?: Json | null
+          biological_sex?: string | null
+          body_type?: string | null
           character_name?: string
           contradiction_flags?: Json
           created_at?: string
           created_by?: string | null
+          ethnicity?: string[] | null
+          facial_archetype?: string | null
           flexible_axes?: Json
+          gender_presentation?: string | null
+          height_class?: string | null
           id?: string
+          identity_confidence?: Json | null
+          identity_evidence?: Json | null
+          identity_inference_type?: Json | null
           identity_signature?: Json | null
           identity_strength?: string | null
           inferred_guidance?: Json
@@ -2657,10 +2296,17 @@ export type Database = {
           locked_invariants?: Json
           missing_clarifications?: Json
           narrative_markers?: Json
+          physical_categories?: Json | null
           producer_guidance?: Json
           project_id?: string
+          role_archetype?: string | null
           script_truth?: Json
+          social_class?: string | null
+          traits_json?: Json | null
+          user_override?: boolean | null
           version_number?: number
+          voice_quality?: string | null
+          wardrobe_signals?: Json | null
         }
         Relationships: [
           {
@@ -2817,22 +2463,7 @@ export type Database = {
           settings_json?: Json | null
           strictness_mode?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "cinematic_quality_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "cinematic_quality_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       coherence_checks_runs: {
         Row: {
@@ -2865,22 +2496,7 @@ export type Database = {
           project_id?: string
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "coherence_checks_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "coherence_checks_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       coherence_findings: {
         Row: {
@@ -2926,20 +2542,6 @@ export type Database = {
           title?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "coherence_findings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "coherence_findings_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "coherence_findings_run_id_fkey"
             columns: ["run_id"]
@@ -3185,22 +2787,7 @@ export type Database = {
           title?: string
           year?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "comparable_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "comparable_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       comparable_influencers: {
         Row: {
@@ -3245,20 +2832,6 @@ export type Database = {
             columns: ["candidate_id"]
             isOneToOne: false
             referencedRelation: "comparable_candidates"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "comparable_influencers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "comparable_influencers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -3317,66 +2890,74 @@ export type Database = {
             referencedRelation: "project_documents"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      concept_brief_sections: {
+        Row: {
+          canon_drift_json: Json | null
+          convergence_score_json: Json | null
+          created_at: string | null
+          id: string
+          last_rewrite_at: string | null
+          plaintext: string | null
+          project_id: string
+          rewrite_attempts: number | null
+          section_key: string
+          section_label: string
+          status: string
+          updated_at: string | null
+          version_id: string
+        }
+        Insert: {
+          canon_drift_json?: Json | null
+          convergence_score_json?: Json | null
+          created_at?: string | null
+          id?: string
+          last_rewrite_at?: string | null
+          plaintext?: string | null
+          project_id: string
+          rewrite_attempts?: number | null
+          section_key: string
+          section_label: string
+          status?: string
+          updated_at?: string | null
+          version_id: string
+        }
+        Update: {
+          canon_drift_json?: Json | null
+          convergence_score_json?: Json | null
+          created_at?: string | null
+          id?: string
+          last_rewrite_at?: string | null
+          plaintext?: string | null
+          project_id?: string
+          rewrite_attempts?: number | null
+          section_key?: string
+          section_label?: string
+          status?: string
+          updated_at?: string | null
+          version_id?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "comparable_script_sources_project_id_fkey"
+            foreignKeyName: "concept_brief_sections_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "comparable_script_sources_project_id_fkey"
+            foreignKeyName: "concept_brief_sections_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
-        ]
-      }
-      competition_rounds: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          group_id: string
-          id: string
-          round_index: number
-          round_type: string
-          source_round_id: string | null
-          status: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          group_id: string
-          id?: string
-          round_index?: number
-          round_type?: string
-          source_round_id?: string | null
-          status?: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          group_id?: string
-          id?: string
-          round_index?: number
-          round_type?: string
-          source_round_id?: string | null
-          status?: string
-        }
-        Relationships: [
           {
-            foreignKeyName: "competition_rounds_group_id_fkey"
-            columns: ["group_id"]
+            foreignKeyName: "concept_brief_sections_version_id_fkey"
+            columns: ["version_id"]
             isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "competition_rounds_source_round_id_fkey"
-            columns: ["source_round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
+            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -3534,20 +3115,6 @@ export type Database = {
             columns: ["pitch_idea_id"]
             isOneToOne: false
             referencedRelation: "pitch_ideas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "concept_lock_documents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "concept_lock_documents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -3711,315 +3278,43 @@ export type Database = {
             referencedRelation: "interview_subjects"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "consent_forms_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "consent_forms_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
-      convergence_candidates: {
+      convergence_jobs: {
         Row: {
-          advisory_codes: string[] | null
-          asset_id: string | null
-          axis_scores: Json | null
-          candidate_index: number
-          confidence: string | null
-          created_at: string
-          evaluated_against: string[] | null
-          evaluation_mode: string | null
-          generation_config: Json | null
-          hard_fail_codes: string[] | null
-          id: string
-          rank_position: number | null
-          raw_evaluation_json: Json | null
-          refinement_fitness: Json | null
-          round_id: string
-          run_id: string
-          score: number | null
-          score_band: string | null
-          scoring_model: string | null
-          scoring_prompt_version: string | null
-          selection_rationale: string | null
-          selection_status: string | null
-          status: string
-          updated_at: string
-        }
-        Insert: {
-          advisory_codes?: string[] | null
-          asset_id?: string | null
-          axis_scores?: Json | null
-          candidate_index?: number
-          confidence?: string | null
-          created_at?: string
-          evaluated_against?: string[] | null
-          evaluation_mode?: string | null
-          generation_config?: Json | null
-          hard_fail_codes?: string[] | null
-          id?: string
-          rank_position?: number | null
-          raw_evaluation_json?: Json | null
-          refinement_fitness?: Json | null
-          round_id: string
-          run_id: string
-          score?: number | null
-          score_band?: string | null
-          scoring_model?: string | null
-          scoring_prompt_version?: string | null
-          selection_rationale?: string | null
-          selection_status?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Update: {
-          advisory_codes?: string[] | null
-          asset_id?: string | null
-          axis_scores?: Json | null
-          candidate_index?: number
-          confidence?: string | null
-          created_at?: string
-          evaluated_against?: string[] | null
-          evaluation_mode?: string | null
-          generation_config?: Json | null
-          hard_fail_codes?: string[] | null
-          id?: string
-          rank_position?: number | null
-          raw_evaluation_json?: Json | null
-          refinement_fitness?: Json | null
-          round_id?: string
-          run_id?: string
-          score?: number | null
-          score_band?: string | null
-          scoring_model?: string | null
-          scoring_prompt_version?: string | null
-          selection_rationale?: string | null
-          selection_status?: string | null
-          status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "convergence_candidates_asset_id_fkey"
-            columns: ["asset_id"]
-            isOneToOne: false
-            referencedRelation: "ai_actor_assets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "convergence_candidates_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "convergence_rounds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "convergence_candidates_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "convergence_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      convergence_events: {
-        Row: {
-          created_at: string
-          event_type: string
-          id: string
-          payload: Json
-          round_id: string | null
-          run_id: string
-        }
-        Insert: {
-          created_at?: string
-          event_type: string
-          id?: string
-          payload?: Json
-          round_id?: string | null
-          run_id: string
-        }
-        Update: {
-          created_at?: string
-          event_type?: string
-          id?: string
-          payload?: Json
-          round_id?: string | null
-          run_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "convergence_events_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "convergence_rounds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "convergence_events_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "convergence_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      convergence_rounds: {
-        Row: {
-          avg_score: number | null
-          best_score: number | null
           completed_at: string | null
-          created_at: string
-          evaluation_mode: string | null
-          evaluation_reference_policy: string | null
-          generation_count: number
+          created_at: string | null
+          document_id: string | null
+          error: string | null
           id: string
-          improvement_delta: number | null
-          keeper_count: number
-          reference_ids: string[] | null
-          refinement_plan: Json | null
-          rejected_count: number
-          round_number: number
-          run_id: string
-          stage: string
-          started_at: string | null
-          stop_eligible: boolean
-          strategy: string
+          project_id: string | null
+          result_json: Json | null
+          status: string | null
+          version_id: string | null
         }
         Insert: {
-          avg_score?: number | null
-          best_score?: number | null
           completed_at?: string | null
-          created_at?: string
-          evaluation_mode?: string | null
-          evaluation_reference_policy?: string | null
-          generation_count?: number
+          created_at?: string | null
+          document_id?: string | null
+          error?: string | null
           id?: string
-          improvement_delta?: number | null
-          keeper_count?: number
-          reference_ids?: string[] | null
-          refinement_plan?: Json | null
-          rejected_count?: number
-          round_number?: number
-          run_id: string
-          stage?: string
-          started_at?: string | null
-          stop_eligible?: boolean
-          strategy?: string
+          project_id?: string | null
+          result_json?: Json | null
+          status?: string | null
+          version_id?: string | null
         }
         Update: {
-          avg_score?: number | null
-          best_score?: number | null
           completed_at?: string | null
-          created_at?: string
-          evaluation_mode?: string | null
-          evaluation_reference_policy?: string | null
-          generation_count?: number
+          created_at?: string | null
+          document_id?: string | null
+          error?: string | null
           id?: string
-          improvement_delta?: number | null
-          keeper_count?: number
-          reference_ids?: string[] | null
-          refinement_plan?: Json | null
-          rejected_count?: number
-          round_number?: number
-          run_id?: string
-          stage?: string
-          started_at?: string | null
-          stop_eligible?: boolean
-          strategy?: string
+          project_id?: string | null
+          result_json?: Json | null
+          status?: string | null
+          version_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "convergence_rounds_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "convergence_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      convergence_runs: {
-        Row: {
-          actor_id: string
-          actor_version_id: string
-          best_candidate_id: string | null
-          completed_at: string | null
-          created_at: string
-          current_round: number
-          final_recommendation: string | null
-          id: string
-          max_rounds: number
-          mode: string
-          policy_json: Json
-          shortlisted_candidate_ids: string[] | null
-          started_at: string | null
-          status: string
-          stop_reason: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          actor_id: string
-          actor_version_id: string
-          best_candidate_id?: string | null
-          completed_at?: string | null
-          created_at?: string
-          current_round?: number
-          final_recommendation?: string | null
-          id?: string
-          max_rounds?: number
-          mode?: string
-          policy_json?: Json
-          shortlisted_candidate_ids?: string[] | null
-          started_at?: string | null
-          status?: string
-          stop_reason?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          actor_id?: string
-          actor_version_id?: string
-          best_candidate_id?: string | null
-          completed_at?: string | null
-          created_at?: string
-          current_round?: number
-          final_recommendation?: string | null
-          id?: string
-          max_rounds?: number
-          mode?: string
-          policy_json?: Json
-          shortlisted_candidate_ids?: string[] | null
-          started_at?: string | null
-          status?: string
-          stop_reason?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "convergence_runs_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "ai_actors"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "convergence_runs_actor_version_id_fkey"
-            columns: ["actor_version_id"]
-            isOneToOne: false
-            referencedRelation: "ai_actor_versions"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       convergence_scores: {
         Row: {
@@ -4088,22 +3383,7 @@ export type Database = {
           trajectory?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "convergence_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "convergence_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       copro_frameworks: {
         Row: {
@@ -5055,20 +4335,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "coverage_runs_prompt_version_id_fkey"
             columns: ["prompt_version_id"]
             isOneToOne: false
@@ -5227,6 +4493,8 @@ export type Database = {
           decision_text: string
           decision_value: Json | null
           id: string
+          locked: boolean
+          meta: Json | null
           project_id: string
           scope: string
           source: string
@@ -5245,6 +4513,8 @@ export type Database = {
           decision_text: string
           decision_value?: Json | null
           id?: string
+          locked?: boolean
+          meta?: Json | null
           project_id: string
           scope?: string
           source: string
@@ -5263,6 +4533,8 @@ export type Database = {
           decision_text?: string
           decision_value?: Json | null
           id?: string
+          locked?: boolean
+          meta?: Json | null
           project_id?: string
           scope?: string
           source?: string
@@ -5275,20 +4547,6 @@ export type Database = {
           title?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "decision_ledger_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "decision_ledger_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "decision_ledger_superseded_by_fkey"
             columns: ["superseded_by"]
@@ -5332,20 +4590,6 @@ export type Database = {
             columns: ["demo_run_id"]
             isOneToOne: false
             referencedRelation: "demo_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "demo_bundles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "demo_bundles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -5401,20 +4645,6 @@ export type Database = {
             referencedRelation: "project_documents"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "demo_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "demo_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       dev_engine_convergence_history: {
@@ -5466,20 +4696,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "project_documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "dev_engine_convergence_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "dev_engine_convergence_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -5686,19 +4902,356 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      dev_seed_v2_axes: {
+        Row: {
+          axis_confidence: number | null
+          axis_key: string
+          axis_priority: number | null
+          axis_role: string | null
+          axis_statement: string | null
+          created_at: string | null
+          id: string
+          project_id: string
+          seed_id: string
+        }
+        Insert: {
+          axis_confidence?: number | null
+          axis_key: string
+          axis_priority?: number | null
+          axis_role?: string | null
+          axis_statement?: string | null
+          created_at?: string | null
+          id?: string
+          project_id: string
+          seed_id: string
+        }
+        Update: {
+          axis_confidence?: number | null
+          axis_key?: string
+          axis_priority?: number | null
+          axis_role?: string | null
+          axis_statement?: string | null
+          created_at?: string | null
+          id?: string
+          project_id?: string
+          seed_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "dev_engine_sessions_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "dev_seed_v2_axes_seed_id_fkey"
+            columns: ["seed_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
           },
+        ]
+      }
+      dev_seed_v2_beats: {
+        Row: {
+          beat_description: string | null
+          beat_key: string
+          created_at: string | null
+          id: string
+          project_id: string | null
+          seed_id: string
+        }
+        Insert: {
+          beat_description?: string | null
+          beat_key: string
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          seed_id: string
+        }
+        Update: {
+          beat_description?: string | null
+          beat_key?: string
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          seed_id?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "dev_engine_sessions_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "dev_seed_v2_beats_seed_id_fkey"
+            columns: ["seed_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_canon_rules: {
+        Row: {
+          created_at: string | null
+          id: string
+          project_id: string
+          rule_description: string
+          rule_key: string
+          rule_scope: string | null
+          seed_id: string
+          severity: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          project_id: string
+          rule_description: string
+          rule_key: string
+          rule_scope?: string | null
+          seed_id: string
+          severity?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          project_id?: string
+          rule_description?: string
+          rule_key?: string
+          rule_scope?: string | null
+          seed_id?: string
+          severity?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_canon_rules_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_entities: {
+        Row: {
+          created_at: string | null
+          entity_key: string
+          entity_type: string | null
+          id: string
+          project_id: string | null
+          seed_id: string
+          story_critical_flag: boolean | null
+        }
+        Insert: {
+          created_at?: string | null
+          entity_key: string
+          entity_type?: string | null
+          id?: string
+          project_id?: string | null
+          seed_id: string
+          story_critical_flag?: boolean | null
+        }
+        Update: {
+          created_at?: string | null
+          entity_key?: string
+          entity_type?: string | null
+          id?: string
+          project_id?: string | null
+          seed_id?: string
+          story_critical_flag?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_entities_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_entity_relations: {
+        Row: {
+          created_at: string | null
+          id: string
+          project_id: string | null
+          relation_type: string | null
+          seed_id: string
+          source_entity_key: string | null
+          target_entity_key: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          relation_type?: string | null
+          seed_id: string
+          source_entity_key?: string | null
+          target_entity_key?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          project_id?: string | null
+          relation_type?: string | null
+          seed_id?: string
+          source_entity_key?: string | null
+          target_entity_key?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_entity_relations_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_generation_intent: {
+        Row: {
+          created_at: string | null
+          id: string
+          mystery_opacity: number | null
+          project_id: string | null
+          projection_targets: Json | null
+          seed_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          mystery_opacity?: number | null
+          project_id?: string | null
+          projection_targets?: Json | null
+          seed_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          mystery_opacity?: number | null
+          project_id?: string | null
+          projection_targets?: Json | null
+          seed_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_generation_intent_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_premise: {
+        Row: {
+          created_at: string | null
+          emotional_promise: string | null
+          id: string
+          premise: string | null
+          project_id: string | null
+          seed_id: string
+          theme_vector: Json | null
+        }
+        Insert: {
+          created_at?: string | null
+          emotional_promise?: string | null
+          id?: string
+          premise?: string | null
+          project_id?: string | null
+          seed_id: string
+          theme_vector?: Json | null
+        }
+        Update: {
+          created_at?: string | null
+          emotional_promise?: string | null
+          id?: string
+          premise?: string | null
+          project_id?: string | null
+          seed_id?: string
+          theme_vector?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_premise_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      dev_seed_v2_projects: {
+        Row: {
+          created_at: string | null
+          derivation_source: string | null
+          derived: boolean
+          id: string
+          project_id: string
+          promoted_at: string | null
+          promotion_summary: Json | null
+        }
+        Insert: {
+          created_at?: string | null
+          derivation_source?: string | null
+          derived?: boolean
+          id?: string
+          project_id: string
+          promoted_at?: string | null
+          promotion_summary?: Json | null
+        }
+        Update: {
+          created_at?: string | null
+          derivation_source?: string | null
+          derived?: boolean
+          id?: string
+          project_id?: string
+          promoted_at?: string | null
+          promotion_summary?: Json | null
+        }
+        Relationships: []
+      }
+      dev_seed_v2_units: {
+        Row: {
+          axis_source: string | null
+          created_at: string | null
+          dependency_position: string | null
+          failure_mode: string | null
+          id: string
+          initial_alignment_status: string | null
+          project_id: string
+          seed_id: string
+          success_state: string | null
+          unit_key: string
+          unit_statement: string | null
+          unit_type: string
+        }
+        Insert: {
+          axis_source?: string | null
+          created_at?: string | null
+          dependency_position?: string | null
+          failure_mode?: string | null
+          id?: string
+          initial_alignment_status?: string | null
+          project_id: string
+          seed_id: string
+          success_state?: string | null
+          unit_key: string
+          unit_statement?: string | null
+          unit_type: string
+        }
+        Update: {
+          axis_source?: string | null
+          created_at?: string | null
+          dependency_position?: string | null
+          failure_mode?: string | null
+          id?: string
+          initial_alignment_status?: string | null
+          project_id?: string
+          seed_id?: string
+          success_state?: string | null
+          unit_key?: string
+          unit_statement?: string | null
+          unit_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dev_seed_v2_units_seed_id_fkey"
+            columns: ["seed_id"]
+            isOneToOne: false
+            referencedRelation: "dev_seed_v2_projects"
             referencedColumns: ["id"]
           },
         ]
@@ -5740,20 +5293,6 @@ export type Database = {
             columns: ["parent_branch_id"]
             isOneToOne: false
             referencedRelation: "development_branches"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "development_branches_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "development_branches_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -5817,66 +5356,69 @@ export type Database = {
       }
       development_notes: {
         Row: {
+          apply_timing: string | null
           category: string | null
+          confidence: number | null
           created_at: string | null
           description: string | null
+          do_not_resolve: boolean | null
           document_id: string
           document_version_id: string
+          evidence_references: string[] | null
           id: string
           note_key: string
+          note_source: string | null
           project_id: string
           regressed: boolean | null
           resolved: boolean | null
           resolved_in_version: string | null
           severity: string | null
+          target_deliverable_type: string | null
           why_it_matters: string | null
         }
         Insert: {
+          apply_timing?: string | null
           category?: string | null
+          confidence?: number | null
           created_at?: string | null
           description?: string | null
+          do_not_resolve?: boolean | null
           document_id: string
           document_version_id: string
+          evidence_references?: string[] | null
           id?: string
           note_key: string
+          note_source?: string | null
           project_id: string
           regressed?: boolean | null
           resolved?: boolean | null
           resolved_in_version?: string | null
           severity?: string | null
+          target_deliverable_type?: string | null
           why_it_matters?: string | null
         }
         Update: {
+          apply_timing?: string | null
           category?: string | null
+          confidence?: number | null
           created_at?: string | null
           description?: string | null
+          do_not_resolve?: boolean | null
           document_id?: string
           document_version_id?: string
+          evidence_references?: string[] | null
           id?: string
           note_key?: string
+          note_source?: string | null
           project_id?: string
           regressed?: boolean | null
           resolved?: boolean | null
           resolved_in_version?: string | null
           severity?: string | null
+          target_deliverable_type?: string | null
           why_it_matters?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "development_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "development_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       development_runs: {
         Row: {
@@ -5894,6 +5436,7 @@ export type Database = {
           project_id: string
           run_type: string
           schema_version: string | null
+          source: string | null
           strategic_priority: string | null
           user_id: string
           version_id: string
@@ -5913,6 +5456,7 @@ export type Database = {
           project_id: string
           run_type?: string
           schema_version?: string | null
+          source?: string | null
           strategic_priority?: string | null
           user_id: string
           version_id: string
@@ -5932,6 +5476,7 @@ export type Database = {
           project_id?: string
           run_type?: string
           schema_version?: string | null
+          source?: string | null
           strategic_priority?: string | null
           user_id?: string
           version_id?: string
@@ -5942,20 +5487,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "project_documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "development_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "development_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -6192,115 +5723,6 @@ export type Database = {
           },
         ]
       }
-      dna_extraction_runs: {
-        Row: {
-          chunk_boundaries: Json
-          chunk_count: number
-          chunk_signals: Json
-          created_at: string
-          dna_profile_id: string
-          error: string | null
-          extraction_mode: string
-          id: string
-          normalized_text_length: number
-          provenance: Json
-          source_mode: string
-          source_url: string | null
-          status: string
-          synthesis_model: string | null
-          user_id: string
-        }
-        Insert: {
-          chunk_boundaries?: Json
-          chunk_count?: number
-          chunk_signals?: Json
-          created_at?: string
-          dna_profile_id: string
-          error?: string | null
-          extraction_mode?: string
-          id?: string
-          normalized_text_length?: number
-          provenance?: Json
-          source_mode?: string
-          source_url?: string | null
-          status?: string
-          synthesis_model?: string | null
-          user_id: string
-        }
-        Update: {
-          chunk_boundaries?: Json
-          chunk_count?: number
-          chunk_signals?: Json
-          created_at?: string
-          dna_profile_id?: string
-          error?: string | null
-          extraction_mode?: string
-          id?: string
-          normalized_text_length?: number
-          provenance?: Json
-          source_mode?: string
-          source_url?: string | null
-          status?: string
-          synthesis_model?: string | null
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dna_extraction_runs_dna_profile_id_fkey"
-            columns: ["dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      dna_source_links: {
-        Row: {
-          created_at: string
-          dna_profile_id: string
-          id: string
-          is_primary: boolean
-          notes: string | null
-          source_label: string
-          source_type: string
-          source_url: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          dna_profile_id: string
-          id?: string
-          is_primary?: boolean
-          notes?: string | null
-          source_label: string
-          source_type?: string
-          source_url: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          dna_profile_id?: string
-          id?: string
-          is_primary?: boolean
-          notes?: string | null
-          source_label?: string
-          source_type?: string
-          source_url?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "dna_source_links_dna_profile_id_fkey"
-            columns: ["dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       doc_change_proposals: {
         Row: {
           created_at: string
@@ -6341,22 +5763,7 @@ export type Database = {
           test_report?: Json | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "doc_change_proposals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "doc_change_proposals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       doc_fact_ledger_items: {
         Row: {
@@ -6392,22 +5799,7 @@ export type Database = {
           status?: string
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "doc_fact_ledger_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "doc_fact_ledger_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       doc_queries: {
         Row: {
@@ -6440,22 +5832,7 @@ export type Database = {
           scope?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "doc_queries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "doc_queries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       doc_query_answers: {
         Row: {
@@ -6697,22 +6074,7 @@ export type Database = {
           title?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "document_assistant_threads_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "document_assistant_threads_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       document_drift_events: {
         Row: {
@@ -6754,22 +6116,7 @@ export type Database = {
           resolved_at?: string | null
           resolved_by?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "document_drift_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "document_drift_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       document_ingestions: {
         Row: {
@@ -6808,19 +6155,64 @@ export type Database = {
           status?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      document_version_subscores: {
+        Row: {
+          category: string
+          confidence: number | null
+          created_at: string | null
+          delta_from_previous: number | null
+          dimension: string
+          id: string
+          is_valid: boolean
+          run_id: string | null
+          score: number
+          trend: string | null
+          validation_error: string | null
+          version_id: string
+        }
+        Insert: {
+          category: string
+          confidence?: number | null
+          created_at?: string | null
+          delta_from_previous?: number | null
+          dimension: string
+          id?: string
+          is_valid?: boolean
+          run_id?: string | null
+          score: number
+          trend?: string | null
+          validation_error?: string | null
+          version_id: string
+        }
+        Update: {
+          category?: string
+          confidence?: number | null
+          created_at?: string | null
+          delta_from_previous?: number | null
+          dimension?: string
+          id?: string
+          is_valid?: boolean
+          run_id?: string | null
+          score?: number
+          trend?: string | null
+          validation_error?: string | null
+          version_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "document_ingestions_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "document_version_subscores_run_id_fkey"
+            columns: ["run_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
+            referencedRelation: "development_runs"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "document_ingestions_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "document_version_subscores_version_id_fkey"
+            columns: ["version_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -6871,22 +6263,7 @@ export type Database = {
           risk_flags?: string[] | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "documentary_coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "documentary_coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       documentary_profiles: {
         Row: {
@@ -6958,22 +6335,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "documentary_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "documentary_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       drift_alerts: {
         Row: {
@@ -7029,20 +6391,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "drift_alerts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "drift_alerts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "drift_alerts_scenario_id_fkey"
             columns: ["scenario_id"]
             isOneToOne: false
@@ -7079,22 +6427,7 @@ export type Database = {
           user_id?: string
           version_label?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "edit_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "edit_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       engine_overrides: {
         Row: {
@@ -7130,22 +6463,7 @@ export type Database = {
           scope?: string
           target_run_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "engine_overrides_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "engine_overrides_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       engine_profiles: {
         Row: {
@@ -7187,22 +6505,7 @@ export type Database = {
           rules?: Json
           rules_summary?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "engine_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "engine_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       engine_source_map: {
         Row: {
@@ -7282,70 +6585,6 @@ export type Database = {
         }
         Relationships: []
       }
-      entity_aliases: {
-        Row: {
-          alias_name: string
-          canonical_entity_id: string
-          confidence: number
-          created_at: string
-          id: string
-          normalized_alias: string
-          project_id: string
-          review_status: string
-          reviewed_at: string | null
-          reviewed_by: string | null
-          source: string
-        }
-        Insert: {
-          alias_name: string
-          canonical_entity_id: string
-          confidence?: number
-          created_at?: string
-          id?: string
-          normalized_alias: string
-          project_id: string
-          review_status?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          source?: string
-        }
-        Update: {
-          alias_name?: string
-          canonical_entity_id?: string
-          confidence?: number
-          created_at?: string
-          id?: string
-          normalized_alias?: string
-          project_id?: string
-          review_status?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          source?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "entity_aliases_canonical_entity_id_fkey"
-            columns: ["canonical_entity_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_entities"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "entity_aliases_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "entity_aliases_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       entity_visual_states: {
         Row: {
           active: boolean
@@ -7358,10 +6597,8 @@ export type Database = {
           entity_name: string
           entity_type: string
           id: string
-          ingestion_run_id: string | null
           parent_state_id: string | null
           project_id: string
-          review_status: string
           source_reason: string | null
           state_category: string
           state_key: string
@@ -7380,10 +6617,8 @@ export type Database = {
           entity_name: string
           entity_type: string
           id?: string
-          ingestion_run_id?: string | null
           parent_state_id?: string | null
           project_id: string
-          review_status?: string
           source_reason?: string | null
           state_category: string
           state_key: string
@@ -7402,10 +6637,8 @@ export type Database = {
           entity_name?: string
           entity_type?: string
           id?: string
-          ingestion_run_id?: string | null
           parent_state_id?: string | null
           project_id?: string
-          review_status?: string
           source_reason?: string | null
           state_category?: string
           state_key?: string
@@ -7414,13 +6647,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "entity_visual_states_ingestion_run_id_fkey"
-            columns: ["ingestion_run_id"]
-            isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "entity_visual_states_parent_state_id_fkey"
             columns: ["parent_state_id"]
@@ -7480,185 +6706,6 @@ export type Database = {
             referencedRelation: "series_episodes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "episode_activity_log_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_activity_log_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      episode_comments: {
-        Row: {
-          anchor: Json | null
-          comment_text: string
-          created_at: string
-          created_by: string
-          episode_number: number
-          id: string
-          project_id: string
-          status: string
-          thread_id: string | null
-          version_id: string | null
-        }
-        Insert: {
-          anchor?: Json | null
-          comment_text?: string
-          created_at?: string
-          created_by: string
-          episode_number: number
-          id?: string
-          project_id: string
-          status?: string
-          thread_id?: string | null
-          version_id?: string | null
-        }
-        Update: {
-          anchor?: Json | null
-          comment_text?: string
-          created_at?: string
-          created_by?: string
-          episode_number?: number
-          id?: string
-          project_id?: string
-          status?: string
-          thread_id?: string | null
-          version_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "episode_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      episode_compliance_reports: {
-        Row: {
-          created_at: string
-          episode_number: number
-          flags: Json
-          id: string
-          override_reason: string | null
-          project_id: string
-          resolver_hash: string | null
-          scores: Json
-          suggestions: string | null
-          template_version_id: string | null
-          user_id: string
-          version_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          episode_number: number
-          flags?: Json
-          id?: string
-          override_reason?: string | null
-          project_id: string
-          resolver_hash?: string | null
-          scores?: Json
-          suggestions?: string | null
-          template_version_id?: string | null
-          user_id: string
-          version_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          episode_number?: number
-          flags?: Json
-          id?: string
-          override_reason?: string | null
-          project_id?: string
-          resolver_hash?: string | null
-          scores?: Json
-          suggestions?: string | null
-          template_version_id?: string | null
-          user_id?: string
-          version_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "episode_compliance_reports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_compliance_reports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      episode_continuity_ledgers: {
-        Row: {
-          created_at: string
-          episode_number: number
-          id: string
-          project_id: string
-          resolver_hash: string | null
-          status: string
-          summary: Json
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          episode_number: number
-          id?: string
-          project_id: string
-          resolver_hash?: string | null
-          status?: string
-          summary?: Json
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          episode_number?: number
-          id?: string
-          project_id?: string
-          resolver_hash?: string | null
-          status?: string
-          summary?: Json
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "episode_continuity_ledgers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_continuity_ledgers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       episode_continuity_notes: {
@@ -7686,22 +6733,7 @@ export type Database = {
           summary?: Json
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "episode_continuity_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_continuity_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       episode_handoffs: {
         Row: {
@@ -7791,20 +6823,6 @@ export type Database = {
             columns: ["from_script_id"]
             isOneToOne: false
             referencedRelation: "scripts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "episode_handoffs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_handoffs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -7906,20 +6924,6 @@ export type Database = {
             referencedRelation: "series_episodes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "episode_patch_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_patch_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       episode_validations: {
@@ -7986,147 +6990,7 @@ export type Database = {
             referencedRelation: "series_episodes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "episode_validations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "episode_validations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
-      }
-      execution_recommendation_runs: {
-        Row: {
-          created_at: string
-          id: string
-          project_id: string
-          recommendations_snapshot: Json
-          run_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          project_id: string
-          recommendations_snapshot?: Json
-          run_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          project_id?: string
-          recommendations_snapshot?: Json
-          run_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "execution_recommendation_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "execution_recommendation_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      execution_recommendation_triage: {
-        Row: {
-          comparison_key: string
-          created_at: string
-          created_by: string | null
-          id: string
-          project_id: string
-          recommendation_id: string
-          triage_status: string
-          updated_at: string
-        }
-        Insert: {
-          comparison_key: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          project_id: string
-          recommendation_id: string
-          triage_status: string
-          updated_at?: string
-        }
-        Update: {
-          comparison_key?: string
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          project_id?: string
-          recommendation_id?: string
-          triage_status?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "execution_recommendation_triage_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "execution_recommendation_triage_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      export_jobs: {
-        Row: {
-          created_at: string
-          error: string | null
-          id: string
-          progress: number
-          project_id: string
-          signed_url: string | null
-          status: string
-          storage_path: string | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          error?: string | null
-          id?: string
-          progress?: number
-          project_id: string
-          signed_url?: string | null
-          status?: string
-          storage_path?: string | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          error?: string | null
-          id?: string
-          progress?: number
-          project_id?: string
-          signed_url?: string | null
-          status?: string
-          storage_path?: string | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: []
       }
       failure_contrast: {
         Row: {
@@ -8266,81 +7130,6 @@ export type Database = {
         }
         Relationships: []
       }
-      format_profiles: {
-        Row: {
-          created_at: string
-          episode_count: number | null
-          episode_length_target: number | null
-          format_subtype: string
-          id: string
-          max_page_count: number
-          max_runtime_min: number
-          min_page_count: number
-          min_runtime_min: number
-          owner_id: string
-          platform_target: string | null
-          production_type: string
-          project_id: string
-          strict_enforcement: boolean
-          target_page_count: number
-          target_runtime_min: number
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          episode_count?: number | null
-          episode_length_target?: number | null
-          format_subtype?: string
-          id?: string
-          max_page_count?: number
-          max_runtime_min?: number
-          min_page_count?: number
-          min_runtime_min?: number
-          owner_id: string
-          platform_target?: string | null
-          production_type?: string
-          project_id: string
-          strict_enforcement?: boolean
-          target_page_count?: number
-          target_runtime_min?: number
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          episode_count?: number | null
-          episode_length_target?: number | null
-          format_subtype?: string
-          id?: string
-          max_page_count?: number
-          max_runtime_min?: number
-          min_page_count?: number
-          min_runtime_min?: number
-          owner_id?: string
-          platform_target?: string | null
-          production_type?: string
-          project_id?: string
-          strict_enforcement?: boolean
-          target_page_count?: number
-          target_runtime_min?: number
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "format_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "format_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       grant_matches: {
         Row: {
           application_notes: string | null
@@ -8393,16 +7182,64 @@ export type Database = {
           url?: string | null
           user_id?: string
         }
+        Relationships: []
+      }
+      graph_mutation_proposals: {
+        Row: {
+          applied_at: string | null
+          created_at: string | null
+          entity_type: string
+          error_log: string | null
+          id: string
+          mutation_type: string
+          project_id: string
+          proposal_json: Json
+          proposal_status: string
+          review_comment: string | null
+          reviewed_at: string | null
+          run_id: string | null
+          source_note_id: string | null
+        }
+        Insert: {
+          applied_at?: string | null
+          created_at?: string | null
+          entity_type?: string
+          error_log?: string | null
+          id?: string
+          mutation_type?: string
+          project_id: string
+          proposal_json: Json
+          proposal_status?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          run_id?: string | null
+          source_note_id?: string | null
+        }
+        Update: {
+          applied_at?: string | null
+          created_at?: string | null
+          entity_type?: string
+          error_log?: string | null
+          id?: string
+          mutation_type?: string
+          project_id?: string
+          proposal_json?: Json
+          proposal_status?: string
+          review_comment?: string | null
+          reviewed_at?: string | null
+          run_id?: string | null
+          source_note_id?: string | null
+        }
         Relationships: [
           {
-            foreignKeyName: "grant_matches_project_id_fkey"
+            foreignKeyName: "graph_mutation_proposals_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "grant_matches_project_id_fkey"
+            foreignKeyName: "graph_mutation_proposals_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -8487,321 +7324,6 @@ export type Database = {
         }
         Relationships: []
       }
-      idea_blueprint_candidates: {
-        Row: {
-          blueprint_id: string
-          budget_band: string
-          created_at: string
-          engine: string | null
-          evaluated_scores: Json | null
-          format: string
-          genre: string
-          id: string
-          lane: string
-          logline: string
-          one_page_pitch: string
-          pitch_idea_id: string | null
-          promoted_at: string | null
-          promoted_pitch_idea_id: string | null
-          promotion_source: string | null
-          promotion_status: string
-          provenance: Json
-          raw_response: Json | null
-          run_id: string
-          score_company_fit: number
-          score_feasibility: number
-          score_lane_fit: number
-          score_market_heat: number
-          score_saturation_risk: number
-          score_total: number
-          scoring_method: string | null
-          title: string
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          blueprint_id: string
-          budget_band?: string
-          created_at?: string
-          engine?: string | null
-          evaluated_scores?: Json | null
-          format?: string
-          genre?: string
-          id?: string
-          lane?: string
-          logline?: string
-          one_page_pitch?: string
-          pitch_idea_id?: string | null
-          promoted_at?: string | null
-          promoted_pitch_idea_id?: string | null
-          promotion_source?: string | null
-          promotion_status?: string
-          provenance?: Json
-          raw_response?: Json | null
-          run_id: string
-          score_company_fit?: number
-          score_feasibility?: number
-          score_lane_fit?: number
-          score_market_heat?: number
-          score_saturation_risk?: number
-          score_total?: number
-          scoring_method?: string | null
-          title?: string
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          blueprint_id?: string
-          budget_band?: string
-          created_at?: string
-          engine?: string | null
-          evaluated_scores?: Json | null
-          format?: string
-          genre?: string
-          id?: string
-          lane?: string
-          logline?: string
-          one_page_pitch?: string
-          pitch_idea_id?: string | null
-          promoted_at?: string | null
-          promoted_pitch_idea_id?: string | null
-          promotion_source?: string | null
-          promotion_status?: string
-          provenance?: Json
-          raw_response?: Json | null
-          run_id?: string
-          score_company_fit?: number
-          score_feasibility?: number
-          score_lane_fit?: number
-          score_market_heat?: number
-          score_saturation_risk?: number
-          score_total?: number
-          scoring_method?: string | null
-          title?: string
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "idea_blueprint_candidates_blueprint_id_fkey"
-            columns: ["blueprint_id"]
-            isOneToOne: false
-            referencedRelation: "idea_blueprints"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "idea_blueprint_candidates_pitch_idea_id_fkey"
-            columns: ["pitch_idea_id"]
-            isOneToOne: false
-            referencedRelation: "pitch_ideas"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "idea_blueprint_candidates_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "idea_blueprint_runs"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      idea_blueprint_runs: {
-        Row: {
-          blueprint_count: number
-          candidate_count: number
-          config: Json
-          created_at: string
-          dna_inputs: Json
-          error: string | null
-          exemplar_ids: string[] | null
-          id: string
-          learning_pool_match_count: number | null
-          learning_pool_only: boolean
-          optimizer_mode: string | null
-          source_dna_profile_id: string | null
-          source_idea_ids: string[] | null
-          status: string
-          trend_signal_ids: string[] | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          blueprint_count?: number
-          candidate_count?: number
-          config?: Json
-          created_at?: string
-          dna_inputs?: Json
-          error?: string | null
-          exemplar_ids?: string[] | null
-          id?: string
-          learning_pool_match_count?: number | null
-          learning_pool_only?: boolean
-          optimizer_mode?: string | null
-          source_dna_profile_id?: string | null
-          source_idea_ids?: string[] | null
-          status?: string
-          trend_signal_ids?: string[] | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          blueprint_count?: number
-          candidate_count?: number
-          config?: Json
-          created_at?: string
-          dna_inputs?: Json
-          error?: string | null
-          exemplar_ids?: string[] | null
-          id?: string
-          learning_pool_match_count?: number | null
-          learning_pool_only?: boolean
-          optimizer_mode?: string | null
-          source_dna_profile_id?: string | null
-          source_idea_ids?: string[] | null
-          status?: string
-          trend_signal_ids?: string[] | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "idea_blueprint_runs_source_dna_profile_id_fkey"
-            columns: ["source_dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      idea_blueprints: {
-        Row: {
-          blueprint_family_key: string | null
-          blueprint_mode: string
-          budget_band: string
-          conflict_design: Json | null
-          conflict_engine: string | null
-          created_at: string
-          derived_from_idea_ids: string[] | null
-          dna_constraint_mode: string | null
-          engine: string | null
-          execution_pattern: Json | null
-          exemplar_inputs: Json | null
-          family_candidates_considered: Json | null
-          family_selection_confidence: number | null
-          family_selection_rationale: string | null
-          feasibility_constraints: Json
-          feasibility_design: Json | null
-          format: string
-          genre: string
-          hook_type: string | null
-          id: string
-          lane: string
-          market_design: Json
-          novelty_constraints: Json
-          protagonist_archetype: string | null
-          protagonist_design: Json | null
-          run_id: string
-          score_pattern: Json | null
-          source_dna_profile_id: string | null
-          source_engine_key: string | null
-          status: string
-          structural_patterns: Json
-          structural_summary: string | null
-          trend_inputs: Json | null
-          updated_at: string
-          user_id: string
-        }
-        Insert: {
-          blueprint_family_key?: string | null
-          blueprint_mode?: string
-          budget_band?: string
-          conflict_design?: Json | null
-          conflict_engine?: string | null
-          created_at?: string
-          derived_from_idea_ids?: string[] | null
-          dna_constraint_mode?: string | null
-          engine?: string | null
-          execution_pattern?: Json | null
-          exemplar_inputs?: Json | null
-          family_candidates_considered?: Json | null
-          family_selection_confidence?: number | null
-          family_selection_rationale?: string | null
-          feasibility_constraints?: Json
-          feasibility_design?: Json | null
-          format?: string
-          genre?: string
-          hook_type?: string | null
-          id?: string
-          lane?: string
-          market_design?: Json
-          novelty_constraints?: Json
-          protagonist_archetype?: string | null
-          protagonist_design?: Json | null
-          run_id: string
-          score_pattern?: Json | null
-          source_dna_profile_id?: string | null
-          source_engine_key?: string | null
-          status?: string
-          structural_patterns?: Json
-          structural_summary?: string | null
-          trend_inputs?: Json | null
-          updated_at?: string
-          user_id: string
-        }
-        Update: {
-          blueprint_family_key?: string | null
-          blueprint_mode?: string
-          budget_band?: string
-          conflict_design?: Json | null
-          conflict_engine?: string | null
-          created_at?: string
-          derived_from_idea_ids?: string[] | null
-          dna_constraint_mode?: string | null
-          engine?: string | null
-          execution_pattern?: Json | null
-          exemplar_inputs?: Json | null
-          family_candidates_considered?: Json | null
-          family_selection_confidence?: number | null
-          family_selection_rationale?: string | null
-          feasibility_constraints?: Json
-          feasibility_design?: Json | null
-          format?: string
-          genre?: string
-          hook_type?: string | null
-          id?: string
-          lane?: string
-          market_design?: Json
-          novelty_constraints?: Json
-          protagonist_archetype?: string | null
-          protagonist_design?: Json | null
-          run_id?: string
-          score_pattern?: Json | null
-          source_dna_profile_id?: string | null
-          source_engine_key?: string | null
-          status?: string
-          structural_patterns?: Json
-          structural_summary?: string | null
-          trend_inputs?: Json | null
-          updated_at?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "idea_blueprints_run_id_fkey"
-            columns: ["run_id"]
-            isOneToOne: false
-            referencedRelation: "idea_blueprint_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "idea_blueprints_source_dna_profile_id_fkey"
-            columns: ["source_dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       image_evaluations: {
         Row: {
           canon_match: string
@@ -8819,16 +7341,12 @@ export type Database = {
           drift_risk: string
           evaluation_method: string
           evaluation_summary: string | null
-          explanation: Json | null
-          governance_verdict: string | null
           id: string
-          image_audit_result: Json | null
           image_id: string
           lore_compatibility: string | null
           narrative_fit: string
           period_plausibility: string | null
           project_id: string
-          prompt_audit_result: Json | null
           traits_satisfied: Json
           traits_violated: Json
           wardrobe_fit: string
@@ -8849,16 +7367,12 @@ export type Database = {
           drift_risk?: string
           evaluation_method?: string
           evaluation_summary?: string | null
-          explanation?: Json | null
-          governance_verdict?: string | null
           id?: string
-          image_audit_result?: Json | null
           image_id: string
           lore_compatibility?: string | null
           narrative_fit?: string
           period_plausibility?: string | null
           project_id: string
-          prompt_audit_result?: Json | null
           traits_satisfied?: Json
           traits_violated?: Json
           wardrobe_fit?: string
@@ -8879,16 +7393,12 @@ export type Database = {
           drift_risk?: string
           evaluation_method?: string
           evaluation_summary?: string | null
-          explanation?: Json | null
-          governance_verdict?: string | null
           id?: string
-          image_audit_result?: Json | null
           image_id?: string
           lore_compatibility?: string | null
           narrative_fit?: string
           period_plausibility?: string | null
           project_id?: string
-          prompt_audit_result?: Json | null
           traits_satisfied?: Json
           traits_violated?: Json
           wardrobe_fit?: string
@@ -8960,22 +7470,7 @@ export type Database = {
           territory?: string | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "impact_partners_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "impact_partners_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       improvement_runs: {
         Row: {
@@ -9089,20 +7584,6 @@ export type Database = {
             referencedRelation: "script_versions"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "improvement_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "improvement_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       incentive_programs: {
@@ -9207,20 +7688,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "integration_connections_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "integration_connections_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "integration_connections_provider_id_fkey"
             columns: ["provider_id"]
             isOneToOne: false
@@ -9273,20 +7740,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "integration_imports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "integration_imports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "integration_imports_provider_id_fkey"
             columns: ["provider_id"]
@@ -9633,22 +8086,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "interview_subjects_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "interview_subjects_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       lane_profiles: {
         Row: {
@@ -9683,6 +8121,33 @@ export type Database = {
           id?: string
           lane_key?: string
           risk_tolerance?: number | null
+        }
+        Relationships: []
+      }
+      learned_nicknames: {
+        Row: {
+          canonical: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          nickname: string
+          project_id: string | null
+        }
+        Insert: {
+          canonical: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          nickname: string
+          project_id?: string | null
+        }
+        Update: {
+          canonical?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          nickname?: string
+          project_id?: string | null
         }
         Relationships: []
       }
@@ -9729,16 +8194,55 @@ export type Database = {
           status?: string | null
           user_id?: string
         }
+        Relationships: []
+      }
+      llm_call_logs: {
+        Row: {
+          caller_id: string | null
+          created_at: string | null
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          model: string
+          project_id: string | null
+          status: string
+          tokens_in: number | null
+          tokens_out: number | null
+        }
+        Insert: {
+          caller_id?: string | null
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          model: string
+          project_id?: string | null
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Update: {
+          caller_id?: string | null
+          created_at?: string | null
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          model?: string
+          project_id?: string | null
+          status?: string
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
         Relationships: [
           {
-            foreignKeyName: "legal_flags_project_id_fkey"
+            foreignKeyName: "llm_call_logs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "legal_flags_project_id_fkey"
+            foreignKeyName: "llm_call_logs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -9752,19 +8256,15 @@ export type Database = {
           canon_location_id: string | null
           completeness_score: number | null
           contextual_dressing: Json
-          craft_level: string
           created_at: string
           created_by: string | null
           dataset_version: number
-          density_profile: Json
           freshness_status: string
           id: string
           inherits_from_parent: boolean
           is_current: boolean
           location_class: string
           location_name: string
-          material_hierarchy: Json
-          material_privilege: Json
           non_inheritable_traits: string[]
           occupation_trace: Json
           parent_location_id: string | null
@@ -9779,12 +8279,10 @@ export type Database = {
           source_canon_hash: string | null
           source_mode: string
           spatial_character: Json
-          spatial_intent: Json
           stale_reason: string | null
           status_expression_mode: string
           status_expression_notes: string | null
           status_signal: Json
-          status_tier: string
           structural_substrate: Json
           surface_condition: Json
           symbolic_motif: Json
@@ -9795,19 +8293,15 @@ export type Database = {
           canon_location_id?: string | null
           completeness_score?: number | null
           contextual_dressing?: Json
-          craft_level?: string
           created_at?: string
           created_by?: string | null
           dataset_version?: number
-          density_profile?: Json
           freshness_status?: string
           id?: string
           inherits_from_parent?: boolean
           is_current?: boolean
           location_class?: string
           location_name: string
-          material_hierarchy?: Json
-          material_privilege?: Json
           non_inheritable_traits?: string[]
           occupation_trace?: Json
           parent_location_id?: string | null
@@ -9822,12 +8316,10 @@ export type Database = {
           source_canon_hash?: string | null
           source_mode?: string
           spatial_character?: Json
-          spatial_intent?: Json
           stale_reason?: string | null
           status_expression_mode?: string
           status_expression_notes?: string | null
           status_signal?: Json
-          status_tier?: string
           structural_substrate?: Json
           surface_condition?: Json
           symbolic_motif?: Json
@@ -9838,19 +8330,15 @@ export type Database = {
           canon_location_id?: string | null
           completeness_score?: number | null
           contextual_dressing?: Json
-          craft_level?: string
           created_at?: string
           created_by?: string | null
           dataset_version?: number
-          density_profile?: Json
           freshness_status?: string
           id?: string
           inherits_from_parent?: boolean
           is_current?: boolean
           location_class?: string
           location_name?: string
-          material_hierarchy?: Json
-          material_privilege?: Json
           non_inheritable_traits?: string[]
           occupation_trace?: Json
           parent_location_id?: string | null
@@ -9865,12 +8353,10 @@ export type Database = {
           source_canon_hash?: string | null
           source_mode?: string
           spatial_character?: Json
-          spatial_intent?: Json
           stale_reason?: string | null
           status_expression_mode?: string
           status_expression_notes?: string | null
           status_signal?: Json
-          status_tier?: string
           structural_substrate?: Json
           surface_condition?: Json
           symbolic_motif?: Json
@@ -9900,138 +8386,6 @@ export type Database = {
           },
           {
             foreignKeyName: "location_visual_datasets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      lookbook_pages: {
-        Row: {
-          created_at: string
-          id: string
-          project_id: string
-          scene_number: number
-          scene_payload: Json
-          updated_at: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          project_id: string
-          scene_number: number
-          scene_payload?: Json
-          updated_at?: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          project_id?: string
-          scene_number?: number
-          scene_payload?: Json
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lookbook_pages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "lookbook_pages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      lookbook_rebuild_runs: {
-        Row: {
-          attached_winner_count: number
-          completed_at: string | null
-          compliant_count: number
-          duration_ms: number | null
-          execution_status: string
-          failure_message: string | null
-          failure_stage: string | null
-          generated_count: number
-          id: string
-          preserved_primary_count: number
-          project_id: string
-          rebuild_mode: string
-          rejected_non_compliant_count: number
-          replaced_primary_count: number
-          resolved_slots: number
-          started_at: string
-          targeted_slot_keys: string[]
-          total_slots: number
-          trigger_source: string
-          unresolved_reasons: Json
-          unresolved_slots: number
-          winner_ids: string[]
-        }
-        Insert: {
-          attached_winner_count?: number
-          completed_at?: string | null
-          compliant_count?: number
-          duration_ms?: number | null
-          execution_status?: string
-          failure_message?: string | null
-          failure_stage?: string | null
-          generated_count?: number
-          id?: string
-          preserved_primary_count?: number
-          project_id: string
-          rebuild_mode: string
-          rejected_non_compliant_count?: number
-          replaced_primary_count?: number
-          resolved_slots?: number
-          started_at?: string
-          targeted_slot_keys?: string[]
-          total_slots?: number
-          trigger_source?: string
-          unresolved_reasons?: Json
-          unresolved_slots?: number
-          winner_ids?: string[]
-        }
-        Update: {
-          attached_winner_count?: number
-          completed_at?: string | null
-          compliant_count?: number
-          duration_ms?: number | null
-          execution_status?: string
-          failure_message?: string | null
-          failure_stage?: string | null
-          generated_count?: number
-          id?: string
-          preserved_primary_count?: number
-          project_id?: string
-          rebuild_mode?: string
-          rejected_non_compliant_count?: number
-          replaced_primary_count?: number
-          resolved_slots?: number
-          started_at?: string
-          targeted_slot_keys?: string[]
-          total_slots?: number
-          trigger_source?: string
-          unresolved_reasons?: Json
-          unresolved_slots?: number
-          winner_ids?: string[]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lookbook_rebuild_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "lookbook_rebuild_runs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -10338,6 +8692,67 @@ export type Database = {
         }
         Relationships: []
       }
+      name_review_suggestions: {
+        Row: {
+          action: string
+          confidence: string
+          created_at: string | null
+          extracted_name: string
+          id: string
+          matched_entity_id: string | null
+          project_id: string
+          reason: string
+          status: string | null
+          suggested_canonical: string | null
+        }
+        Insert: {
+          action: string
+          confidence: string
+          created_at?: string | null
+          extracted_name: string
+          id?: string
+          matched_entity_id?: string | null
+          project_id: string
+          reason: string
+          status?: string | null
+          suggested_canonical?: string | null
+        }
+        Update: {
+          action?: string
+          confidence?: string
+          created_at?: string | null
+          extracted_name?: string
+          id?: string
+          matched_entity_id?: string | null
+          project_id?: string
+          reason?: string
+          status?: string | null
+          suggested_canonical?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "name_review_suggestions_matched_entity_id_fkey"
+            columns: ["matched_entity_id"]
+            isOneToOne: false
+            referencedRelation: "narrative_entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "name_review_suggestions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "name_review_suggestions_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       narrative_dna_profiles: {
         Row: {
           antagonist_pattern: string | null
@@ -10432,91 +8847,7 @@ export type Database = {
           user_id?: string
           world_logic_rules?: string[] | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "narrative_dna_profiles_primary_engine_key_fkey"
-            columns: ["primary_engine_key"]
-            isOneToOne: false
-            referencedRelation: "narrative_engines"
-            referencedColumns: ["engine_key"]
-          },
-          {
-            foreignKeyName: "narrative_dna_profiles_secondary_engine_key_fkey"
-            columns: ["secondary_engine_key"]
-            isOneToOne: false
-            referencedRelation: "narrative_engines"
-            referencedColumns: ["engine_key"]
-          },
-          {
-            foreignKeyName: "narrative_dna_profiles_source_corpus_script_id_fkey"
-            columns: ["source_corpus_script_id"]
-            isOneToOne: false
-            referencedRelation: "corpus_scripts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      narrative_engine_blueprint_families: {
-        Row: {
-          active: boolean | null
-          budget_suitability: string[] | null
-          created_at: string
-          description: string
-          engine_key: string
-          execution_pattern: Json | null
-          family_key: string
-          id: string
-          label: string
-          lane_suitability: string[] | null
-          structural_risks: string[] | null
-          structural_strengths: string[] | null
-          updated_at: string
-          when_not_to_use: string | null
-          when_to_use: string | null
-        }
-        Insert: {
-          active?: boolean | null
-          budget_suitability?: string[] | null
-          created_at?: string
-          description?: string
-          engine_key: string
-          execution_pattern?: Json | null
-          family_key: string
-          id?: string
-          label: string
-          lane_suitability?: string[] | null
-          structural_risks?: string[] | null
-          structural_strengths?: string[] | null
-          updated_at?: string
-          when_not_to_use?: string | null
-          when_to_use?: string | null
-        }
-        Update: {
-          active?: boolean | null
-          budget_suitability?: string[] | null
-          created_at?: string
-          description?: string
-          engine_key?: string
-          execution_pattern?: Json | null
-          family_key?: string
-          id?: string
-          label?: string
-          lane_suitability?: string[] | null
-          structural_risks?: string[] | null
-          structural_strengths?: string[] | null
-          updated_at?: string
-          when_not_to_use?: string | null
-          when_to_use?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "narrative_engine_blueprint_families_engine_key_fkey"
-            columns: ["engine_key"]
-            isOneToOne: false
-            referencedRelation: "narrative_engines"
-            referencedColumns: ["engine_key"]
-          },
-        ]
+        Relationships: []
       }
       narrative_engines: {
         Row: {
@@ -10580,67 +8911,101 @@ export type Database = {
       }
       narrative_entities: {
         Row: {
+          authorial_intent: string | null
           canonical_name: string
           created_at: string
+          do_not_resolve: boolean | null
           entity_key: string
           entity_type: string
           id: string
-          ingestion_run_id: string | null
+          inputs_used: Json
           meta_json: Json
-          project_id: string
+          narrative_role: string | null
+          project_id: string | null
+          scene_count: number
           source_key: string | null
           source_kind: string
           status: string
           updated_at: string
         }
         Insert: {
+          authorial_intent?: string | null
           canonical_name?: string
           created_at?: string
+          do_not_resolve?: boolean | null
           entity_key: string
           entity_type?: string
           id?: string
-          ingestion_run_id?: string | null
+          inputs_used?: Json
           meta_json?: Json
-          project_id: string
+          narrative_role?: string | null
+          project_id?: string | null
+          scene_count?: number
           source_key?: string | null
           source_kind?: string
           status?: string
           updated_at?: string
         }
         Update: {
+          authorial_intent?: string | null
           canonical_name?: string
           created_at?: string
+          do_not_resolve?: boolean | null
           entity_key?: string
           entity_type?: string
           id?: string
-          ingestion_run_id?: string | null
+          inputs_used?: Json
           meta_json?: Json
-          project_id?: string
+          narrative_role?: string | null
+          project_id?: string | null
+          scene_count?: number
           source_key?: string | null
           source_kind?: string
           status?: string
           updated_at?: string
         }
+        Relationships: []
+      }
+      narrative_entity_aliases: {
+        Row: {
+          alias_name: string
+          alias_type: string | null
+          canonical_entity_id: string
+          confidence: number
+          created_at: string
+          id: string
+          project_id: string
+          reason: string | null
+          source: string
+        }
+        Insert: {
+          alias_name: string
+          alias_type?: string | null
+          canonical_entity_id: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          project_id: string
+          reason?: string | null
+          source?: string
+        }
+        Update: {
+          alias_name?: string
+          alias_type?: string | null
+          canonical_entity_id?: string
+          confidence?: number
+          created_at?: string
+          id?: string
+          project_id?: string
+          reason?: string | null
+          source?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "narrative_entities_ingestion_run_id_fkey"
-            columns: ["ingestion_run_id"]
+            foreignKeyName: "narrative_entity_aliases_canonical_entity_id_fkey"
+            columns: ["canonical_entity_id"]
             isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "narrative_entities_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "narrative_entities_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "narrative_entities"
             referencedColumns: ["id"]
           },
         ]
@@ -10678,20 +9043,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "narrative_entity_relations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "narrative_entity_relations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "narrative_entity_relations_source_entity_id_fkey"
             columns: ["source_entity_id"]
             isOneToOne: false
@@ -10707,13 +9058,126 @@ export type Database = {
           },
         ]
       }
+      narrative_obligations: {
+        Row: {
+          arc_id: string | null
+          charge: number
+          created_at: string
+          description: string | null
+          detection_confidence: number | null
+          detection_mode: string
+          discharged_at: string | null
+          domain: string
+          evidence_refs: Json
+          human_verified: boolean
+          id: string
+          lifecycle_state: string
+          narrative_weight: number
+          obligation_id: string
+          obligation_type: string
+          project_id: string
+          projection_scope: Json
+          provenance: Json
+          required_by: string | null
+          severity_default: string
+          source_key: string
+          source_layer: string
+          source_scene_id: string | null
+          target_scene_id: string | null
+          thread_label: string | null
+        }
+        Insert: {
+          arc_id?: string | null
+          charge?: number
+          created_at?: string
+          description?: string | null
+          detection_confidence?: number | null
+          detection_mode?: string
+          discharged_at?: string | null
+          domain?: string
+          evidence_refs?: Json
+          human_verified?: boolean
+          id?: string
+          lifecycle_state?: string
+          narrative_weight?: number
+          obligation_id: string
+          obligation_type: string
+          project_id: string
+          projection_scope?: Json
+          provenance?: Json
+          required_by?: string | null
+          severity_default?: string
+          source_key: string
+          source_layer: string
+          source_scene_id?: string | null
+          target_scene_id?: string | null
+          thread_label?: string | null
+        }
+        Update: {
+          arc_id?: string | null
+          charge?: number
+          created_at?: string
+          description?: string | null
+          detection_confidence?: number | null
+          detection_mode?: string
+          discharged_at?: string | null
+          domain?: string
+          evidence_refs?: Json
+          human_verified?: boolean
+          id?: string
+          lifecycle_state?: string
+          narrative_weight?: number
+          obligation_id?: string
+          obligation_type?: string
+          project_id?: string
+          projection_scope?: Json
+          provenance?: Json
+          required_by?: string | null
+          severity_default?: string
+          source_key?: string
+          source_layer?: string
+          source_scene_id?: string | null
+          target_scene_id?: string | null
+          thread_label?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "narrative_obligations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "narrative_obligations_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "narrative_obligations_source_scene_id_fkey"
+            columns: ["source_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scene_graph_scenes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "narrative_obligations_target_scene_id_fkey"
+            columns: ["target_scene_id"]
+            isOneToOne: false
+            referencedRelation: "scene_graph_scenes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       narrative_repairs: {
         Row: {
           created_at: string
           diagnostic_type: string
           executed_at: string | null
           priority_score: number
-          project_id: string
+          project_id: string | null
           recommended_action: string | null
           repair_id: string
           repair_type: string
@@ -10733,7 +9197,7 @@ export type Database = {
           diagnostic_type?: string
           executed_at?: string | null
           priority_score?: number
-          project_id: string
+          project_id?: string | null
           recommended_action?: string | null
           repair_id?: string
           repair_type?: string
@@ -10753,7 +9217,7 @@ export type Database = {
           diagnostic_type?: string
           executed_at?: string | null
           priority_score?: number
-          project_id?: string
+          project_id?: string | null
           recommended_action?: string | null
           repair_id?: string
           repair_type?: string
@@ -10768,74 +9232,65 @@ export type Database = {
           summary?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "narrative_repairs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "narrative_repairs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       narrative_scene_entity_links: {
         Row: {
-          confidence: number
+          confidence: string
           created_at: string
           entity_id: string
           id: string
-          project_id: string
+          inputs_used: Json
+          project_id: string | null
           relation_type: string
           scene_id: string
-          source_kind: string
+          source_version_id: string | null
+          updated_at: string
         }
         Insert: {
-          confidence?: number
+          confidence?: string
           created_at?: string
           entity_id: string
           id?: string
-          project_id: string
-          relation_type?: string
+          inputs_used?: Json
+          project_id?: string | null
+          relation_type: string
           scene_id: string
-          source_kind?: string
+          source_version_id?: string | null
+          updated_at?: string
         }
         Update: {
-          confidence?: number
+          confidence?: string
           created_at?: string
           entity_id?: string
           id?: string
-          project_id?: string
+          inputs_used?: Json
+          project_id?: string | null
           relation_type?: string
           scene_id?: string
-          source_kind?: string
+          source_version_id?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "narrative_scene_entity_links_entity_id_fkey"
+            foreignKeyName: "nsel_entity_id_fkey"
             columns: ["entity_id"]
             isOneToOne: false
             referencedRelation: "narrative_entities"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "narrative_scene_entity_links_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "nsel_scene_id_fkey"
+            columns: ["scene_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
+            referencedRelation: "scene_graph_scenes"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "narrative_scene_entity_links_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "nsel_source_version_id_fkey"
+            columns: ["source_version_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "scene_graph_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -10847,11 +9302,12 @@ export type Database = {
           extraction_method: string
           id: string
           payload_json: Json
-          project_id: string
+          project_id: string | null
+          scene_count: number
           source_doc_type: string
           source_doc_version_id: string | null
-          stale_reason: Json | null
-          status: string
+          stale_reason: string | null
+          status: string | null
           unit_key: string
           unit_type: string
           updated_at: string
@@ -10862,11 +9318,12 @@ export type Database = {
           extraction_method?: string
           id?: string
           payload_json?: Json
-          project_id: string
+          project_id?: string | null
+          scene_count?: number
           source_doc_type: string
           source_doc_version_id?: string | null
-          stale_reason?: Json | null
-          status?: string
+          stale_reason?: string | null
+          status?: string | null
           unit_key: string
           unit_type: string
           updated_at?: string
@@ -10877,35 +9334,102 @@ export type Database = {
           extraction_method?: string
           id?: string
           payload_json?: Json
-          project_id?: string
+          project_id?: string | null
+          scene_count?: number
           source_doc_type?: string
           source_doc_version_id?: string | null
-          stale_reason?: Json | null
-          status?: string
+          stale_reason?: string | null
+          status?: string | null
           unit_key?: string
           unit_type?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "narrative_units_project_id_fkey"
+            foreignKeyName: "narrative_units_source_doc_version_id_fkey"
+            columns: ["source_doc_version_id"]
+            isOneToOne: false
+            referencedRelation: "project_document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      neural_validation_runs: {
+        Row: {
+          created_at: string
+          divergence_json: Json
+          document_id: string | null
+          document_version_id: string | null
+          id: string
+          input_text_hash: string
+          input_text_preview: string | null
+          layer_type: string
+          model_version: string
+          output_json: Json
+          prediction_source: string | null
+          project_id: string
+          status: string
+          target_json: Json
+        }
+        Insert: {
+          created_at?: string
+          divergence_json?: Json
+          document_id?: string | null
+          document_version_id?: string | null
+          id?: string
+          input_text_hash: string
+          input_text_preview?: string | null
+          layer_type: string
+          model_version: string
+          output_json?: Json
+          prediction_source?: string | null
+          project_id: string
+          status?: string
+          target_json?: Json
+        }
+        Update: {
+          created_at?: string
+          divergence_json?: Json
+          document_id?: string | null
+          document_version_id?: string | null
+          id?: string
+          input_text_hash?: string
+          input_text_preview?: string | null
+          layer_type?: string
+          model_version?: string
+          output_json?: Json
+          prediction_source?: string | null
+          project_id?: string
+          status?: string
+          target_json?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "neural_validation_runs_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "project_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "neural_validation_runs_document_version_id_fkey"
+            columns: ["document_version_id"]
+            isOneToOne: false
+            referencedRelation: "project_document_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "neural_validation_runs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "narrative_units_project_id_fkey"
+            foreignKeyName: "neural_validation_runs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "narrative_units_source_doc_version_id_fkey"
-            columns: ["source_doc_version_id"]
-            isOneToOne: false
-            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -10958,20 +9482,6 @@ export type Database = {
             referencedRelation: "project_notes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "note_change_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "note_change_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       note_change_plans: {
@@ -11020,20 +9530,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "note_change_plans_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "note_change_plans_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "note_change_plans_thread_id_fkey"
             columns: ["thread_id"]
             isOneToOne: false
@@ -11049,162 +9545,36 @@ export type Database = {
           },
         ]
       }
-      note_option_sets: {
-        Row: {
-          created_at: string
-          created_by: string
-          direction: Json | null
-          id: string
-          option_set_index: number
-          options: Json
-          pinned_constraints: Json | null
-          thread_id: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string
-          direction?: Json | null
-          id?: string
-          option_set_index: number
-          options: Json
-          pinned_constraints?: Json | null
-          thread_id: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string
-          direction?: Json | null
-          id?: string
-          option_set_index?: number
-          options?: Json
-          pinned_constraints?: Json | null
-          thread_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "note_option_sets_thread_id_fkey"
-            columns: ["thread_id"]
-            isOneToOne: false
-            referencedRelation: "note_threads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      note_thread_messages: {
-        Row: {
-          content: string
-          created_at: string
-          created_by: string
-          id: string
-          meta: Json | null
-          role: string
-          thread_id: string
-        }
-        Insert: {
-          content: string
-          created_at?: string
-          created_by?: string
-          id?: string
-          meta?: Json | null
-          role: string
-          thread_id: string
-        }
-        Update: {
-          content?: string
-          created_at?: string
-          created_by?: string
-          id?: string
-          meta?: Json | null
-          role?: string
-          thread_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "note_thread_messages_thread_id_fkey"
-            columns: ["thread_id"]
-            isOneToOne: false
-            referencedRelation: "note_threads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      note_thread_state: {
-        Row: {
-          direction: Json
-          last_generated_set: number | null
-          pinned_constraints: Json
-          selected_option: Json | null
-          synthesis: Json | null
-          thread_id: string
-          updated_at: string
-          updated_by: string
-        }
-        Insert: {
-          direction?: Json
-          last_generated_set?: number | null
-          pinned_constraints?: Json
-          selected_option?: Json | null
-          synthesis?: Json | null
-          thread_id: string
-          updated_at?: string
-          updated_by?: string
-        }
-        Update: {
-          direction?: Json
-          last_generated_set?: number | null
-          pinned_constraints?: Json
-          selected_option?: Json | null
-          synthesis?: Json | null
-          thread_id?: string
-          updated_at?: string
-          updated_by?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "note_thread_state_thread_id_fkey"
-            columns: ["thread_id"]
-            isOneToOne: true
-            referencedRelation: "note_threads"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       note_threads: {
         Row: {
           created_at: string
           created_by: string
-          document_id: string
+          document_id: string | null
           id: string
-          note_hash: string
-          note_snapshot: Json | null
           project_id: string
           status: string
+          title: string | null
           updated_at: string
-          version_id: string | null
         }
         Insert: {
           created_at?: string
           created_by?: string
-          document_id: string
+          document_id?: string | null
           id?: string
-          note_hash: string
-          note_snapshot?: Json | null
           project_id: string
           status?: string
+          title?: string | null
           updated_at?: string
-          version_id?: string | null
         }
         Update: {
           created_at?: string
           created_by?: string
-          document_id?: string
+          document_id?: string | null
           id?: string
-          note_hash?: string
-          note_snapshot?: Json | null
           project_id?: string
           status?: string
+          title?: string | null
           updated_at?: string
-          version_id?: string | null
         }
         Relationships: [
           {
@@ -11212,27 +9582,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "project_documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_threads_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "note_threads_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "note_threads_version_id_fkey"
-            columns: ["version_id"]
-            isOneToOne: false
-            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -11271,22 +9620,7 @@ export type Database = {
           type?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "notifications_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "notifications_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       nuance_runs: {
         Row: {
@@ -11367,20 +9701,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "project_documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "nuance_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "nuance_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -11490,22 +9810,7 @@ export type Database = {
           talent_attached?: boolean | null
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "outcome_deltas_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "outcome_deltas_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       outcome_signals: {
         Row: {
@@ -11536,20 +9841,6 @@ export type Database = {
           signal_type?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "outcome_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "outcome_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "outcome_signals_script_version_id_fkey"
             columns: ["script_version_id"]
@@ -11599,73 +9890,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "packaging_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "packaging_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      pending_actor_binds: {
-        Row: {
-          actor_id: string
-          character_key: string
-          created_at: string
-          id: string
-          project_id: string
-          resolved_at: string | null
-          source: string
-          status: string
-          user_id: string
-        }
-        Insert: {
-          actor_id: string
-          character_key: string
-          created_at?: string
-          id?: string
-          project_id: string
-          resolved_at?: string | null
-          source?: string
-          status?: string
-          user_id: string
-        }
-        Update: {
-          actor_id?: string
-          character_key?: string
-          created_at?: string
-          id?: string
-          project_id?: string
-          resolved_at?: string | null
-          source?: string
-          status?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "pending_actor_binds_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "pending_actor_binds_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       pipeline_transitions: {
         Row: {
@@ -11746,29 +9971,13 @@ export type Database = {
           status?: string
           trigger?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "pipeline_transitions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "pipeline_transitions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       pitch_decks: {
         Row: {
           created_at: string
           id: string
           project_id: string
-          share_expires_at: string | null
           share_token: string | null
           slides: Json
           status: string
@@ -11780,7 +9989,6 @@ export type Database = {
           created_at?: string
           id?: string
           project_id: string
-          share_expires_at?: string | null
           share_token?: string | null
           slides?: Json
           status?: string
@@ -11792,7 +10000,6 @@ export type Database = {
           created_at?: string
           id?: string
           project_id?: string
-          share_expires_at?: string | null
           share_token?: string | null
           slides?: Json
           status?: string
@@ -11800,22 +10007,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "pitch_decks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "pitch_decks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       pitch_feedback: {
         Row: {
@@ -11865,11 +10057,8 @@ export type Database = {
           created_at: string
           development_sprint: Json
           devseed_canon_json: Json
-          exemplar_notes: string | null
-          generation_mode: string | null
           genre: string
           id: string
-          is_exemplar: boolean
           lane_confidence: number
           learning_pool_eligibility_reason: string | null
           learning_pool_eligible: boolean
@@ -11893,13 +10082,10 @@ export type Database = {
           score_market_heat: number | null
           score_saturation_risk: number | null
           score_total: number | null
-          source_blueprint_id: string | null
-          source_blueprint_run_id: string | null
           source_coverage_run_id: string | null
           source_dna_profile_id: string | null
           source_engine_key: string | null
           status: string
-          strength_tags: string[]
           title: string
           updated_at: string
           user_id: string
@@ -11914,11 +10100,8 @@ export type Database = {
           created_at?: string
           development_sprint?: Json
           devseed_canon_json?: Json
-          exemplar_notes?: string | null
-          generation_mode?: string | null
           genre?: string
           id?: string
-          is_exemplar?: boolean
           lane_confidence?: number
           learning_pool_eligibility_reason?: string | null
           learning_pool_eligible?: boolean
@@ -11942,13 +10125,10 @@ export type Database = {
           score_market_heat?: number | null
           score_saturation_risk?: number | null
           score_total?: number | null
-          source_blueprint_id?: string | null
-          source_blueprint_run_id?: string | null
           source_coverage_run_id?: string | null
           source_dna_profile_id?: string | null
           source_engine_key?: string | null
           status?: string
-          strength_tags?: string[]
           title?: string
           updated_at?: string
           user_id: string
@@ -11963,11 +10143,8 @@ export type Database = {
           created_at?: string
           development_sprint?: Json
           devseed_canon_json?: Json
-          exemplar_notes?: string | null
-          generation_mode?: string | null
           genre?: string
           id?: string
-          is_exemplar?: boolean
           lane_confidence?: number
           learning_pool_eligibility_reason?: string | null
           learning_pool_eligible?: boolean
@@ -11991,13 +10168,10 @@ export type Database = {
           score_market_heat?: number | null
           score_saturation_risk?: number | null
           score_total?: number | null
-          source_blueprint_id?: string | null
-          source_blueprint_run_id?: string | null
           source_coverage_run_id?: string | null
           source_dna_profile_id?: string | null
           source_engine_key?: string | null
           status?: string
-          strength_tags?: string[]
           title?: string
           updated_at?: string
           user_id?: string
@@ -12012,53 +10186,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "pitch_ideas_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "pitch_ideas_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "pitch_ideas_promoted_to_project_id_fkey"
-            columns: ["promoted_to_project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "pitch_ideas_promoted_to_project_id_fkey"
-            columns: ["promoted_to_project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "pitch_ideas_source_coverage_run_id_fkey"
             columns: ["source_coverage_run_id"]
             isOneToOne: false
             referencedRelation: "coverage_runs"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "pitch_ideas_source_dna_profile_id_fkey"
-            columns: ["source_dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "pitch_ideas_source_engine_key_fkey"
-            columns: ["source_engine_key"]
-            isOneToOne: false
-            referencedRelation: "narrative_engines"
-            referencedColumns: ["engine_key"]
           },
         ]
       }
@@ -12102,22 +10234,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "post_milestones_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "post_milestones_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       poster_candidates: {
         Row: {
@@ -12279,16 +10396,58 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      producer_notes: {
+        Row: {
+          created_at: string | null
+          created_by: string | null
+          decision: string
+          divergence_id: string
+          entity_tag: string | null
+          id: string
+          locked: boolean | null
+          note_text: string | null
+          project_id: string
+          source_doc_type: string
+          source_doc_version_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          created_by?: string | null
+          decision: string
+          divergence_id: string
+          entity_tag?: string | null
+          id?: string
+          locked?: boolean | null
+          note_text?: string | null
+          project_id: string
+          source_doc_type: string
+          source_doc_version_id: string
+        }
+        Update: {
+          created_at?: string | null
+          created_by?: string | null
+          decision?: string
+          divergence_id?: string
+          entity_tag?: string | null
+          id?: string
+          locked?: boolean | null
+          note_text?: string | null
+          project_id?: string
+          source_doc_type?: string
+          source_doc_version_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "prediction_outcomes_project_id_fkey"
+            foreignKeyName: "producer_notes_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "prediction_outcomes_project_id_fkey"
+            foreignKeyName: "producer_notes_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -12331,20 +10490,6 @@ export type Database = {
           totals?: Json
         }
         Relationships: [
-          {
-            foreignKeyName: "production_breakdowns_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "production_breakdowns_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "production_breakdowns_source_snapshot_id_fkey"
             columns: ["source_snapshot_id"]
@@ -12427,22 +10572,7 @@ export type Database = {
           variance?: number | null
           variance_pct?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "production_cost_actuals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "production_cost_actuals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       production_daily_reports: {
         Row: {
@@ -12496,22 +10626,7 @@ export type Database = {
           weather?: string
           wrap_time?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "production_daily_reports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "production_daily_reports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       production_engine_weights: {
         Row: {
@@ -12550,27 +10665,21 @@ export type Database = {
       }
       profiles: {
         Row: {
-          created_at: string
-          display_name: string | null
-          id: string
-          mode_preference: string
-          updated_at: string
+          created_at: string | null
+          mode_preference: string | null
+          updated_at: string | null
           user_id: string
         }
         Insert: {
-          created_at?: string
-          display_name?: string | null
-          id?: string
-          mode_preference?: string
-          updated_at?: string
+          created_at?: string | null
+          mode_preference?: string | null
+          updated_at?: string | null
           user_id: string
         }
         Update: {
-          created_at?: string
-          display_name?: string | null
-          id?: string
-          mode_preference?: string
-          updated_at?: string
+          created_at?: string | null
+          mode_preference?: string | null
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -12620,20 +10729,6 @@ export type Database = {
             referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_active_docs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_active_docs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_activity_log: {
@@ -12673,22 +10768,7 @@ export type Database = {
           summary?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_activity_log_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_activity_log_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_ai_cast: {
         Row: {
@@ -12739,77 +10819,6 @@ export type Database = {
             referencedRelation: "ai_actor_versions"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_ai_cast_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_ai_cast_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_ai_cast_history: {
-        Row: {
-          change_reason: string | null
-          change_type: string
-          changed_by: string | null
-          character_key: string
-          created_at: string
-          id: string
-          next_ai_actor_id: string | null
-          next_ai_actor_version_id: string | null
-          previous_ai_actor_id: string | null
-          previous_ai_actor_version_id: string | null
-          project_id: string
-        }
-        Insert: {
-          change_reason?: string | null
-          change_type?: string
-          changed_by?: string | null
-          character_key: string
-          created_at?: string
-          id?: string
-          next_ai_actor_id?: string | null
-          next_ai_actor_version_id?: string | null
-          previous_ai_actor_id?: string | null
-          previous_ai_actor_version_id?: string | null
-          project_id: string
-        }
-        Update: {
-          change_reason?: string | null
-          change_type?: string
-          changed_by?: string | null
-          character_key?: string
-          created_at?: string
-          id?: string
-          next_ai_actor_id?: string | null
-          next_ai_actor_version_id?: string | null
-          previous_ai_actor_id?: string | null
-          previous_ai_actor_version_id?: string | null
-          project_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_ai_cast_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_ai_cast_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_baselines: {
@@ -12855,22 +10864,7 @@ export type Database = {
           user_id?: string
           would_pursue?: boolean | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_baselines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_baselines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_budget_lines: {
         Row: {
@@ -12920,20 +10914,6 @@ export type Database = {
             referencedRelation: "project_budgets"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_budget_lines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_budget_lines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_budgets: {
@@ -12979,22 +10959,7 @@ export type Database = {
           user_id?: string
           version_label?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_budgets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_budgets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_canon: {
         Row: {
@@ -13015,22 +10980,7 @@ export type Database = {
           updated_at?: string
           updated_by?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_canon_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_canon_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_canon_versions: {
         Row: {
@@ -13069,22 +11019,7 @@ export type Database = {
           summary?: string | null
           version_number?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_canon_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_canon_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_cashflow_sources: {
         Row: {
@@ -13135,22 +11070,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_cashflow_sources_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_cashflow_sources_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_cast: {
         Row: {
@@ -13213,16 +11133,52 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      project_characters: {
+        Row: {
+          character_key: string
+          character_name: string
+          created_at: string
+          id: string
+          metadata: Json | null
+          project_id: string
+          role_category: string | null
+          sort_order: number | null
+          updated_at: string
+        }
+        Insert: {
+          character_key: string
+          character_name: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          project_id: string
+          role_category?: string | null
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Update: {
+          character_key?: string
+          character_name?: string
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          project_id?: string
+          role_category?: string | null
+          sort_order?: number | null
+          updated_at?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "project_cast_project_id_fkey"
+            foreignKeyName: "project_characters_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "project_cast_project_id_fkey"
+            foreignKeyName: "project_characters_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -13255,22 +11211,7 @@ export type Database = {
           role?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_chat_messages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_chat_messages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_collaborators: {
         Row: {
@@ -13306,22 +11247,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_collaborators_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_collaborators_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_comments: {
         Row: {
@@ -13362,20 +11288,6 @@ export type Database = {
             referencedRelation: "project_comments"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_company_links: {
@@ -13406,20 +11318,6 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "production_companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_company_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_company_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -13468,20 +11366,6 @@ export type Database = {
           title?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "project_comparables_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_comparables_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "project_comparables_source_doc_id_fkey"
             columns: ["source_doc_id"]
@@ -13566,20 +11450,6 @@ export type Database = {
             referencedRelation: "project_participants"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_contracts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_contracts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_copro_scenarios: {
@@ -13628,20 +11498,6 @@ export type Database = {
             columns: ["copro_framework_id"]
             isOneToOne: false
             referencedRelation: "copro_frameworks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_copro_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_copro_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -13700,20 +11556,6 @@ export type Database = {
             referencedRelation: "project_budgets"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_cost_entries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_cost_entries_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_coverage_runs: {
@@ -13766,20 +11608,6 @@ export type Database = {
           subject_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "project_coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_coverage_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "project_coverage_runs_subject_id_fkey"
             columns: ["subject_id"]
@@ -13834,20 +11662,6 @@ export type Database = {
             referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_coverage_subjects_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_coverage_subjects_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_deadlines: {
@@ -13887,22 +11701,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_deadlines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_deadlines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_deals: {
         Row: {
@@ -13953,22 +11752,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_deals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_deals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_decisions: {
         Row: {
@@ -14034,22 +11818,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_decisions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_decisions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_deferred_notes: {
         Row: {
@@ -14121,22 +11890,7 @@ export type Database = {
           suggested_fixes?: Json | null
           target_deliverable_type?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_deferred_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_deferred_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_deliverables: {
         Row: {
@@ -14187,22 +11941,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_deliverables_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_deliverables_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_dev_decision_state: {
         Row: {
@@ -14250,22 +11989,7 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_dev_decision_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_dev_decision_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_dev_note_state: {
         Row: {
@@ -14292,6 +12016,7 @@ export type Database = {
           objective: string | null
           project_id: string
           scope_json: Json
+          section: string | null
           severity: number
           status: string
           tier: string
@@ -14324,6 +12049,7 @@ export type Database = {
           objective?: string | null
           project_id: string
           scope_json?: Json
+          section?: string | null
           severity?: number
           status?: string
           tier?: string
@@ -14356,6 +12082,7 @@ export type Database = {
           objective?: string | null
           project_id?: string
           scope_json?: Json
+          section?: string | null
           severity?: number
           status?: string
           tier?: string
@@ -14377,20 +12104,6 @@ export type Database = {
             columns: ["last_version_id"]
             isOneToOne: false
             referencedRelation: "project_document_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_dev_note_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_dev_note_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -14429,22 +12142,7 @@ export type Database = {
           search_vector?: unknown
           version_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_doc_chunks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_doc_chunks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_doc_set_items: {
         Row: {
@@ -14516,22 +12214,7 @@ export type Database = {
           project_id?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_doc_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_doc_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_document_chunks: {
         Row: {
@@ -14629,6 +12312,8 @@ export type Database = {
           meta_json: Json | null
           parent_version_id: string | null
           plaintext: string
+          producer_note_id: string | null
+          reconciliation_source: Json | null
           source_decision_ids: Json | null
           source_document_ids: Json | null
           source_run_id: string | null
@@ -14673,6 +12358,8 @@ export type Database = {
           meta_json?: Json | null
           parent_version_id?: string | null
           plaintext?: string
+          producer_note_id?: string | null
+          reconciliation_source?: Json | null
           source_decision_ids?: Json | null
           source_document_ids?: Json | null
           source_run_id?: string | null
@@ -14717,6 +12404,8 @@ export type Database = {
           meta_json?: Json | null
           parent_version_id?: string | null
           plaintext?: string
+          producer_note_id?: string | null
+          reconciliation_source?: Json | null
           source_decision_ids?: Json | null
           source_document_ids?: Json | null
           source_run_id?: string | null
@@ -14759,6 +12448,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "project_document_versions_producer_note_id_fkey"
+            columns: ["producer_note_id"]
+            isOneToOne: false
+            referencedRelation: "producer_notes"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "project_document_versions_style_template_version_id_fkey"
             columns: ["style_template_version_id"]
             isOneToOne: false
@@ -14790,7 +12486,7 @@ export type Database = {
           needs_reconcile: boolean
           pages_analyzed: number | null
           plaintext: string | null
-          project_id: string
+          project_id: string | null
           reconcile_reasons: Json | null
           source: string | null
           storage_path: string | null
@@ -14821,7 +12517,7 @@ export type Database = {
           needs_reconcile?: boolean
           pages_analyzed?: number | null
           plaintext?: string | null
-          project_id: string
+          project_id?: string | null
           reconcile_reasons?: Json | null
           source?: string | null
           storage_path?: string | null
@@ -14852,7 +12548,7 @@ export type Database = {
           needs_reconcile?: boolean
           pages_analyzed?: number | null
           plaintext?: string | null
-          project_id?: string
+          project_id?: string | null
           reconcile_reasons?: Json | null
           source?: string | null
           storage_path?: string | null
@@ -14867,20 +12563,6 @@ export type Database = {
             columns: ["latest_version_id"]
             isOneToOne: false
             referencedRelation: "project_document_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_documents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_documents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -14931,20 +12613,6 @@ export type Database = {
             columns: ["engine_id"]
             isOneToOne: false
             referencedRelation: "trend_engines"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_engine_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_engine_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -14998,22 +12666,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_finance_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_finance_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_finance_snapshots: {
         Row: {
@@ -15067,20 +12720,6 @@ export type Database = {
             columns: ["import_id"]
             isOneToOne: false
             referencedRelation: "integration_imports"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_finance_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_finance_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -15146,185 +12785,352 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_hods_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_hods_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_images: {
         Row: {
-          archived_from_active_at: string | null
-          asset_group: Database["public"]["Enums"]["asset_group"] | null
+          actual_height: number | null
+          actual_width: number | null
+          ai_actor_ids: string[] | null
+          ai_actor_version_ids: string[] | null
+          api_responses: Json | null
+          aspect_compliant: boolean | null
+          aspect_drift: boolean | null
+          asset_group: string | null
+          auto_complete_context: Json | null
+          batch_index: number | null
+          bound_dna_version_ids: string[] | null
+          camera_language_hash: string | null
           canon_constraints: Json
           canon_location_id: string | null
-          canon_reset_batch_id: string | null
+          canonical_binding_missing: string[] | null
+          canonical_binding_status: string | null
+          composition_rule: string | null
+          composition_rule_hash: string | null
           created_at: string
           created_by: string | null
-          curation_state: Database["public"]["Enums"]["curation_state"]
+          curation_state: string | null
+          dataset_provenance: Json | null
+          dims_source: string | null
           entity_id: string | null
+          expected_character_count: number | null
+          face_detected: boolean | null
           freshness_status: string
-          generation_config: Json
-          generation_epoch: number
+          generation_config: Json | null
           generation_purpose: string | null
           height: number | null
           id: string
+          identity_anchors_count: number | null
+          identity_canon_facts_used: string | null
+          identity_full_body_anchor_used: string | null
+          identity_headshot_anchor_used: string | null
+          identity_lock_strength: number | null
+          identity_locked: boolean | null
+          identity_mode: string | null
+          identity_notes_used: string | null
+          identity_signature_used: string | null
+          identity_sources: string[] | null
+          identity_traits_used: number | null
+          image_url: string | null
           is_active: boolean
           is_primary: boolean
-          lane_compliance_score: number | null
           lane_key: string | null
           location_ref: string | null
-          model: string
-          moment_ref: string | null
+          model: string | null
+          narrative_source: string | null
           negative_prompt: string
-          premium_eligible: boolean
+          nsfw_score: number | null
+          pass: boolean | null
+          premium_eligible: boolean | null
           prestige_style: string | null
+          production_design_architecture: string | null
+          production_design_hash: string | null
           project_id: string
+          prompt_override_length: number | null
+          prompt_override_used: boolean | null
           prompt_used: string
-          provider: string
+          provider: string | null
+          quality_reasons: string[] | null
           quality_rejection_codes: string[] | null
           quality_score: number | null
-          quality_status: string
+          quality_status: string | null
           quality_warnings: string[] | null
-          reuse_pool_eligible: boolean
+          requested_aspect_ratio: string | null
+          requested_character_names: string[] | null
+          requested_height: number | null
+          requested_location_ids: string[] | null
+          requested_shot_type: string | null
+          requested_width: number | null
+          requirement_ids: string[] | null
+          resolved_character_names: string[] | null
+          resolved_location_ids: string[] | null
+          resolved_location_names: string[] | null
           role: Database["public"]["Enums"]["project_image_role"]
-          shot_type: Database["public"]["Enums"]["shot_type"] | null
+          shot_intent: string | null
+          shot_intent_slide_type: string | null
+          shot_list_camera_movement: string | null
+          shot_list_context_used: boolean | null
+          shot_list_framing: string | null
+          shot_list_id: string | null
+          shot_list_item_ids: string[] | null
+          shot_list_location: string | null
+          shot_list_time_of_day: string | null
+          shot_type: string | null
+          slide_type: string | null
+          source_feature: string | null
           source_poster_id: string | null
           stale_reason: string | null
           state_key: string | null
           state_label: string | null
+          state_variant_used: string | null
           storage_bucket: string
           storage_path: string
           strategy_key: string | null
-          style_mode: string
+          style_lock_active: boolean | null
+          style_lock_hash: string | null
+          style_mode: string | null
           subject: string | null
           subject_ref: string | null
           subject_type: string | null
+          target_requirement_id: string | null
+          targeting_mode: string | null
           truth_snapshot_json: Json | null
-          user_id: string
+          user_id: string | null
+          variant_index: number | null
+          vertical_drama_project: boolean | null
           width: number | null
+          world_binding_active: boolean | null
+          world_binding_era: string | null
         }
         Insert: {
-          archived_from_active_at?: string | null
-          asset_group?: Database["public"]["Enums"]["asset_group"] | null
+          actual_height?: number | null
+          actual_width?: number | null
+          ai_actor_ids?: string[] | null
+          ai_actor_version_ids?: string[] | null
+          api_responses?: Json | null
+          aspect_compliant?: boolean | null
+          aspect_drift?: boolean | null
+          asset_group?: string | null
+          auto_complete_context?: Json | null
+          batch_index?: number | null
+          bound_dna_version_ids?: string[] | null
+          camera_language_hash?: string | null
           canon_constraints?: Json
           canon_location_id?: string | null
-          canon_reset_batch_id?: string | null
+          canonical_binding_missing?: string[] | null
+          canonical_binding_status?: string | null
+          composition_rule?: string | null
+          composition_rule_hash?: string | null
           created_at?: string
           created_by?: string | null
-          curation_state?: Database["public"]["Enums"]["curation_state"]
+          curation_state?: string | null
+          dataset_provenance?: Json | null
+          dims_source?: string | null
           entity_id?: string | null
+          expected_character_count?: number | null
+          face_detected?: boolean | null
           freshness_status?: string
-          generation_config?: Json
-          generation_epoch?: number
+          generation_config?: Json | null
           generation_purpose?: string | null
           height?: number | null
           id?: string
+          identity_anchors_count?: number | null
+          identity_canon_facts_used?: string | null
+          identity_full_body_anchor_used?: string | null
+          identity_headshot_anchor_used?: string | null
+          identity_lock_strength?: number | null
+          identity_locked?: boolean | null
+          identity_mode?: string | null
+          identity_notes_used?: string | null
+          identity_signature_used?: string | null
+          identity_sources?: string[] | null
+          identity_traits_used?: number | null
+          image_url?: string | null
           is_active?: boolean
           is_primary?: boolean
-          lane_compliance_score?: number | null
           lane_key?: string | null
           location_ref?: string | null
-          model?: string
-          moment_ref?: string | null
+          model?: string | null
+          narrative_source?: string | null
           negative_prompt?: string
-          premium_eligible?: boolean
+          nsfw_score?: number | null
+          pass?: boolean | null
+          premium_eligible?: boolean | null
           prestige_style?: string | null
+          production_design_architecture?: string | null
+          production_design_hash?: string | null
           project_id: string
+          prompt_override_length?: number | null
+          prompt_override_used?: boolean | null
           prompt_used?: string
-          provider?: string
+          provider?: string | null
+          quality_reasons?: string[] | null
           quality_rejection_codes?: string[] | null
           quality_score?: number | null
-          quality_status?: string
+          quality_status?: string | null
           quality_warnings?: string[] | null
-          reuse_pool_eligible?: boolean
+          requested_aspect_ratio?: string | null
+          requested_character_names?: string[] | null
+          requested_height?: number | null
+          requested_location_ids?: string[] | null
+          requested_shot_type?: string | null
+          requested_width?: number | null
+          requirement_ids?: string[] | null
+          resolved_character_names?: string[] | null
+          resolved_location_ids?: string[] | null
+          resolved_location_names?: string[] | null
           role: Database["public"]["Enums"]["project_image_role"]
-          shot_type?: Database["public"]["Enums"]["shot_type"] | null
+          shot_intent?: string | null
+          shot_intent_slide_type?: string | null
+          shot_list_camera_movement?: string | null
+          shot_list_context_used?: boolean | null
+          shot_list_framing?: string | null
+          shot_list_id?: string | null
+          shot_list_item_ids?: string[] | null
+          shot_list_location?: string | null
+          shot_list_time_of_day?: string | null
+          shot_type?: string | null
+          slide_type?: string | null
+          source_feature?: string | null
           source_poster_id?: string | null
           stale_reason?: string | null
           state_key?: string | null
           state_label?: string | null
+          state_variant_used?: string | null
           storage_bucket?: string
           storage_path: string
           strategy_key?: string | null
-          style_mode?: string
+          style_lock_active?: boolean | null
+          style_lock_hash?: string | null
+          style_mode?: string | null
           subject?: string | null
           subject_ref?: string | null
           subject_type?: string | null
+          target_requirement_id?: string | null
+          targeting_mode?: string | null
           truth_snapshot_json?: Json | null
-          user_id: string
+          user_id?: string | null
+          variant_index?: number | null
+          vertical_drama_project?: boolean | null
           width?: number | null
+          world_binding_active?: boolean | null
+          world_binding_era?: string | null
         }
         Update: {
-          archived_from_active_at?: string | null
-          asset_group?: Database["public"]["Enums"]["asset_group"] | null
+          actual_height?: number | null
+          actual_width?: number | null
+          ai_actor_ids?: string[] | null
+          ai_actor_version_ids?: string[] | null
+          api_responses?: Json | null
+          aspect_compliant?: boolean | null
+          aspect_drift?: boolean | null
+          asset_group?: string | null
+          auto_complete_context?: Json | null
+          batch_index?: number | null
+          bound_dna_version_ids?: string[] | null
+          camera_language_hash?: string | null
           canon_constraints?: Json
           canon_location_id?: string | null
-          canon_reset_batch_id?: string | null
+          canonical_binding_missing?: string[] | null
+          canonical_binding_status?: string | null
+          composition_rule?: string | null
+          composition_rule_hash?: string | null
           created_at?: string
           created_by?: string | null
-          curation_state?: Database["public"]["Enums"]["curation_state"]
+          curation_state?: string | null
+          dataset_provenance?: Json | null
+          dims_source?: string | null
           entity_id?: string | null
+          expected_character_count?: number | null
+          face_detected?: boolean | null
           freshness_status?: string
-          generation_config?: Json
-          generation_epoch?: number
+          generation_config?: Json | null
           generation_purpose?: string | null
           height?: number | null
           id?: string
+          identity_anchors_count?: number | null
+          identity_canon_facts_used?: string | null
+          identity_full_body_anchor_used?: string | null
+          identity_headshot_anchor_used?: string | null
+          identity_lock_strength?: number | null
+          identity_locked?: boolean | null
+          identity_mode?: string | null
+          identity_notes_used?: string | null
+          identity_signature_used?: string | null
+          identity_sources?: string[] | null
+          identity_traits_used?: number | null
+          image_url?: string | null
           is_active?: boolean
           is_primary?: boolean
-          lane_compliance_score?: number | null
           lane_key?: string | null
           location_ref?: string | null
-          model?: string
-          moment_ref?: string | null
+          model?: string | null
+          narrative_source?: string | null
           negative_prompt?: string
-          premium_eligible?: boolean
+          nsfw_score?: number | null
+          pass?: boolean | null
+          premium_eligible?: boolean | null
           prestige_style?: string | null
+          production_design_architecture?: string | null
+          production_design_hash?: string | null
           project_id?: string
+          prompt_override_length?: number | null
+          prompt_override_used?: boolean | null
           prompt_used?: string
-          provider?: string
+          provider?: string | null
+          quality_reasons?: string[] | null
           quality_rejection_codes?: string[] | null
           quality_score?: number | null
-          quality_status?: string
+          quality_status?: string | null
           quality_warnings?: string[] | null
-          reuse_pool_eligible?: boolean
+          requested_aspect_ratio?: string | null
+          requested_character_names?: string[] | null
+          requested_height?: number | null
+          requested_location_ids?: string[] | null
+          requested_shot_type?: string | null
+          requested_width?: number | null
+          requirement_ids?: string[] | null
+          resolved_character_names?: string[] | null
+          resolved_location_ids?: string[] | null
+          resolved_location_names?: string[] | null
           role?: Database["public"]["Enums"]["project_image_role"]
-          shot_type?: Database["public"]["Enums"]["shot_type"] | null
+          shot_intent?: string | null
+          shot_intent_slide_type?: string | null
+          shot_list_camera_movement?: string | null
+          shot_list_context_used?: boolean | null
+          shot_list_framing?: string | null
+          shot_list_id?: string | null
+          shot_list_item_ids?: string[] | null
+          shot_list_location?: string | null
+          shot_list_time_of_day?: string | null
+          shot_type?: string | null
+          slide_type?: string | null
+          source_feature?: string | null
           source_poster_id?: string | null
           stale_reason?: string | null
           state_key?: string | null
           state_label?: string | null
+          state_variant_used?: string | null
           storage_bucket?: string
           storage_path?: string
           strategy_key?: string | null
-          style_mode?: string
+          style_lock_active?: boolean | null
+          style_lock_hash?: string | null
+          style_mode?: string | null
           subject?: string | null
           subject_ref?: string | null
           subject_type?: string | null
+          target_requirement_id?: string | null
+          targeting_mode?: string | null
           truth_snapshot_json?: Json | null
-          user_id?: string
+          user_id?: string | null
+          variant_index?: number | null
+          vertical_drama_project?: boolean | null
           width?: number | null
+          world_binding_active?: boolean | null
+          world_binding_era?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "project_images_canon_location_id_fkey"
-            columns: ["canon_location_id"]
-            isOneToOne: false
-            referencedRelation: "canon_locations"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "project_images_project_id_fkey"
             columns: ["project_id"]
@@ -15337,13 +13143,6 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_images_source_poster_id_fkey"
-            columns: ["source_poster_id"]
-            isOneToOne: false
-            referencedRelation: "project_posters"
             referencedColumns: ["id"]
           },
         ]
@@ -15400,20 +13199,6 @@ export type Database = {
             columns: ["incentive_program_id"]
             isOneToOne: false
             referencedRelation: "incentive_programs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_incentive_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_incentive_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -15511,22 +13296,7 @@ export type Database = {
           token?: string
           use_count?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_invite_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_invite_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_issue_events: {
         Row: {
@@ -15591,22 +13361,7 @@ export type Database = {
           source_row_id?: string
           source_table?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_issue_lifecycle_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_issue_lifecycle_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_issues: {
         Row: {
@@ -15675,22 +13430,7 @@ export type Database = {
           verify_detail?: string | null
           verify_status?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_lane_prefs: {
         Row: {
@@ -15717,22 +13457,7 @@ export type Database = {
           updated_at?: string
           updated_by?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_lane_prefs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_lane_prefs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_note_events: {
         Row: {
@@ -15768,20 +13493,6 @@ export type Database = {
             columns: ["note_id"]
             isOneToOne: false
             referencedRelation: "project_notes"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_note_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_note_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -15870,20 +13581,6 @@ export type Database = {
             referencedRelation: "project_notes"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_outcomes: {
@@ -15956,22 +13653,7 @@ export type Database = {
           talent_attached?: boolean
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_outcomes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_outcomes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_ownership_stakes: {
         Row: {
@@ -16040,20 +13722,6 @@ export type Database = {
             referencedRelation: "project_participants"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_ownership_stakes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_ownership_stakes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_participants: {
@@ -16102,22 +13770,7 @@ export type Database = {
           user_id?: string
           version?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_participants_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_participants_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_partners: {
         Row: {
@@ -16156,22 +13809,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_partners_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_partners_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_posters: {
         Row: {
@@ -16195,7 +13833,6 @@ export type Database = {
           rendered_storage_path: string | null
           source_type: string
           stale_reason: string | null
-          status: string
           truth_snapshot_json: Json | null
           updated_at: string
           user_id: string
@@ -16222,7 +13859,6 @@ export type Database = {
           rendered_storage_path?: string | null
           source_type?: string
           stale_reason?: string | null
-          status?: string
           truth_snapshot_json?: Json | null
           updated_at?: string
           user_id: string
@@ -16249,7 +13885,6 @@ export type Database = {
           rendered_storage_path?: string | null
           source_type?: string
           stale_reason?: string | null
-          status?: string
           truth_snapshot_json?: Json | null
           updated_at?: string
           user_id?: string
@@ -16294,22 +13929,7 @@ export type Database = {
           project_id?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_preferences_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_preferences_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_recoupment_scenarios: {
         Row: {
@@ -16345,22 +13965,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_recoupment_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_recoupment_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_recoupment_tiers: {
         Row: {
@@ -16409,20 +14014,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "project_recoupment_tiers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_recoupment_tiers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "project_recoupment_tiers_scenario_id_fkey"
             columns: ["scenario_id"]
@@ -16517,22 +14108,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_scenarios_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_scenes: {
         Row: {
@@ -16583,22 +14159,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_scripts: {
         Row: {
@@ -16634,22 +14195,7 @@ export type Database = {
           user_id?: string
           version_label?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_scripts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_scripts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_share_links: {
         Row: {
@@ -16682,22 +14228,7 @@ export type Database = {
           signed_url?: string | null
           storage_path?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_share_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_share_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_share_pack_events: {
         Row: {
@@ -16821,22 +14352,7 @@ export type Database = {
           watermark_enabled?: boolean
           watermark_text?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_share_packs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_share_packs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_shares: {
         Row: {
@@ -16866,22 +14382,7 @@ export type Database = {
           role?: string
           user_id?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_shares_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_shares_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_signal_matches: {
         Row: {
@@ -16925,20 +14426,6 @@ export type Database = {
             referencedRelation: "trend_signals"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_signal_matches_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_signal_matches_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_spines: {
@@ -16975,22 +14462,7 @@ export type Database = {
           stats?: Json
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_spines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_spines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_state_graphs: {
         Row: {
@@ -17055,20 +14527,6 @@ export type Database = {
             referencedRelation: "project_scenarios"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_state_graphs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_state_graphs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       project_story_spines: {
@@ -17105,22 +14563,7 @@ export type Database = {
           summary?: string | null
           version?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_story_spines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_story_spines_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_talent_triage: {
         Row: {
@@ -17174,22 +14617,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_talent_triage_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_talent_triage_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_thread_ledgers: {
         Row: {
@@ -17222,79 +14650,7 @@ export type Database = {
           summary?: string | null
           version?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_thread_ledgers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_thread_ledgers_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      project_title_history: {
-        Row: {
-          change_reason: string | null
-          created_at: string
-          created_by: string | null
-          effective_from: string
-          effective_to: string | null
-          id: string
-          is_current: boolean
-          normalized_title: string
-          project_id: string
-          title: string
-          title_type: string
-        }
-        Insert: {
-          change_reason?: string | null
-          created_at?: string
-          created_by?: string | null
-          effective_from?: string
-          effective_to?: string | null
-          id?: string
-          is_current?: boolean
-          normalized_title: string
-          project_id: string
-          title: string
-          title_type?: string
-        }
-        Update: {
-          change_reason?: string | null
-          created_at?: string
-          created_by?: string | null
-          effective_from?: string
-          effective_to?: string | null
-          id?: string
-          is_current?: boolean
-          normalized_title?: string
-          project_id?: string
-          title?: string
-          title_type?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_title_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_title_history_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_updates: {
         Row: {
@@ -17327,22 +14683,7 @@ export type Database = {
           update_type?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "project_updates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_updates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       project_vectors: {
         Row: {
@@ -17380,6 +14721,238 @@ export type Database = {
         }
         Relationships: []
       }
+      project_visual_execution_provenance: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          executed_at: string
+          execution_number: number
+          execution_state: string
+          generated_asset_ids: string[] | null
+          generation_input_hash: string | null
+          governance_snapshot_hash: string | null
+          id: string
+          is_superseded: boolean
+          previous_asset_ids: string[] | null
+          previous_execution_id: string | null
+          project_id: string
+          recommended_action: string
+          repair_intent_id: string
+          result_summary: Json | null
+          review_notes: string | null
+          review_state: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          stage_id: string
+          stale_reason_snapshot: Json | null
+          superseded_at: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          executed_at?: string
+          execution_number: number
+          execution_state: string
+          generated_asset_ids?: string[] | null
+          generation_input_hash?: string | null
+          governance_snapshot_hash?: string | null
+          id?: string
+          is_superseded?: boolean
+          previous_asset_ids?: string[] | null
+          previous_execution_id?: string | null
+          project_id: string
+          recommended_action: string
+          repair_intent_id: string
+          result_summary?: Json | null
+          review_notes?: string | null
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          stage_id: string
+          stale_reason_snapshot?: Json | null
+          superseded_at?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          executed_at?: string
+          execution_number?: number
+          execution_state?: string
+          generated_asset_ids?: string[] | null
+          generation_input_hash?: string | null
+          governance_snapshot_hash?: string | null
+          id?: string
+          is_superseded?: boolean
+          previous_asset_ids?: string[] | null
+          previous_execution_id?: string | null
+          project_id?: string
+          recommended_action?: string
+          repair_intent_id?: string
+          result_summary?: Json | null
+          review_notes?: string | null
+          review_state?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          stage_id?: string
+          stale_reason_snapshot?: Json | null
+          superseded_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_execution_provenance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_visual_execution_provenance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_visual_execution_provenance_repair_intent_id_fkey"
+            columns: ["repair_intent_id"]
+            isOneToOne: false
+            referencedRelation: "project_visual_repair_intents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_visual_repair_intents: {
+        Row: {
+          approval_state: string
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string
+          downstream_stages: string[] | null
+          executed_at: string | null
+          execution_result_json: Json | null
+          execution_state: string
+          id: string
+          intent_detail: string | null
+          intent_label: string | null
+          project_id: string
+          provenance_snapshot: Json | null
+          recommended_action: string
+          rejection_reason: string | null
+          stage_id: string
+          stale_reason_codes: string[]
+        }
+        Insert: {
+          approval_state?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by: string
+          downstream_stages?: string[] | null
+          executed_at?: string | null
+          execution_result_json?: Json | null
+          execution_state?: string
+          id?: string
+          intent_detail?: string | null
+          intent_label?: string | null
+          project_id: string
+          provenance_snapshot?: Json | null
+          recommended_action: string
+          rejection_reason?: string | null
+          stage_id: string
+          stale_reason_codes?: string[]
+        }
+        Update: {
+          approval_state?: string
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string
+          downstream_stages?: string[] | null
+          executed_at?: string | null
+          execution_result_json?: Json | null
+          execution_state?: string
+          id?: string
+          intent_detail?: string | null
+          intent_label?: string | null
+          project_id?: string
+          provenance_snapshot?: Json | null
+          recommended_action?: string
+          rejection_reason?: string | null
+          stage_id?: string
+          stale_reason_codes?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_repair_intents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_visual_repair_intents_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      project_visual_stage_governance: {
+        Row: {
+          blocker_codes: string[] | null
+          computed_status: string
+          eligibility_state: Json
+          id: string
+          last_evaluated_at: string
+          project_id: string
+          provenance_json: Json | null
+          source_snapshot_hash: string
+          stage_id: string
+          stale_risk: Json | null
+        }
+        Insert: {
+          blocker_codes?: string[] | null
+          computed_status: string
+          eligibility_state?: Json
+          id?: string
+          last_evaluated_at?: string
+          project_id: string
+          provenance_json?: Json | null
+          source_snapshot_hash: string
+          stage_id: string
+          stale_risk?: Json | null
+        }
+        Update: {
+          blocker_codes?: string[] | null
+          computed_status?: string
+          eligibility_state?: Json
+          id?: string
+          last_evaluated_at?: string
+          project_id?: string
+          provenance_json?: Json | null
+          source_snapshot_hash?: string
+          stage_id?: string
+          stale_risk?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_visual_stage_governance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "project_script_scene_state"
+            referencedColumns: ["project_id"]
+          },
+          {
+            foreignKeyName: "project_visual_stage_governance_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       project_visual_style: {
         Row: {
           camera_philosophy: string
@@ -17395,7 +14968,6 @@ export type Database = {
           lighting_philosophy: string
           period: string
           project_id: string
-          style_lock_json: Json | null
           texture_materiality: string
           updated_at: string
         }
@@ -17413,7 +14985,6 @@ export type Database = {
           lighting_philosophy?: string
           period?: string
           project_id: string
-          style_lock_json?: Json | null
           texture_materiality?: string
           updated_at?: string
         }
@@ -17431,7 +15002,6 @@ export type Database = {
           lighting_philosophy?: string
           period?: string
           project_id?: string
-          style_lock_json?: Json | null
           texture_materiality?: string
           updated_at?: string
         }
@@ -17452,211 +15022,6 @@ export type Database = {
           },
         ]
       }
-      project_visual_stage_governance: {
-        Row: {
-          blocker_codes: string[] | null
-          computed_status: string
-          created_at: string
-          eligibility_state: Json
-          id: string
-          last_evaluated_at: string
-          project_id: string
-          provenance_json: Json | null
-          source_snapshot_hash: string
-          stage_id: string
-          stale_risk: Json | null
-          updated_at: string
-        }
-        Insert: {
-          blocker_codes?: string[] | null
-          computed_status: string
-          created_at?: string
-          eligibility_state?: Json
-          id?: string
-          last_evaluated_at?: string
-          project_id: string
-          provenance_json?: Json | null
-          source_snapshot_hash: string
-          stage_id: string
-          stale_risk?: Json | null
-          updated_at?: string
-        }
-        Update: {
-          blocker_codes?: string[] | null
-          computed_status?: string
-          created_at?: string
-          eligibility_state?: Json
-          id?: string
-          last_evaluated_at?: string
-          project_id?: string
-          provenance_json?: Json | null
-          source_snapshot_hash?: string
-          stage_id?: string
-          stale_risk?: Json | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_visual_stage_governance_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-
-      project_visual_repair_intents: {
-        Row: {
-          approval_state: string
-          approved_at: string | null
-          approved_by: string | null
-          created_at: string
-          created_by: string
-          downstream_stages: string[] | null
-          executed_at: string | null
-          execution_state: string
-          id: string
-          intent_detail: string | null
-          intent_label: string | null
-          project_id: string
-          provenance_snapshot: Json | null
-          recommended_action: string
-          rejection_reason: string | null
-          stage_id: string
-          stale_reason_codes: string[]
-        }
-        Insert: {
-          approval_state?: string
-          approved_at?: string | null
-          approved_by?: string | null
-          created_at?: string
-          created_by: string
-          downstream_stages?: string[] | null
-          executed_at?: string | null
-          execution_state?: string
-          id?: string
-          intent_detail?: string | null
-          intent_label?: string | null
-          project_id: string
-          provenance_snapshot?: Json | null
-          recommended_action: string
-          rejection_reason?: string | null
-          stage_id: string
-          stale_reason_codes?: string[]
-        }
-        Update: {
-          approval_state?: string
-          approved_at?: string | null
-          approved_by?: string | null
-          created_at?: string
-          created_by?: string
-          downstream_stages?: string[] | null
-          executed_at?: string | null
-          execution_state?: string
-          id?: string
-          intent_detail?: string | null
-          intent_label?: string | null
-          project_id?: string
-          provenance_snapshot?: Json | null
-          recommended_action?: string
-          rejection_reason?: string | null
-          stage_id?: string
-          stale_reason_codes?: string[]
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_visual_repair_intents_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-
-      project_visual_execution_provenance: {
-        Row: {
-          id: string
-          project_id: string
-          repair_intent_id: string
-          execution_number: number
-          stage_id: string
-          recommended_action: string
-          execution_state: string
-          governance_snapshot_hash: string | null
-          stale_reason_snapshot: Json | null
-          generation_input_hash: string | null
-          generated_asset_ids: string[] | null
-          previous_asset_ids: string[] | null
-          previous_execution_id: string | null
-          is_superseded: boolean
-          superseded_at: string | null
-          result_summary: Json | null
-          error_message: string | null
-          executed_at: string
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          project_id: string
-          repair_intent_id: string
-          execution_number: number
-          stage_id: string
-          recommended_action: string
-          execution_state: string
-          governance_snapshot_hash?: string | null
-          stale_reason_snapshot?: Json | null
-          generation_input_hash?: string | null
-          generated_asset_ids?: string[] | null
-          previous_asset_ids?: string[] | null
-          previous_execution_id?: string | null
-          is_superseded?: boolean
-          superseded_at?: string | null
-          result_summary?: Json | null
-          error_message?: string | null
-          executed_at?: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          project_id?: string
-          repair_intent_id?: string
-          execution_number?: number
-          stage_id?: string
-          recommended_action?: string
-          execution_state?: string
-          governance_snapshot_hash?: string | null
-          stale_reason_snapshot?: Json | null
-          generation_input_hash?: string | null
-          generated_asset_ids?: string[] | null
-          previous_asset_ids?: string[] | null
-          previous_execution_id?: string | null
-          is_superseded?: boolean
-          superseded_at?: string | null
-          result_summary?: Json | null
-          error_message?: string | null
-          executed_at?: string
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "project_visual_execution_provenance_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_visual_execution_provenance_repair_intent_id_fkey"
-            columns: ["repair_intent_id"]
-            isOneToOne: false
-            referencedRelation: "project_visual_repair_intents"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-
       project_waterfall_rules: {
         Row: {
           cap_amount: string
@@ -17733,20 +15098,6 @@ export type Database = {
             referencedRelation: "project_participants"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "project_waterfall_rules_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "project_waterfall_rules_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       projects: {
@@ -17763,6 +15114,7 @@ export type Database = {
           concept_lock_version: number | null
           confidence: number | null
           created_at: string
+          criteria_json: Json | null
           current_stage: string | null
           default_prestige_style: string | null
           development_behavior: string | null
@@ -17781,6 +15133,7 @@ export type Database = {
           locked_fields: Json | null
           min_runtime_hard_floor: number | null
           min_runtime_minutes: number | null
+          narrative_spine_json: Json | null
           packaging_mode: string
           packaging_stage: string
           pinned: boolean
@@ -17834,6 +15187,7 @@ export type Database = {
           concept_lock_version?: number | null
           confidence?: number | null
           created_at?: string
+          criteria_json?: Json | null
           current_stage?: string | null
           default_prestige_style?: string | null
           development_behavior?: string | null
@@ -17852,6 +15206,7 @@ export type Database = {
           locked_fields?: Json | null
           min_runtime_hard_floor?: number | null
           min_runtime_minutes?: number | null
+          narrative_spine_json?: Json | null
           packaging_mode?: string
           packaging_stage?: string
           pinned?: boolean
@@ -17905,6 +15260,7 @@ export type Database = {
           concept_lock_version?: number | null
           confidence?: number | null
           created_at?: string
+          criteria_json?: Json | null
           current_stage?: string | null
           default_prestige_style?: string | null
           development_behavior?: string | null
@@ -17923,6 +15279,7 @@ export type Database = {
           locked_fields?: Json | null
           min_runtime_hard_floor?: number | null
           min_runtime_minutes?: number | null
+          narrative_spine_json?: Json | null
           packaging_mode?: string
           packaging_stage?: string
           pinned?: boolean
@@ -17965,38 +15322,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "projects_active_company_profile_id_fkey"
-            columns: ["active_company_profile_id"]
-            isOneToOne: false
-            referencedRelation: "company_intelligence_profiles"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "projects_canon_version_id_fkey"
             columns: ["canon_version_id"]
             isOneToOne: false
             referencedRelation: "project_canon_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "projects_source_dna_profile_id_fkey"
-            columns: ["source_dna_profile_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_dna_profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "projects_source_engine_key_fkey"
-            columns: ["source_engine_key"]
-            isOneToOne: false
-            referencedRelation: "narrative_engines"
-            referencedColumns: ["engine_key"]
-          },
-          {
-            foreignKeyName: "projects_source_pitch_idea_id_fkey"
-            columns: ["source_pitch_idea_id"]
-            isOneToOne: false
-            referencedRelation: "pitch_ideas"
             referencedColumns: ["id"]
           },
         ]
@@ -18029,19 +15358,62 @@ export type Database = {
           snapshot_date?: string
           user_id?: string
         }
+        Relationships: []
+      }
+      reconciliation_flags: {
+        Row: {
+          cleared_at: string | null
+          created_at: string | null
+          downstream_doc_type: string
+          downstream_doc_version_id: string
+          entity_tag: string | null
+          id: string
+          project_id: string
+          reason: string | null
+          triggered_by_producer_note_id: string | null
+        }
+        Insert: {
+          cleared_at?: string | null
+          created_at?: string | null
+          downstream_doc_type: string
+          downstream_doc_version_id: string
+          entity_tag?: string | null
+          id?: string
+          project_id: string
+          reason?: string | null
+          triggered_by_producer_note_id?: string | null
+        }
+        Update: {
+          cleared_at?: string | null
+          created_at?: string | null
+          downstream_doc_type?: string
+          downstream_doc_version_id?: string
+          entity_tag?: string | null
+          id?: string
+          project_id?: string
+          reason?: string | null
+          triggered_by_producer_note_id?: string | null
+        }
         Relationships: [
           {
-            foreignKeyName: "readiness_score_history_project_id_fkey"
+            foreignKeyName: "reconciliation_flags_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "readiness_score_history_project_id_fkey"
+            foreignKeyName: "reconciliation_flags_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reconciliation_flags_triggered_by_producer_note_id_fkey"
+            columns: ["triggered_by_producer_note_id"]
+            isOneToOne: false
+            referencedRelation: "producer_notes"
             referencedColumns: ["id"]
           },
         ]
@@ -18169,125 +15541,82 @@ export type Database = {
           total_count?: number
           updated_at?: string
         }
+        Relationships: []
+      }
+      regeneration_runs: {
+        Row: {
+          abort_reason: string | null
+          completed_at: string | null
+          completed_scene_ids: string[]
+          failed_scene_ids: string[]
+          id: string
+          meta_json: Json
+          ndg_post_at_risk_count: number | null
+          ndg_pre_at_risk_count: number | null
+          ndg_validation_status: string | null
+          project_id: string
+          recommended_scope: string
+          source_axes: string[]
+          source_unit_keys: string[]
+          started_at: string
+          status: string
+          target_scene_count: number
+          target_scene_ids: string[]
+          triggered_by: string | null
+        }
+        Insert: {
+          abort_reason?: string | null
+          completed_at?: string | null
+          completed_scene_ids?: string[]
+          failed_scene_ids?: string[]
+          id?: string
+          meta_json?: Json
+          ndg_post_at_risk_count?: number | null
+          ndg_pre_at_risk_count?: number | null
+          ndg_validation_status?: string | null
+          project_id: string
+          recommended_scope: string
+          source_axes?: string[]
+          source_unit_keys?: string[]
+          started_at?: string
+          status?: string
+          target_scene_count?: number
+          target_scene_ids?: string[]
+          triggered_by?: string | null
+        }
+        Update: {
+          abort_reason?: string | null
+          completed_at?: string | null
+          completed_scene_ids?: string[]
+          failed_scene_ids?: string[]
+          id?: string
+          meta_json?: Json
+          ndg_post_at_risk_count?: number | null
+          ndg_pre_at_risk_count?: number | null
+          ndg_validation_status?: string | null
+          project_id?: string
+          recommended_scope?: string
+          source_axes?: string[]
+          source_unit_keys?: string[]
+          started_at?: string
+          status?: string
+          target_scene_count?: number
+          target_scene_ids?: string[]
+          triggered_by?: string | null
+        }
         Relationships: [
           {
-            foreignKeyName: "regen_jobs_project_id_fkey"
+            foreignKeyName: "regeneration_runs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "regen_jobs_project_id_fkey"
+            foreignKeyName: "regeneration_runs_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      repair_runs: {
-        Row: {
-          attempt_index: number
-          created_at: string
-          created_by: string | null
-          group_id: string
-          id: string
-          max_attempts: number
-          repair_policy_key: string
-          repair_round_id: string | null
-          source_round_id: string
-          status: string
-        }
-        Insert: {
-          attempt_index?: number
-          created_at?: string
-          created_by?: string | null
-          group_id: string
-          id?: string
-          max_attempts?: number
-          repair_policy_key?: string
-          repair_round_id?: string | null
-          source_round_id: string
-          status?: string
-        }
-        Update: {
-          attempt_index?: number
-          created_at?: string
-          created_by?: string | null
-          group_id?: string
-          id?: string
-          max_attempts?: number
-          repair_policy_key?: string
-          repair_round_id?: string | null
-          source_round_id?: string
-          status?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "repair_runs_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "repair_runs_repair_round_id_fkey"
-            columns: ["repair_round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "repair_runs_source_round_id_fkey"
-            columns: ["source_round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      repair_targets: {
-        Row: {
-          created_at: string
-          diagnostics_json: Json
-          id: string
-          repair_run_id: string
-          source_candidate_version_id: string
-          target_rank_position: number | null
-          target_reason_key: string
-        }
-        Insert: {
-          created_at?: string
-          diagnostics_json?: Json
-          id?: string
-          repair_run_id: string
-          source_candidate_version_id: string
-          target_rank_position?: number | null
-          target_reason_key?: string
-        }
-        Update: {
-          created_at?: string
-          diagnostics_json?: Json
-          id?: string
-          repair_run_id?: string
-          source_candidate_version_id?: string
-          target_rank_position?: number | null
-          target_reason_key?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "repair_targets_repair_run_id_fkey"
-            columns: ["repair_run_id"]
-            isOneToOne: false
-            referencedRelation: "repair_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "repair_targets_source_candidate_version_id_fkey"
-            columns: ["source_candidate_version_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -18328,75 +15657,120 @@ export type Database = {
             referencedRelation: "decision_ledger"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "resolved_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "resolved_notes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
-      retcon_events: {
+      reverse_engineer_context: {
         Row: {
-          change_summary: string
-          changed_doc_type: string | null
-          changed_version_id: string | null
-          created_at: string
+          block_count: number | null
+          created_at: string | null
+          created_by: string | null
           id: string
-          impact_analysis: Json | null
-          patch_suggestions: Json | null
+          last_blocked_at: string | null
+          locked_entity_ids: string[]
+          locked_scene_ids: string[]
           project_id: string
-          resolver_hash: string | null
-          status: string
-          user_id: string
+          regex_found_names: string[] | null
         }
         Insert: {
-          change_summary?: string
-          changed_doc_type?: string | null
-          changed_version_id?: string | null
-          created_at?: string
+          block_count?: number | null
+          created_at?: string | null
+          created_by?: string | null
           id?: string
-          impact_analysis?: Json | null
-          patch_suggestions?: Json | null
+          last_blocked_at?: string | null
+          locked_entity_ids?: string[]
+          locked_scene_ids?: string[]
           project_id: string
-          resolver_hash?: string | null
-          status?: string
-          user_id: string
+          regex_found_names?: string[] | null
         }
         Update: {
-          change_summary?: string
-          changed_doc_type?: string | null
-          changed_version_id?: string | null
-          created_at?: string
+          block_count?: number | null
+          created_at?: string | null
+          created_by?: string | null
           id?: string
-          impact_analysis?: Json | null
-          patch_suggestions?: Json | null
+          last_blocked_at?: string | null
+          locked_entity_ids?: string[]
+          locked_scene_ids?: string[]
           project_id?: string
-          resolver_hash?: string | null
+          regex_found_names?: string[] | null
+        }
+        Relationships: []
+      }
+      reverse_engineer_jobs: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          error: string | null
+          id: string
+          project_id: string
+          result_doc_id: string | null
+          script_document_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          project_id: string
+          result_doc_id?: string | null
+          script_document_id?: string | null
           status?: string
-          user_id?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          error?: string | null
+          id?: string
+          project_id?: string
+          result_doc_id?: string | null
+          script_document_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      reverse_engineer_stages: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          job_id: string
+          output: Json | null
+          stage_key: string
+          stage_label: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_id: string
+          output?: Json | null
+          stage_key: string
+          stage_label: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          job_id?: string
+          output?: Json | null
+          stage_key?: string
+          stage_label?: string
+          status?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "retcon_events_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "reverse_engineer_stages_job_id_fkey"
+            columns: ["job_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "retcon_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "reverse_engineer_jobs"
             referencedColumns: ["id"]
           },
         ]
@@ -18462,22 +15836,7 @@ export type Database = {
           summary?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "review_tasks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "review_tasks_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       rewrite_jobs: {
         Row: {
@@ -18556,20 +15915,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "rewrite_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "rewrite_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "rewrite_jobs_run_id_fkey"
             columns: ["run_id"]
@@ -18652,22 +15997,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "rewrite_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "rewrite_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       rewrite_scene_outputs: {
         Row: {
@@ -18710,20 +16040,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "rewrite_scene_outputs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "rewrite_scene_outputs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "rewrite_scene_outputs_run_id_fkey"
             columns: ["run_id"]
@@ -18785,155 +16101,6 @@ export type Database = {
             referencedRelation: "video_generation_plans"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "rough_cuts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "rough_cuts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      round_progressions: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          group_id: string
-          id: string
-          next_task_ref_id: string | null
-          next_task_type: string
-          progression_snapshot_json: Json
-          progression_status: string
-          promoted_candidate_version_id: string | null
-          rationale: string | null
-          round_id: string
-          source_promotion_id: string | null
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          group_id: string
-          id?: string
-          next_task_ref_id?: string | null
-          next_task_type?: string
-          progression_snapshot_json?: Json
-          progression_status?: string
-          promoted_candidate_version_id?: string | null
-          rationale?: string | null
-          round_id: string
-          source_promotion_id?: string | null
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          group_id?: string
-          id?: string
-          next_task_ref_id?: string | null
-          next_task_type?: string
-          progression_snapshot_json?: Json
-          progression_status?: string
-          promoted_candidate_version_id?: string | null
-          rationale?: string | null
-          round_id?: string
-          source_promotion_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "round_progressions_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "round_progressions_promoted_candidate_version_id_fkey"
-            columns: ["promoted_candidate_version_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "round_progressions_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "round_progressions_source_promotion_id_fkey"
-            columns: ["source_promotion_id"]
-            isOneToOne: false
-            referencedRelation: "round_promotions"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      round_promotions: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          gating_snapshot_json: Json
-          group_id: string
-          id: string
-          promoted_candidate_version_id: string | null
-          promotion_mode: string
-          promotion_status: string
-          rationale: string | null
-          round_id: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          gating_snapshot_json?: Json
-          group_id: string
-          id?: string
-          promoted_candidate_version_id?: string | null
-          promotion_mode?: string
-          promotion_status?: string
-          rationale?: string | null
-          round_id: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          gating_snapshot_json?: Json
-          group_id?: string
-          id?: string
-          promoted_candidate_version_id?: string | null
-          promotion_mode?: string
-          promotion_status?: string
-          rationale?: string | null
-          round_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "round_promotions_group_id_fkey"
-            columns: ["group_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_groups"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "round_promotions_promoted_candidate_version_id_fkey"
-            columns: ["promoted_candidate_version_id"]
-            isOneToOne: false
-            referencedRelation: "candidate_versions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "round_promotions_round_id_fkey"
-            columns: ["round_id"]
-            isOneToOne: false
-            referencedRelation: "competition_rounds"
-            referencedColumns: ["id"]
-          },
         ]
       }
       scenario_decision_events: {
@@ -18973,20 +16140,6 @@ export type Database = {
             columns: ["previous_scenario_id"]
             isOneToOne: false
             referencedRelation: "project_scenarios"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scenario_decision_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_decision_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -19036,20 +16189,6 @@ export type Database = {
           status?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "scenario_merge_approvals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_merge_approvals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scenario_merge_approvals_scenario_id_fkey"
             columns: ["scenario_id"]
@@ -19101,20 +16240,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scenario_projections_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_projections_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scenario_projections_scenario_id_fkey"
             columns: ["scenario_id"]
             isOneToOne: false
@@ -19156,20 +16281,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scenario_recommendations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_recommendations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scenario_recommendations_recommended_scenario_id_fkey"
             columns: ["recommended_scenario_id"]
             isOneToOne: false
@@ -19207,20 +16318,6 @@ export type Database = {
           scores?: Json
         }
         Relationships: [
-          {
-            foreignKeyName: "scenario_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scenario_scores_scenario_id_fkey"
             columns: ["scenario_id"]
@@ -19265,20 +16362,6 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "scenario_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scenario_snapshots_scenario_id_fkey"
             columns: ["scenario_id"]
@@ -19334,24 +16417,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scenario_stress_tests_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scenario_stress_tests_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scenario_stress_tests_scenario_id_fkey"
             columns: ["scenario_id"]
             isOneToOne: false
             referencedRelation: "project_scenarios"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scene_blueprint_bindings: {
+        Row: {
+          computed_at: string
+          id: string
+          patch_intent: string
+          project_id: string
+          reason: string | null
+          risk_source: string
+          scene_id: string
+          scene_key: string
+          slugline: string | null
+          source_axis: string
+          source_doc_version_id: string | null
+          source_unit_key: string | null
+          target_surface: string
+          updated_at: string
+        }
+        Insert: {
+          computed_at?: string
+          id?: string
+          patch_intent?: string
+          project_id: string
+          reason?: string | null
+          risk_source?: string
+          scene_id: string
+          scene_key: string
+          slugline?: string | null
+          source_axis: string
+          source_doc_version_id?: string | null
+          source_unit_key?: string | null
+          target_surface?: string
+          updated_at?: string
+        }
+        Update: {
+          computed_at?: string
+          id?: string
+          patch_intent?: string
+          project_id?: string
+          reason?: string | null
+          risk_source?: string
+          scene_id?: string
+          scene_key?: string
+          slugline?: string | null
+          source_axis?: string
+          source_doc_version_id?: string | null
+          source_unit_key?: string | null
+          target_surface?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scene_blueprint_bindings_source_doc_version_id_fkey"
+            columns: ["source_doc_version_id"]
+            isOneToOne: false
+            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -19393,20 +16521,6 @@ export type Database = {
             columns: ["change_set_id"]
             isOneToOne: false
             referencedRelation: "scene_change_sets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -19454,20 +16568,6 @@ export type Database = {
             columns: ["change_set_id"]
             isOneToOne: false
             referencedRelation: "scene_change_sets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_ops_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_ops_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -19526,20 +16626,6 @@ export type Database = {
             columns: ["change_set_id"]
             isOneToOne: false
             referencedRelation: "scene_change_sets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_review_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_change_set_review_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -19604,20 +16690,6 @@ export type Database = {
             columns: ["base_snapshot_id"]
             isOneToOne: false
             referencedRelation: "scene_graph_snapshots"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_change_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_change_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -19824,20 +16896,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_diff_artifacts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_diff_artifacts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_diff_artifacts_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -19916,20 +16974,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_diff_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_diff_comments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_diff_comments_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -19938,101 +16982,200 @@ export type Database = {
           },
         ]
       }
-      scene_entity_participation: {
+      scene_engagement_scores: {
         Row: {
-          confidence: number
-          costume_note: string | null
+          character_connection_score: number | null
+          cognitive_load_score: number | null
+          confidence: number | null
           created_at: string
-          entity_id: string
-          entity_type: string
+          document_id: string | null
+          document_version_id: string | null
+          emotional_journey_score: number | null
           id: string
-          ingestion_run_id: string | null
-          is_primary: boolean
+          narrative_absorption_score: number | null
+          neural_validation_run_id: string | null
+          prediction_source: string
           project_id: string
-          review_status: string
-          review_tier: string
-          reviewed_at: string | null
-          reviewed_by: string | null
-          role_in_scene: string
-          scene_id: string
-          source_reason: string
-          state_note: string | null
+          raw_roi_json: Json
+          scene_heading: string | null
+          scene_key: string
+          score_version: number
+          total_score: number
+          visceral_impact_score: number | null
         }
         Insert: {
-          confidence?: number
-          costume_note?: string | null
+          character_connection_score?: number | null
+          cognitive_load_score?: number | null
+          confidence?: number | null
           created_at?: string
-          entity_id: string
-          entity_type?: string
+          document_id?: string | null
+          document_version_id?: string | null
+          emotional_journey_score?: number | null
           id?: string
-          ingestion_run_id?: string | null
-          is_primary?: boolean
+          narrative_absorption_score?: number | null
+          neural_validation_run_id?: string | null
+          prediction_source: string
           project_id: string
-          review_status?: string
-          review_tier?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          role_in_scene?: string
-          scene_id: string
-          source_reason?: string
-          state_note?: string | null
+          raw_roi_json?: Json
+          scene_heading?: string | null
+          scene_key: string
+          score_version?: number
+          total_score: number
+          visceral_impact_score?: number | null
         }
         Update: {
-          confidence?: number
-          costume_note?: string | null
+          character_connection_score?: number | null
+          cognitive_load_score?: number | null
+          confidence?: number | null
           created_at?: string
-          entity_id?: string
-          entity_type?: string
+          document_id?: string | null
+          document_version_id?: string | null
+          emotional_journey_score?: number | null
           id?: string
-          ingestion_run_id?: string | null
-          is_primary?: boolean
+          narrative_absorption_score?: number | null
+          neural_validation_run_id?: string | null
+          prediction_source?: string
           project_id?: string
-          review_status?: string
-          review_tier?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          role_in_scene?: string
-          scene_id?: string
-          source_reason?: string
-          state_note?: string | null
+          raw_roi_json?: Json
+          scene_heading?: string | null
+          scene_key?: string
+          score_version?: number
+          total_score?: number
+          visceral_impact_score?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "scene_entity_participation_entity_id_fkey"
-            columns: ["entity_id"]
+            foreignKeyName: "scene_engagement_scores_document_id_fkey"
+            columns: ["document_id"]
             isOneToOne: false
-            referencedRelation: "narrative_entities"
+            referencedRelation: "project_documents"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_entity_participation_ingestion_run_id_fkey"
-            columns: ["ingestion_run_id"]
+            foreignKeyName: "scene_engagement_scores_document_version_id_fkey"
+            columns: ["document_version_id"]
             isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
+            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_entity_participation_project_id_fkey"
+            foreignKeyName: "scene_engagement_scores_neural_validation_run_id_fkey"
+            columns: ["neural_validation_run_id"]
+            isOneToOne: false
+            referencedRelation: "neural_validation_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "scene_engagement_scores_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "scene_entity_participation_project_id_fkey"
+            foreignKeyName: "scene_engagement_scores_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "scene_entity_participation_scene_id_fkey"
-            columns: ["scene_id"]
-            isOneToOne: false
-            referencedRelation: "scene_graph_scenes"
-            referencedColumns: ["id"]
-          },
         ]
+      }
+      scene_enrichment: {
+        Row: {
+          computed_at: string | null
+          emotional_arc_direction: string | null
+          emotional_register: string | null
+          id: string
+          inputs_used: Json | null
+          is_current: boolean | null
+          narrative_beat: string | null
+          narrative_momentum: string | null
+          project_id: string
+          protagonist_emotional_state: Json | null
+          relationship_context: Json | null
+          scene_key: string
+          tension_level: number | null
+          thematic_tags: string[] | null
+          thematic_weight: number | null
+        }
+        Insert: {
+          computed_at?: string | null
+          emotional_arc_direction?: string | null
+          emotional_register?: string | null
+          id?: string
+          inputs_used?: Json | null
+          is_current?: boolean | null
+          narrative_beat?: string | null
+          narrative_momentum?: string | null
+          project_id: string
+          protagonist_emotional_state?: Json | null
+          relationship_context?: Json | null
+          scene_key: string
+          tension_level?: number | null
+          thematic_tags?: string[] | null
+          thematic_weight?: number | null
+        }
+        Update: {
+          computed_at?: string | null
+          emotional_arc_direction?: string | null
+          emotional_register?: string | null
+          id?: string
+          inputs_used?: Json | null
+          is_current?: boolean | null
+          narrative_beat?: string | null
+          narrative_momentum?: string | null
+          project_id?: string
+          protagonist_emotional_state?: Json | null
+          relationship_context?: Json | null
+          scene_key?: string
+          tension_level?: number | null
+          thematic_tags?: string[] | null
+          thematic_weight?: number | null
+        }
+        Relationships: []
+      }
+      scene_extract_debug: {
+        Row: {
+          doc_id: string | null
+          first_200: string | null
+          id: string
+          lines_0_5: string | null
+          lines_10_15: string | null
+          lines_5_10: string | null
+          project_id: string
+          run_at: string | null
+          scene_count: number | null
+          script_length: number | null
+          version_id: string | null
+        }
+        Insert: {
+          doc_id?: string | null
+          first_200?: string | null
+          id?: string
+          lines_0_5?: string | null
+          lines_10_15?: string | null
+          lines_5_10?: string | null
+          project_id: string
+          run_at?: string | null
+          scene_count?: number | null
+          script_length?: number | null
+          version_id?: string | null
+        }
+        Update: {
+          doc_id?: string | null
+          first_200?: string | null
+          id?: string
+          lines_0_5?: string | null
+          lines_10_15?: string | null
+          lines_5_10?: string | null
+          project_id?: string
+          run_at?: string | null
+          scene_count?: number | null
+          script_length?: number | null
+          version_id?: string | null
+        }
+        Relationships: []
       }
       scene_graph_actions: {
         Row: {
@@ -20062,22 +17205,7 @@ export type Database = {
           payload?: Json
           project_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "scene_graph_actions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_actions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       scene_graph_order: {
         Row: {
@@ -20117,20 +17245,6 @@ export type Database = {
           sequence?: number | null
         }
         Relationships: [
-          {
-            foreignKeyName: "scene_graph_order_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_order_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scene_graph_order_scene_id_fkey"
             columns: ["scene_id"]
@@ -20194,20 +17308,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scene_graph_patch_queue_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_patch_queue_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_graph_patch_queue_source_action_id_fkey"
             columns: ["source_action_id"]
             isOneToOne: false
@@ -20246,61 +17346,57 @@ export type Database = {
       }
       scene_graph_scenes: {
         Row: {
+          act: number | null
+          act_label: string | null
           created_at: string
           created_by: string | null
           deprecated_at: string | null
           id: string
           ingestion_run_id: string | null
+          page_range_end: number | null
+          page_range_start: number | null
           project_id: string
           provenance: Json
-          scene_key: string | null
+          scene_key: string
           scene_kind: string
+          slugline: string | null
+          source_text_refs: Json
         }
         Insert: {
+          act?: number | null
+          act_label?: string | null
           created_at?: string
           created_by?: string | null
           deprecated_at?: string | null
           id?: string
           ingestion_run_id?: string | null
+          page_range_end?: number | null
+          page_range_start?: number | null
           project_id: string
           provenance?: Json
-          scene_key?: string | null
+          scene_key: string
           scene_kind?: string
+          slugline?: string | null
+          source_text_refs?: Json
         }
         Update: {
+          act?: number | null
+          act_label?: string | null
           created_at?: string
           created_by?: string | null
           deprecated_at?: string | null
           id?: string
           ingestion_run_id?: string | null
+          page_range_end?: number | null
+          page_range_start?: number | null
           project_id?: string
           provenance?: Json
-          scene_key?: string | null
+          scene_key?: string
           scene_kind?: string
+          slugline?: string | null
+          source_text_refs?: Json
         }
-        Relationships: [
-          {
-            foreignKeyName: "scene_graph_scenes_ingestion_run_id_fkey"
-            columns: ["ingestion_run_id"]
-            isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_graph_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       scene_graph_snapshots: {
         Row: {
@@ -20333,22 +17429,7 @@ export type Database = {
           project_id?: string
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "scene_graph_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_snapshots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       scene_graph_versions: {
         Row: {
@@ -20444,20 +17525,6 @@ export type Database = {
             columns: ["canon_location_id"]
             isOneToOne: false
             referencedRelation: "canon_locations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "scene_graph_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_graph_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -20578,20 +17645,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_pass_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_pass_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_pass_runs_snapshot_id_fkey"
             columns: ["snapshot_id"]
             isOneToOne: false
@@ -20655,20 +17708,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_qc_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_qc_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_qc_issues_qc_run_id_fkey"
             columns: ["qc_run_id"]
             isOneToOne: false
@@ -20709,20 +17748,6 @@ export type Database = {
           summary?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "scene_qc_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_qc_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scene_qc_runs_snapshot_id_fkey"
             columns: ["snapshot_id"]
@@ -20798,20 +17823,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scene_schedule_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_schedule_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_schedule_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -20869,20 +17880,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scene_shot_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_shot_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_shot_sets_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -20936,20 +17933,6 @@ export type Database = {
           version_number?: number
         }
         Relationships: [
-          {
-            foreignKeyName: "scene_shot_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_shot_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "scene_shot_versions_shot_id_fkey"
             columns: ["shot_id"]
@@ -21097,20 +18080,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "scene_shots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scene_shots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "scene_shots_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -21137,6 +18106,7 @@ export type Database = {
         Row: {
           act: number | null
           arc_steps: Json
+          axis_key: string | null
           id: string
           order_key: string
           project_id: string
@@ -21149,6 +18119,7 @@ export type Database = {
         Insert: {
           act?: number | null
           arc_steps?: Json
+          axis_key?: string | null
           id?: string
           order_key: string
           project_id: string
@@ -21161,6 +18132,7 @@ export type Database = {
         Update: {
           act?: number | null
           arc_steps?: Json
+          axis_key?: string | null
           id?: string
           order_key?: string
           project_id?: string
@@ -21170,19 +18142,111 @@ export type Database = {
           threads?: Json
           updated_at?: string
         }
+        Relationships: []
+      }
+      screenplay_intake_runs: {
+        Row: {
+          completed_at: string | null
+          error: string | null
+          id: string
+          initiated_at: string
+          metadata: Json
+          project_id: string
+          script_version_id: string | null
+          source_doc_id: string | null
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          error?: string | null
+          id?: string
+          initiated_at?: string
+          metadata?: Json
+          project_id: string
+          script_version_id?: string | null
+          source_doc_id?: string | null
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          error?: string | null
+          id?: string
+          initiated_at?: string
+          metadata?: Json
+          project_id?: string
+          script_version_id?: string | null
+          source_doc_id?: string | null
+          status?: string
+          user_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "scene_spine_links_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "screenplay_intake_runs_script_version_id_fkey"
+            columns: ["script_version_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
+            referencedRelation: "project_document_versions"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "scene_spine_links_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "screenplay_intake_runs_source_doc_id_fkey"
+            columns: ["source_doc_id"]
             isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "project_documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      screenplay_intake_stage_runs: {
+        Row: {
+          action_name: string | null
+          completed_at: string | null
+          error: string | null
+          function_name: string | null
+          id: string
+          output_summary: Json | null
+          retryable: boolean
+          run_id: string
+          stage_key: string
+          stage_order: number
+          started_at: string | null
+          status: string
+        }
+        Insert: {
+          action_name?: string | null
+          completed_at?: string | null
+          error?: string | null
+          function_name?: string | null
+          id?: string
+          output_summary?: Json | null
+          retryable?: boolean
+          run_id: string
+          stage_key: string
+          stage_order: number
+          started_at?: string | null
+          status?: string
+        }
+        Update: {
+          action_name?: string | null
+          completed_at?: string | null
+          error?: string | null
+          function_name?: string | null
+          id?: string
+          output_summary?: Json | null
+          retryable?: boolean
+          run_id?: string
+          stage_key?: string
+          stage_order?: number
+          started_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "screenplay_intake_stage_runs_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "screenplay_intake_runs"
             referencedColumns: ["id"]
           },
         ]
@@ -21217,24 +18281,92 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "script_blueprints_project_id_fkey"
+            foreignKeyName: "script_blueprints_source_document_version_id_fkey"
+            columns: ["source_document_version_id"]
+            isOneToOne: false
+            referencedRelation: "project_document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      script_coverages: {
+        Row: {
+          character_analysis: string
+          comparable_titles: Json
+          created_at: string
+          document_id: string | null
+          draft_label: string
+          id: string
+          logline: string
+          market_positioning: string
+          project_id: string
+          recommendation: string
+          recommendation_reason: string
+          strengths: Json
+          structural_analysis: string
+          synopsis: string
+          themes: Json
+          user_id: string
+          weaknesses: Json
+        }
+        Insert: {
+          character_analysis?: string
+          comparable_titles?: Json
+          created_at?: string
+          document_id?: string | null
+          draft_label?: string
+          id?: string
+          logline?: string
+          market_positioning?: string
+          project_id: string
+          recommendation?: string
+          recommendation_reason?: string
+          strengths?: Json
+          structural_analysis?: string
+          synopsis?: string
+          themes?: Json
+          user_id: string
+          weaknesses?: Json
+        }
+        Update: {
+          character_analysis?: string
+          comparable_titles?: Json
+          created_at?: string
+          document_id?: string | null
+          draft_label?: string
+          id?: string
+          logline?: string
+          market_positioning?: string
+          project_id?: string
+          recommendation?: string
+          recommendation_reason?: string
+          strengths?: Json
+          structural_analysis?: string
+          synopsis?: string
+          themes?: Json
+          user_id?: string
+          weaknesses?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "script_coverages_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "project_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "script_coverages_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "project_script_scene_state"
             referencedColumns: ["project_id"]
           },
           {
-            foreignKeyName: "script_blueprints_project_id_fkey"
+            foreignKeyName: "script_coverages_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "script_blueprints_source_document_version_id_fkey"
-            columns: ["source_document_version_id"]
-            isOneToOne: false
-            referencedRelation: "project_document_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -21268,20 +18400,6 @@ export type Database = {
           status?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "script_extraction_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "script_extraction_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "script_extraction_runs_script_version_id_fkey"
             columns: ["script_version_id"]
@@ -21325,20 +18443,6 @@ export type Database = {
             columns: ["document_id"]
             isOneToOne: false
             referencedRelation: "project_documents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "script_pdf_pages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "script_pdf_pages_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -21462,20 +18566,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "script_unit_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "script_unit_links_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "script_unit_links_to_unit_id_fkey"
             columns: ["to_unit_id"]
             isOneToOne: false
@@ -21590,20 +18680,6 @@ export type Database = {
             columns: ["parent_unit_id"]
             isOneToOne: false
             referencedRelation: "script_units"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "script_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "script_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -21721,20 +18797,6 @@ export type Database = {
             referencedRelation: "script_blueprints"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "script_world_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "script_world_state_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       scripts: {
@@ -21822,22 +18884,7 @@ export type Database = {
           version?: number
           version_label?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "scripts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "scripts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       season_master_compilations: {
         Row: {
@@ -21873,22 +18920,7 @@ export type Database = {
           project_id?: string
           source?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "season_master_compilations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "season_master_compilations_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       series_continuity_issues: {
         Row: {
@@ -21941,20 +18973,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "series_continuity_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_continuity_issues_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "series_continuity_issues_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
@@ -22003,22 +19021,7 @@ export type Database = {
           status?: string
           summary?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "series_continuity_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_continuity_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       series_dev_notes_runs: {
         Row: {
@@ -22060,22 +19063,7 @@ export type Database = {
           status?: string
           summary?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "series_dev_notes_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_dev_notes_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       series_episode_canon_facts: {
         Row: {
@@ -22105,39 +19093,21 @@ export type Database = {
           project_id?: string
           recap?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "series_episode_canon_facts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_episode_canon_facts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       series_episodes: {
         Row: {
           canon_snapshot_id: string | null
-          compliance_score: number | null
           created_at: string
           delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
-          depends_on_hash: string | null
           episode_number: number
           generation_progress: Json | null
           handoff_status: string | null
           id: string
           is_deleted: boolean
           is_season_template: boolean
-          lock_override_reason: string | null
           locked_at: string | null
           logline: string | null
           project_id: string
@@ -22153,19 +19123,16 @@ export type Database = {
         }
         Insert: {
           canon_snapshot_id?: string | null
-          compliance_score?: number | null
           created_at?: string
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
-          depends_on_hash?: string | null
           episode_number: number
           generation_progress?: Json | null
           handoff_status?: string | null
           id?: string
           is_deleted?: boolean
           is_season_template?: boolean
-          lock_override_reason?: string | null
           locked_at?: string | null
           logline?: string | null
           project_id: string
@@ -22181,19 +19148,16 @@ export type Database = {
         }
         Update: {
           canon_snapshot_id?: string | null
-          compliance_score?: number | null
           created_at?: string
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
-          depends_on_hash?: string | null
           episode_number?: number
           generation_progress?: Json | null
           handoff_status?: string | null
           id?: string
           is_deleted?: boolean
           is_season_template?: boolean
-          lock_override_reason?: string | null
           locked_at?: string | null
           logline?: string | null
           project_id?: string
@@ -22213,20 +19177,6 @@ export type Database = {
             columns: ["canon_snapshot_id"]
             isOneToOne: false
             referencedRelation: "canon_snapshots"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "series_episodes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_episodes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -22272,22 +19222,7 @@ export type Database = {
           user_id?: string
           working_set?: Json
         }
-        Relationships: [
-          {
-            foreignKeyName: "series_writer_sessions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "series_writer_sessions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: true
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       shadow_source_evaluations: {
         Row: {
@@ -22364,22 +19299,7 @@ export type Database = {
           signal_name?: string
           signal_type?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "shared_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "shared_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       shoot_days: {
         Row: {
@@ -22415,22 +19335,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "shoot_days_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "shoot_days_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       shot_list_items: {
         Row: {
@@ -22596,22 +19501,7 @@ export type Database = {
           status?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "shot_lists_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "shot_lists_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       shot_plan_job_scenes: {
         Row: {
@@ -22662,20 +19552,6 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "shot_plan_jobs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "shot_plan_job_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "shot_plan_job_scenes_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -22738,22 +19614,7 @@ export type Database = {
           total_scenes?: number
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "shot_plan_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "shot_plan_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       stage_gates: {
         Row: {
@@ -22795,204 +19656,7 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "stage_gates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "stage_gates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      state_transition_candidates: {
-        Row: {
-          confidence: number
-          created_at: string
-          entity_id: string
-          entity_type: string
-          evidence_text: string | null
-          from_state_key: string | null
-          id: string
-          ingestion_run_id: string | null
-          project_id: string
-          promoted_to_evs_id: string | null
-          review_status: string
-          review_tier: string
-          reviewed_at: string | null
-          reviewed_by: string | null
-          scene_id: string | null
-          state_category: string
-          to_state_key: string
-        }
-        Insert: {
-          confidence?: number
-          created_at?: string
-          entity_id: string
-          entity_type?: string
-          evidence_text?: string | null
-          from_state_key?: string | null
-          id?: string
-          ingestion_run_id?: string | null
-          project_id: string
-          promoted_to_evs_id?: string | null
-          review_status?: string
-          review_tier?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          scene_id?: string | null
-          state_category?: string
-          to_state_key: string
-        }
-        Update: {
-          confidence?: number
-          created_at?: string
-          entity_id?: string
-          entity_type?: string
-          evidence_text?: string | null
-          from_state_key?: string | null
-          id?: string
-          ingestion_run_id?: string | null
-          project_id?: string
-          promoted_to_evs_id?: string | null
-          review_status?: string
-          review_tier?: string
-          reviewed_at?: string | null
-          reviewed_by?: string | null
-          scene_id?: string | null
-          state_category?: string
-          to_state_key?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "state_transition_candidates_entity_id_fkey"
-            columns: ["entity_id"]
-            isOneToOne: false
-            referencedRelation: "narrative_entities"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "state_transition_candidates_ingestion_run_id_fkey"
-            columns: ["ingestion_run_id"]
-            isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "state_transition_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "state_transition_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "state_transition_candidates_promoted_to_evs_id_fkey"
-            columns: ["promoted_to_evs_id"]
-            isOneToOne: false
-            referencedRelation: "entity_visual_states"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "state_transition_candidates_scene_id_fkey"
-            columns: ["scene_id"]
-            isOneToOne: false
-            referencedRelation: "scene_graph_scenes"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      story_ingestion_runs: {
-        Row: {
-          completed_at: string | null
-          created_at: string
-          created_by: string | null
-          diff_json: Json | null
-          failure_reason: string | null
-          id: string
-          manifest_json: Json
-          parse_quality_json: Json
-          project_id: string
-          source_document_ids: string[]
-          source_kind: string
-          source_resolution_json: Json
-          source_version_ids: string[]
-          stage_summary: Json
-          status: string
-          superseded_by: string | null
-        }
-        Insert: {
-          completed_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          diff_json?: Json | null
-          failure_reason?: string | null
-          id?: string
-          manifest_json?: Json
-          parse_quality_json?: Json
-          project_id: string
-          source_document_ids?: string[]
-          source_kind?: string
-          source_resolution_json?: Json
-          source_version_ids?: string[]
-          stage_summary?: Json
-          status?: string
-          superseded_by?: string | null
-        }
-        Update: {
-          completed_at?: string | null
-          created_at?: string
-          created_by?: string | null
-          diff_json?: Json | null
-          failure_reason?: string | null
-          id?: string
-          manifest_json?: Json
-          parse_quality_json?: Json
-          project_id?: string
-          source_document_ids?: string[]
-          source_kind?: string
-          source_resolution_json?: Json
-          source_version_ids?: string[]
-          stage_summary?: Json
-          status?: string
-          superseded_by?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "story_ingestion_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "story_ingestion_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "story_ingestion_runs_superseded_by_fkey"
-            columns: ["superseded_by"]
-            isOneToOne: false
-            referencedRelation: "story_ingestion_runs"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       story_metrics_runs: {
         Row: {
@@ -23031,22 +19695,7 @@ export type Database = {
           source_snapshot_id?: string | null
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "story_metrics_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "story_metrics_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       story_rulesets: {
         Row: {
@@ -23121,20 +19770,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "story_rulesets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "story_rulesets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "story_rulesets_repaired_from_ruleset_id_fkey"
             columns: ["repaired_from_ruleset_id"]
             isOneToOne: false
@@ -23183,22 +19818,7 @@ export type Database = {
           user_id?: string
           version?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "story_spine_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "story_spine_versions_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       storyboard_boards: {
         Row: {
@@ -23278,20 +19898,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "storyboard_boards_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_boards_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "storyboard_boards_shot_list_id_fkey"
             columns: ["shot_list_id"]
             isOneToOne: false
@@ -23357,20 +19963,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "storyboard_exports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_exports_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "storyboard_exports_shot_list_id_fkey"
             columns: ["shot_list_id"]
@@ -23446,20 +20038,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "storyboard_frames_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_frames_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "storyboard_frames_scene_id_fkey"
             columns: ["scene_id"]
             isOneToOne: false
@@ -23525,20 +20103,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "storyboard_panels_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_panels_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "storyboard_panels_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
@@ -23599,20 +20163,6 @@ export type Database = {
             columns: ["panel_id"]
             isOneToOne: false
             referencedRelation: "storyboard_panels"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "storyboard_pipeline_frames_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_pipeline_frames_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -23678,20 +20228,6 @@ export type Database = {
             columns: ["panel_id"]
             isOneToOne: false
             referencedRelation: "storyboard_panels"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "storyboard_render_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_render_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
           {
@@ -23761,20 +20297,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "storyboard_render_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_render_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "storyboard_render_runs_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
@@ -23821,20 +20343,6 @@ export type Database = {
           unit_keys?: string[]
         }
         Relationships: [
-          {
-            foreignKeyName: "storyboard_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "storyboard_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "storyboard_runs_source_visual_unit_run_id_fkey"
             columns: ["source_visual_unit_run_id"]
@@ -23902,22 +20410,7 @@ export type Database = {
           writing_voice_id?: string | null
           writing_voice_label?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "style_evals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "style_evals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       subscriptions: {
         Row: {
@@ -24036,20 +20529,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "team_voice_sources_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "team_voice_sources_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "team_voice_sources_team_voice_id_fkey"
             columns: ["team_voice_id"]
             isOneToOne: false
@@ -24160,6 +20639,21 @@ export type Database = {
           territory?: string
           timezone?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      test_migration_check: {
+        Row: {
+          id: number
+          name: string | null
+        }
+        Insert: {
+          id?: number
+          name?: string | null
+        }
+        Update: {
+          id?: number
+          name?: string | null
         }
         Relationships: []
       }
@@ -24447,20 +20941,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "trailer_blueprints_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_blueprints_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "trailer_blueprints_storyboard_run_id_fkey"
             columns: ["storyboard_run_id"]
@@ -24800,22 +21280,7 @@ export type Database = {
           technical_motion_score?: number | null
           technical_overall?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_clip_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_clip_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_clips: {
         Row: {
@@ -24978,20 +21443,6 @@ export type Database = {
             referencedRelation: "trailer_clip_jobs"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "trailer_clips_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_clips_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       trailer_continuity_events: {
@@ -25028,20 +21479,6 @@ export type Database = {
             columns: ["continuity_run_id"]
             isOneToOne: false
             referencedRelation: "trailer_continuity_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "trailer_continuity_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_continuity_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -25089,22 +21526,7 @@ export type Database = {
           summary_json?: Json | null
           trailer_cut_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_continuity_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_continuity_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_continuity_scores: {
         Row: {
@@ -25161,20 +21583,6 @@ export type Database = {
             columns: ["continuity_run_id"]
             isOneToOne: false
             referencedRelation: "trailer_continuity_runs"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "trailer_continuity_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_continuity_scores_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -25307,20 +21715,6 @@ export type Database = {
             referencedRelation: "trailer_blueprints"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "trailer_cuts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_cuts_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       trailer_definition_pack_items: {
@@ -25376,20 +21770,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "trailer_definition_pack_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_definition_pack_items_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "trailer_definition_pack_items_version_id_fkey"
             columns: ["version_id"]
             isOneToOne: false
@@ -25429,22 +21809,7 @@ export type Database = {
           updated_at?: string
           updated_by?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_definition_packs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_definition_packs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_finishing_profiles: {
         Row: {
@@ -25513,22 +21878,7 @@ export type Database = {
           updated_at?: string
           vignette_amount?: number
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_finishing_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_finishing_profiles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_judge_v2_runs: {
         Row: {
@@ -25574,20 +21924,6 @@ export type Database = {
           status?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "trailer_judge_v2_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_judge_v2_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "trailer_judge_v2_runs_rhythm_run_id_fkey"
             columns: ["rhythm_run_id"]
@@ -25662,20 +21998,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "trailer_learning_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_learning_signals_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "trailer_learning_signals_script_run_id_fkey"
             columns: ["script_run_id"]
             isOneToOne: false
@@ -25745,22 +22067,7 @@ export type Database = {
           title?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_look_bibles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_look_bibles_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_moments: {
         Row: {
@@ -25805,22 +22112,7 @@ export type Database = {
           spectacle_score?: number
           suggested_visual_approach?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_moments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_moments_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_render_events: {
         Row: {
@@ -26007,20 +22299,6 @@ export type Database = {
             referencedRelation: "trailer_finishing_profiles"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "trailer_render_variants_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_render_variants_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       trailer_rhythm_runs: {
@@ -26085,20 +22363,6 @@ export type Database = {
           warnings?: string[] | null
         }
         Relationships: [
-          {
-            foreignKeyName: "trailer_rhythm_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_rhythm_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "trailer_rhythm_runs_script_run_id_fkey"
             columns: ["script_run_id"]
@@ -26279,22 +22543,7 @@ export type Database = {
           variant_label?: string | null
           warnings?: string[] | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_script_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_script_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_shot_design_runs: {
         Row: {
@@ -26340,20 +22589,6 @@ export type Database = {
           warnings?: string[] | null
         }
         Relationships: [
-          {
-            foreignKeyName: "trailer_shot_design_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_shot_design_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "trailer_shot_design_runs_rhythm_run_id_fkey"
             columns: ["rhythm_run_id"]
@@ -26473,22 +22708,7 @@ export type Database = {
           source_moment_ids?: string[]
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "trailer_shotlists_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_shotlists_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       trailer_style_presets: {
         Row: {
@@ -26515,19 +22735,63 @@ export type Database = {
           preset_json?: Json
           project_id?: string
         }
+        Relationships: []
+      }
+      treatment_acts: {
+        Row: {
+          act_blueprint: Json | null
+          act_key: string
+          act_number: number
+          arc_state_deltas: Json | null
+          content: string | null
+          content_hash: string | null
+          created_at: string | null
+          error_message: string | null
+          id: string
+          label: string
+          revised_at: string | null
+          revised_by: string | null
+          status: string | null
+          treatment_id: string
+        }
+        Insert: {
+          act_blueprint?: Json | null
+          act_key: string
+          act_number: number
+          arc_state_deltas?: Json | null
+          content?: string | null
+          content_hash?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          label: string
+          revised_at?: string | null
+          revised_by?: string | null
+          status?: string | null
+          treatment_id: string
+        }
+        Update: {
+          act_blueprint?: Json | null
+          act_key?: string
+          act_number?: number
+          arc_state_deltas?: Json | null
+          content?: string | null
+          content_hash?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          id?: string
+          label?: string
+          revised_at?: string | null
+          revised_by?: string | null
+          status?: string | null
+          treatment_id?: string
+        }
         Relationships: [
           {
-            foreignKeyName: "trailer_style_presets_project_id_fkey"
-            columns: ["project_id"]
+            foreignKeyName: "treatment_acts_treatment_id_fkey"
+            columns: ["treatment_id"]
             isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "trailer_style_presets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
+            referencedRelation: "project_documents"
             referencedColumns: ["id"]
           },
         ]
@@ -27015,20 +23279,6 @@ export type Database = {
             referencedRelation: "canon_snapshots"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "vertical_episode_metrics_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "vertical_episode_metrics_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
         ]
       }
       vertical_trend_snapshots: {
@@ -27107,22 +23357,7 @@ export type Database = {
           user_id?: string
           vendor?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "vfx_shots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "vfx_shots_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       video_generation_plans: {
         Row: {
@@ -27165,20 +23400,6 @@ export type Database = {
           source?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "video_generation_plans_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "video_generation_plans_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "video_generation_plans_quality_run_id_fkey"
             columns: ["quality_run_id"]
@@ -27228,20 +23449,6 @@ export type Database = {
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "video_generation_plans"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "video_render_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "video_render_jobs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -27298,6 +23505,66 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "video_render_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      visual_database: {
+        Row: {
+          atom_id: string
+          created_at: string
+          curation_status: string | null
+          derived_from_ref: string | null
+          generation_status: string | null
+          id: string
+          image_url: string | null
+          model_used: string | null
+          prompt_used: string | null
+          thumbnail_url: string | null
+          updated_at: string
+          version_chain: string[] | null
+        }
+        Insert: {
+          atom_id: string
+          created_at?: string
+          curation_status?: string | null
+          derived_from_ref?: string | null
+          generation_status?: string | null
+          id?: string
+          image_url?: string | null
+          model_used?: string | null
+          prompt_used?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          version_chain?: string[] | null
+        }
+        Update: {
+          atom_id?: string
+          created_at?: string
+          curation_status?: string | null
+          derived_from_ref?: string | null
+          generation_status?: string | null
+          id?: string
+          image_url?: string | null
+          model_used?: string | null
+          prompt_used?: string | null
+          thumbnail_url?: string | null
+          updated_at?: string
+          version_chain?: string[] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visual_database_atom_id_fkey"
+            columns: ["atom_id"]
+            isOneToOne: false
+            referencedRelation: "atoms"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visual_database_derived_from_ref_fkey"
+            columns: ["derived_from_ref"]
+            isOneToOne: false
+            referencedRelation: "visual_database"
             referencedColumns: ["id"]
           },
         ]
@@ -27455,20 +23722,6 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "visual_reference_assets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_reference_assets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "visual_reference_assets_reference_set_id_fkey"
             columns: ["reference_set_id"]
             isOneToOne: false
@@ -27517,30 +23770,10 @@ export type Database = {
           ref_type?: string
           updated_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "visual_reference_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_reference_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       visual_scenarios: {
         Row: {
-          affected_canon_fields: Json | null
-          affected_downstream: Json | null
-          affected_image_families: Json | null
-          affected_traits: Json | null
-          analysis_method: string | null
           canon_compatibility: string | null
           change_json: Json
           classification: string | null
@@ -27553,21 +23786,14 @@ export type Database = {
           impacted_systems: Json
           lore_compatibility: string | null
           material_compatibility: string | null
-          preview_safe: boolean | null
           project_id: string
           query_text: string
           recommended_path: string | null
-          source_dna_version_id: string | null
           state: string
           target: string
           updated_at: string
         }
         Insert: {
-          affected_canon_fields?: Json | null
-          affected_downstream?: Json | null
-          affected_image_families?: Json | null
-          affected_traits?: Json | null
-          analysis_method?: string | null
           canon_compatibility?: string | null
           change_json?: Json
           classification?: string | null
@@ -27580,21 +23806,14 @@ export type Database = {
           impacted_systems?: Json
           lore_compatibility?: string | null
           material_compatibility?: string | null
-          preview_safe?: boolean | null
           project_id: string
           query_text?: string
           recommended_path?: string | null
-          source_dna_version_id?: string | null
           state?: string
           target?: string
           updated_at?: string
         }
         Update: {
-          affected_canon_fields?: Json | null
-          affected_downstream?: Json | null
-          affected_image_families?: Json | null
-          affected_traits?: Json | null
-          analysis_method?: string | null
           canon_compatibility?: string | null
           change_json?: Json
           classification?: string | null
@@ -27607,11 +23826,9 @@ export type Database = {
           impacted_systems?: Json
           lore_compatibility?: string | null
           material_compatibility?: string | null
-          preview_safe?: boolean | null
           project_id?: string
           query_text?: string
           recommended_path?: string | null
-          source_dna_version_id?: string | null
           state?: string
           target?: string
           updated_at?: string
@@ -27631,63 +23848,35 @@ export type Database = {
             referencedRelation: "projects"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "visual_scenarios_source_dna_version_id_fkey"
-            columns: ["source_dna_version_id"]
-            isOneToOne: false
-            referencedRelation: "character_visual_dna"
-            referencedColumns: ["id"]
-          },
         ]
       }
       visual_set_candidates: {
         Row: {
-          convergence_scores: Json | null
           created_at: string
           evaluation_id: string | null
-          fail_reason: string | null
-          final_score: number | null
-          generation_epoch: number
-          hard_fail: boolean | null
           id: string
           image_id: string
-          model_metadata: Json | null
           producer_decision: string
-          prompt_used: string | null
           rejection_reason: string | null
           selected_for_slot: boolean
           visual_set_slot_id: string
         }
         Insert: {
-          convergence_scores?: Json | null
           created_at?: string
           evaluation_id?: string | null
-          fail_reason?: string | null
-          final_score?: number | null
-          generation_epoch?: number
-          hard_fail?: boolean | null
           id?: string
           image_id: string
-          model_metadata?: Json | null
           producer_decision?: string
-          prompt_used?: string | null
           rejection_reason?: string | null
           selected_for_slot?: boolean
           visual_set_slot_id: string
         }
         Update: {
-          convergence_scores?: Json | null
           created_at?: string
           evaluation_id?: string | null
-          fail_reason?: string | null
-          final_score?: number | null
-          generation_epoch?: number
-          hard_fail?: boolean | null
           id?: string
           image_id?: string
-          model_metadata?: Json | null
           producer_decision?: string
-          prompt_used?: string | null
           rejection_reason?: string | null
           selected_for_slot?: boolean
           visual_set_slot_id?: string
@@ -27704,13 +23893,8 @@ export type Database = {
       }
       visual_set_slots: {
         Row: {
-          attempt_count: number | null
-          best_candidate_id: string | null
-          best_score: number | null
-          convergence_state: Json | null
           created_at: string
           evaluation_status: string | null
-          generation_epoch: number
           id: string
           is_required: boolean
           replacement_count: number
@@ -27722,13 +23906,8 @@ export type Database = {
           visual_set_id: string
         }
         Insert: {
-          attempt_count?: number | null
-          best_candidate_id?: string | null
-          best_score?: number | null
-          convergence_state?: Json | null
           created_at?: string
           evaluation_status?: string | null
-          generation_epoch?: number
           id?: string
           is_required?: boolean
           replacement_count?: number
@@ -27740,13 +23919,8 @@ export type Database = {
           visual_set_id: string
         }
         Update: {
-          attempt_count?: number | null
-          best_candidate_id?: string | null
-          best_score?: number | null
-          convergence_state?: Json | null
           created_at?: string
           evaluation_status?: string | null
-          generation_epoch?: number
           id?: string
           is_required?: boolean
           replacement_count?: number
@@ -27769,17 +23943,17 @@ export type Database = {
       }
       visual_sets: {
         Row: {
-          created_at: string
+          created_at: string | null
           current_dna_version_id: string | null
           domain: string
           entity_state_id: string | null
           entity_state_key: string | null
-          generation_epoch: number
+          generation_epoch: number | null
           id: string
           locked_at: string | null
           locked_by: string | null
           project_id: string
-          required_slot_count: number
+          required_slot_count: number | null
           reset_at: string | null
           reset_by: string | null
           reset_reason: string | null
@@ -27788,20 +23962,20 @@ export type Database = {
           target_id: string | null
           target_name: string
           target_type: string
-          updated_at: string
+          updated_at: string | null
         }
         Insert: {
-          created_at?: string
+          created_at?: string | null
           current_dna_version_id?: string | null
-          domain?: string
+          domain: string
           entity_state_id?: string | null
           entity_state_key?: string | null
-          generation_epoch?: number
+          generation_epoch?: number | null
           id?: string
           locked_at?: string | null
           locked_by?: string | null
           project_id: string
-          required_slot_count?: number
+          required_slot_count?: number | null
           reset_at?: string | null
           reset_by?: string | null
           reset_reason?: string | null
@@ -27810,20 +23984,20 @@ export type Database = {
           target_id?: string | null
           target_name?: string
           target_type?: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Update: {
-          created_at?: string
+          created_at?: string | null
           current_dna_version_id?: string | null
           domain?: string
           entity_state_id?: string | null
           entity_state_key?: string | null
-          generation_epoch?: number
+          generation_epoch?: number | null
           id?: string
           locked_at?: string | null
           locked_by?: string | null
           project_id?: string
-          required_slot_count?: number
+          required_slot_count?: number | null
           reset_at?: string | null
           reset_by?: string | null
           reset_reason?: string | null
@@ -27832,23 +24006,9 @@ export type Database = {
           target_id?: string | null
           target_name?: string
           target_type?: string
-          updated_at?: string
+          updated_at?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "visual_sets_current_dna_version_id_fkey"
-            columns: ["current_dna_version_id"]
-            isOneToOne: false
-            referencedRelation: "character_visual_dna"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "visual_sets_entity_state_id_fkey"
-            columns: ["entity_state_id"]
-            isOneToOne: false
-            referencedRelation: "entity_visual_states"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "visual_sets_project_id_fkey"
             columns: ["project_id"]
@@ -27858,69 +24018,6 @@ export type Database = {
           },
           {
             foreignKeyName: "visual_sets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      visual_similarity_cache: {
-        Row: {
-          anchor_context: string
-          anchor_hash: string
-          anchor_image_ids: Json
-          candidate_image_id: string
-          character_name: string
-          composite_score: number
-          created_at: string
-          dimensions_json: Json
-          id: string
-          is_actionable: boolean
-          project_id: string
-          scoring_version: string
-          summary: string
-        }
-        Insert: {
-          anchor_context?: string
-          anchor_hash: string
-          anchor_image_ids?: Json
-          candidate_image_id: string
-          character_name?: string
-          composite_score?: number
-          created_at?: string
-          dimensions_json?: Json
-          id?: string
-          is_actionable?: boolean
-          project_id: string
-          scoring_version?: string
-          summary?: string
-        }
-        Update: {
-          anchor_context?: string
-          anchor_hash?: string
-          anchor_image_ids?: Json
-          candidate_image_id?: string
-          character_name?: string
-          composite_score?: number
-          created_at?: string
-          dimensions_json?: Json
-          id?: string
-          is_actionable?: boolean
-          project_id?: string
-          scoring_version?: string
-          summary?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "visual_similarity_cache_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_similarity_cache_project_id_fkey"
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "projects"
@@ -27966,20 +24063,6 @@ export type Database = {
           unit_key?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "visual_unit_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_unit_candidates_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "visual_unit_candidates_run_id_fkey"
             columns: ["run_id"]
@@ -28045,20 +24128,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "visual_unit_diffs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_unit_diffs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "visual_unit_diffs_to_candidate_id_fkey"
             columns: ["to_candidate_id"]
             isOneToOne: false
@@ -28114,20 +24183,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "visual_unit_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_unit_events_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "visual_unit_events_unit_id_fkey"
             columns: ["unit_id"]
             isOneToOne: false
@@ -28170,22 +24225,7 @@ export type Database = {
           source_versions?: Json
           status?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "visual_unit_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_unit_runs_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       visual_units: {
         Row: {
@@ -28236,20 +24276,6 @@ export type Database = {
             columns: ["candidate_id"]
             isOneToOne: false
             referencedRelation: "visual_unit_candidates"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "visual_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "visual_units_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -28319,20 +24345,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "writers_room_changesets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "project_script_scene_state"
-            referencedColumns: ["project_id"]
-          },
-          {
-            foreignKeyName: "writers_room_changesets_project_id_fkey"
-            columns: ["project_id"]
-            isOneToOne: false
-            referencedRelation: "projects"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "writers_room_changesets_quality_run_id_fkey"
             columns: ["quality_run_id"]
             isOneToOne: false
@@ -28389,25 +24401,13 @@ export type Database = {
     }
     Functions: {
       accept_invite_link: { Args: { _token: string }; Returns: Json }
-      apply_promotion_decision: {
-        Args: {
-          p_actor_id: string
-          p_actor_version_id: string
-          p_block_reasons: string[]
-          p_decided_by: string
-          p_decision_mode: string
-          p_decision_note: string
-          p_eligible_for_promotion: boolean
-          p_final_decision_status: string
-          p_override_reason: string
-          p_policy_decision_status: string
-          p_policy_version: string
-          p_review_required: boolean
-          p_scoring_model: string
-          p_validation_result_id: string
-          p_validation_run_id: string
-        }
-        Returns: Json
+      acquire_regen_advisory_lock: {
+        Args: { p_project_id: string }
+        Returns: boolean
+      }
+      aggregate_character_scene_counts: {
+        Args: { p_project_id: string }
+        Returns: undefined
       }
       bootstrap_lookbook_sections: {
         Args: { p_project_id: string }
@@ -28417,29 +24417,6 @@ export type Database = {
       check_document_access: {
         Args: { _file_path: string; _user_id: string }
         Returns: boolean
-      }
-      claim_next_cast_regen_job: {
-        Args: never
-        Returns: {
-          character_key: string
-          completed_at: string | null
-          created_at: string
-          error_message: string | null
-          id: string
-          output_id: string
-          output_type: string
-          project_id: string
-          reason: string
-          requested_by: string | null
-          started_at: string | null
-          status: string
-        }[]
-        SetofOptions: {
-          from: "*"
-          to: "cast_regen_jobs"
-          isOneToOne: false
-          isSetofReturn: true
-        }
       }
       claim_next_devseed_items: {
         Args: { p_claimed_by: string; p_job_id: string; p_limit: number }
@@ -28666,6 +24643,103 @@ export type Database = {
         }
         Returns: Json
       }
+      convergence_atomic_write:
+        | {
+            Args: {
+              p_allowed_gap?: number
+              p_analysis_mode?: string
+              p_convergence_status?: string
+              p_creative_detail?: Json
+              p_creative_integrity_score?: number
+              p_development_stage?: string
+              p_document_id: string
+              p_executive_guidance?: string
+              p_executive_snapshot?: string
+              p_format_advisory?: Json
+              p_full_result?: Json
+              p_gap?: number
+              p_greenlight_detail?: Json
+              p_greenlight_probability?: number
+              p_leverage_moves?: string[]
+              p_output_json?: Json
+              p_primary_commercial_risk?: string
+              p_primary_creative_risk?: string
+              p_production_type?: string
+              p_project_id: string
+              p_run_type?: string
+              p_strategic_priority?: string
+              p_trajectory?: string
+              p_user_id: string
+              p_version_id: string
+            }
+            Returns: undefined
+          }
+        | {
+            Args: {
+              p_allowed_gap?: number
+              p_analysis_mode?: string
+              p_convergence_status?: string
+              p_creative_detail?: Json
+              p_creative_integrity_score?: number
+              p_data_integrity_ok?: boolean
+              p_development_stage?: string
+              p_document_id: string
+              p_executive_guidance?: string
+              p_executive_snapshot?: string
+              p_format_advisory?: Json
+              p_full_result?: Json
+              p_gap?: number
+              p_greenlight_detail?: Json
+              p_greenlight_probability?: number
+              p_leverage_moves?: string[]
+              p_output_json?: Json
+              p_override_allowed?: boolean
+              p_primary_commercial_risk?: string
+              p_primary_creative_risk?: string
+              p_production_type?: string
+              p_project_id: string
+              p_promotion_allowed?: boolean
+              p_run_type?: string
+              p_stage_readiness_score?: number
+              p_stage_readiness_status?: string
+              p_strategic_priority?: string
+              p_trajectory?: string
+              p_user_id: string
+              p_version_id: string
+            }
+            Returns: undefined
+          }
+      create_regen_run_locked: {
+        Args: {
+          p_meta_json: Json
+          p_ndg_pre_at_risk_count: number
+          p_project_id: string
+          p_recommended_scope: string
+          p_source_axes: string[]
+          p_source_unit_keys: string[]
+          p_target_scene_count: number
+          p_target_scene_ids: string[]
+          p_triggered_by: string
+        }
+        Returns: Json
+      }
+      ds2_delete_seed: {
+        Args: { p_project_id: string; p_seed_id: string }
+        Returns: Json
+      }
+      ds2_sync_seed_to_canon: {
+        Args: {
+          p_force_resync?: boolean
+          p_project_id: string
+          p_seed_id: string
+        }
+        Returns: Json
+      }
+      ds2_update_seed: {
+        Args: { p_patch: Json; p_project_id: string; p_seed_id: string }
+        Returns: Json
+      }
+      exec_sql: { Args: { query: string }; Returns: Json }
       get_deal_finance_summary: { Args: { _project_id: string }; Returns: Json }
       get_project_role: {
         Args: { _project_id: string; _user_id: string }
@@ -28700,7 +24774,6 @@ export type Database = {
         Returns: string
       }
       is_feature_flag_enabled: { Args: { _key: string }; Returns: boolean }
-      lock_visual_set: { Args: { p_set_id: string }; Returns: Json }
       match_trend_signals: {
         Args: {
           _limit?: number
@@ -28720,7 +24793,7 @@ export type Database = {
           velocity: string
         }[]
       }
-      next_actor_roster_number: { Args: never; Returns: number }
+      next_execution_number: { Args: { p_project_id: string }; Returns: number }
       next_scene_version: {
         Args: {
           p_created_by?: string
@@ -28741,6 +24814,7 @@ export type Database = {
         }
         Returns: Json
       }
+      re_job_processor: { Args: never; Returns: undefined }
       rebind_project_ai_cast: {
         Args: {
           p_changed_by: string
@@ -28749,14 +24823,6 @@ export type Database = {
           p_project_id: string
           p_reason: string
         }
-        Returns: Json
-      }
-      reset_costume_generation: {
-        Args: { p_project_id: string; p_reason?: string; p_reset_by?: string }
-        Returns: Json
-      }
-      resolve_visual_set_readiness: {
-        Args: { p_set_id: string }
         Returns: Json
       }
       resume_costume_run: {
@@ -28815,6 +24881,7 @@ export type Database = {
         Args: { p_document_id: string; p_new_version_id: string }
         Returns: Json
       }
+      test_trinity: { Args: never; Returns: string }
       upsert_trend_signal_embedding: {
         Args: {
           _embedding: number[]
@@ -28828,13 +24895,6 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
-      asset_group:
-        | "character"
-        | "world"
-        | "key_moment"
-        | "visual_language"
-        | "poster"
-        | "hero_frame"
       camera_move:
         | "static"
         | "push_in"
@@ -28846,7 +24906,6 @@ export type Database = {
         | "crane"
         | "tilt"
         | "dolly_zoom"
-      curation_state: "active" | "candidate" | "archived" | "rejected"
       project_image_role:
         | "poster_primary"
         | "poster_variant"
@@ -28857,8 +24916,6 @@ export type Database = {
         | "visual_reference"
         | "lookbook_cover"
         | "marketing_variant"
-        | "hero_variant"
-        | "hero_primary"
       project_role: "producer" | "sales_agent" | "lawyer" | "creative"
       shot_type:
         | "wide"
@@ -28868,22 +24925,6 @@ export type Database = {
         | "aerial"
         | "macro"
         | "montage"
-        | "close_up"
-        | "full_body"
-        | "profile"
-        | "over_shoulder"
-        | "detail"
-        | "tableau"
-        | "emotional_variant"
-        | "atmospheric"
-        | "time_variant"
-        | "lighting_ref"
-        | "texture_ref"
-        | "composition_ref"
-        | "color_ref"
-        | "identity_headshot"
-        | "identity_profile"
-        | "identity_full_body"
       trailer_phase:
         | "hook"
         | "setup"
@@ -29017,17 +25058,12 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
-      asset_group: [
-        "character",
-        "world",
-        "key_moment",
-        "visual_language",
-        "poster",
-        "hero_frame",
-      ],
       camera_move: [
         "static",
         "push_in",
@@ -29040,7 +25076,6 @@ export const Constants = {
         "tilt",
         "dolly_zoom",
       ],
-      curation_state: ["active", "candidate", "archived", "rejected"],
       project_image_role: [
         "poster_primary",
         "poster_variant",
@@ -29051,8 +25086,6 @@ export const Constants = {
         "visual_reference",
         "lookbook_cover",
         "marketing_variant",
-        "hero_variant",
-        "hero_primary",
       ],
       project_role: ["producer", "sales_agent", "lawyer", "creative"],
       shot_type: [
@@ -29063,22 +25096,6 @@ export const Constants = {
         "aerial",
         "macro",
         "montage",
-        "close_up",
-        "full_body",
-        "profile",
-        "over_shoulder",
-        "detail",
-        "tableau",
-        "emotional_variant",
-        "atmospheric",
-        "time_variant",
-        "lighting_ref",
-        "texture_ref",
-        "composition_ref",
-        "color_ref",
-        "identity_headshot",
-        "identity_profile",
-        "identity_full_body",
       ],
       trailer_phase: [
         "hook",
