@@ -6,7 +6,7 @@
  *            to eliminate Suspense+portal race condition
  *   Part B — SafeRouteBoundary.tsx: Added explicit DOMException/NotFoundError/removeChild
  *            detection. Such errors are transient race conditions and should NOT count
- *            against recovery attempts. MAX_RECOVERY_ATTEMPTS increased from 2 to 5.
+ *            against recovery attempts. MAX_RECOVERY_ATTEMPTS changed from 5 to 2.
  *   Part C — errorCapture.ts: Suppresses removeChild NotFoundError from global
  *            error handler — these are handled by SafeRouteBoundary and are noise
  *            in diagnostics.
@@ -94,8 +94,8 @@ describe('Part B — SafeRouteBoundary: removeChild (NotFoundError) detection', 
   });
 
   // ── MAX_RECOVERY_ATTEMPTS ──
-  it('has MAX_RECOVERY_ATTEMPTS = 5', () => {
-    expect(source).toContain('MAX_RECOVERY_ATTEMPTS = 5');
+  it('has MAX_RECOVERY_ATTEMPTS = 2 (P0 wiring fix)', () => {
+    expect(source).toContain('MAX_RECOVERY_ATTEMPTS = 2');
   });
 
   it('shows permanent error after exceeding MAX_RECOVERY_ATTEMPTS', () => {
