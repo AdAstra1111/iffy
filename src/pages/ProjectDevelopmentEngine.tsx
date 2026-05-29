@@ -3801,28 +3801,35 @@ export default function ProjectDevelopmentEngine() {
       {/* ═══ SHARED OVERLAYS (visible in both modes) ═══ */}
 
       {/* CanonDeltaDialog — foundation docs approval flow */}
-      {canonDeltaOpen && selectedDoc && selectedVersionId && projectId && (
-        <CanonDeltaDialog
-          projectId={projectId}
-          docType={selectedDoc.doc_type || ''}
-          currentVersionId={selectedVersionId}
-          approvedVersion={undefined}
-          currentVersion={selectedVersion}
-          onClose={() => setCanonDeltaOpen(false)}
-          onConfirm={async () => {
-            setCanonDeltaOpen(false);
-            setApprovePending(true);
-            try {
-              await doApproveAndActivate();
-              toast.success('Version approved & activated in Active Folder');
-            } catch (err: any) {
-              toast.error(err.message || 'Failed to approve');
-            } finally {
-              setApprovePending(false);
-            }
-          }}
-        />
-      )}
+      <Dialog open={!!canonDeltaOpen && !!selectedDoc && !!selectedVersionId && !!projectId} onOpenChange={(open) => { if (!open) setCanonDeltaOpen(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve Version</DialogTitle>
+          </DialogHeader>
+          {canonDeltaOpen && selectedDoc && selectedVersionId && projectId && (
+          <CanonDeltaDialog
+            projectId={projectId}
+            docType={selectedDoc.doc_type || ''}
+            currentVersionId={selectedVersionId}
+            approvedVersion={undefined}
+            currentVersion={selectedVersion}
+            onClose={() => setCanonDeltaOpen(false)}
+            onConfirm={async () => {
+              setCanonDeltaOpen(false);
+              setApprovePending(true);
+              try {
+                await doApproveAndActivate();
+                toast.success('Version approved & activated in Active Folder');
+              } catch (err: any) {
+                toast.error(err.message || 'Failed to approve');
+              } finally {
+                setApprovePending(false);
+              }
+            }}
+          />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Drift Override Dialog */}
       <Dialog open={driftOverrideOpen} onOpenChange={setDriftOverrideOpen}>
@@ -3907,21 +3914,21 @@ export default function ProjectDevelopmentEngine() {
       </Dialog>
 
       {/* Rewrite Trajectory Observatory Dialog */}
-      {projectId && selectedDocId && (
-        <Dialog open={observatoryOpen} onOpenChange={setObservatoryOpen}>
-          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-sm font-display">
-                Rewrite Trajectory Observatory
-              </DialogTitle>
-            </DialogHeader>
-            <RewriteTrajectoryObservatory
-              documentId={selectedDocId}
-              projectId={projectId}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+      <Dialog open={observatoryOpen && !!projectId && !!selectedDocId} onOpenChange={setObservatoryOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-sm font-display">
+              Rewrite Trajectory Observatory
+            </DialogTitle>
+          </DialogHeader>
+          {projectId && selectedDocId && (
+          <RewriteTrajectoryObservatory
+            documentId={selectedDocId}
+            projectId={projectId}
+          />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Floating Writers' Room button */}
       <Button
@@ -3934,17 +3941,15 @@ export default function ProjectDevelopmentEngine() {
       </Button>
 
       {/* Global Writers' Room Drawer */}
-      {projectId && selectedDocId && (
-        <NoteWritersRoomDrawer
-          open={globalWritersRoomOpen}
-          onOpenChange={setGlobalWritersRoomOpen}
-          projectId={projectId}
-          documentId={selectedDocId}
-          versionId={selectedVersionId || undefined}
-          note={{ description: 'General discussion', category: 'general', note_hash: `general-${selectedDocId}` }}
-          scriptContext={versionText?.slice(0, 6000)}
-        />
-      )}
+      <NoteWritersRoomDrawer
+        open={globalWritersRoomOpen && !!projectId && !!selectedDocId}
+        onOpenChange={setGlobalWritersRoomOpen}
+        projectId={projectId}
+        documentId={selectedDocId}
+        versionId={selectedVersionId || undefined}
+        note={{ description: 'General discussion', category: 'general', note_hash: `general-${selectedDocId}` }}
+        scriptContext={versionText?.slice(0, 6000)}
+      />
 
       {/* Next Actions → Unified NoteDrawer */}
       <NoteDrawer

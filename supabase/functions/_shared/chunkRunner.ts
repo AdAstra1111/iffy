@@ -1909,4 +1909,5 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     assembledFromChunks: true,
   };
 }
+}
 
