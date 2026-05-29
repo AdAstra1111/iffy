@@ -153,6 +153,8 @@ describe('pipeline resolution', () => {
 
   it('follows ABVR: A2 best approved by score', () => {
     const noCurrent = versions.map(v => ({ ...v, is_current: false }));
+    // Ensure v2 (originally approved) is NOT approved so it doesn't leak through spread copy
+    noCurrent[1].approval_status = 'rejected';
     noCurrent[0].approval_status = 'approved';
     noCurrent[3].approval_status = 'approved';
     // v4 has ci: 92, gp: 85 (total 177) vs v1 ci: 85, gp: 80 (total 165)
@@ -293,10 +295,10 @@ describe('assertRuntimeBindingEligible', () => {
   });
 
   it('returns eligible=true for a valid promote operation', () => {
-    const renderBinding = makeBinding({ type: 'render', versionId: 'v2', source: 'approved_and_current' });
-    const result = assertRuntimeBindingEligible(renderBinding, {
+    const promoteGateBinding = makeBinding({ type: 'promotion_gate', versionId: 'v2', source: 'approved_and_current' });
+    const result = assertRuntimeBindingEligible(promoteGateBinding, {
       operation: 'promote',
-      sourceBinding: renderBinding,
+      sourceBinding: promoteGateBinding,
       targetDocType: 'treatment',
     } as any);
     expect(result.eligible).toBe(true);

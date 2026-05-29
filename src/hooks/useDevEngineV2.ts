@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import type { DeliverableType, DevelopmentBehavior, ConvergenceStatus } from '@/lib/dev-os-config';
 import { computeConvergenceStatus } from '@/lib/dev-os-config';
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
+import { useDocumentRuntimeBinding } from '@/lib/versionBinding/useDocumentRuntimeBinding';
+import type { ResolverVersion } from '@/lib/versionBinding/documentRuntimeBindingResolver';
 
 // ── Types ──
 
@@ -261,8 +263,8 @@ export function useDevEngineV2(projectId: string | undefined) {
     refetchInterval: 10_000,
   });
 
-  // Derive the "current" version: prefer is_current flag, fallback to highest version_number
-  const currentVersion = versions.find((v: any) => v.is_current) || versions[versions.length - 1] || null;
+  // Derive the "current" version from render binding (prefers authoritative, fallback to selected, fallback to latest)
+  const currentVersion = render?.versionId || null;
 
   // Runs for selected version
   const { data: runs = [] } = useQuery({
@@ -677,14 +679,26 @@ export function useDevEngineV2(projectId: string | undefined) {
 
   // Derived
   const selectedDoc = documents.find(d => d.id === selectedDocId) || null;
+  const selectedDocType = selectedDoc?.doc_type || null;
   const selectedVersion = versions.find(v => v.id === selectedVersionId) || (versions.length > 0 ? versions[versions.length - 1] : null);
 
-  // Auto-select version when versions load
+  // ── DocumentRuntimeBinding Resolver ──
+  // Replaces manual currentVersion derivation, auto-select logic, and approvedVersionMap queries
+  const {
+    authoritativeVersionId,
+    promotionGateVersionId,
+    effectiveVersionId: bindingEffectiveVersionId,
+    render,
+    pipeline: pipelineBinding,
+    assertEligible,
+  } = useDocumentRuntimeBinding(selectedDocType, versions, selectedVersionId);
+
+  // Auto-select version when versions load (uses render binding for consistent selection)
   useEffect(() => {
-    if (selectedDocId && !selectedVersionId && versions.length > 0) {
-      setSelectedVersionId(versions[versions.length - 1].id);
+    if (selectedDocId && !selectedVersionId && render?.versionId) {
+      setSelectedVersionId(render.versionId);
     }
-  }, [selectedDocId, selectedVersionId, versions]);
+  }, [selectedDocId, selectedVersionId, render?.versionId]);
 
   // Latest analysis for selected version
   const latestAnalysis = (runs ?? []).filter(r => r.run_type === 'ANALYZE').pop()?.output_json || null;

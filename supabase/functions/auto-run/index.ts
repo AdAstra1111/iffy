@@ -21,6 +21,7 @@ import { isAggregate, getRegressionThreshold, getExploreThreshold, getMaxFrontie
 import { isCIBlockerGateEnabled, isPlateauV2Enabled, isRewriteTargetingEnabled, parseLatestReviewForActiveVersion, evaluateCIBlockerGateFromPayload, checkPlateauV2, compileRewriteDirectives, formatDirectivesAsDirections } from "../_shared/ciBlockerGate.ts";
 import { DEFAULT_MAX_TOTAL_STEPS, DEFAULT_MAX_STAGE_LOOPS, MAX_TOTAL_ATTEMPTS_PER_TARGET, getAttemptStrategy, selectNotesForStrategy, getForkDirections } from "../_shared/convergencePolicy.ts";
 import { ENGAGEMENT_DEFAULTS } from "../_shared/engagementMetric.ts";
+import { resolveABVR, resolveBackendBinding } from "../_shared/documentRuntimeBinding.ts";
 // ── PATCH D: plateau eligibility check ──
 async function hasQualifyingRewriteAttempt(supabase, jobId, currentDoc) {
   try {
@@ -906,35 +907,20 @@ function extractTargetGP(job) {
 }
 // ── IEL: ABVR — Active Best Version Resolution ──
 // Deterministic resolver: picks the version Auto-Run must treat as current baseline.
-// Resolution rules (strict order):
-//   A) Authoritative approved+current version (always wins)
-//   B) If resume_version_id present AND follow_latest is false → use it (pinned) when still valid
-//   C) Else → highest-scoring eligible version (approval_status=approved OR is_current=true) from DB-persisted meta_json.ci/gp
-//   D) Fallback → best approved by version_number, then is_current, then latest by version_number
+// Delegates to shared documentRuntimeBinding module for core resolution logic.
+// Wraps with auto-run specific IEL logging and transition ledger.
 async function resolveActiveVersionForDoc(supabase, job, documentId, ctx) {
-  const { data: versions, error: versionsErr } = await supabase.from("project_document_versions").select("id, version_number, approval_status, is_current, created_by, meta_json, approved_at").eq("document_id", documentId).order("version_number", {
-    ascending: false
-  });
-  if (versionsErr) {
-    console.error(`[auto-run][IEL] abvr_versions_query_failed { document_id: "${documentId}", error: "${versionsErr.message}" }`);
-    return null;
-  }
-  const allVersions = versions || [];
-  if (!allVersions.length) {
+  const resolved = await resolveABVR(supabase, job, documentId, ctx);
+  if (!resolved) {
     console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: null, reason: "no_versions" }`);
     return null;
   }
-  // A) APPROVED-FIRST RESOLUTION (hard invariant)
-  // If any approved version exists, Auto-Run must bind to approved lineage only.
-  const approvedVersions = allVersions.filter((v)=>v.approval_status === "approved");
-  // A1) Authoritative approved+current
-  const approvedCurrent = approvedVersions.find((v)=>!!v.is_current);
-  if (approvedCurrent) {
-    if (!job.follow_latest && job.resume_version_id && job.resume_document_id === documentId && job.resume_version_id !== approvedCurrent.id) {
-      console.log(`[auto-run][IEL] pinned_overridden_by_authoritative { job_id: "${ctx?.jobId || 'unknown'}", doc_type: "${ctx?.docType || 'unknown'}", document_id: "${documentId}", pinned_version_id: "${job.resume_version_id}", authoritative_version_id: "${approvedCurrent.id}", reason: "approved_and_current_must_win" }`);
-    }
-    console.log(`[auto-run][IEL] authoritative_version_resolved { document_id: "${documentId}", version_id: "${approvedCurrent.id}", reason: "approved_and_current", version_number: ${approvedCurrent.version_number}, doc_type: "${ctx?.docType || 'unknown'}" }`);
-    // ── TRANSITION LEDGER: authoritative_version_resolved ──
+
+  // Additional auto-run specific IEL logging on top of shared module
+  console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: "${resolved.versionId}", reason: "${resolved.reason}", source: "${resolved.source}" }`);
+
+  // ── TRANSITION LEDGER: authoritative_version_resolved ──
+  if (resolved.reason === 'approved_and_current') {
     try {
       const { data: docRow } = await supabase.from("project_documents").select("project_id").eq("id", documentId).maybeSingle();
       if (docRow?.project_id) {
@@ -943,116 +929,20 @@ async function resolveActiveVersionForDoc(supabase, job, documentId, ctx) {
           eventType: TRANSITION_EVENTS.AUTHORITATIVE_VERSION_RESOLVED,
           docType: ctx?.docType,
           jobId: ctx?.jobId,
-          resultingVersionId: approvedCurrent.id,
+          resultingVersionId: resolved.versionId,
           trigger: "abvr_resolution",
           sourceOfTruth: "auto-run",
           resultingState: {
-            reason: "approved_and_current",
-            version_number: approvedCurrent.version_number
+            reason: resolved.reason,
           }
         });
       }
     } catch (e) {
       console.warn(`[auto-run][transition-ledger] authoritative_version_resolved emit failed: ${e?.message}`);
     }
-    return {
-      versionId: approvedCurrent.id,
-      source: "best_approved",
-      reason: "approved_and_current"
-    };
   }
-  // A2) Best approved by persisted score (CI+GP)
-  const approvedScored = approvedVersions.map((v)=>{
-    const parsed = parseVersionScores(v.meta_json);
-    return {
-      id: v.id,
-      version_number: v.version_number,
-      approval_status: v.approval_status,
-      is_current: !!v.is_current,
-      ci: parsed.ci,
-      gp: parsed.gp,
-      scoreSource: parsed.scoreSource
-    };
-  }).filter((v)=>v.ci !== null && v.gp !== null);
-  const bestApprovedScored = pickBestScoredVersion(approvedScored);
-  if (bestApprovedScored) {
-    console.log(`[auto-run][IEL] approved_best_detected { job_id: "${ctx?.jobId || 'unknown'}", doc_type: "${ctx?.docType || 'unknown'}", document_id: "${documentId}", best_version_id: "${bestApprovedScored.id}", best_ci: ${bestApprovedScored.ci}, best_gp: ${bestApprovedScored.gp}, score_source: "${bestApprovedScored.scoreSource || 'unknown'}", reason: "approved_best_score" }`);
-    return {
-      versionId: bestApprovedScored.id,
-      source: "best_approved",
-      reason: "approved_best_score"
-    };
-  }
-  // A3) Fallback to newest approved version
-  const newestApproved = approvedVersions[0];
-  if (newestApproved) {
-    console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: "${newestApproved.id}", reason: "best_approved", version_number: ${newestApproved.version_number} }`);
-    return {
-      versionId: newestApproved.id,
-      source: "best_approved",
-      reason: "best_approved_by_version"
-    };
-  }
-  // B) Pinned (only when no approved version exists)
-  if (!job.follow_latest && job.resume_version_id && job.resume_document_id === documentId) {
-    const pinnedExists = allVersions.some((v)=>v.id === job.resume_version_id);
-    if (pinnedExists) {
-      console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: "${job.resume_version_id}", reason: "pinned", follow_latest: ${job.follow_latest}, resume_version_id: "${job.resume_version_id}" }`);
-      return {
-        versionId: job.resume_version_id,
-        source: "pinned",
-        reason: "pinned"
-      };
-    }
-    console.warn(`[auto-run][IEL] pinned_version_missing { job_id: "${ctx?.jobId || 'unknown'}", doc_type: "${ctx?.docType || 'unknown'}", document_id: "${documentId}", pinned_version_id: "${job.resume_version_id}" }`);
-  }
-  // C) No approved version exists: use best scored current candidate
-  const eligibleScored = allVersions.map((v)=>{
-    const parsed = parseVersionScores(v.meta_json);
-    const eligibilityReason = v.is_current ? "is_current" : null;
-    return {
-      id: v.id,
-      version_number: v.version_number,
-      approval_status: v.approval_status,
-      is_current: !!v.is_current,
-      ci: parsed.ci,
-      gp: parsed.gp,
-      scoreSource: parsed.scoreSource,
-      eligibilityReason,
-      origin: v.meta_json?.accepted_by === "auto-run" || `${v.meta_json?.score_source || ""}`.startsWith("auto-run") ? "auto_run" : "user"
-    };
-  }).filter((v)=>v.eligibilityReason && v.ci !== null && v.gp !== null);
-  const bestEligible = pickBestScoredVersion(eligibleScored);
-  if (bestEligible) {
-    console.log(`[auto-run][IEL] eligible_best_detected { job_id: "${ctx?.jobId || 'unknown'}", doc_type: "${ctx?.docType || 'unknown'}", document_id: "${documentId}", best_version_id: "${bestEligible.id}", best_ci: ${bestEligible.ci}, best_gp: ${bestEligible.gp}, score_source: "${bestEligible.scoreSource || 'unknown'}", eligibility_reason: "${bestEligible.eligibilityReason}", origin: "${bestEligible.origin}" }`);
-    return {
-      versionId: bestEligible.id,
-      source: "eligible_best_score",
-      reason: `eligible_best:${bestEligible.eligibilityReason}`
-    };
-  }
-  // C1) is_current
-  const currentVer1 = allVersions.find((v)=>!!v.is_current);
-  if (currentVer1) {
-    console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: "${currentVer1.id}", reason: "is_current" }`);
-    return {
-      versionId: currentVer1.id,
-      source: "is_current",
-      reason: "is_current"
-    };
-  }
-  // C3) latest by version_number (final fallback)
-  const latestVer = allVersions[0];
-  if (latestVer) {
-    console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: "${latestVer.id}", reason: "latest_version_number" }`);
-    return {
-      versionId: latestVer.id,
-      source: "latest_version_number",
-      reason: "latest_version_number"
-    };
-  }
-  console.log(`[auto-run][IEL] abvr_active_version_selected { document_id: "${documentId}", selected_version_id: null, reason: "no_versions" }`);
-  return null;
+
+  return resolved;
 }
 // ── IEL: Fresh Review Before Plateau Gate ──
 // Uses ABVR to determine which version should be reviewed, then checks if that version

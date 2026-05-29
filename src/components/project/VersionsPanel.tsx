@@ -118,7 +118,12 @@ export function VersionsPanel({ projectId }: VersionsPanelProps) {
   const bestDocType = bestInfo?.docType ?? null;
 
   const { data: versions = [], isLoading: versionsLoading } = useDocumentVersions(effectiveDocId);
-  const setCurrentVersion = useSetCurrentVersion();
+  const selectedDocType = devDocs.find(d => d.id === effectiveDocId)?.doc_type ?? null;
+  const setCurrentVersion = useSetCurrentVersion({
+    docType: selectedDocType,
+    versions,
+    selectedVersionId: null,
+  });
   const deleteVersion = useDeleteVersion();
 
   if (docsLoading) {

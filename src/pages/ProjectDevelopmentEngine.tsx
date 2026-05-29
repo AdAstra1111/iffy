@@ -1935,9 +1935,11 @@ export default function ProjectDevelopmentEngine() {
       setDriftOverrideOpen(true);
       return;
     }
-    // BINDING GUARD: Verify promote is eligible for current bindings
+    // BINDING GUARD: Verify promote is eligible — use promotion_gate, not render binding
+    // (Invariant 4 RENDER_SWITCH_DURING_PROMOTE should only block re-resolution mid-promote,
+    //  not the initial eligibility check — using promotion_gate is semantically correct)
     const bindingGuard = assertEligible('promote', {
-      sourceBinding: render,
+      sourceBinding: 'promotion_gate',
       targetDocType: selectedDeliverableType,
       projectId,
     });

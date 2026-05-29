@@ -4,6 +4,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useDocumentRuntimeBinding } from '@/lib/versionBinding/useDocumentRuntimeBinding';
 
 export interface DocumentVersion {
   id: string;
@@ -43,11 +44,42 @@ export function useDocumentVersions(documentId: string | undefined) {
   });
 }
 
-export function useSetCurrentVersion() {
+/**
+ * Mutation hook to set a version as current.
+ * Accepts optional binding context (docType, versions) for invariant guard.
+ * When binding context is provided, the guard blocks invalid set_current calls.
+ */
+export function useSetCurrentVersion(
+  bindingContext?: {
+    docType: string | null;
+    versions: any[];
+    selectedVersionId: string | null;
+  },
+) {
   const queryClient = useQueryClient();
+
+  // ── Runtime binding guard ──
+  const { assertEligible } = useDocumentRuntimeBinding(
+    bindingContext?.docType ?? null,
+    bindingContext?.versions ?? [],
+    bindingContext?.selectedVersionId ?? null,
+  );
 
   return useMutation({
     mutationFn: async ({ documentId, versionId }: { documentId: string; versionId: string }) => {
+      // Invariant guard: block invalid set_current_version calls
+      if (bindingContext) {
+        const result = assertEligible('set_current', {
+          sourceBinding: 'authoritative',
+          targetVersionId: versionId,
+        });
+        if (!result.eligible) {
+          throw new Error(
+            `[binding-guard] set_current_version blocked: ${JSON.stringify(result.violations)}`,
+          );
+        }
+      }
+
       const { data, error } = await (supabase as any).rpc('set_current_version', {
         p_document_id: documentId,
         p_new_version_id: versionId,
