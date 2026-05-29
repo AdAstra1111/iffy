@@ -324,7 +324,12 @@ Total scenes should be 90-130 for a standard feature film.`;
       .replace(/```\s*$/gm, "")
       .trim();
 
-  const parsed: ScenePlanEntry[] = JSON.parse(cleanJson);
+    // Belt-and-suspenders: if still wrapped in backtick fences, strip entire first/last lines
+    const finalClean = cleanJson.startsWith("```")
+      ? cleanJson.split("\n").slice(1, -1).join("\n").trim()
+      : cleanJson;
+
+  const parsed: ScenePlanEntry[] = JSON.parse(finalClean);
   if (!Array.isArray(parsed) || parsed.length < 5) {
     throw new Error(`Scene Plan generated ${parsed.length} scenes — expected at least 5`);
   }
