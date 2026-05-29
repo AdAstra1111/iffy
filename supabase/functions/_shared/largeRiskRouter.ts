@@ -23,6 +23,8 @@ export interface ChunkPlanEntry {
   episodeEnd?: number;
   /** For sectioned: section identifier */
   sectionId?: string;
+  /** For beat_sequential (feature_script): which act this beat belongs to (1-4) */
+  actNumber?: number;
 }
 
 export interface ChunkPlan {
@@ -69,7 +71,26 @@ const ALL_LARGE_RISK = new Set([
   ...BEAT_SEQUENTIAL_DOC_TYPES,
 ]);
 
-// ── Public API ──
+// ── Standard Save the Cat beat-to-act boundary mapping ─────────────────
+// Used by feature_script chunk plan to partition beats into parallel act groups.
+// Act 1: beats 1-15 (Opening Image → Break into Two)
+// Act 2a: beats 16-25 (B Story → Midpoint)
+// Act 2b: beats 26-40 (Bad Guys Close In → Dark Night of the Soul)
+// Act 3: beats 41+ (Break into Three → Final Image)
+export const BEAT_ACT_BOUNDARIES = [
+  { act: 1, maxBeatNumber: 15 },
+  { act: 2, maxBeatNumber: 25 },
+  { act: 3, maxBeatNumber: 40 },
+  { act: 4, maxBeatNumber: Infinity },
+] as const;
+
+/** Resolve which act a beat belongs to based on its number. */
+export function resolveBeatAct(beatNumber: number): number {
+  for (const boundary of BEAT_ACT_BOUNDARIES) {
+    if (beatNumber <= boundary.maxBeatNumber) return boundary.act;
+  }
+  return 4; // Fallback: last act
+}
 
 /**
  * Returns true if this doc_type is large-risk and MUST use chunked generation/rewrite.
@@ -239,6 +260,7 @@ export function chunkPlanFor(
       chunkIndex: i,
       chunkKey: `beat_${String(beat.number).padStart(2, "0")}`,
       label: `Beat ${beat.number}: ${beat.title}`,
+      actNumber: resolveBeatAct(beat.number),
     }));
 
     return { strategy, chunks, totalChunks: chunks.length, docType };

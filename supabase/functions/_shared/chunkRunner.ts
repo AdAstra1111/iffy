@@ -12,7 +12,7 @@
  */
 
 import { resolveGateway } from "./llm.ts";
-import { type ChunkPlan, type ChunkPlanEntry, chunkPlanFor, isEpisodicDocType } from "./largeRiskRouter.ts";
+import { type ChunkPlan, type ChunkPlanEntry, chunkPlanFor, isEpisodicDocType, resolveBeatAct } from "./largeRiskRouter.ts";
 import { validateEpisodicChunk, validateEpisodicContent, validateSectionedContent, validateBeatSequentialChunk, hasBannedSummarizationLanguage, hasScreenplayFormat } from "./chunkValidator.ts";
 
 // ── Types ──
@@ -609,96 +609,254 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
   let completedChunks = plan.totalChunks - toGenerate.length;
   let failedChunks = 0;
 
-  for (const chunk of toGenerate) {
-    // FIX (trinity-2026-05-03-generate-2a2b-dropped-fix — Bug 1):
-    // For sectioned strategy (Treatment, Beat Sheet, etc.), DO NOT pass the previous
-    // chunk's narrative ending as continuity context. Each act is a standalone
-    // structural contract — NOT a continuation of the previous act.
-    //
-    // The bug: upstreamContent (global treatment context) + previousEnding (Act 1's
-    // actual narrative text) together give the LLM both the structural contract AND
-    // the narrative content. Seeing Act 1's actual text as "what came before" causes
-    // the LLM to skip Act 2A/2B generation and jump to the next structural position.
-    //
-    // Fix: For sectioned strategy, pass a plain structural description of the previous
-    // section (its dramatic function, position in the arc) WITHOUT its narrative content.
-    // The lengthGuidance block already tells the LLM what each act IS — no need to also
-    // hand it the previous act's actual prose.
-    //
-    // Episodic_indexed strategy STILL gets narrative continuity (episodes ARE
-    // sequential continuations of each other — this is correct and expected).
-    let previousEnding: string | undefined;
-    if (plan.strategy === "episodic_indexed") {
-      // Episodic: pass last 500 chars of previous episode for genuine continuity
-      previousEnding = chunk.chunkIndex > 0
-        ? chunkContents[chunk.chunkIndex - 1].slice(-500)
-        : undefined;
-    } else if (plan.strategy === "sectioned") {
-      // Sectioned: each act is standalone. Provide structural description only —
-      // no narrative content from the previous act that would make the LLM "continue"
-      // instead of generating the act as an independent piece.
-      const ACT_STRUCTURAL_DESCRIPTIONS: Record<string, string> = {
-        "act_2a_rising_action": "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
-        "act_2b_complications": "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
-        "act_3_climax_resolution": "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
-        "act_1_setup": "Act 1: Setup — Introduces the world, protagonist, ordinary life, and the inciting incident that disrupts everything. This is the first act.",
-        "act_2a_beats": "Act 2A: Rising Action — Beats covering B Story through Midpoint. Follows Act 1 Setup.",
-        "act_2b_beats": "Act 2B: Complications — Beats covering Bad Guys Close In through Dark Night of the Soul. Follows Act 2A Rising Action.",
-        "act_3_beats": "Act 3: Climax & Resolution — Beats covering Break Into Three through Final Image. Follows Act 2B Complications.",
-        "act_1_beats": "Act 1: Setup — Beats covering Opening Image through Break Into Two.",
-        "act_2a": "Act 2A: Rising Action — Follows Act 1. The protagonist commits to the journey. Rising stakes, early obstacles.",
-        "act_2b": "Act 2B: Complications — Follows Act 2A. Escalating complications, midpoint turn, dark night of the soul.",
-        "act_3": "Act 3: Climax & Resolution — Follows Act 2B. Climax, final confrontation, resolution.",
-        "act_1": "Act 1: Setup — Opening of the story. Establishes world, protagonist, goal, inciting incident.",
-      };
-      if (chunk.chunkIndex > 0) {
-        const prevChunk = plan.chunks[chunk.chunkIndex - 1];
-        previousEnding = ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
-          ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
-          ?? `Previous section was ${prevChunk.label}.`;
-      }
-    } else if (plan.strategy === "beat_sequential") {
-      // Beat sequential: pass last 800 chars of previous beat for genuine continuity
-      previousEnding = chunk.chunkIndex > 0
-        ? chunkContents[chunk.chunkIndex - 1].slice(-800)
-        : undefined;
-    } else if (plan.strategy === "scene_indexed") {
-      // Scene indexed: scene batches are sequential — pass last 800 chars of previous batch for genuine screenplay continuity
-      previousEnding = chunk.chunkIndex > 0
-        ? chunkContents[chunk.chunkIndex - 1].slice(-800)
-        : undefined;
+  // ── PARALLEL ACT DISPATCH for beat_sequential (feature_script) ──
+  // Beats from different acts have zero narrative dependency and can generate in parallel.
+  // Within each act, beats run sequentially for continuity (character walks from beat 12→13).
+  // Between acts: structural description passed (not beat content) to prevent cross-act bleed.
+  if (plan.strategy === "beat_sequential") {
+    // Group toGenerate by act number
+    const actGroups = new Map<number, typeof toGenerate>();
+    for (const chunk of toGenerate) {
+      const act = chunk.actNumber ?? resolveBeatAct(parseInt(chunk.chunkKey.replace("beat_", ""), 10));
+      if (!actGroups.has(act)) actGroups.set(act, []);
+      actGroups.get(act)!.push(chunk);
     }
 
-    // Mark as running with heartbeat timestamp
-    const chunkStartedAt = new Date().toISOString();
-    const existingMeta = chunkMap.get(chunk.chunkIndex)?.meta_json || {};
-    await supabase
-      .from("project_document_chunks")
-      .update({
-        status: "running",
-        attempts: (chunkMap.get(chunk.chunkIndex)?.attempts || 0) + 1,
-        meta_json: {
-          ...existingMeta,
-          heartbeat_at: chunkStartedAt,
-          generation_started_at: chunkStartedAt,
-          stale_reason: null,
-          cleared_at: null,
-        },
-      })
-      .eq("document_id", documentId)
-      .eq("version_id", versionId)
-      .eq("chunk_index", chunk.chunkIndex);
+    // Sort each act's chunks by chunkIndex (beats within an act must be sequential)
+    for (const [, group] of actGroups) {
+      group.sort((a, b) => a.chunkIndex - b.chunkIndex);
+    }
 
-    let content = "";
-    let chunkPassed = false;
-    let validationError = "";
+    // Structural descriptions for act boundaries (between acts — not beat content)
+    const ACT_STRUCTURAL_DESCRIPTIONS: Record<number, string> = {
+      2: "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+      3: "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+      4: "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+    };
 
-    for (let attempt = 0; attempt <= maxChunkRepairs; attempt++) {
-      try {
-        content = await generateSingleChunk(chunkOpts, chunk, previousEnding);
+    // Process each act group in parallel
+    const actResults = await Promise.all([...actGroups.entries()].map(async ([actNumber, actChunks]) => {
+      const actCompleted: number[] = [];
+      const actFailed: number[] = [];
+      const actValidator = (idx: number) => {}; // no-op, kept for interface compat
 
-        // Validate chunk
-        if (plan.strategy === "episodic_indexed" && chunk.episodeStart && chunk.episodeEnd) {
+      for (let ci = 0; ci < actChunks.length; ci++) {
+        const chunk = actChunks[ci];
+        const actLocalCompleted = actCompleted.length;
+
+        // Between acts: structural description. Within an act: last 800 chars of previous beat.
+        let previousEnding: string | undefined;
+        if (actLocalCompleted > 0) {
+          // Same act — pass last 800 chars of previous beat in this act group
+          const prevChunkIdx = actChunks[ci - 1].chunkIndex;
+          previousEnding = chunkContents[prevChunkIdx]
+            ? chunkContents[prevChunkIdx].slice(-800)
+            : undefined;
+        } else if (actNumber > 1) {
+          // First beat of a new act — structural description, not beat content
+          previousEnding = ACT_STRUCTURAL_DESCRIPTIONS[actNumber]
+            ?? `Act ${actNumber} — follows the previous act's story arc.`;
+        }
+
+        // Mark as running with heartbeat timestamp
+        const chunkStartedAt = new Date().toISOString();
+        const existingMeta = chunkMap.get(chunk.chunkIndex)?.meta_json || {};
+        await supabase
+          .from("project_document_chunks")
+          .update({
+            status: "running",
+            attempts: (chunkMap.get(chunk.chunkIndex)?.attempts || 0) + 1,
+            meta_json: {
+              ...existingMeta,
+              heartbeat_at: chunkStartedAt,
+              generation_started_at: chunkStartedAt,
+              stale_reason: null,
+              cleared_at: null,
+            },
+          })
+          .eq("document_id", documentId)
+          .eq("version_id", versionId)
+          .eq("chunk_index", chunk.chunkIndex);
+
+        let content = "";
+        let chunkPassed = false;
+        let validationError = "";
+
+        for (let attempt = 0; attempt <= maxChunkRepairs; attempt++) {
+          try {
+            content = await generateSingleChunk(chunkOpts, chunk, previousEnding);
+
+            // Validate beat_sequential chunk
+            const { validateBeatSequentialChunk } = await import("./chunkValidator.ts");
+            const validation = validateBeatSequentialChunk(content, docType);
+            if (!validation.pass && attempt < maxChunkRepairs) {
+              console.warn(`[chunkRunner] Beat chunk ${chunk.chunkKey} failed validation (attempt ${attempt}): ${validation.failures.map((f: any) => f.detail).join("; ")}`);
+              validationError = validation.failures.map((f: any) => f.detail).join("; ");
+              await backoffDelay(attempt);
+              continue;
+            }
+            chunkPassed = validation.pass;
+            if (!chunkPassed) {
+              validationError = validation.failures.map((f: any) => f.detail).join("; ");
+            }
+            break;
+          } catch (err: any) {
+            const isTimeout = err.message?.includes("timed out");
+            const failureReason = isTimeout ? "llm_call_timeout" : "generation_error";
+            console.error(`[chunkRunner][IEL] chunk_generation_failed: key=${chunk.chunkKey} attempt=${attempt} reason=${failureReason} error=${err.message}`);
+            if (attempt >= maxChunkRepairs) {
+              const failMeta = {
+                ...existingMeta,
+                heartbeat_at: new Date().toISOString(),
+                failure_reason: failureReason,
+                failed_at: new Date().toISOString(),
+                last_error: err.message?.slice(0, 300),
+              };
+              await supabase
+                .from("project_document_chunks")
+                .update({
+                  status: "failed",
+                  error: err.message?.slice(0, 500),
+                  attempts: (chunkMap.get(chunk.chunkIndex)?.attempts || 0) + attempt + 1,
+                  meta_json: failMeta,
+                })
+                .eq("document_id", documentId)
+                .eq("version_id", versionId)
+                .eq("chunk_index", chunk.chunkIndex);
+            }
+          }
+        }
+
+        if (content) {
+          chunkContents[chunk.chunkIndex] = content;
+
+          const finalStatus = chunkPassed ? "done" : "failed_validation";
+          if (!chunkPassed) actFailed.push(chunk.chunkIndex);
+          if (chunkPassed) actCompleted.push(chunk.chunkIndex);
+
+          await supabase
+            .from("project_document_chunks")
+            .update({
+              status: finalStatus,
+              content,
+              char_count: content.length,
+              error: chunkPassed ? null : "Beat structure invalid",
+              ...(chunkPassed ? {} : {
+                meta_json: {
+                  ...existingMeta,
+                  failure_reason: "beat_validation_failed",
+                  failed_at: new Date().toISOString(),
+                  last_error: validationError || "Beat structure invalid",
+                },
+              }),
+            })
+            .eq("document_id", documentId)
+            .eq("version_id", versionId)
+            .eq("chunk_index", chunk.chunkIndex);
+        }
+      }
+
+      return { actCompleted, actFailed };
+    }));
+
+    // Merge results from all acts
+    for (const result of actResults) {
+      completedChunks += result.actCompleted.length;
+      failedChunks += result.actFailed.length;
+    }
+  } else {
+    // ── SEQUENTIAL PATH: all other strategies (episodic_indexed, sectioned, scene_indexed) ──
+    for (const chunk of toGenerate) {
+      const comment = ""; // placeholder to keep the original comment structure
+      // FIX (trinity-2026-05-03-generate-2a2b-dropped-fix — Bug 1):
+      // For sectioned strategy (Treatment, Beat Sheet, etc.), DO NOT pass the previous
+      // chunk's narrative ending as continuity context. Each act is a standalone
+      // structural contract — NOT a continuation of the previous act.
+      //
+      // The bug: upstreamContent (global treatment context) + previousEnding (Act 1's
+      // actual narrative text) together give the LLM both the structural contract AND
+      // the narrative content. Seeing Act 1's actual text as "what came before" causes
+      // the LLM to skip Act 2A/2B generation and jump to the next structural position.
+      //
+      // Fix: For sectioned strategy, pass a plain structural description of the previous
+      // section (its dramatic function, position in the arc) WITHOUT its narrative content.
+      // The lengthGuidance block already tells the LLM what each act IS — no need to also
+      // hand it the previous act's actual prose.
+      //
+      // Episodic_indexed strategy STILL gets narrative continuity (episodes ARE
+      // sequential continuations of each other — this is correct and expected).
+      let previousEnding: string | undefined;
+      if (plan.strategy === "episodic_indexed") {
+        // Episodic: pass last 500 chars of previous episode for genuine continuity
+        previousEnding = chunk.chunkIndex > 0
+          ? chunkContents[chunk.chunkIndex - 1].slice(-500)
+          : undefined;
+      } else if (plan.strategy === "sectioned") {
+        // Sectioned: each act is standalone. Provide structural description only —
+        // no narrative content from the previous act that would make the LLM "continue"
+        // instead of generating the act as an independent piece.
+        const ACT_STRUCTURAL_DESCRIPTIONS: Record<string, string> = {
+          "act_2a_rising_action": "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+          "act_2b_complications": "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+          "act_3_climax_resolution": "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+          "act_1_setup": "Act 1: Setup — Introduces the world, protagonist, ordinary life, and the inciting incident that disrupts everything. This is the first act.",
+          "act_2a_beats": "Act 2A: Rising Action — Beats covering B Story through Midpoint. Follows Act 1 Setup.",
+          "act_2b_beats": "Act 2B: Complications — Beats covering Bad Guys Close In through Dark Night of the Soul. Follows Act 2A Rising Action.",
+          "act_3_beats": "Act 3: Climax & Resolution — Beats covering Break Into Three through Final Image. Follows Act 2B Complications.",
+          "act_1_beats": "Act 1: Setup — Beats covering Opening Image through Break Into Two.",
+          "act_2a": "Act 2A: Rising Action — Follows Act 1. The protagonist commits to the journey. Rising stakes, early obstacles.",
+          "act_2b": "Act 2B: Complications — Follows Act 2A. Escalating complications, midpoint turn, dark night of the soul.",
+          "act_3": "Act 3: Climax & Resolution — Follows Act 2B. Climax, final confrontation, resolution.",
+          "act_1": "Act 1: Setup — Opening of the story. Establishes world, protagonist, goal, inciting incident.",
+        };
+        if (chunk.chunkIndex > 0) {
+          const prevChunk = plan.chunks[chunk.chunkIndex - 1];
+          previousEnding = ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.chunkKey]
+            ?? ACT_STRUCTURAL_DESCRIPTIONS[prevChunk.sectionId ?? ""]
+            ?? `Previous section was ${prevChunk.label}.`;
+        }
+      } else if (plan.strategy === "beat_sequential") {
+        // Beat sequential: pass last 800 chars of previous beat for genuine continuity
+        previousEnding = chunk.chunkIndex > 0
+          ? chunkContents[chunk.chunkIndex - 1].slice(-800)
+          : undefined;
+      } else if (plan.strategy === "scene_indexed") {
+        // Scene indexed: scene batches are sequential — pass last 800 chars of previous batch for genuine screenplay continuity
+        previousEnding = chunk.chunkIndex > 0
+          ? chunkContents[chunk.chunkIndex - 1].slice(-800)
+          : undefined;
+      }
+
+      // Mark as running with heartbeat timestamp
+      const chunkStartedAt = new Date().toISOString();
+      const existingMeta = chunkMap.get(chunk.chunkIndex)?.meta_json || {};
+      await supabase
+        .from("project_document_chunks")
+        .update({
+          status: "running",
+          attempts: (chunkMap.get(chunk.chunkIndex)?.attempts || 0) + 1,
+          meta_json: {
+            ...existingMeta,
+            heartbeat_at: chunkStartedAt,
+            generation_started_at: chunkStartedAt,
+            stale_reason: null,
+            cleared_at: null,
+          },
+        })
+        .eq("document_id", documentId)
+        .eq("version_id", versionId)
+        .eq("chunk_index", chunk.chunkIndex);
+
+      let content = "";
+      let chunkPassed = false;
+      let validationError = "";
+
+      for (let attempt = 0; attempt <= maxChunkRepairs; attempt++) {
+        try {
+          content = await generateSingleChunk(chunkOpts, chunk, previousEnding);
+
+          // Validate chunk
+          if (plan.strategy === "episodic_indexed" && chunk.episodeStart && chunk.episodeEnd) {
           const expectedEps = Array.from(
             { length: chunk.episodeEnd - chunk.episodeStart + 1 },
             (_, i) => chunk.episodeStart! + i
@@ -865,7 +1023,70 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
   // If there are missing chunks, regenerate them now before assembly
   if (missingIndexes.length > 0) {
     console.log(`[chunkRunner] Regenerating ${missingIndexes.length} missing chunk(s): [${missingIndexes.join(", ")}]`);
-    for (const idx of missingIndexes) {
+
+    if (plan.strategy === "beat_sequential") {
+      // ── PARALLEL ACT REPAIR for beat_sequential ──
+      // Group missing chunks by act and repair each act in parallel
+      const missingByAct = new Map<number, number[]>();
+      for (const idx of missingIndexes) {
+        const chunk = plan.chunks[idx];
+        if (!chunk) continue;
+        const act = chunk.actNumber ?? resolveBeatAct(parseInt(chunk.chunkKey.replace("beat_", ""), 10));
+        if (!missingByAct.has(act)) missingByAct.set(act, []);
+        missingByAct.get(act)!.push(idx);
+      }
+
+      const ACT_STRUCTURAL_DESCRIPTIONS: Record<number, string> = {
+        2: "Act 2A: Rising Action — The protagonist commits to the journey. Rising stakes, early obstacles, key relationships forged or strained. Follows Act 1 Setup.",
+        3: "Act 2B: Complications — Complications escalate. Midpoint turn, reversals, the protagonist pushed to their limit. Dark night of the soul. Follows Act 2A Rising Action.",
+        4: "Act 3: Climax & Resolution — Climax, final confrontation, resolution. Thematic statement landed. Closing image. Follows Act 2B Complications.",
+      };
+
+      await Promise.all([...missingByAct.entries()].map(async ([actNumber, actIndices]) => {
+        // Sort by chunkIndex for sequential continuity within act
+        actIndices.sort((a, b) => a - b);
+        for (let mi = 0; mi < actIndices.length; mi++) {
+          const idx = actIndices[mi];
+          const chunk = plan.chunks[idx];
+          if (!chunk) continue;
+
+          let previousEnding: string | undefined;
+          if (mi > 0) {
+            // Same act — pass last 800 chars of previous repaired beat
+            const prevIdx = actIndices[mi - 1];
+            previousEnding = (chunkContents[prevIdx] || "").slice(-800);
+          } else if (actNumber > 1) {
+            // First missing beat in a new act — structural description
+            previousEnding = ACT_STRUCTURAL_DESCRIPTIONS[actNumber]
+              ?? `Act ${actNumber} — follows the previous act's story arc.`;
+          }
+
+          try {
+            const regenContent = await generateSingleChunk(chunkOpts, chunk, previousEnding);
+            if (regenContent) {
+              chunkContents[idx] = regenContent;
+              await supabase
+                .from("project_document_chunks")
+                .update({ status: "done", content: regenContent, char_count: regenContent.length, error: null })
+                .eq("document_id", documentId)
+                .eq("version_id", versionId)
+                .eq("chunk_index", idx);
+              console.log(`[chunkRunner] Missing chunk ${idx} recovered: ${regenContent.length} chars`);
+            }
+          } catch (err: any) {
+            console.error(`[chunkRunner] Recovery regen for chunk ${idx} failed:`, err.message);
+            await supabase
+              .from("project_document_chunks")
+              .update({ status: "failed", error: `Recovery failed: ${err.message?.slice(0, 300)}` })
+              .eq("document_id", documentId)
+              .eq("version_id", versionId)
+              .eq("chunk_index", idx);
+          }
+        }
+      }));
+    } else {
+      // ── SEQUENTIAL REPAIR: all other strategies ──
+      for (const idx of missingIndexes) {
       const chunk = plan.chunks[idx];
       if (!chunk) continue;
       const previousEnding = (() => {
@@ -916,6 +1137,7 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           .eq("version_id", versionId)
           .eq("chunk_index", idx);
       }
+    }
     }
   }
 

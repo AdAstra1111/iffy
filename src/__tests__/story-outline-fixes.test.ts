@@ -299,11 +299,11 @@ describe('Fix E: Per-act vs full prompt split', () => {
     expect(fourActsBlock).toContain('in parallel chunks');
   });
 
-  it('source code: specified act branch (line 1167) does NOT contain "ALL 4 acts"', () => {
+  it('source code: specified act branch (line 1202) does NOT contain "ALL 4 acts"', () => {
     const source = readSource('supabase/functions/generate-document/index.ts');
-    // Line 1167 is the resume/specified-act branch of the ternary
+    // Line 1202 is the resume/specified-act branch of the ternary (shifted +35 lines by 4 patches)
     const lines = source.split('\n');
-    const resumeLine = lines[1166]; // 0-indexed: line 1167 shown → index 1166
+    const resumeLine = lines[1201]; // 0-indexed: line 1202 shown → index 1201
     expect(resumeLine).toContain('specified act');
     expect(resumeLine).not.toContain('ALL 4 acts');
   });

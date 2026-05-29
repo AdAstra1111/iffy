@@ -33668,6 +33668,55 @@ CRITICAL:
           }
         });
       }
+      // ── STORY OUTLINE MOMENT PATH ──
+      if (job?.target_doc_type === "story_outline") {
+        const entryNum = job.scene_number;
+        const prevCtx = job.prev_summary || "";
+        const nextCtx = job.next_summary || "";
+        const allNotes = job.approved_notes || [];
+        const notesCtx = allNotes.length > 0
+          ? "\n\nAPPROVED NOTES & DECISIONS:\n" + allNotes.map(n => "- " + (n.description || n.note || "")).join("\n")
+          : "";
+        const systemMsg = "You are rewriting ONE moment of a story outline.\n\nINSTRUCTIONS:\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\n- Keep the Number and Title EXACTLY as they are.\n- Write vivid present-tense prose. 2-5 sentences.\n- Output ONLY valid JSON: {\"number\": " + (entryNum + 1) + ", \"title\": \"...\", \"description\": \"...\"}" + notesCtx;
+        const userMsg = "MOMENT TO REWRITE:" +
+          (prevCtx ? "\nPREVIOUS MOMENT:\n" + prevCtx : "") +
+          "\nCURRENT MOMENT:\nTitle: " + (job.scene_heading || "") +
+          (nextCtx ? "\n\nNEXT MOMENT:\n" + nextCtx : "");
+        const startTime = Date.now();
+        const raw = await callGoogleGemini(systemMsg, userMsg, 0.0, 2000);
+        const durationMs = Date.now() - startTime;
+        const m = (raw || "").match(/\{[\s\S]*?\}/);
+        let rewrittenText = raw;
+        if (m) {
+          try { const p = JSON.parse(m[0]); if (p.description) rewrittenText = p.description; } catch {}
+        }
+        const effU = user?.id || null;
+        await supabase.from("rewrite_scene_outputs").upsert({
+          project_id: projectId, user_id: effU,
+          source_version_id: sourceVersionId, run_id: runId,
+          scene_number: entryNum, rewritten_text: rewrittenText.trim(),
+          tokens_in: (prevCtx + nextCtx).length, tokens_out: rewrittenText.trim().length
+        }, { onConflict: "run_id,scene_number" });
+        const { data: soOutVer } = await supabase.from("project_document_versions")
+          .select("id").eq("document_id", job.source_doc_id)
+          .filter("meta_json->>run_type", "eq", "STORY_OUTLINE_REWRITE")
+          .order("version_number", { ascending: false }).limit(1).maybeSingle();
+        if (soOutVer) {
+          await supabase.from("project_document_chunks").update({
+            status: "done", content: rewrittenText.trim(), char_count: rewrittenText.trim().length
+          }).eq("version_id", soOutVer.id).eq("chunk_index", entryNum);
+        }
+        await supabase.from("rewrite_jobs").update({
+          status: "done", finished_at: new Date().toISOString(), error: null
+        }).eq("id", job.id);
+        return new Response(JSON.stringify({
+          processed: true, scene_number: entryNum + 1, status: "done",
+          duration_ms: durationMs, input_chars: (prevCtx + nextCtx).length,
+          output_chars: rewrittenText.trim().length, delta_pct: 0, skipped: false
+        }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" }
+        });
+      }
       if (!projectId || !sourceVersionId) throw new Error("projectId, sourceVersionId required");
       // Atomic claim via RPC — always filter by run_id
       const { data: claimedRows, error: claimErr } = await supabase.rpc("claim_next_rewrite_job", {
@@ -33727,55 +33776,6 @@ CRITICAL:
         });
       }
       try {
-        // --- STORY OUTLINE MOMENT PATH ---
-        if (job.target_doc_type === "story_outline") {
-          const entryNum = job.scene_number;
-          const prevCtx = job.prev_summary || "";
-          const nextCtx = job.next_summary || "";
-          const allNotes = job.approved_notes || [];
-          const notesCtx = allNotes.length > 0
-            ? "\\n\\nAPPROVED NOTES & DECISIONS:\\n" + allNotes.map(n => "- " + (n.description || n.note || "")).join("\\n")
-            : "";
-          const systemMsg = "You are rewriting ONE moment of a story outline.\\n\\nINSTRUCTIONS:\\n- Rewrite ONLY the Description field of the CURRENT MOMENT below.\\n- Keep the Number and Title EXACTLY as they are.\\n- Write vivid present-tense prose. 2-5 sentences.\\n- Output ONLY valid JSON: {\\"number\\": " + (entryNum + 1) + ", \\"title\\": \\"...\\", \\"description\\": \\"...\\"}" + notesCtx;
-          const userMsg = "MOMENT TO REWRITE:" +
-            (prevCtx ? "\\nPREVIOUS MOMENT:\\n" + prevCtx : "") +
-            "\\nCURRENT MOMENT:\\nTitle: " + (job.scene_heading || "") +
-            (nextCtx ? "\\n\\nNEXT MOMENT:\\n" + nextCtx : "");
-          const startTime = Date.now();
-          const raw = await callGoogleGemini(systemMsg, userMsg, 0.0, 2000);
-          const durationMs = Date.now() - startTime;
-          const m = (raw || "").match(/\\{[\\s\\S]*?\\}/);
-          let rewrittenText = raw;
-          if (m) {
-            try { const p = JSON.parse(m[0]); if (p.description) rewrittenText = p.description; } catch {}
-          }
-          const effU = user?.id || null;
-          await supabase.from("rewrite_scene_outputs").upsert({
-            project_id: projectId, user_id: effU,
-            source_version_id: sourceVersionId, run_id: effectiveRunId,
-            scene_number: entryNum, rewritten_text: rewrittenText.trim(),
-            tokens_in: (prevCtx + nextCtx).length, tokens_out: rewrittenText.trim().length
-          }, { onConflict: "run_id,scene_number" });
-          const { data: soOutVer } = await supabase.from("project_document_versions")
-            .select("id").eq("document_id", job.source_doc_id)
-            .filter("meta_json->>run_type", "eq", "STORY_OUTLINE_REWRITE")
-            .order("version_number", { ascending: false }).limit(1).maybeSingle();
-          if (soOutVer) {
-            await supabase.from("project_document_chunks").update({
-              status: "done", content: rewrittenText.trim(), char_count: rewrittenText.trim().length
-            }).eq("version_id", soOutVer.id).eq("chunk_index", entryNum);
-          }
-          await supabase.from("rewrite_jobs").update({
-            status: "done", finished_at: new Date().toISOString(), error: null
-          }).eq("id", job.id);
-          return new Response(JSON.stringify({
-            processed: true, scene_number: entryNum + 1, status: "done",
-            duration_ms: durationMs, input_chars: (prevCtx + nextCtx).length,
-            output_chars: rewrittenText.trim().length, delta_pct: 0, skipped: false
-          }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" }
-          });
-        }
         // Get scene text — bound to exact snapshot via scene_graph_version_id
         let sceneText = "";
         if (job.scene_graph_version_id) {
@@ -33922,6 +33922,8 @@ CRITICAL:
         });
       }
     }
+    // ── GET REWRITE STATUS ──
+    // ── STORY OUTLINE REWRITE STATUS (polls project_document_chunks) ──
     if (action === "get_story_outline_rewrite_status") {
       const { projectId, runId } = body;
       if (!runId) {
@@ -34239,79 +34241,6 @@ CRITICAL:
         ascending: true
       });
       if (!outputs || outputs.length === 0) throw new Error("No scene outputs found");
-      // ── STORY OUTLINE ASSEMBLY PATH ──
-      // If source doc is story_outline, assemble outputs back into JSON entries format
-      const { data: soDocRow } = await supabase.from("project_documents").select("doc_type").eq("id", sourceDocId).maybeSingle();
-      const isStoryOutlineAssembly = soDocRow?.doc_type === "story_outline";
-      if (isStoryOutlineAssembly) {
-        const { data: soVersion } = await supabase.from("project_document_versions").select("plaintext").eq("id", sourceVersionId).maybeSingle();
-        let soJSON = null;
-        try { soJSON = JSON.parse(soVersion?.plaintext || "{}"); } catch {}
-        const rewrittenEntries = (soJSON?.entries || []).map((origE, idx) => {
-          const out = outputs.find(o => o.scene_number === idx);
-          return {
-            number: origE.number || idx + 1,
-            title: origE.title || "",
-            description: out ? out.rewritten_text : (origE.description || "")
-          };
-        });
-        assembledText = JSON.stringify({
-          title: soJSON?.title || "",
-          format: soJSON?.format || "story_outline",
-          entries: rewrittenEntries
-        }, null, 2);
-        totalScenesInAssembly = rewrittenEntries.length;
-        const trulySelective = false;
-        // Create new version via doc-os + CCE drift check
-        const sceneRwProject = await supabase.from("projects").select("assigned_lane, format").eq("id", projectId).single();
-        const sceneRwLane = sceneRwProject?.data?.assigned_lane || "independent-film";
-        const sceneRwFormat = sceneRwProject?.data?.format || "film";
-        const sceneRwTvCtx = await loadTeamVoiceContext(supabase, projectId, sceneRwLane);
-        const sceneRwMetaJson = sceneRwTvCtx.metaStamp ? { ...sceneRwTvCtx.metaStamp } : undefined;
-        const sceneRwDocRow = soDocRow;
-        const sceneRwDocType = sceneRwDocRow?.doc_type || "other";
-        const sceneRwCCE = await runCCEPostGeneration(supabase, projectId, assembledText, sceneRwDocType, "dev-engine-v2:story-outline-assemble");
-        const newVersion = await createVersion(supabase, {
-          documentId: sourceDocId,
-          docType: sceneRwDocType,
-          format: sceneRwFormat,
-          plaintext: assembledText,
-          label: `Story outline rewrite (${totalScenesInAssembly} moments)`,
-          createdBy: user.id,
-          changeSummary: `Story outline moment-level rewrite across ${totalScenesInAssembly} moments.`,
-          metaJson: { ...sceneRwMetaJson || {}, ...sceneRwCCE.metaPatch },
-          generatorId: "dev-engine-v2-story-outline-rewrite",
-          inputsUsed: { generator_id: "dev-engine-v2-story-outline-rewrite", document_id: sourceDocId, parent_version_id: sourceVersionId, run_id: runId, project_id: projectId }
-        });
-        // Style eval
-        const srStyleTarget = (await loadVoiceTargets(supabase, projectId, sceneRwLane)).target;
-        const srStyleEval = await runStyleEval(supabase, assembledText, projectId, sourceDocId, newVersion.id, sceneRwLane, srStyleTarget);
-        if (srStyleEval) {
-          const mergedMeta = { ...newVersion.meta_json || {}, ...srStyleEval.metaFields };
-          await supabase.from("project_document_versions").update({ meta_json: mergedMeta }).eq("id", newVersion.id);
-          newVersion.meta_json = mergedMeta;
-        }
-        if (auto_promote !== false) {
-          const { error: rpcErr } = await supabase.rpc("set_current_version", { p_document_id: sourceDocId, p_new_version_id: newVersion.id });
-          if (rpcErr) {
-            try { await supabase.from("project_document_versions").delete().eq("id", newVersion.id); } catch (delErr) { console.error("[scene-rewrite] Failed to rollback version after RPC error:", delErr.message); }
-            if (runId) { await supabase.from("rewrite_runs").update({ status: "failed", summary: `set_current_version RPC failed: ${rpcErr.message}`, updated_at: new Date().toISOString() }).eq("id", runId); }
-            throw new Error(`set_current_version RPC failed: ${rpcErr.message}`);
-          }
-        } else { console.log(`[scene-rewrite] auto_promote=false — skipping set_current_version for version ${newVersion.id}`); }
-        if (runId) { await supabase.from("rewrite_runs").update({ status: "complete", summary: `Story outline rewrite: ${totalScenesInAssembly} moments.`, updated_at: new Date().toISOString() }).eq("id", runId); }
-        await supabase.from("development_runs").insert({
-          project_id: projectId, document_id: sourceDocId, version_id: newVersion.id, user_id: user.id, run_type: "REWRITE",
-          output_json: { rewrite_mode: "moment", rewrite_mode_used: "moment", rewrite_mode_selected: rewriteModeSelected || "auto", rewrite_mode_effective: rewriteModeEffective || "moment", rewrite_mode_reason: rewriteModeReason || "auto_probe_moment", rewrite_mode_debug: rewriteModeDebug || null, rewrite_probe: rewriteProbe || null, rewrite_scope_plan: rewriteScopePlan || null, rewrite_scope_expanded_from: rewriteScopeExpandedFrom || null, rewrite_verification: rewriteVerification || null, selective_rewrite: false, target_scenes_count: null, total_scenes_count: totalScenesInAssembly, scenes_count: totalScenesInAssembly, rewritten_text: `[${assembledText.length} chars]`, changes_summary: `Story outline moment-level rewrite across ${totalScenesInAssembly} moments.`, source_version_id: sourceVersionId, source_doc_id: sourceDocId, run_id: runId || null },
-          schema_version: SCHEMA_VERSION
-        });
-        console.log(`[story-outline-assemble] Assembled ${totalScenesInAssembly} moments → ${assembledText.length} chars, new version ${newVersion.id}`);
-        return new Response(JSON.stringify({
-          newVersionId: newVersion.id, newVersionNumber: newVersion.version_number, newVersionLabel: newVersion.label,
-          newChangeSummary: newVersion.change_summary, charCount: assembledText.length, scenesCount: totalScenesInAssembly,
-          totalScenesInAssembly, selectiveRewrite: false, trulySelective: false, targetScenesCount: null
-        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      }
       // Build rewritten text map
       const rewrittenMap = new Map();
       for (const o of outputs)rewrittenMap.set(o.scene_number, o.rewritten_text);
