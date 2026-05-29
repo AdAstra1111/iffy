@@ -105,7 +105,7 @@ function normalizeValue(raw: string, category: string): string {
     if (match && match[1] && match[1].trim()) {
       const stripped = match[1].trim();
       const suffix = (match[2] || "").toLowerCase();
-      const descriptorSuffixes = new Set(["appearance", "look", "looks", "type", "description", "feature", "features"]);
+      const descriptorSuffixes = new Set(["appearance", "look", "looks", "type", "description", "feature"]);
       if (!suffix || suffix === category.toLowerCase() || descriptorSuffixes.has(suffix)) {
         value = stripped;
         break;
@@ -254,7 +254,7 @@ function buildStructuredIdentityFromTraits(traits: Trait[], strength: string): R
           updateField("biological_sex", biologicalSex);
         }
 
-        const matchedGender = genderLabels.find(g => cleanLabel.includes(g));
+        const matchedGender = genderLabels.find(g => new RegExp(`\\b${g}\\b`, 'i').test(cleanLabel));
         if (matchedGender && !genderPresentation) {
           genderPresentation = matchedGender;
           updateField("gender_presentation", genderPresentation);

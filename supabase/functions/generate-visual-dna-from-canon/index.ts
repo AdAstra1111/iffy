@@ -1587,7 +1587,7 @@ const CATEGORY_SUFFIXES = [
         const suffix = (match[2] || "").toLowerCase();
         // Allow stripping when suffix matches category, is a known generic,
         // or matches one of the descriptive suffixes like "appearance", "looks"
-        const descriptorSuffixes = new Set(["appearance", "look", "looks", "type", "description", "feature", "features"]);
+        const descriptorSuffixes = new Set(["appearance", "look", "looks", "type", "description", "feature"]);
         if (!suffix || suffix === category.toLowerCase() || descriptorSuffixes.has(suffix)) {
           value = stripped;
           break;
@@ -1761,7 +1761,7 @@ const NON_HUMAN_MARKERS = [
         }
 
         // gender_presentation: broader, but only if meaningful
-        const matchedGender = genderLabels.find(g => cleanLabel.includes(g));
+        const matchedGender = genderLabels.find(g => new RegExp(`\\b${g}\\b`, 'i').test(cleanLabel));
         if (matchedGender && !genderPresentation) {
           genderPresentation = matchedGender;
           updateField("gender_presentation", genderPresentation);
