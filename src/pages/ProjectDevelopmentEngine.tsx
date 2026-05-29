@@ -46,6 +46,7 @@ import {
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { OperationProgress, DEV_ANALYZE_STAGES, DEV_NOTES_STAGES, DEV_REWRITE_STAGES, DEV_CONVERT_STAGES, DEV_GENERATE_STAGES } from '@/components/OperationProgress';
 import { useSetAsLatestDraft } from '@/hooks/useSetAsLatestDraft';
+import { useDocumentRuntimeBinding } from '@/lib/versionBinding/useDocumentRuntimeBinding';
 import { approveAndActivate, unapproveVersion } from '@/lib/active-folder/approveAndActivate';
 import { recordResolutions } from '@/lib/decisions/client';
 import { useSeasonTemplate } from '@/hooks/useSeasonTemplate';
@@ -837,37 +838,33 @@ export default function ProjectDevelopmentEngine() {
     prevAuthVersionRef.current = null;
   }, [selectedDoc?.doc_type]);
 
-  // Resolve authoritative version for promotion gating (strict approved+current, fallback approved)
-  // Single deterministic memo — avoids two separate useMemos both keyed on [versions] that
-  // each create new references on every 10s poll (contributing to the render loop).
-  const authoritativeVersion = useMemo(() => {
-    const strict = versions.find((v: any) => v.approval_status === 'approved' && v.is_current === true);
-    if (strict) return strict;
-    const fallback = versions.filter((v: any) => v.approval_status === 'approved').sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()).slice(-1)[0];
-    return fallback || null;
-  }, [versions]);
-  // Stable promotionGateVersionId — separate memo sorted by version_number DESC
-  // NEVER falls through to selectedVersionId (was the root cause of the 3573b98c↔c8ca087c oscillation)
-  const stablePromotionVersion = useMemo(() => {
-    const strict = versions
-      .filter((v: any) => v.approval_status === 'approved' && v.is_current === true)
-      .sort((a: any, b: any) => (b.version_number || 0) - (a.version_number || 0));
-    if (strict.length > 0) return strict[0];
-    const fallback = versions
-      .filter((v: any) => v.approval_status === 'approved')
-      .sort((a: any, b: any) => (b.version_number || 0) - (a.version_number || 0));
-    return fallback.length > 0 ? fallback[0] : null;
-  }, [versions]);
-  const promotionGateVersionId = stablePromotionVersion?.id || null;
+  // ── Centralized DocumentRuntimeBinding Resolver ──
+  // Replaces inline authoritativeVersion, stablePromotionVersion, effectiveVersionId useMemos
+  const {
+    authoritative,
+    promotionGate,
+    render,
+    pipeline: runtimePipelineBinding,
+    authoritativeVersionId,
+    promotionGateVersionId,
+    effectiveVersionId: hookEffectiveVersionId,
+    assertEligible,
+  } = useDocumentRuntimeBinding(selectedDeliverableType, versions, selectedVersionId);
 
-  // PATCH C — effectiveVersionId: authoritative wins over selected for all gate/convergence surfaces
-  const effectiveVersionId = authoritativeVersion?.id || selectedVersionId || null;
+  // Use hook-derived effectiveVersionId (authoritative wins, fallback selected, fallback latest)
+  const effectiveVersionId = hookEffectiveVersionId;
+  // Derive authoritativeVersion for existing downstream consumers that need the full version object
+  // (approval_status, meta_json, etc.) — join back from versions array
+  const authoritativeVersion = useMemo(() => {
+    if (!authoritativeVersionId) return null;
+    return versions.find((v: any) => v.id === authoritativeVersionId) || null;
+  }, [versions, authoritativeVersionId]);
 
   // Auto-select authoritative version ONLY when the authoritative version first appears or changes
   // (not continuously — that blocks manual version browsing in the sidebar)
   const prevAuthVersionRef = useRef<string | null>(null);
   useEffect(() => {
-    const authId = authoritativeVersion?.id ?? null;
+    const authId = authoritativeVersionId ?? null;
     if (authId && authId !== prevAuthVersionRef.current) {
       prevAuthVersionRef.current = authId;
       if (selectedVersionId && authId !== selectedVersionId) {
@@ -875,7 +872,7 @@ export default function ProjectDevelopmentEngine() {
         setSelectedVersionId(authId);
       }
     }
-  }, [authoritativeVersion?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [authoritativeVersionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const promotionGateRuns = useMemo(
     () => (allDocRuns || []).filter((r: any) => r.version_id === promotionGateVersionId),
@@ -1084,7 +1081,7 @@ export default function ProjectDevelopmentEngine() {
     prevPromotionSignatureRef.current = promotionState.signature;
 
     // ── Version mismatch / stale gate diagnostics ──
-    const convergenceVersionId = selectedVersionId || null;
+    const convergenceVersionId = render?.versionId || null;
     const prevDocType = lastPromotionGateVersionRef.current.docType;
     const currDocType = selectedDeliverableType;
     const prevVersionId = lastPromotionGateVersionRef.current.versionId;
@@ -1936,6 +1933,18 @@ export default function ProjectDevelopmentEngine() {
     }
     if (hasUnresolvedMajorDrift) {
       setDriftOverrideOpen(true);
+      return;
+    }
+    // BINDING GUARD: Verify promote is eligible for current bindings
+    const bindingGuard = assertEligible('promote', {
+      sourceBinding: render,
+      targetDocType: selectedDeliverableType,
+      projectId,
+    });
+    if (!bindingGuard.eligible) {
+      const reasons = bindingGuard.invariants.map(i => i.detail).filter(Boolean).join('; ');
+      console.warn(`[ui][IEL] promote_blocked_by_binding_guard { reasons: "${reasons}" }`);
+      toast.error(`Promote blocked by binding guard: ${reasons}`);
       return;
     }
     // PIPELINE AUTHORITY: use Pipeline Brain exclusively, never fall back to LLM output

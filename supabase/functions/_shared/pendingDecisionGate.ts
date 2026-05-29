@@ -11,32 +11,11 @@
  *
  * narrativeContextResolver only injects status='active', so workflow_pending
  * rows are never injected into prompts.
- */
-import {
-  getRequiredDecisions,
-  classifyDecision,
-  classifyByAutonomy,
-  buildPendingDecisionKey,
-  DECISION_DEFS,
-  SEMANTIC_KEYS,
-  isQualityPlateau,
-  type ClassificationContext,
-} from "./decisionPolicyRegistry.ts";
+ */ import { getRequiredDecisions, classifyDecision, classifyByAutonomy, buildPendingDecisionKey, DECISION_DEFS, SEMANTIC_KEYS, isQualityPlateau } from "./decisionPolicyRegistry.ts";
 import { inferEpisodeCountFromDocs } from "./episode-count.ts";
-
-export interface PendingDecisionGateResult {
-  shouldPause: boolean;
-  blockingIds: string[];
-  deferrableIds: string[];
-  pauseReason: string | null;
-  logSummary: string;
-}
-
-/** Build workflow-namespaced key (never collides with canon keys) */
-function workflowKey(format: string, docType: string, semanticKey: string): string {
+/** Build workflow-namespaced key (never collides with canon keys) */ function workflowKey(format, docType, semanticKey) {
   return `workflow:${format}:${docType}:${semanticKey}`;
 }
-
 /**
  * Run the pre-stage decision gate.
  *
@@ -45,31 +24,30 @@ function workflowKey(format: string, docType: string, semanticKey: string): stri
  *    - Classify via registry
  *    - Upsert into decision_ledger with status='workflow_pending'
  * 3. Return whether to pause (BLOCKING_NOW) or continue (DEFERRABLE only)
- */
-export async function runPendingDecisionGate(
-  supabase: any,
-  projectId: string,
-  jobId: string,
-  format: string,
-  docType: string,
-  ladder: string[],
-  allowDefaults: boolean,
-  decisionMode?: "strict" | "autonomous",
-): Promise<PendingDecisionGateResult> {
+ */ export async function runPendingDecisionGate(supabase, projectId, jobId, format, docType, ladder, allowDefaults, decisionMode) {
   const required = getRequiredDecisions(format, docType);
   const allRequired = [
-    ...required.blocking.map(k => ({ key: k, hint: "blocking" as const })),
-    ...required.deferrable.map(k => ({ key: k, hint: "deferrable" as const })),
+    ...required.blocking.map((k)=>({
+        key: k,
+        hint: "blocking"
+      })),
+    ...required.deferrable.map((k)=>({
+        key: k,
+        hint: "deferrable"
+      }))
   ];
-
   if (allRequired.length === 0) {
-    return { shouldPause: false, blockingIds: [], deferrableIds: [], pauseReason: null, logSummary: "No decisions required for this stage" };
+    return {
+      shouldPause: false,
+      blockingIds: [],
+      deferrableIds: [],
+      pauseReason: null,
+      logSummary: "No decisions required for this stage"
+    };
   }
-
   const approvals = await buildApprovalsState(supabase, projectId, ladder);
   const canonState = await buildCanonState(supabase, projectId);
-
-  const ctx: ClassificationContext = {
+  const ctx = {
     format,
     lane: null,
     doc_type: docType,
@@ -78,36 +56,23 @@ export async function runPendingDecisionGate(
     allow_defaults: allowDefaults,
     approvals_state: approvals,
     canon_state: canonState,
-    decision_mode: decisionMode || "strict",
+    decision_mode: decisionMode || "strict"
   };
-
   // Check which decisions are already resolved as canon (status='active')
   const resolvedCanonKeys = await getResolvedCanonKeys(supabase, projectId);
-
   // Check existing workflow_pending decisions
-  const { data: existingWorkflow } = await supabase
-    .from("decision_ledger")
-    .select("id, decision_key, decision_value, status")
-    .eq("project_id", projectId)
-    .eq("status", "workflow_pending");
-  const workflowMap = new Map((existingWorkflow || []).map((d: any) => [d.decision_key, d]));
-
-  const blockingIds: string[] = [];
-  const deferrableIds: string[] = [];
+  const { data: existingWorkflow } = await supabase.from("decision_ledger").select("id, decision_key, decision_value, status").eq("project_id", projectId).eq("status", "workflow_pending");
+  const workflowMap = new Map((existingWorkflow || []).map((d)=>[
+      d.decision_key,
+      d
+    ]));
+  const blockingIds = [];
+  const deferrableIds = [];
   let forcedDeferrableCount = 0;
-
-  for (const { key: semanticKey, hint } of allRequired) {
+  for (const { key: semanticKey, hint } of allRequired){
     const canonKey = buildPendingDecisionKey(format, docType, semanticKey);
     const wfKey = workflowKey(format, docType, semanticKey);
-
-    const matchedBy = resolvedCanonKeys.has(canonKey)
-      ? "canon"
-      : resolvedCanonKeys.has(wfKey)
-        ? "workflow_active"
-        : resolvedCanonKeys.has(semanticKey)
-          ? "semantic"
-          : null;
-
+    const matchedBy = resolvedCanonKeys.has(canonKey) ? "canon" : resolvedCanonKeys.has(wfKey) ? "workflow_active" : resolvedCanonKeys.has(semanticKey) ? "semantic" : null;
     // Already resolved as canon/workflow active → skip deterministic re-creation
     if (matchedBy) {
       console.log(`[decision-gate][IEL] decision_already_resolved`, JSON.stringify({
@@ -115,11 +80,10 @@ export async function runPendingDecisionGate(
         semantic_key: semanticKey,
         canon_key: canonKey,
         wf_key: wfKey,
-        matched_key_type: matchedBy,
+        matched_key_type: matchedBy
       }));
       continue;
     }
-
     // Existing workflow_pending row check (with ambiguity fail-closed)
     const existing = workflowMap.get(wfKey) || workflowMap.get(canonKey) || workflowMap.get(semanticKey);
     if (existing) {
@@ -129,76 +93,78 @@ export async function runPendingDecisionGate(
           semantic_key: semanticKey,
           expected_wf_key: wfKey,
           found_key: existing.decision_key,
-          existing_id: existing.id,
+          existing_id: existing.id
         }));
         // Fail closed: do not create duplicate rows when key shape is ambiguous
         blockingIds.push(existing.id);
         continue;
       }
-
       const rawCls = existing.decision_value?.classification;
       // Registry authority: deferrable hint overrides BLOCKING_NOW
-      const effectiveCls = (hint === "deferrable" && rawCls === "BLOCKING_NOW") ? "DEFERRABLE" : rawCls;
+      const effectiveCls = hint === "deferrable" && rawCls === "BLOCKING_NOW" ? "DEFERRABLE" : rawCls;
       if (hint === "deferrable" && rawCls === "BLOCKING_NOW") forcedDeferrableCount++;
       if (effectiveCls === "BLOCKING_NOW") blockingIds.push(existing.id);
       else if (effectiveCls === "DEFERRABLE") deferrableIds.push(existing.id);
       continue;
     }
-
     // Classify deterministically
     const result = classifyDecision(semanticKey, ctx);
     const def = DECISION_DEFS[semanticKey];
-
     // Registry authority: deferrable hint overrides BLOCKING_NOW from classifier
-    const effectiveClassification = (hint === "deferrable" && result.classification === "BLOCKING_NOW")
-      ? "DEFERRABLE" : result.classification;
+    const effectiveClassification = hint === "deferrable" && result.classification === "BLOCKING_NOW" ? "DEFERRABLE" : result.classification;
     if (hint === "deferrable" && result.classification === "BLOCKING_NOW") {
       forcedDeferrableCount++;
       console.log(`[decision-gate] Registry override: ${semanticKey} classified BLOCKING_NOW but hint=deferrable → forced DEFERRABLE`);
     }
-
     // Build options — inject canonical episode count for EPISODE_COUNT decisions
     let options = def?.options || null;
-    let recommendation: any = null;
+    let recommendation = null;
     if (semanticKey === SEMANTIC_KEYS.EPISODE_COUNT && Array.isArray(options)) {
       try {
         // Resolve canonical episode count from project + docs
-        const { data: proj } = await supabase.from("projects")
-          .select("season_episode_count").eq("id", projectId).maybeSingle();
+        const { data: proj } = await supabase.from("projects").select("season_episode_count").eq("id", projectId).maybeSingle();
         let canonCount = proj?.season_episode_count;
         if (!canonCount || canonCount <= 0) {
           canonCount = await inferEpisodeCountFromDocs(supabase, projectId);
         }
         if (typeof canonCount === "number" && canonCount > 0) {
-          const originalOptions = [...options];
-          const exists = options.some((o: any) => String(o.value) === String(canonCount));
+          const originalOptions = [
+            ...options
+          ];
+          const exists = options.some((o)=>String(o.value) === String(canonCount));
           if (!exists) {
             options = [
-              { value: String(canonCount), label: `${canonCount} episodes (Current Canon)` },
-              ...options,
+              {
+                value: String(canonCount),
+                label: `${canonCount} episodes (Current Canon)`
+              },
+              ...options
             ];
           } else {
             // Mark the existing option as canon
-            options = options.map((o: any) =>
-              String(o.value) === String(canonCount)
-                ? { ...o, label: `${canonCount} episodes (Current Canon)` }
-                : o
-            );
+            options = options.map((o)=>String(o.value) === String(canonCount) ? {
+                ...o,
+                label: `${canonCount} episodes (Current Canon)`
+              } : o);
           }
-          recommendation = { value: String(canonCount), reason: "Matches canonical episode count" };
+          recommendation = {
+            value: String(canonCount),
+            reason: "Matches canonical episode count"
+          };
           console.log(`[canon][IEL] episode_count_canon_injected`, JSON.stringify({
-            decision_key: wfKey, canonical_episode_count: canonCount,
-            original_options: originalOptions.map((o: any) => o.value),
-            final_options: options.map((o: any) => o.value),
+            decision_key: wfKey,
+            canonical_episode_count: canonCount,
+            original_options: originalOptions.map((o)=>o.value),
+            final_options: options.map((o)=>o.value)
           }));
         }
-      } catch (e: any) {
+      } catch (e) {
         console.warn(`[canon][IEL] episode_count_canon_resolve_failed`, JSON.stringify({
-          decision_key: wfKey, error: e?.message,
+          decision_key: wfKey,
+          error: e?.message
         }));
       }
     }
-
     // Insert workflow_pending row into decision_ledger
     const { data: inserted } = await supabase.from("decision_ledger").insert({
       project_id: projectId,
@@ -217,57 +183,50 @@ export async function runPendingDecisionGate(
         decision_mode: ctx.decision_mode,
         required_evidence: def?.required_evidence_template || [],
         revisit_stage: result.revisit_stage,
-        scope_json: { format, doc_type: docType },
-        provenance: { job_id: jobId, generator: "decision_policy_registry" },
+        scope_json: {
+          format,
+          doc_type: docType
+        },
+        provenance: {
+          job_id: jobId,
+          generator: "decision_policy_registry"
+        }
       },
       scope: "project",
       source: "workflow_decision",
-      status: "workflow_pending",
+      status: "workflow_pending"
     }).select("id, decision_value").single();
-
     if (inserted) {
       if (effectiveClassification === "BLOCKING_NOW") blockingIds.push(inserted.id);
       else deferrableIds.push(inserted.id);
     }
   }
-
   // ── SECOND PASS: Auto-resolve blocking decisions in autonomous mode ──
   // When decisionMode === "autonomous" and allowDefaults is enabled, any newly
   // inserted blocking decisions with autonomy + default_value are auto-resolved
   // immediately. This prevents the pipeline from pausing for decisions that
   // should be auto-resolved in autonomous mode.
   if (decisionMode === "autonomous" && allowDefaults && blockingIds.length > 0) {
-    const autoResolvedIds: string[] = [];
-    for (let i = 0; i < blockingIds.length; i++) {
+    const autoResolvedIds = [];
+    for(let i = 0; i < blockingIds.length; i++){
       const id = blockingIds[i];
       // Fetch the inserted decision to check for autonomy + default_value
-      const { data: row } = await supabase
-        .from("decision_ledger")
-        .select("id, decision_key, decision_value")
-        .eq("id", id)
-        .maybeSingle();
+      const { data: row } = await supabase.from("decision_ledger").select("id, decision_key, decision_value").eq("id", id).maybeSingle();
       if (!row) continue;
       const dv = row.decision_value || {};
       const autoVal = dv.default_value;
       const autoName = dv.autonomy;
       if (autoVal && autoName) {
         // Auto-resolve: update status to active with selected default
-        await supabase
-          .from("decision_ledger")
-          .update({
-            status: "active",
-            decision_value: {
-              ...dv,
-              selected_option: autoVal,
-              resolved_by: "auto_run_autonomous",
-              resolved_at: new Date().toISOString(),
-            },
-          })
-          .eq("id", id)
-          .then(() => {})
-          .then(undefined, (e: any) =>
-            console.warn(`[decision-gate][IEL] auto_resolve_failed { decision_id: "${id}", error: "${e?.message}" }`)
-          );
+        await supabase.from("decision_ledger").update({
+          status: "active",
+          decision_value: {
+            ...dv,
+            selected_option: autoVal,
+            resolved_by: "auto_run_autonomous",
+            resolved_at: new Date().toISOString()
+          }
+        }).eq("id", id).then(()=>{}).then(undefined, (e)=>console.warn(`[decision-gate][IEL] auto_resolve_failed { decision_id: "${id}", error: "${e?.message}" }`));
         autoResolvedIds.push(id);
         console.log(`[decision-gate][IEL] auto_resolved { decision_id: "${id}", decision_key: "${row.decision_key || "?"}", default_value: "${autoVal}", autonomy: "${autoName}" }`);
       } else {
@@ -277,49 +236,42 @@ export async function runPendingDecisionGate(
     }
     // Remove auto-resolved IDs from blocking list so they don't trigger a pause
     const resolvedSet = new Set(autoResolvedIds);
-    const remainingBlocking = blockingIds.filter((id) => !resolvedSet.has(id));
+    const remainingBlocking = blockingIds.filter((id)=>!resolvedSet.has(id));
     // Clear blockingIds array and repopulate with remaining
     blockingIds.length = 0;
     blockingIds.push(...remainingBlocking);
   }
-
   const shouldPause = blockingIds.length > 0 && !allowDefaults;
-  const pauseReason = shouldPause
-    ? `pending_decisions: ${blockingIds.length} blocking decision(s) for ${docType}`
-    : null;
-
+  const pauseReason = shouldPause ? `pending_decisions: ${blockingIds.length} blocking decision(s) for ${docType}` : null;
   const logSummary = `[decision-gate] format=${format} doc=${docType} blocking=${blockingIds.length} deferrable=${deferrableIds.length} forced_deferrable=${forcedDeferrableCount} pause=${shouldPause}`;
   console.log(logSummary);
-
-  return { shouldPause, blockingIds, deferrableIds, pauseReason, logSummary };
+  return {
+    shouldPause,
+    blockingIds,
+    deferrableIds,
+    pauseReason,
+    logSummary
+  };
 }
-
 /**
  * Quality Plateau Guard — creates a workflow decision when scores stagnate.
  * Classification is determined by the DecisionDef's autonomy level via classifyByAutonomy.
  * QUALITY_PLATEAU has autonomy="informational" → NEVER_BLOCKING in all modes.
- */
-export async function checkQualityPlateau(
-  supabase: any,
-  projectId: string,
-  jobId: string,
-  format: string,
-  docType: string,
-  ci: number,
-  gp: number,
-  previousCi: number,
-  previousGp: number,
-  consecutiveHighScoreAttempts: number,
-  decisionMode?: string,
-): Promise<{ isPlateaued: boolean; decisionId?: string }> {
-  if (!isQualityPlateau({ ci, gp, previousCi, previousGp, consecutiveHighScoreAttempts })) {
-    return { isPlateaued: false };
+ */ export async function checkQualityPlateau(supabase, projectId, jobId, format, docType, ci, gp, previousCi, previousGp, consecutiveHighScoreAttempts, decisionMode) {
+  if (!isQualityPlateau({
+    ci,
+    gp,
+    previousCi,
+    previousGp,
+    consecutiveHighScoreAttempts
+  })) {
+    return {
+      isPlateaued: false
+    };
   }
-
   const def = DECISION_DEFS["QUALITY_PLATEAU"];
-  const qualityCls = classifyByAutonomy(def?.autonomy, (decisionMode as "strict" | "autonomous") || "strict");
+  const qualityCls = classifyByAutonomy(def?.autonomy, decisionMode || "strict");
   const wfKey = workflowKey(format, docType, "QUALITY_PLATEAU");
-
   const { data: inserted } = await supabase.from("decision_ledger").insert({
     project_id: projectId,
     decision_key: wfKey,
@@ -328,49 +280,50 @@ export async function checkQualityPlateau(
     decision_value: {
       question: def.question,
       options: def.options,
-      recommendation: { value: "proceed", reason: "Scores stagnating" },
+      recommendation: {
+        value: "proceed",
+        reason: "Scores stagnating"
+      },
       classification: qualityCls,
       decision_mode: decisionMode || null,
       required_evidence: [],
       revisit_stage: null,
-      scope_json: { format, doc_type: docType, ci, gp },
-      provenance: { job_id: jobId, generator: "quality_plateau_guard" },
+      scope_json: {
+        format,
+        doc_type: docType,
+        ci,
+        gp
+      },
+      provenance: {
+        job_id: jobId,
+        generator: "quality_plateau_guard"
+      }
     },
     scope: "project",
     source: "workflow_decision",
-    status: "workflow_pending",
+    status: "workflow_pending"
   }).select("id").single();
-
   console.log(`[decision-gate] QUALITY_PLATEAU workflow_pending created for ${format}:${docType} CI=${ci} GP=${gp} mode=${decisionMode || "strict"} class=${qualityCls}`);
-  return { isPlateaued: true, decisionId: inserted?.id };
+  return {
+    isPlateaued: true,
+    decisionId: inserted?.id
+  };
 }
-
 /**
  * Quality Ceiling Guard — creates a workflow decision when content hits structural CI ceiling.
  * Classification is determined by the DecisionDef's autonomy level via classifyByAutonomy.
  * QUALITY_CEILING has autonomy="informational" → NEVER_BLOCKING in all modes.
  * Different from QUALITY_PLATEAU: this is a ceiling case, not a convergence case.
- */
-export async function checkQualityCeiling(
-  supabase: any,
-  projectId: string,
-  jobId: string,
-  format: string,
-  docType: string,
-  currentCI: number,
-  estimatedCeiling: number,
-  ceilingDiagnostic: string,
-  decisionMode?: string,
-): Promise<{ isCeilingHit: boolean; decisionId?: string }> {
+ */ export async function checkQualityCeiling(supabase, projectId, jobId, format, docType, currentCI, estimatedCeiling, ceilingDiagnostic, decisionMode) {
   if (!DECISION_DEFS["QUALITY_CEILING"]) {
     console.warn(`[decision-gate] QUALITY_CEILING not in DECISION_DEFS — skipping`);
-    return { isCeilingHit: false };
+    return {
+      isCeilingHit: false
+    };
   }
-
   const def = DECISION_DEFS["QUALITY_CEILING"];
-  const qualityCls = classifyByAutonomy(def?.autonomy, (decisionMode as "strict" | "autonomous") || "strict");
+  const qualityCls = classifyByAutonomy(def?.autonomy, decisionMode || "strict");
   const wfKey = workflowKey(format, docType, "QUALITY_CEILING");
-
   const { data: inserted } = await supabase.from("decision_ledger").insert({
     project_id: projectId,
     decision_key: wfKey,
@@ -379,62 +332,55 @@ export async function checkQualityCeiling(
     decision_value: {
       question: def.question,
       options: def.options,
-      recommendation: { value: "promote_anyway", reason: "Content at structural ceiling" },
+      recommendation: {
+        value: "promote_anyway",
+        reason: "Content at structural ceiling"
+      },
       classification: qualityCls,
       decision_mode: decisionMode || null,
       required_evidence: [],
       revisit_stage: null,
-      scope_json: { format, doc_type: docType, current_ci: currentCI, estimated_ceiling: estimatedCeiling, ceiling_diagnostic: ceilingDiagnostic },
-      provenance: { job_id: jobId, generator: "quality_ceiling_guard" },
+      scope_json: {
+        format,
+        doc_type: docType,
+        current_ci: currentCI,
+        estimated_ceiling: estimatedCeiling,
+        ceiling_diagnostic: ceilingDiagnostic
+      },
+      provenance: {
+        job_id: jobId,
+        generator: "quality_ceiling_guard"
+      }
     },
     scope: "project",
     source: "workflow_decision",
-    status: "workflow_pending",
+    status: "workflow_pending"
   }).select("id").single();
-
   console.log(`[decision-gate] QUALITY_CEILING workflow_pending created for ${format}:${docType} CI=${currentCI} ceiling=${estimatedCeiling} mode=${decisionMode || "strict"} class=${qualityCls}`);
-  return { isCeilingHit: true, decisionId: inserted?.id };
+  return {
+    isCeilingHit: true,
+    decisionId: inserted?.id
+  };
 }
-
 /**
  * Resolve a workflow_pending decision: mark superseded + create canon entry.
  * Called from server-side (edge function / auto-run approve-decision handler).
- */
-export async function resolvePendingDecision(
-  supabase: any,
-  decisionId: string,
-  resolvedValue: any,
-  userId: string,
-  options?: { createCanonEntry?: boolean; canonTitle?: string; canonText?: string },
-): Promise<void> {
+ */ export async function resolvePendingDecision(supabase, decisionId, resolvedValue, userId, options) {
   // Fetch the workflow_pending row
-  const { data: decision } = await supabase
-    .from("decision_ledger")
-    .select("*")
-    .eq("id", decisionId)
-    .eq("status", "workflow_pending")
-    .single();
-
+  const { data: decision } = await supabase.from("decision_ledger").select("*").eq("id", decisionId).eq("status", "workflow_pending").single();
   if (!decision) throw new Error(`Workflow decision ${decisionId} not found or not workflow_pending`);
-
   // Mark workflow row as superseded (no longer pending)
-  await supabase
-    .from("decision_ledger")
-    .update({ status: "superseded" })
-    .eq("id", decisionId);
-
+  await supabase.from("decision_ledger").update({
+    status: "superseded"
+  }).eq("id", decisionId);
   // Create canon entry if requested
   if (options?.createCanonEntry !== false) {
     // Derive canon key from workflow key: strip 'workflow:' prefix
     const canonKey = decision.decision_key.replace(/^workflow:/, "");
-
     // Supersede any existing active canon decision with same key
-    await supabase.from("decision_ledger")
-      .update({ status: "superseded" })
-      .eq("project_id", decision.project_id)
-      .eq("decision_key", canonKey)
-      .eq("status", "active");
-
+    await supabase.from("decision_ledger").update({
+      status: "superseded"
+    }).eq("project_id", decision.project_id).eq("decision_key", canonKey).eq("status", "active");
     await supabase.from("decision_ledger").insert({
       project_id: decision.project_id,
       decision_key: canonKey,
@@ -444,81 +390,42 @@ export async function resolvePendingDecision(
       scope: "project",
       source: "pending_decision_resolved",
       created_by: userId,
-      status: "active",
+      status: "active"
     });
   }
 }
-
 // ── Helpers ────────────────────────────────────────────────────────────────
-
-async function buildApprovalsState(
-  supabase: any,
-  projectId: string,
-  ladder: string[],
-): Promise<Record<string, { exists: boolean; approved: boolean }>> {
-  const result: Record<string, { exists: boolean; approved: boolean }> = {};
-
-  const { data: docs } = await supabase
-    .from("project_documents")
-    .select("doc_type, latest_version_id")
-    .eq("project_id", projectId);
-
-  const docMap = new Map((docs || []).map((d: any) => [d.doc_type, d]));
-
-  const versionIds = (docs || [])
-    .filter((d: any) => d.latest_version_id)
-    .map((d: any) => d.latest_version_id);
-
-  let approvedSet = new Set<string>();
+async function buildApprovalsState(supabase, projectId, ladder) {
+  const result = {};
+  const { data: docs } = await supabase.from("project_documents").select("doc_type, latest_version_id").eq("project_id", projectId);
+  const docMap = new Map((docs || []).map((d)=>[
+      d.doc_type,
+      d
+    ]));
+  const versionIds = (docs || []).filter((d)=>d.latest_version_id).map((d)=>d.latest_version_id);
+  let approvedSet = new Set();
   if (versionIds.length > 0) {
-    const { data: versions } = await supabase
-      .from("project_document_versions")
-      .select("id, document_id, approval_status")
-      .in("id", versionIds.slice(0, 50));
-    approvedSet = new Set(
-      (versions || [])
-        .filter((v: any) => v.approval_status === "approved")
-        .map((v: any) => v.id)
-    );
+    const { data: versions } = await supabase.from("project_document_versions").select("id, document_id, approval_status").in("id", versionIds.slice(0, 50));
+    approvedSet = new Set((versions || []).filter((v)=>v.approval_status === "approved").map((v)=>v.id));
   }
-
-  for (const docType of ladder) {
+  for (const docType of ladder){
     const doc = docMap.get(docType);
     result[docType] = {
       exists: !!doc,
-      approved: doc?.latest_version_id ? approvedSet.has(doc.latest_version_id) : false,
+      approved: doc?.latest_version_id ? approvedSet.has(doc.latest_version_id) : false
     };
   }
-
   return result;
 }
-
-async function buildCanonState(
-  supabase: any,
-  projectId: string,
-): Promise<{ has_characters: boolean; has_world_rules: boolean }> {
-  const { data: facts } = await supabase
-    .from("canon_facts")
-    .select("fact_type")
-    .eq("project_id", projectId)
-    .eq("is_active", true)
-    .limit(100);
-
-  const types = new Set((facts || []).map((f: any) => f.fact_type));
+async function buildCanonState(supabase, projectId) {
+  const { data: facts } = await supabase.from("canon_facts").select("fact_type").eq("project_id", projectId).eq("is_active", true).limit(100);
+  const types = new Set((facts || []).map((f)=>f.fact_type));
   return {
     has_characters: types.has("character") || types.has("character_trait"),
-    has_world_rules: types.has("world_rule") || types.has("setting"),
+    has_world_rules: types.has("world_rule") || types.has("setting")
   };
 }
-
-async function getResolvedCanonKeys(
-  supabase: any,
-  projectId: string,
-): Promise<Set<string>> {
-  const { data } = await supabase
-    .from("decision_ledger")
-    .select("decision_key")
-    .eq("project_id", projectId)
-    .eq("status", "active");
-  return new Set((data || []).map((d: any) => d.decision_key));
+async function getResolvedCanonKeys(supabase, projectId) {
+  const { data } = await supabase.from("decision_ledger").select("decision_key").eq("project_id", projectId).eq("status", "active");
+  return new Set((data || []).map((d)=>d.decision_key));
 }

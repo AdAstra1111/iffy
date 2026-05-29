@@ -7,109 +7,60 @@
  *
  * INVARIANT: Every generated document MUST pass its stage identity
  * check before being accepted into the pipeline.
- */
-
-// ── Violation Types ──
-
-export type StageIdentityViolation =
-  | "IDEA_STAGE_SHAPE_VIOLATION"       // screenplay/scene formatting in idea
-  | "IDEA_TOO_EXPANDED"                // idea resembles concept_brief (too long/dense)
-  | "IDEA_STAGE_IDENTITY_VIOLATION"    // general stage identity failure for idea
-  | "CONCEPT_BRIEF_STAGE_SHAPE_VIOLATION" // screenplay formatting in concept_brief
-  | "STAGE_IDENTITY_PASS";
-
-export interface StageIdentityResult {
-  pass: boolean;
-  violation: StageIdentityViolation;
-  details: {
-    doc_type: string;
-    char_count: number;
-    word_count: number;
-    section_count: number;
-    has_screenplay_formatting: boolean;
-    has_scene_headings: boolean;
-    has_dialogue_cues: boolean;
-    has_parentheticals: boolean;
-    has_vo_os: boolean;
-    density_class: "idea" | "concept_brief" | "treatment_plus" | "unknown";
-    violations: string[];
-  };
-  repair_hint?: string;
-}
-
+ */ // ── Violation Types ──
 // ── Constants ──
-
 // IDEA: short, proposition-led, high-signal
 const IDEA_MAX_CHARS = 4000;
 const IDEA_MAX_WORDS = 600;
-const IDEA_MAX_SECTIONS = 6;  // title + logline + premise + genre + usp + maybe 1 more
-
+const IDEA_MAX_SECTIONS = 6; // title + logline + premise + genre + usp + maybe 1 more
 // CONCEPT_BRIEF: expanded development articulation
 const CONCEPT_BRIEF_MAX_CHARS = 12000;
 const CONCEPT_BRIEF_MIN_CHARS = 800;
-
 // Screenplay detection patterns
 const SCENE_HEADING_RE = /^(INT\.|EXT\.|INT\/EXT\.|I\/E\.)\s/m;
 const DIALOGUE_CUE_RE = /^[A-Z][A-Z\s.'-]{1,30}\s*(\(.*?\))?\s*$/m;
 const PARENTHETICAL_RE = /^\s*\(.*?\)\s*$/m;
 const VO_OS_RE = /\(V\.O\.\)|\(O\.S\.\)|\(O\.C\.\)|\(CONT'D\)/i;
 const SLUGLINE_INTENSIVE_RE = /(?:^|\n)(?:INT\.|EXT\.|INT\/EXT\.).*(?:\n|$)/g;
-
 // Section heading detection (markdown ##)
 const SECTION_HEADING_RE = /^#{1,3}\s+\S/gm;
-
 // ── Helpers ──
-
-function countWords(text: string): number {
-  return text.split(/\s+/).filter(w => w.length > 0).length;
+function countWords(text) {
+  return text.split(/\s+/).filter((w)=>w.length > 0).length;
 }
-
-function countSections(text: string): number {
+function countSections(text) {
   return (text.match(SECTION_HEADING_RE) || []).length;
 }
-
-function hasScreenplayFormatting(text: string): {
-  scene_headings: boolean;
-  dialogue_cues: boolean;
-  parentheticals: boolean;
-  vo_os: boolean;
-  scene_heading_count: number;
-} {
+function hasScreenplayFormatting(text) {
   const lines = text.split("\n");
   let scene_heading_count = 0;
   let dialogue_cue_count = 0;
   let parenthetical_count = 0;
-
-  for (const line of lines) {
+  for (const line of lines){
     const trimmed = line.trim();
     if (SCENE_HEADING_RE.test(trimmed)) scene_heading_count++;
     if (DIALOGUE_CUE_RE.test(trimmed) && trimmed.length < 40 && trimmed === trimmed.toUpperCase()) dialogue_cue_count++;
     if (PARENTHETICAL_RE.test(trimmed) && trimmed.startsWith("(")) parenthetical_count++;
   }
-
   return {
     scene_headings: scene_heading_count >= 1,
     dialogue_cues: dialogue_cue_count >= 2,
     parentheticals: parenthetical_count >= 1,
     vo_os: VO_OS_RE.test(text),
-    scene_heading_count,
+    scene_heading_count
   };
 }
-
 // ── Public Validators ──
-
 /**
  * Validate that an idea document has correct stage identity.
  * Rejects screenplay formatting and concept-brief-level expansion.
- */
-export function validateIdeaStageIdentity(plaintext: string, metaJson?: Record<string, any>): StageIdentityResult {
+ */ export function validateIdeaStageIdentity(plaintext, metaJson) {
   const text = (plaintext || "").trim();
   const charCount = text.length;
   const wordCount = countWords(text);
   const sectionCount = countSections(text);
   const screenplay = hasScreenplayFormatting(text);
-  const violations: string[] = [];
-
+  const violations = [];
   const baseDetails = {
     doc_type: "idea",
     char_count: charCount,
@@ -121,9 +72,8 @@ export function validateIdeaStageIdentity(plaintext: string, metaJson?: Record<s
     has_parentheticals: screenplay.parentheticals,
     has_vo_os: screenplay.vo_os,
     density_class: "unknown",
-    violations,
+    violations
   };
-
   // Size/density restrictions removed — doc length is not a quality signal.
   // Screenplay formatting (INT./EXT., dialogue cues, V.O.) remains a hard fail.
   if (screenplay.scene_headings || screenplay.dialogue_cues || screenplay.vo_os) {
@@ -135,28 +85,27 @@ export function validateIdeaStageIdentity(plaintext: string, metaJson?: Record<s
       pass: false,
       violation: "IDEA_STAGE_SHAPE_VIOLATION",
       details: baseDetails,
-      repair_hint: "Strip all screenplay formatting. Rewrite as concise concept-stage prose: logline + premise + commercial framing only.",
+      repair_hint: "Strip all screenplay formatting. Rewrite as concise concept-stage prose: logline + premise + commercial framing only."
     };
   }
-
   // Size and density restrictions removed — document length is not a quality signal for idea-stage docs.
   // NOTE: IDEA_MAX_CHARS/WORDS/SECTIONS constants are retained for future reference only.
-
-  return { pass: true, violation: "STAGE_IDENTITY_PASS", details: baseDetails };
+  return {
+    pass: true,
+    violation: "STAGE_IDENTITY_PASS",
+    details: baseDetails
+  };
 }
-
 /**
  * Validate that a concept_brief document has correct stage identity.
  * Rejects screenplay formatting.
- */
-export function validateConceptBriefStageIdentity(plaintext: string): StageIdentityResult {
+ */ export function validateConceptBriefStageIdentity(plaintext) {
   const text = (plaintext || "").trim();
   const charCount = text.length;
   const wordCount = countWords(text);
   const sectionCount = countSections(text);
   const screenplay = hasScreenplayFormatting(text);
-  const violations: string[] = [];
-
+  const violations = [];
   const baseDetails = {
     doc_type: "concept_brief",
     char_count: charCount,
@@ -168,9 +117,8 @@ export function validateConceptBriefStageIdentity(plaintext: string): StageIdent
     has_parentheticals: screenplay.parentheticals,
     has_vo_os: screenplay.vo_os,
     density_class: "unknown",
-    violations,
+    violations
   };
-
   // SCREENPLAY CONTAMINATION — hard fail
   if (screenplay.scene_heading_count >= 3 || screenplay.dialogue_cues || screenplay.vo_os) {
     if (screenplay.scene_headings) violations.push(`Found ${screenplay.scene_heading_count} scene heading(s)`);
@@ -180,33 +128,34 @@ export function validateConceptBriefStageIdentity(plaintext: string): StageIdent
       pass: false,
       violation: "CONCEPT_BRIEF_STAGE_SHAPE_VIOLATION",
       details: baseDetails,
-      repair_hint: "Strip screenplay formatting. Concept brief should be structured development prose, not scenic dramatization.",
+      repair_hint: "Strip screenplay formatting. Concept brief should be structured development prose, not scenic dramatization."
     };
   }
-
-  return { pass: true, violation: "STAGE_IDENTITY_PASS", details: baseDetails };
+  return {
+    pass: true,
+    violation: "STAGE_IDENTITY_PASS",
+    details: baseDetails
+  };
 }
-
 /**
  * Dispatch validation based on doc_type.
  * Returns null for doc types without stage identity contracts.
- */
-export function validateStageIdentity(docType: string, plaintext: string, metaJson?: Record<string, any>): StageIdentityResult | null {
-  switch (docType) {
-    case "idea": return validateIdeaStageIdentity(plaintext, metaJson);
-    case "concept_brief": return validateConceptBriefStageIdentity(plaintext);
-    default: return null;
+ */ export function validateStageIdentity(docType, plaintext, metaJson) {
+  switch(docType){
+    case "idea":
+      return validateIdeaStageIdentity(plaintext, metaJson);
+    case "concept_brief":
+      return validateConceptBriefStageIdentity(plaintext);
+    default:
+      return null;
   }
 }
-
 // ── Prompt Blocks ──
-
 /**
  * Returns a binding prompt block enforcing stage identity for the given doc type.
  * Inject into system prompt during generation.
- */
-export function getStageIdentityPromptBlock(docType: string): string | null {
-  switch (docType) {
+ */ export function getStageIdentityPromptBlock(docType) {
+  switch(docType){
     case "idea":
       return `
 ═══════════════════════════════════════
@@ -246,7 +195,6 @@ You are writing an IDEA document — the earliest, most concise stage artifact.
 ### STAGE BOUNDARY RULE:
 If your output starts resembling a concept brief (multiple structured development sections, protagonist/antagonist/stakes/tone breakdowns), STOP and compress back to idea density. An idea should feel like a pitch — not a development document.
 `;
-
     case "concept_brief":
       return `
 ═══════════════════════════════════════
@@ -272,28 +220,11 @@ You are writing a CONCEPT BRIEF — an expanded development articulation of the 
 - Beat-by-beat plot unfolding
 - Treatment-level narrative detail
 `;
-
     default:
       return null;
   }
 }
-
-// ── Diagnostics ──
-
-export interface StageIdentityDiagnostic {
-  doc_type: string;
-  violation: StageIdentityViolation;
-  pass: boolean;
-  char_count: number;
-  word_count: number;
-  section_count: number;
-  screenplay_contamination: boolean;
-  density_class: string;
-  repair_invoked: boolean;
-  violations: string[];
-}
-
-export function buildDiagnostic(result: StageIdentityResult, repairInvoked = false): StageIdentityDiagnostic {
+export function buildDiagnostic(result, repairInvoked = false) {
   return {
     doc_type: result.details.doc_type,
     violation: result.violation,
@@ -304,6 +235,6 @@ export function buildDiagnostic(result: StageIdentityResult, repairInvoked = fal
     screenplay_contamination: result.details.has_screenplay_formatting,
     density_class: result.details.density_class,
     repair_invoked: repairInvoked,
-    violations: result.details.violations,
+    violations: result.details.violations
   };
 }

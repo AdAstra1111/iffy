@@ -8,42 +8,36 @@
  * NON-NEGOTIABLE INVARIANT:
  *   Runtime targets are canonical to the PRODUCT (viewer-facing runtime),
  *   NOT to the length of development documents.
- */
-
-/** Runtime-bearing doc types by format where viewer-facing duration is meaningful. */
-const DURATION_ELIGIBLE_BY_FORMAT: Record<string, Set<string>> = {
+ */ /** Runtime-bearing doc types by format where viewer-facing duration is meaningful. */ const DURATION_ELIGIBLE_BY_FORMAT = {
   'vertical-drama': new Set([
     'episode_script',
-    'season_script',
+    'season_script'
   ]),
   'tv-series': new Set([
     'episode_script',
     'season_script',
-    'season_master_script',
+    'season_master_script'
   ]),
   'limited-series': new Set([
     'episode_script',
     'season_script',
-    'season_master_script',
+    'season_master_script'
   ]),
   'film': new Set([
-    'feature_script',
+    'feature_script'
   ]),
   'short-film': new Set([
-    'feature_script',
-  ]),
+    'feature_script'
+  ])
 };
-
-/** Fallback set used when format is unknown or not in the map. */
-const DURATION_ELIGIBLE_FALLBACK = new Set([
+/** Fallback set used when format is unknown or not in the map. */ const DURATION_ELIGIBLE_FALLBACK = new Set([
   'feature_script',
   'episode_script',
   'season_script',
   'season_master_script',
   'pilot_script',
-  'script',
+  'script'
 ]);
-
 /**
  * Canonical check: is this doc type eligible for duration enforcement?
  *
@@ -53,16 +47,11 @@ const DURATION_ELIGIBLE_FALLBACK = new Set([
  * @param docType  The current document type key (e.g. 'idea', 'episode_script')
  * @param format   The project format (e.g. 'vertical-drama', 'film')
  * @returns true ONLY for runtime-bearing deliverables
- */
-export function isDurationEligibleDocType(
-  docType: string | null | undefined,
-  format?: string | null,
-): boolean {
+ */ export function isDurationEligibleDocType(docType, format) {
   if (!docType) return false;
-  const eligible = (format && DURATION_ELIGIBLE_BY_FORMAT[format]) || DURATION_ELIGIBLE_FALLBACK;
+  const eligible = format && DURATION_ELIGIBLE_BY_FORMAT[format] || DURATION_ELIGIBLE_FALLBACK;
   return eligible.has(docType);
 }
-
 // ── Deprecated target guard ────────────────────────────────────────────────
 /**
  * Doc types that MUST NOT be used as pipeline targets (generation, promotion,
@@ -70,11 +59,9 @@ export function isDurationEligibleDocType(
  * resolution. Any pipeline action attempting to target one of these MUST
  * resolve via alias first; if it still resolves to a deprecated key, the
  * action must be rejected.
- */
-const DEPRECATED_TARGET_DOC_TYPES = new Set([
-  'complete_season_script',
+ */ const DEPRECATED_TARGET_DOC_TYPES = new Set([
+  'complete_season_script'
 ]);
-
 /**
  * Returns true if the given docType is a deprecated target that pipelines
  * must NOT generate, promote to, or package as.
@@ -82,10 +69,7 @@ const DEPRECATED_TARGET_DOC_TYPES = new Set([
  * Use this guard in auto-run, dev-engine, season-package, and any promotion
  * flow BEFORE accepting a target doc type. If this returns true, the caller
  * must either resolve via alias or reject the action.
- */
-export function isDeprecatedTargetDocType(
-  docType: string | null | undefined,
-): boolean {
+ */ export function isDeprecatedTargetDocType(docType) {
   if (!docType) return false;
   return DEPRECATED_TARGET_DOC_TYPES.has(docType);
 }

@@ -6,10 +6,7 @@
  * Do NOT redefine these types elsewhere. This is the authoritative source.
  *
  * Spec: docs/narrative-spine-v1.md
- */
-
-// ── 3 new string literal unions (story_engine / pressure_system / central_conflict reuse existing enums) ──
-
+ */ // ── 3 new string literal unions (story_engine / pressure_system / central_conflict reuse existing enums) ──
 export const PROTAGONIST_ARCS = [
   'redemption',
   'corruption',
@@ -21,10 +18,8 @@ export const PROTAGONIST_ARCS = [
   'revenge',
   'acceptance',
   'disillusionment',
-  'awakening',
-] as const;
-export type ProtagonistArc = typeof PROTAGONIST_ARCS[number];
-
+  'awakening'
+];
 export const MIDPOINT_REVERSALS = [
   'false_victory',
   'false_defeat',
@@ -35,10 +30,8 @@ export const MIDPOINT_REVERSALS = [
   'ally_betrayal',
   'identity_reveal',
   'power_shift',
-  'sacrifice',
-] as const;
-export type MidpointReversal = typeof MIDPOINT_REVERSALS[number];
-
+  'sacrifice'
+];
 export const TONAL_GRAVITIES = [
   'tragedy',
   'catharsis',
@@ -50,33 +43,8 @@ export const TONAL_GRAVITIES = [
   'dark',
   'bittersweet',
   'hopeful',
-  'playful',
-] as const;
-export type TonalGravity = typeof TONAL_GRAVITIES[number];
-
-// ── NarrativeSpine — the 9-axis structural lock ──
-
-export interface NarrativeSpine {
-  /** Repeatable narrative mechanism (maps to StoryEngine enum) */
-  story_engine: string | null;
-  /** Causal logic driving the drama (maps to CausalGrammar enum) */
-  pressure_system: string | null;
-  /** Primary conflict topology (maps to ConflictMode enum) */
-  central_conflict: string | null;
-  /** Category of the inciting event */
-  inciting_incident: string | null;
-  /** How the story ends / resolution shape */
-  resolution_type: string | null;
-  /** Stakes category / scale */
-  stakes_class: string | null;
-  /** Protagonist's transformation arc */
-  protagonist_arc: ProtagonistArc | null;
-  /** The structural reversal at the story midpoint */
-  midpoint_reversal: MidpointReversal | null;
-  /** Overall tonal gravity / emotional register */
-  tonal_gravity: TonalGravity | null;
-}
-
+  'playful'
+];
 export const SPINE_AXES = [
   'story_engine',
   'pressure_system',
@@ -86,134 +54,100 @@ export const SPINE_AXES = [
   'stakes_class',
   'protagonist_arc',
   'midpoint_reversal',
-  'tonal_gravity',
-] as const;
-export type SpineAxis = typeof SPINE_AXES[number];
-
-export const NARRATIVE_SPINE_EMPTY: NarrativeSpine = {
-  story_engine:      null,
-  pressure_system:   null,
-  central_conflict:  null,
+  'tonal_gravity'
+];
+export const NARRATIVE_SPINE_EMPTY = {
+  story_engine: null,
+  pressure_system: null,
+  central_conflict: null,
   inciting_incident: null,
-  resolution_type:   null,
-  stakes_class:      null,
-  protagonist_arc:   null,
+  resolution_type: null,
+  stakes_class: null,
+  protagonist_arc: null,
   midpoint_reversal: null,
-  tonal_gravity:     null,
+  tonal_gravity: null
 };
-
-// ── Axis Metadata — canonical classification per spec ──
-
-export type InheritanceClass = 'A' | 'B' | 'S' | 'C';
-export type AmendmentSeverity = 'constitutional' | 'severe' | 'severe_moderate' | 'moderate' | 'light';
-
-export interface AxisMeta {
-  /** Human-readable label */
-  label: string;
-  /** Inheritance class per spec: A=Constitutional, B=Bounded, S=Scope-specific, C=Expressive */
-  class: InheritanceClass;
-  /** Constitutional severity of changing this axis after lock */
-  severity: AmendmentSeverity;
-  /**
-   * Earliest stage that must revalidate on amendment.
-   * 'next_unapproved' = caller resolves to next unapproved stage at amendment time.
-   */
-  revalidationFloor: string | 'next_unapproved';
-  /** One-line description for UI */
-  description: string;
-}
-
-export const AXIS_METADATA: Record<SpineAxis, AxisMeta> = {
+export const AXIS_METADATA = {
   story_engine: {
-    label:             'Story Engine',
-    class:             'A',
-    severity:          'constitutional',
+    label: 'Story Engine',
+    class: 'A',
+    severity: 'constitutional',
     revalidationFloor: 'concept_brief',
-    description:       'The dominant narrative mechanism — what drives the story forward.',
+    description: 'The dominant narrative mechanism — what drives the story forward.'
   },
   protagonist_arc: {
-    label:             'Protagonist Arc',
-    class:             'A',
-    severity:          'constitutional',
+    label: 'Protagonist Arc',
+    class: 'A',
+    severity: 'constitutional',
     revalidationFloor: 'concept_brief',
-    description:       'The internal transformation journey of the central protagonist.',
+    description: 'The internal transformation journey of the central protagonist.'
   },
   pressure_system: {
-    label:             'Pressure System',
-    class:             'B',
-    severity:          'severe',
+    label: 'Pressure System',
+    class: 'B',
+    severity: 'severe',
     revalidationFloor: 'concept_brief',
-    description:       'The causal grammar of the conflict — how pressure is applied.',
+    description: 'The causal grammar of the conflict — how pressure is applied.'
   },
   central_conflict: {
-    label:             'Central Conflict',
-    class:             'B',
-    severity:          'severe_moderate',
+    label: 'Central Conflict',
+    class: 'B',
+    severity: 'severe_moderate',
     revalidationFloor: 'character_bible',
-    description:       'The dominant constitutional conflict topology of the project.',
+    description: 'The dominant constitutional conflict topology of the project.'
   },
   resolution_type: {
-    label:             'Resolution Type',
-    class:             'B',
-    severity:          'moderate',
+    label: 'Resolution Type',
+    class: 'B',
+    severity: 'moderate',
     revalidationFloor: 'season_arc',
-    description:       'The constitutional end-state promise — how the story resolves.',
+    description: 'The constitutional end-state promise — how the story resolves.'
   },
   stakes_class: {
-    label:             'Stakes Class',
-    class:             'B',
-    severity:          'moderate',
+    label: 'Stakes Class',
+    class: 'B',
+    severity: 'moderate',
     revalidationFloor: 'concept_brief',
-    description:       'The emotional register of what is at risk.',
+    description: 'The emotional register of what is at risk.'
   },
   inciting_incident: {
-    label:             'Inciting Incident',
-    class:             'S',
-    severity:          'moderate',
+    label: 'Inciting Incident',
+    class: 'S',
+    severity: 'moderate',
     revalidationFloor: 'concept_brief',
-    description:       'The structural trigger category that begins the narrative engine.',
+    description: 'The structural trigger category that begins the narrative engine.'
   },
   midpoint_reversal: {
-    label:             'Midpoint Reversal',
-    class:             'S',
-    severity:          'moderate',
+    label: 'Midpoint Reversal',
+    class: 'S',
+    severity: 'moderate',
     revalidationFloor: 'season_arc',
-    description:       'The structural pivot type at the story midpoint.',
+    description: 'The structural pivot type at the story midpoint.'
   },
   tonal_gravity: {
-    label:             'Tonal Gravity',
-    class:             'C',
-    severity:          'light',
+    label: 'Tonal Gravity',
+    class: 'C',
+    severity: 'light',
     revalidationFloor: 'next_unapproved',
-    description:       'The gravitational emotional register of the project.',
-  },
+    description: 'The gravitational emotional register of the project.'
+  }
 };
-
 // ── Validators ──
-
-/** Returns true if all 9 axes are present as non-null strings */
-export function isCompleteSpine(s: unknown): s is NarrativeSpine {
+/** Returns true if all 9 axes are present as non-null strings */ export function isCompleteSpine(s) {
   if (!s || typeof s !== 'object') return false;
-  const obj = s as Record<string, unknown>;
-  return SPINE_AXES.every(axis => typeof obj[axis] === 'string' && (obj[axis] as string).length > 0);
+  const obj = s;
+  return SPINE_AXES.every((axis)=>typeof obj[axis] === 'string' && obj[axis].length > 0);
 }
-
-/** Returns count of non-null axes */
-export function countSpineAxes(s: NarrativeSpine | null | undefined): number {
+/** Returns count of non-null axes */ export function countSpineAxes(s) {
   if (!s) return 0;
-  return SPINE_AXES.filter(axis => s[axis] !== null && s[axis] !== undefined && s[axis] !== '').length;
+  return SPINE_AXES.filter((axis)=>s[axis] !== null && s[axis] !== undefined && s[axis] !== '').length;
 }
-
-/** Returns array of missing (null) axis names */
-export function getMissingAxes(s: NarrativeSpine | null | undefined): SpineAxis[] {
-  if (!s) return [...SPINE_AXES];
-  return SPINE_AXES.filter(axis => !s[axis]);
+/** Returns array of missing (null) axis names */ export function getMissingAxes(s) {
+  if (!s) return [
+    ...SPINE_AXES
+  ];
+  return SPINE_AXES.filter((axis)=>!s[axis]);
 }
-
-// ── Derived Lifecycle State ──
-
-export type SpineLifecycleState = 'none' | 'provisional' | 'confirmed' | 'locked' | 'locked_amended';
-
 /**
  * Derives spine lifecycle state from canonical sources.
  * NO spine_state column exists — state is always computed.
@@ -223,127 +157,103 @@ export type SpineLifecycleState = 'none' | 'provisional' | 'confirmed' | 'locked
  * confirmed    → ledger entry with status='pending_lock', locked=false
  * locked       → ledger entry with status='active', locked=true, no superseded entries
  * locked_amended → active locked entry + ≥1 superseded entry (amendment history)
- */
-export async function getSpineState(
-  supabase: any,
-  projectId: string
-): Promise<{ state: SpineLifecycleState; spine: NarrativeSpine | null; entryId: string | null }> {
+ */ export async function getSpineState(supabase, projectId) {
   const [{ data: project }, { data: decisions }] = await Promise.all([
-    supabase
-      .from('projects')
-      .select('narrative_spine_json')
-      .eq('id', projectId)
-      .single(),
-    supabase
-      .from('decision_ledger')
-      .select('id, locked, status, meta, created_at')
-      .eq('project_id', projectId)
-      .eq('decision_key', 'narrative_spine')
-      .order('created_at', { ascending: false }),
+    supabase.from('projects').select('narrative_spine_json').eq('id', projectId).single(),
+    supabase.from('decision_ledger').select('id, locked, status, meta, created_at').eq('project_id', projectId).eq('decision_key', 'narrative_spine').order('created_at', {
+      ascending: false
+    })
   ]);
-
-  const spine: NarrativeSpine | null = project?.narrative_spine_json ?? null;
-
-  if (!spine) return { state: 'none', spine: null, entryId: null };
-
+  const spine = project?.narrative_spine_json ?? null;
+  if (!spine) return {
+    state: 'none',
+    spine: null,
+    entryId: null
+  };
   const entries = decisions ?? [];
-  const activeEntry = entries.find((d: any) => d.status === 'active' && d.locked === true);
-  const pendingEntry = entries.find((d: any) => d.status === 'pending_lock' && d.locked === false);
-  const supersededEntries = entries.filter((d: any) => d.status === 'superseded');
-
-  if (!activeEntry && !pendingEntry) return { state: 'provisional', spine, entryId: null };
-  if (pendingEntry && !activeEntry) return { state: 'confirmed', spine, entryId: pendingEntry.id };
-  if (activeEntry && supersededEntries.length > 0) return { state: 'locked_amended', spine, entryId: activeEntry.id };
-  if (activeEntry) return { state: 'locked', spine, entryId: activeEntry.id };
-
-  return { state: 'provisional', spine, entryId: null };
+  const activeEntry = entries.find((d)=>d.status === 'active' && d.locked === true);
+  const pendingEntry = entries.find((d)=>d.status === 'pending_lock' && d.locked === false);
+  const supersededEntries = entries.filter((d)=>d.status === 'superseded');
+  if (!activeEntry && !pendingEntry) return {
+    state: 'provisional',
+    spine,
+    entryId: null
+  };
+  if (pendingEntry && !activeEntry) return {
+    state: 'confirmed',
+    spine,
+    entryId: pendingEntry.id
+  };
+  if (activeEntry && supersededEntries.length > 0) return {
+    state: 'locked_amended',
+    spine,
+    entryId: activeEntry.id
+  };
+  if (activeEntry) return {
+    state: 'locked',
+    spine,
+    entryId: activeEntry.id
+  };
+  return {
+    state: 'provisional',
+    spine,
+    entryId: null
+  };
 }
-
 // ── Amendment Helpers ──
-
-/** Returns constitutional severity for a given axis */
-export function getAxisSeverity(axis: SpineAxis): AmendmentSeverity {
+/** Returns constitutional severity for a given axis */ export function getAxisSeverity(axis) {
   return AXIS_METADATA[axis].severity;
 }
-
 /**
  * Returns the stage index (in the given ladder) at which documents must be revalidated
  * when the given axis is amended. Returns -1 if floor is 'next_unapproved' (caller resolves).
- */
-export function getRevalidationFloorIndex(axis: SpineAxis, ladder: string[]): number {
+ */ export function getRevalidationFloorIndex(axis, ladder) {
   const floor = AXIS_METADATA[axis].revalidationFloor;
   if (floor === 'next_unapproved') return -1; // caller resolves at amendment time
   const idx = ladder.indexOf(floor);
   return idx === -1 ? 0 : idx; // if stage not in ladder, default to start
 }
-
 // ── Prompt Injection ──
-
 /**
  * Returns a human-readable summary of the locked spine axes for injection
  * into stage generation prompts. Only includes non-null axes.
  * Includes lifecycle state context (provisional vs locked) in the header.
- */
-export function spineToPromptBlock(
-  spine: NarrativeSpine | null | undefined,
-  state: SpineLifecycleState = 'locked'
-): string {
+ */ export function spineToPromptBlock(spine, state = 'locked') {
   if (!spine) return '';
-  const lines: string[] = [];
-  if (spine.story_engine)       lines.push(`- Story Engine: ${spine.story_engine}`);
-  if (spine.pressure_system)    lines.push(`- Pressure System: ${spine.pressure_system}`);
-  if (spine.central_conflict)   lines.push(`- Central Conflict: ${spine.central_conflict}`);
-  if (spine.inciting_incident)  lines.push(`- Inciting Incident: ${spine.inciting_incident}`);
-  if (spine.resolution_type)    lines.push(`- Resolution Type: ${spine.resolution_type}`);
-  if (spine.stakes_class)       lines.push(`- Stakes: ${spine.stakes_class}`);
-  if (spine.protagonist_arc)    lines.push(`- Protagonist Arc: ${spine.protagonist_arc}`);
-  if (spine.midpoint_reversal)  lines.push(`- Midpoint Reversal: ${spine.midpoint_reversal}`);
-  if (spine.tonal_gravity)      lines.push(`- Tonal Gravity: ${spine.tonal_gravity}`);
+  const lines = [];
+  if (spine.story_engine) lines.push(`- Story Engine: ${spine.story_engine}`);
+  if (spine.pressure_system) lines.push(`- Pressure System: ${spine.pressure_system}`);
+  if (spine.central_conflict) lines.push(`- Central Conflict: ${spine.central_conflict}`);
+  if (spine.inciting_incident) lines.push(`- Inciting Incident: ${spine.inciting_incident}`);
+  if (spine.resolution_type) lines.push(`- Resolution Type: ${spine.resolution_type}`);
+  if (spine.stakes_class) lines.push(`- Stakes: ${spine.stakes_class}`);
+  if (spine.protagonist_arc) lines.push(`- Protagonist Arc: ${spine.protagonist_arc}`);
+  if (spine.midpoint_reversal) lines.push(`- Midpoint Reversal: ${spine.midpoint_reversal}`);
+  if (spine.tonal_gravity) lines.push(`- Tonal Gravity: ${spine.tonal_gravity}`);
   if (lines.length === 0) return '';
-
-  const header = (state === 'locked' || state === 'locked_amended')
-    ? 'NARRATIVE SPINE (CONSTITUTIONALLY LOCKED — do not deviate from these structural constraints):'
-    : 'NARRATIVE SPINE (Provisional — use as structural guidance):'
-
+  const header = state === 'locked' || state === 'locked_amended' ? 'NARRATIVE SPINE (CONSTITUTIONALLY LOCKED — do not deviate from these structural constraints):' : 'NARRATIVE SPINE (Provisional — use as structural guidance):';
   return `\n\n${header}\n${lines.join('\n')}\n`;
 }
-
 /**
  * Returns a spine alignment check block for inclusion in reviewer prompts.
  * Only includes axes that are non-null. Tagged as spine_alignment source.
- */
-export function spineToReviewerAlignmentBlock(spine: NarrativeSpine | null | undefined): string {
+ */ export function spineToReviewerAlignmentBlock(spine) {
   if (!spine) return '';
-  const checks: string[] = [];
-
+  const checks = [];
   // Class A — Constitutional (highest priority drift risk)
-  if (spine.story_engine)
-    checks.push(`• [CONSTITUTIONAL] Does the story's core engine match "${spine.story_engine}"? Any deviation here is a structural violation — flag as spine_drift if not.`);
-  if (spine.protagonist_arc)
-    checks.push(`• [CONSTITUTIONAL] Does the protagonist's journey support the declared arc: "${spine.protagonist_arc}"? Flag as spine_drift if the arc has shifted.`);
-
+  if (spine.story_engine) checks.push(`• [CONSTITUTIONAL] Does the story's core engine match "${spine.story_engine}"? Any deviation here is a structural violation — flag as spine_drift if not.`);
+  if (spine.protagonist_arc) checks.push(`• [CONSTITUTIONAL] Does the protagonist's journey support the declared arc: "${spine.protagonist_arc}"? Flag as spine_drift if the arc has shifted.`);
   // Class B — Bounded modulation
-  if (spine.pressure_system)
-    checks.push(`• Does the pressure system driving the story match "${spine.pressure_system}"? Bounded variation is acceptable; structural replacement is not.`);
-  if (spine.central_conflict)
-    checks.push(`• Is the central conflict recognizably "${spine.central_conflict}"? Flag spine_drift if the conflict has been replaced rather than developed.`);
-  if (spine.resolution_type)
-    checks.push(`• Does the resolution shape match the declared resolution type: "${spine.resolution_type}"?`);
-  if (spine.stakes_class)
-    checks.push(`• Are the stakes consistent with the declared stakes class: "${spine.stakes_class}"?`);
-
+  if (spine.pressure_system) checks.push(`• Does the pressure system driving the story match "${spine.pressure_system}"? Bounded variation is acceptable; structural replacement is not.`);
+  if (spine.central_conflict) checks.push(`• Is the central conflict recognizably "${spine.central_conflict}"? Flag spine_drift if the conflict has been replaced rather than developed.`);
+  if (spine.resolution_type) checks.push(`• Does the resolution shape match the declared resolution type: "${spine.resolution_type}"?`);
+  if (spine.stakes_class) checks.push(`• Are the stakes consistent with the declared stakes class: "${spine.stakes_class}"?`);
   // Class S — Scope-specific
-  if (spine.inciting_incident)
-    checks.push(`• Does this document's inciting event align with the declared inciting category: "${spine.inciting_incident}"?`);
-  if (spine.midpoint_reversal)
-    checks.push(`• Does the structural midpoint function as a "${spine.midpoint_reversal}" reversal?`);
-
+  if (spine.inciting_incident) checks.push(`• Does this document's inciting event align with the declared inciting category: "${spine.inciting_incident}"?`);
+  if (spine.midpoint_reversal) checks.push(`• Does the structural midpoint function as a "${spine.midpoint_reversal}" reversal?`);
   // Class C — Expressive modulation (flag drift only, variation is expected)
-  if (spine.tonal_gravity)
-    checks.push(`• Does the document's emotional register broadly align with "${spine.tonal_gravity}"? Expressive variation is acceptable but sustained tonal drift should be flagged.`);
-
+  if (spine.tonal_gravity) checks.push(`• Does the document's emotional register broadly align with "${spine.tonal_gravity}"? Expressive variation is acceptable but sustained tonal drift should be flagged.`);
   if (checks.length === 0) return '';
-
   return `\n\nSPINE ALIGNMENT CHECK (advisory — Phase 2 enforcement):
 ${checks.join('\n')}
 
@@ -353,65 +263,40 @@ For each check above:
 - If a Class A axis (story_engine or protagonist_arc) has been replaced: emit a "spine_drift" blocker note — this is a constitutional violation.
 All spine findings must include note_source: "spine_alignment" or "spine_drift". These are advisory in v1 — do not block promotion.\n`;
 }
-
 // ── Validator coverage registry ──
 // Canonical set of spine axes that have dedicated inference-pass coverage.
 // Used by the rewrite planner to classify gaps as:
 //   "supported but not evaluated on this version" vs "not yet covered by any validator."
 // Update this when new validator passes are added (e.g. Class S section targeting).
-export const VALIDATOR_SUPPORTED_AXES: ReadonlyArray<SpineAxis> = [
-  'story_engine',      // Class A — constitutional exact-match check
-  'protagonist_arc',   // Class A — constitutional exact-match check
-  'pressure_system',   // Class B — bounded modulation check
-  'central_conflict',  // Class B — bounded modulation check
-  'resolution_type',   // Class B — bounded modulation check
-  'stakes_class',      // Class B — bounded modulation check
-] as const;
-
+export const VALIDATOR_SUPPORTED_AXES = [
+  'story_engine',
+  'protagonist_arc',
+  'pressure_system',
+  'central_conflict',
+  'resolution_type',
+  'stakes_class'
+];
 // Axes explicitly deferred from validator coverage with rationale:
 //   inciting_incident  (Class S) — section-specific; deferred until section targeting is available
 //   midpoint_reversal  (Class S) — bounded context window misses the document midpoint structurally
 //   tonal_gravity      (Class C) — expressive modulation expected; detection threshold too subjective at v1
-export const VALIDATOR_DEFERRED_AXES: ReadonlyArray<SpineAxis> = [
+export const VALIDATOR_DEFERRED_AXES = [
   'inciting_incident',
   'midpoint_reversal',
-  'tonal_gravity',
-] as const;
-
+  'tonal_gravity'
+];
 // ── Class A Spine Check — dedicated comparison pass ──
-
 export const CLASS_A_SPINE_CHECK_DOC_TYPES = new Set([
   'story_outline',
   'character_bible',
   'beat_sheet',
   'feature_script',
-  'production_draft',
+  'production_draft'
 ]);
-
-export interface ClassACheckResult {
-  axis: 'story_engine' | 'protagonist_arc';
-  status: 'aligned' | 'contradicted' | 'unclear';
-  confidence: number;
-  evidence: string;
-  verbatim_quote: string | null;  // L4.4: exact phrase copied verbatim from document
-  suggested_note: {
-    category: string;
-    severity: string;
-    note_source: string;
-    title: string;
-    instruction: string;
-  } | null;
-}
-
-export interface ClassASpineCheckOutput {
-  checks: ClassACheckResult[];
-}
-
 /**
  * Builds the system prompt for the Class A spine check pass.
  * This is a narrow, deterministic comparison — NOT a general review.
- */
-export function buildClassASpineCheckSystemPrompt(): string {
+ */ export function buildClassASpineCheckSystemPrompt() {
   return `You are a constitutional narrative compliance checker.
 
 Your ONLY task: compare a locked Narrative Spine's Class A axes against bounded document evidence and determine whether the document CONTRADICTS the locked spec.
@@ -471,25 +356,16 @@ QUOTE SELECTION PRIORITY (L4.6):
 - Reason: quotes from narrative sections enable precise document targeting; preamble quotes do not.
 - If ONLY preamble text supports the finding, use it — but prefer act-level evidence when both exist.`;
 }
-
 /**
  * Builds the user prompt for the Class A spine check pass.
  * Uses bounded context: last portion of document + protagonist-related sections.
- */
-export function buildClassASpineCheckUserPrompt(
-  spine: NarrativeSpine,
-  docType: string,
-  documentText: string,
-  projectTitle?: string,
-  lane?: string,
-): string {
+ */ export function buildClassASpineCheckUserPrompt(spine, docType, documentText, projectTitle, lane) {
   const storyEngine = spine.story_engine || '(not set)';
   const protagonistArc = spine.protagonist_arc || '(not set)';
-
   // Bounded context: take first 3000 chars + last 5000 chars (captures setup + climax/resolution)
   const MAX_FRONT = 3000;
   const MAX_BACK = 5000;
-  let boundedContext: string;
+  let boundedContext;
   if (documentText.length <= MAX_FRONT + MAX_BACK + 500) {
     boundedContext = documentText;
   } else {
@@ -497,7 +373,6 @@ export function buildClassASpineCheckUserPrompt(
     const back = documentText.slice(-MAX_BACK);
     boundedContext = `${front}\n\n[... middle section omitted for brevity ...]\n\n${back}`;
   }
-
   return `LOCKED CLASS A SPINE VALUES (constitutional — these are the authoritative spec):
 - Story Engine: "${storyEngine}"
 - Protagonist Arc: "${protagonistArc}"
@@ -517,32 +392,33 @@ When selecting your verbatim_quote, search for supporting evidence inside the NA
 Act-level quotes anchor targeting to the actual narrative, not the summary header.
 Only fall back to preamble text if no act-level evidence exists.`;
 }
-
 /**
  * Validates and parses the Class A spine check output.
  * Returns null if output is invalid.
- */
-export function parseClassASpineCheckOutput(parsed: any): ClassASpineCheckOutput | null {
+ */ export function parseClassASpineCheckOutput(parsed) {
   if (!parsed || !Array.isArray(parsed.checks)) return null;
-  const validAxes = new Set(['story_engine', 'protagonist_arc']);
-  const validStatuses = new Set(['aligned', 'contradicted', 'unclear']);
-
-  const checks: ClassACheckResult[] = [];
-  for (const c of parsed.checks) {
+  const validAxes = new Set([
+    'story_engine',
+    'protagonist_arc'
+  ]);
+  const validStatuses = new Set([
+    'aligned',
+    'contradicted',
+    'unclear'
+  ]);
+  const checks = [];
+  for (const c of parsed.checks){
     if (!validAxes.has(c.axis) || !validStatuses.has(c.status)) continue;
     // L4.4: validate verbatim_quote — must be a non-empty string ≤300 chars, or null
     const rawVQ = c.verbatim_quote;
-    const verbatimQuote: string | null = (
-      typeof rawVQ === 'string' && rawVQ.trim().length >= 5 && rawVQ.trim().length <= 300
-    ) ? rawVQ.trim() : null;
-
-    const result: ClassACheckResult = {
+    const verbatimQuote = typeof rawVQ === 'string' && rawVQ.trim().length >= 5 && rawVQ.trim().length <= 300 ? rawVQ.trim() : null;
+    const result = {
       axis: c.axis,
       status: c.status,
       confidence: typeof c.confidence === 'number' ? c.confidence : 50,
       evidence: typeof c.evidence === 'string' ? c.evidence : '',
       verbatim_quote: verbatimQuote,
-      suggested_note: null,
+      suggested_note: null
     };
     if (c.status === 'contradicted' && c.suggested_note) {
       result.suggested_note = {
@@ -550,7 +426,7 @@ export function parseClassASpineCheckOutput(parsed: any): ClassASpineCheckOutput
         severity: 'blocker',
         note_source: 'spine_drift',
         title: typeof c.suggested_note.title === 'string' ? c.suggested_note.title : `Class A violation: ${c.axis}`,
-        instruction: typeof c.suggested_note.instruction === 'string' ? c.suggested_note.instruction : '',
+        instruction: typeof c.suggested_note.instruction === 'string' ? c.suggested_note.instruction : ''
       };
     } else if (c.status === 'contradicted' && !c.suggested_note) {
       // Force a note for contradicted results
@@ -559,7 +435,7 @@ export function parseClassASpineCheckOutput(parsed: any): ClassASpineCheckOutput
         severity: 'blocker',
         note_source: 'spine_drift',
         title: `Class A violation: ${c.axis} contradicts locked spine`,
-        instruction: c.evidence || 'Realign document with locked spine axis.',
+        instruction: c.evidence || 'Realign document with locked spine axis.'
       };
     }
     // Enforce: no note for aligned/unclear
@@ -569,9 +445,10 @@ export function parseClassASpineCheckOutput(parsed: any): ClassASpineCheckOutput
     checks.push(result);
   }
   if (checks.length === 0) return null;
-  return { checks };
+  return {
+    checks
+  };
 }
-
 // ── Class B Spine Check — bounded modulation pass ──
 // Covers pressure_system, central_conflict, resolution_type, stakes_class.
 // These axes allow bounded modulation — "developed" is not "contradicted".
@@ -586,45 +463,18 @@ export function parseClassASpineCheckOutput(parsed: any): ClassASpineCheckOutput
 //   inciting_incident (Class S) — deferred to Phase 2 once section-targeting is available;
 //     early-document context is captured in first 3K chars but axis value is a structural
 //     category that requires comparison against a specific narrative event, not prose description.
-
-/** Class B axes evaluated in the dedicated check pass */
-export const CLASS_B_SPINE_CHECK_AXES = [
+/** Class B axes evaluated in the dedicated check pass */ export const CLASS_B_SPINE_CHECK_AXES = [
   'pressure_system',
   'central_conflict',
   'resolution_type',
-  'stakes_class',
-] as const satisfies ReadonlyArray<SpineAxis>;
-
-/** Doc types eligible for Class B check — same eligibility as Class A */
-export const CLASS_B_SPINE_CHECK_DOC_TYPES = CLASS_A_SPINE_CHECK_DOC_TYPES;
-
-export type ClassBAxis = typeof CLASS_B_SPINE_CHECK_AXES[number];
-
-export interface ClassBCheckResult {
-  axis: ClassBAxis;
-  status: 'aligned' | 'contradicted' | 'unclear';
-  confidence: number;
-  evidence: string;
-  verbatim_quote: string | null;  // L4.4: exact phrase copied verbatim from document
-  suggested_note: {
-    category: string;
-    severity: string;
-    note_source: string;
-    title: string;
-    instruction: string;
-  } | null;
-}
-
-export interface ClassBSpineCheckOutput {
-  checks: ClassBCheckResult[];
-}
-
+  'stakes_class'
+];
+/** Doc types eligible for Class B check — same eligibility as Class A */ export const CLASS_B_SPINE_CHECK_DOC_TYPES = CLASS_A_SPINE_CHECK_DOC_TYPES;
 /**
  * Builds the system prompt for the Class B spine check pass.
  * Key difference from Class A: development/modulation is acceptable;
  * only structural REPLACEMENT is a violation.
- */
-export function buildClassBSpineCheckSystemPrompt(): string {
+ */ export function buildClassBSpineCheckSystemPrompt() {
   return `You are a structural narrative compliance reviewer.
 
 Your ONLY task: compare a locked Narrative Spine's Class B axes against bounded document evidence and determine whether each axis has been REPLACED (structural violation) or remains WITHIN ACCEPTABLE BOUNDS.
@@ -687,31 +537,21 @@ QUOTE SELECTION PRIORITY (L4.6):
 - Reason: quotes from narrative sections enable precise document targeting; preamble quotes do not.
 - If ONLY preamble text supports the finding, use it — but prefer act-level evidence when both exist.`;
 }
-
 /**
  * Builds the user prompt for the Class B spine check pass.
  * Only includes non-null Class B spine axes.
  * Returns empty string if no Class B axes are present (caller must check).
- */
-export function buildClassBSpineCheckUserPrompt(
-  spine: NarrativeSpine,
-  docType: string,
-  documentText: string,
-  projectTitle?: string,
-  lane?: string,
-): string {
-  const spineLines: string[] = [];
-  if (spine.pressure_system)  spineLines.push(`- Pressure System: "${spine.pressure_system}"`);
+ */ export function buildClassBSpineCheckUserPrompt(spine, docType, documentText, projectTitle, lane) {
+  const spineLines = [];
+  if (spine.pressure_system) spineLines.push(`- Pressure System: "${spine.pressure_system}"`);
   if (spine.central_conflict) spineLines.push(`- Central Conflict: "${spine.central_conflict}"`);
-  if (spine.resolution_type)  spineLines.push(`- Resolution Type: "${spine.resolution_type}"`);
-  if (spine.stakes_class)     spineLines.push(`- Stakes Class: "${spine.stakes_class}"`);
-
+  if (spine.resolution_type) spineLines.push(`- Resolution Type: "${spine.resolution_type}"`);
+  if (spine.stakes_class) spineLines.push(`- Stakes Class: "${spine.stakes_class}"`);
   if (spineLines.length === 0) return '';
-
   // Same bounded context window as Class A (first 3K + last 5K chars)
   const MAX_FRONT = 3000;
   const MAX_BACK = 5000;
-  let boundedContext: string;
+  let boundedContext;
   if (documentText.length <= MAX_FRONT + MAX_BACK + 500) {
     boundedContext = documentText;
   } else {
@@ -719,7 +559,6 @@ export function buildClassBSpineCheckUserPrompt(
     const back = documentText.slice(-MAX_BACK);
     boundedContext = `${front}\n\n[... middle section omitted for brevity ...]\n\n${back}`;
   }
-
   return `LOCKED CLASS B SPINE VALUES (bounded — structural REPLACEMENT is a violation; development/modulation is acceptable):
 ${spineLines.join('\n')}
 
@@ -739,44 +578,43 @@ When selecting your verbatim_quote, search for supporting evidence inside the NA
 Act-level quotes anchor targeting to the actual narrative, not the summary header.
 Only fall back to preamble text if no act-level evidence exists.`;
 }
-
 /**
  * Validates and parses the Class B spine check output.
  * Returns null if output is invalid or contains no valid checks.
- */
-export function parseClassBSpineCheckOutput(parsed: any): ClassBSpineCheckOutput | null {
+ */ export function parseClassBSpineCheckOutput(parsed) {
   if (!parsed || !Array.isArray(parsed.checks)) return null;
-  const validAxes = new Set<string>(['pressure_system', 'central_conflict', 'resolution_type', 'stakes_class']);
-  const validStatuses = new Set(['aligned', 'contradicted', 'unclear']);
-
-  const checks: ClassBCheckResult[] = [];
-  for (const c of parsed.checks) {
+  const validAxes = new Set([
+    'pressure_system',
+    'central_conflict',
+    'resolution_type',
+    'stakes_class'
+  ]);
+  const validStatuses = new Set([
+    'aligned',
+    'contradicted',
+    'unclear'
+  ]);
+  const checks = [];
+  for (const c of parsed.checks){
     if (!validAxes.has(c.axis) || !validStatuses.has(c.status)) continue;
     // L4.4: validate verbatim_quote — same rules as Class A
     const rawBVQ = c.verbatim_quote;
-    const bVerbatimQuote: string | null = (
-      typeof rawBVQ === 'string' && rawBVQ.trim().length >= 5 && rawBVQ.trim().length <= 300
-    ) ? rawBVQ.trim() : null;
-
-    const result: ClassBCheckResult = {
-      axis: c.axis as ClassBAxis,
+    const bVerbatimQuote = typeof rawBVQ === 'string' && rawBVQ.trim().length >= 5 && rawBVQ.trim().length <= 300 ? rawBVQ.trim() : null;
+    const result = {
+      axis: c.axis,
       status: c.status,
       confidence: typeof c.confidence === 'number' ? c.confidence : 50,
       evidence: typeof c.evidence === 'string' ? c.evidence : '',
       verbatim_quote: bVerbatimQuote,
-      suggested_note: null,
+      suggested_note: null
     };
     if (c.status === 'contradicted' && c.suggested_note) {
       result.suggested_note = {
         category: 'spine_drift',
         severity: 'high',
         note_source: 'spine_alignment',
-        title: typeof c.suggested_note.title === 'string'
-          ? c.suggested_note.title
-          : `Class B structural drift: ${c.axis}`,
-        instruction: typeof c.suggested_note.instruction === 'string'
-          ? c.suggested_note.instruction
-          : '',
+        title: typeof c.suggested_note.title === 'string' ? c.suggested_note.title : `Class B structural drift: ${c.axis}`,
+        instruction: typeof c.suggested_note.instruction === 'string' ? c.suggested_note.instruction : ''
       };
     } else if (c.status === 'contradicted' && !c.suggested_note) {
       // Force a note for contradicted results even when model omits it
@@ -785,7 +623,7 @@ export function parseClassBSpineCheckOutput(parsed: any): ClassBSpineCheckOutput
         severity: 'high',
         note_source: 'spine_alignment',
         title: `Class B structural drift: ${c.axis} contradicts locked spine`,
-        instruction: c.evidence || 'Realign document with the locked spine axis.',
+        instruction: c.evidence || 'Realign document with the locked spine axis.'
       };
     }
     // Enforce: no note for aligned/unclear
@@ -795,41 +633,40 @@ export function parseClassBSpineCheckOutput(parsed: any): ClassBSpineCheckOutput
     checks.push(result);
   }
   if (checks.length === 0) return null;
-  return { checks };
+  return {
+    checks
+  };
 }
-
 // ── lockNarrativeSpine — fires when Concept Brief is approved ──
 // Transitions the pending_lock decision_ledger spine entry to locked=true, status='active'.
 // No-op if already locked or if no pending_lock entry exists (user hasn't confirmed yet — diagnostic only).
-export async function lockNarrativeSpine(supabase: any, projectId: string, docType: string): Promise<void> {
+export async function lockNarrativeSpine(supabase, projectId, docType) {
   if (docType !== 'concept_brief') return; // only fires on CB approval
   try {
-    const { data: entries } = await supabase
-      .from('decision_ledger')
-      .select('id, locked, status')
-      .eq('project_id', projectId)
-      .eq('decision_key', 'narrative_spine')
-      .in('status', ['pending_lock', 'active']);
+    const { data: entries } = await supabase.from('decision_ledger').select('id, locked, status').eq('project_id', projectId).eq('decision_key', 'narrative_spine').in('status', [
+      'pending_lock',
+      'active'
+    ]);
     if (!entries || entries.length === 0) {
       console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "no_spine_entry" }`);
       return;
     }
-    const activeEntry = entries.find((e: any) => e.status === 'active' && e.locked === true);
+    const activeEntry = entries.find((e)=>e.status === 'active' && e.locked === true);
     if (activeEntry) {
       console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "already_locked", entry_id: "${activeEntry.id}" }`);
       return;
     }
-    const pendingEntry = entries.find((e: any) => e.status === 'pending_lock');
+    const pendingEntry = entries.find((e)=>e.status === 'pending_lock');
     if (!pendingEntry) {
       console.log(`[narrativeSpine] spine_lock_skipped { project_id: "${projectId}", reason: "not_confirmed_by_user" }`);
       return;
     }
-    await supabase
-      .from('decision_ledger')
-      .update({ locked: true, status: 'active' })
-      .eq('id', pendingEntry.id);
+    await supabase.from('decision_ledger').update({
+      locked: true,
+      status: 'active'
+    }).eq('id', pendingEntry.id);
     console.log(`[narrativeSpine] spine_locked { project_id: "${projectId}", entry_id: "${pendingEntry.id}", trigger: "concept_brief_approved" }`);
-  } catch (e: any) {
+  } catch (e) {
     console.warn(`[narrativeSpine] spine_lock_error { project_id: "${projectId}", error: "${e?.message}" }`);
   }
 }
