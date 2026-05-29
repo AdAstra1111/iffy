@@ -15,7 +15,7 @@
 import {
   getRequiredDecisions,
   classifyDecision,
-  classifyQualityDecision,
+  classifyByAutonomy,
   buildPendingDecisionKey,
   DECISION_DEFS,
   SEMANTIC_KEYS,
@@ -212,6 +212,9 @@ export async function runPendingDecisionGate(
         classification: effectiveClassification,
         raw_classification: result.classification,
         registry_hint: hint,
+        autonomy: def?.autonomy || null,
+        default_value: def?.default_value || null,
+        decision_mode: ctx.decision_mode,
         required_evidence: def?.required_evidence_template || [],
         revisit_stage: result.revisit_stage,
         scope_json: { format, doc_type: docType },
@@ -228,6 +231,58 @@ export async function runPendingDecisionGate(
     }
   }
 
+  // ── SECOND PASS: Auto-resolve blocking decisions in autonomous mode ──
+  // When decisionMode === "autonomous" and allowDefaults is enabled, any newly
+  // inserted blocking decisions with autonomy + default_value are auto-resolved
+  // immediately. This prevents the pipeline from pausing for decisions that
+  // should be auto-resolved in autonomous mode.
+  if (decisionMode === "autonomous" && allowDefaults && blockingIds.length > 0) {
+    const autoResolvedIds: string[] = [];
+    for (let i = 0; i < blockingIds.length; i++) {
+      const id = blockingIds[i];
+      // Fetch the inserted decision to check for autonomy + default_value
+      const { data: row } = await supabase
+        .from("decision_ledger")
+        .select("id, decision_key, decision_value")
+        .eq("id", id)
+        .maybeSingle();
+      if (!row) continue;
+      const dv = row.decision_value || {};
+      const autoVal = dv.default_value;
+      const autoName = dv.autonomy;
+      if (autoVal && autoName) {
+        // Auto-resolve: update status to active with selected default
+        await supabase
+          .from("decision_ledger")
+          .update({
+            status: "active",
+            decision_value: {
+              ...dv,
+              selected_option: autoVal,
+              resolved_by: "auto_run_autonomous",
+              resolved_at: new Date().toISOString(),
+            },
+          })
+          .eq("id", id)
+          .then(() => {})
+          .then(undefined, (e: any) =>
+            console.warn(`[decision-gate][IEL] auto_resolve_failed { decision_id: "${id}", error: "${e?.message}" }`)
+          );
+        autoResolvedIds.push(id);
+        console.log(`[decision-gate][IEL] auto_resolved { decision_id: "${id}", decision_key: "${row.decision_key || "?"}", default_value: "${autoVal}", autonomy: "${autoName}" }`);
+      } else {
+        // No default_value set — still skip pausing (autonomous mode)
+        console.warn(`[decision-gate][IEL] autonomous_no_default { decision_id: "${id}", decision_key: "${row.decision_key || "?"}", autonomy: "${autoName || "unset"}", default_value: "${autoVal || "unset"}", action: "skip_autonomous_no_default" }`);
+      }
+    }
+    // Remove auto-resolved IDs from blocking list so they don't trigger a pause
+    const resolvedSet = new Set(autoResolvedIds);
+    const remainingBlocking = blockingIds.filter((id) => !resolvedSet.has(id));
+    // Clear blockingIds array and repopulate with remaining
+    blockingIds.length = 0;
+    blockingIds.push(...remainingBlocking);
+  }
+
   const shouldPause = blockingIds.length > 0 && !allowDefaults;
   const pauseReason = shouldPause
     ? `pending_decisions: ${blockingIds.length} blocking decision(s) for ${docType}`
@@ -240,7 +295,9 @@ export async function runPendingDecisionGate(
 }
 
 /**
- * Quality Plateau Guard — creates a DEFERRABLE workflow decision when scores stagnate.
+ * Quality Plateau Guard — creates a workflow decision when scores stagnate.
+ * Classification is determined by the DecisionDef's autonomy level via classifyByAutonomy.
+ * QUALITY_PLATEAU has autonomy="informational" → NEVER_BLOCKING in all modes.
  */
 export async function checkQualityPlateau(
   supabase: any,
@@ -259,9 +316,9 @@ export async function checkQualityPlateau(
     return { isPlateaued: false };
   }
 
-  const qualityCls = classifyQualityDecision(decisionMode);
-  const wfKey = workflowKey(format, docType, "QUALITY_PLATEAU");
   const def = DECISION_DEFS["QUALITY_PLATEAU"];
+  const qualityCls = classifyByAutonomy(def?.autonomy, (decisionMode as "strict" | "autonomous") || "strict");
+  const wfKey = workflowKey(format, docType, "QUALITY_PLATEAU");
 
   const { data: inserted } = await supabase.from("decision_ledger").insert({
     project_id: projectId,
@@ -289,7 +346,9 @@ export async function checkQualityPlateau(
 }
 
 /**
- * Quality Ceiling Guard — creates a DEFERRABLE workflow decision when content hits structural CI ceiling.
+ * Quality Ceiling Guard — creates a workflow decision when content hits structural CI ceiling.
+ * Classification is determined by the DecisionDef's autonomy level via classifyByAutonomy.
+ * QUALITY_CEILING has autonomy="informational" → NEVER_BLOCKING in all modes.
  * Different from QUALITY_PLATEAU: this is a ceiling case, not a convergence case.
  */
 export async function checkQualityCeiling(
@@ -308,9 +367,9 @@ export async function checkQualityCeiling(
     return { isCeilingHit: false };
   }
 
-  const qualityCls = classifyQualityDecision(decisionMode);
-  const wfKey = workflowKey(format, docType, "QUALITY_CEILING");
   const def = DECISION_DEFS["QUALITY_CEILING"];
+  const qualityCls = classifyByAutonomy(def?.autonomy, (decisionMode as "strict" | "autonomous") || "strict");
+  const wfKey = workflowKey(format, docType, "QUALITY_CEILING");
 
   const { data: inserted } = await supabase.from("decision_ledger").insert({
     project_id: projectId,
