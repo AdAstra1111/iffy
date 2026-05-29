@@ -414,6 +414,66 @@ async function handleCharacter(
     }
   }
 
+  // ── G7: Auto-calculate package_strength & populate character_wardrobe_profiles ──
+  // Populates the new character_wardrobe_profiles table with extracted wardrobe
+  // data and calculates package_strength from wardrobe profile completeness.
+  try {
+    if (traits.length > 0 || mergedIdentity.wardrobe_signals) {
+      // Extract clothing-related traits for wardrobe profile
+      const clothingTraits = traits.filter((t: any) => t.category === "clothing");
+      const wardrobeGarments = clothingTraits.map((t: any, i: number) => ({
+        garment_id: `garment_${i}_${Date.now()}`,
+        name: t.label,
+        type: t.category,
+        description: t.evidence_excerpt || t.label,
+        fabric: "",
+        color_palette: {},
+        source: t.evidence_source || "extraction",
+      }));
+
+      // Calculate package_strength based on completeness
+      const hasFabric = !!mergedIdentity.wardrobe_signals && Object.keys(mergedIdentity.wardrobe_signals).length > 0;
+      const hasGarments = wardrobeGarments.length > 0;
+      const hasFabricLanguage = !!(mergedIdentity as any).fabric_language;
+      const hasPaletteLogic = !!(mergedIdentity as any).palette_logic;
+      const hasSilhouette = !!(mergedIdentity as any).silhouette_language;
+
+      let calculatedStrength = "unassessed";
+      if (hasGarments && hasFabric && hasFabricLanguage && hasPaletteLogic) {
+        calculatedStrength = "strong";
+      } else if (hasGarments && (hasFabric || hasFabricLanguage)) {
+        calculatedStrength = "moderate";
+      } else if (hasGarments) {
+        calculatedStrength = "weak";
+      }
+
+      // Upsert into character_wardrobe_profiles
+      const { error: cwpError } = await sb
+        .from("character_wardrobe_profiles")
+        .upsert({
+          project_id: projectId,
+          character_name: characterName,
+          profile_version: 1,
+          is_current: true,
+          garments: wardrobeGarments,
+          fabric_language: (mergedIdentity as any).fabric_language || null,
+          palette_logic: (mergedIdentity as any).palette_logic || null,
+          silhouette_language: (mergedIdentity as any).silhouette_language || null,
+          package_strength: calculatedStrength,
+          extraction_version: "g7_auto",
+          source: "generate-visual-dna-from-canon",
+        }, {
+          onConflict: "project_id, character_name, is_current",
+        });
+
+      if (cwpError) {
+        report.errors.push(`character_wardrobe_profiles upsert failed: ${cwpError.message}`);
+      }
+    }
+  } catch (cwpErr: any) {
+    report.errors.push(`Wardrobe profile enrichment failed: ${cwpErr.message}`);
+  }
+
   return respond(report);
 }
 
@@ -623,7 +683,7 @@ async function handleProjectStyle(
   // [VISUAL STYLE AUTHORITY] block in hero frame prompts.
   try {
     const styleProfile = {
-      era: derivedStyle.period || canon_era || "",
+      era: derivedStyle.period || "",
       cultural_context: derivedStyle.cultural_context || "",
       tone_atmosphere: derivedStyle.lighting_philosophy || "",
       color_palette: derivedStyle.color_response || "",
@@ -644,18 +704,40 @@ async function handleProjectStyle(
     }
 
     if (Object.keys(cleanProfile).length > 1) {
-      const { error: vlError } = await sb
+      // Check for existing row first
+      const { data: existingVL } = await sb
         .from("project_visual_language")
-        .upsert({
-          project_id: projectId,
-          style_profile_json: cleanProfile,
-          updated_at: new Date().toISOString(),
-        }, {
-          onConflict: "project_id",
-        });
+        .select("id")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (vlError) {
-        report.errors.push(`project_visual_language upsert failed: ${vlError.message}`);
+      if (existingVL?.id) {
+        // Update existing
+        const { error: vlError } = await sb
+          .from("project_visual_language")
+          .update({
+            style_profile_json: cleanProfile,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingVL.id);
+
+        if (vlError) {
+          report.errors.push(`project_visual_language update failed: ${vlError.message}`);
+        }
+      } else {
+        // Insert new
+        const { error: vlError } = await sb
+          .from("project_visual_language")
+          .insert({
+            project_id: projectId,
+            style_profile_json: cleanProfile,
+          });
+
+        if (vlError) {
+          report.errors.push(`project_visual_language insert failed: ${vlError.message}`);
+        }
       }
     }
   } catch (vlErr: any) {

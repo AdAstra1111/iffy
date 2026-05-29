@@ -68,6 +68,8 @@ export interface ClassificationContext {
   approvals_state: Record<string, { exists: boolean; approved: boolean }>;
   /** Whether canon facts exist for key entities */
   canon_state: { has_characters: boolean; has_world_rules: boolean };
+  /** Decision mode: "strict" (default) pauses for user input; "autonomous" auto-resolves */
+  decision_mode: "strict" | "autonomous";
 }
 
 // ── Semantic Keys ──────────────────────────────────────────────────────────
@@ -94,6 +96,7 @@ export function buildDecisionKey(format: string, docType: string, semanticKey: s
 export const DECISION_DEFS: Record<string, DecisionDef> = {
   EPISODE_COUNT: {
     question: "How many episodes should this season contain?",
+    autonomy: "advisory",
     options: [
       { value: "8", label: "8 episodes" },
       { value: "10", label: "10 episodes" },
@@ -108,6 +111,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   CAST_LOCK: {
     question: "Should the character roster be locked for script generation?",
+    autonomy: "blocking",
     required_evidence_template: [
       { doc_type: "character_bible", requires_approval: true },
     ],
@@ -115,6 +119,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   TONE_POLARITY: {
     question: "What is the dominant tonal register for this project?",
+    autonomy: "advisory",
     options: [
       { value: "dark", label: "Dark / Gritty" },
       { value: "warm", label: "Warm / Hopeful" },
@@ -128,6 +133,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   WORLD_RULE_ANCHOR: {
     question: "Are the foundational world rules established and locked?",
+    autonomy: "blocking",
     required_evidence_template: [
       { doc_type: "treatment", requires_approval: true },
     ],
@@ -135,6 +141,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   FORMAT_RUNTIME: {
     question: "What is the target runtime per episode?",
+    autonomy: "advisory",
     options: [
       { value: "60", label: "~1 minute (vertical)" },
       { value: "180", label: "~3 minutes (short-form)" },
@@ -148,6 +155,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   CONTRACT_LOGIC: {
     question: "Is the central narrative contract/premise logically grounded?",
+    autonomy: "blocking",
     options: [
       { value: "accept", label: "Accept — contract is logically grounded" },
       { value: "reject", label: "Reject — contract needs revision" },
@@ -159,6 +167,7 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   TENTPOLE_MAPPING: {
     question: "Are the tentpole/anchor episodes confirmed?",
+    autonomy: "advisory",
     required_evidence_template: [
       { doc_type: "episode_grid", requires_approval: true },
     ],
@@ -166,6 +175,8 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   QUALITY_PLATEAU: {
     question: "Quality scores have plateaued. Should we proceed to the next stage or continue refining?",
+    autonomy: "informational",
+    default_value: "proceed",
     options: [
       { value: "proceed", label: "Proceed to next stage" },
       { value: "continue", label: "Continue refining" },
@@ -175,6 +186,8 @@ export const DECISION_DEFS: Record<string, DecisionDef> = {
   },
   QUALITY_CEILING: {
     question: "Content has reached its structural CI ceiling. Current CI is within 8% of the estimated maximum for this format/budget profile.",
+    autonomy: "informational",
+    default_value: "promote_anyway",
     options: [
       { value: "promote_anyway", label: "Promote at current CI" },
       { value: "abandon", label: "Abandon" },
@@ -268,21 +281,21 @@ export const REQUIRED_DECISIONS_BY_STAGE: Record<string, StageDecisionMap> = {
 // ── Classification Logic ───────────────────────────────────────────────────
 
 /**
- * Classify a decision deterministically.
+ * Classify a decision deterministically with autonomy-level and decision-mode awareness.
  *
- * Rules (fail-closed):
+ * RULES (fail-closed, in order):
  * 1. If semantic_key is not in DECISION_DEFS → NEVER_BLOCKING (unknown key).
- * 2. If evidence is missing → DEFERRABLE (can't decide yet).
- * 3. If evidence exists but decision unresolved → BLOCKING_NOW (strict mode).
- * 4. If evidence exists but decision unresolved → DEFERRABLE (autonomous mode).
- * 5. If decision has no options → NEVER_BLOCKING (empty-options rule).
+ * 2. If decision has no options → NEVER_BLOCKING (empty-options guard, fixes CAST_LOCK stall).
+ * 3. If autonomy === "informational" → NEVER_BLOCKING in both modes.
+ * 4. If evidence is missing → DEFERRABLE (can't decide yet).
+ * 5. If evidence exists but decision unresolved:
+ *    - strict mode: BLOCKING_NOW (regardless of blocking/advisory)
+ *    - autonomous + blocking → NEVER_BLOCKING (auto-resolved)
+ *    - autonomous + advisory → DEFERRABLE (noted, never blocks)
  *
- * RULE ORDERING INVARIANT: Rule 5 (empty-options check) must come AFTER
- * Rules 3 and 4 (blocking+strict, blocking+autonomous). This ensures that
- * decisions with no options (e.g. CAST_LOCK) are NEVER_BLOCKING only after
- * the mode-specific rules have had their say. CONTRACT_LOGIC now has options
- * (accept/reject) so it falls through to Rules 3/4 as expected, enabling
- * BLOCKING_NOW in strict mode.
+ * EMPTY-OPTIONS INVARIANT: CAST_LOCK has no options → Rule 2 catches it early,
+ * returning NEVER_BLOCKING. This prevents the CAST_LOCK stall that occurred when
+ * classifyDecision returned BLOCKING_NOW for decisions with no UI-renderable options.
  */
 export function classifyDecision(
   semanticKey: string,
@@ -297,18 +310,27 @@ export function classifyDecision(
     };
   }
 
-  // Quality plateau and quality ceiling are never blocking — they proceed silently
-  if (semanticKey === "QUALITY_PLATEAU" || semanticKey === "QUALITY_CEILING") {
+  // Rule 2: Empty options → NEVER_BLOCKING (regardless of autonomy/mode)
+  // CAST_LOCK has no options — this prevents the CAST_LOCK stall that blocked
+  // the pipeline with no UI-renderable options for the user to act on.
+  if (!def.options || def.options.length === 0) {
     return {
       classification: "NEVER_BLOCKING",
-      reason: semanticKey === "QUALITY_CEILING"
-        ? "Content at structural CI ceiling — quality decisions are non-blocking"
-        : "Quality plateau — quality decisions are non-blocking",
+      reason: `Decision '${semanticKey}' has no configurable options — auto-resolved as non-blocking`,
       revisit_stage: null,
     };
   }
 
-  // Check required evidence availability
+  // Rule 3: Informational autonomy → NEVER_BLOCKING in both modes
+  if (def.autonomy === "informational") {
+    return {
+      classification: "NEVER_BLOCKING",
+      reason: `Decision '${semanticKey}' is informational — never blocks pipeline`,
+      revisit_stage: null,
+    };
+  }
+
+  // Rule 4: Check required evidence availability
   const evidenceMissing = def.required_evidence_template.some((ev) => {
     const state = ctx.approvals_state[ev.doc_type];
     if (!state || !state.exists) return true;
@@ -326,11 +348,35 @@ export function classifyDecision(
     };
   }
 
-  // Evidence exists but decision unresolved → BLOCKING
+  // Rule 5: Evidence exists but decision unresolved — mode-aware
+  const decisionMode = ctx.decision_mode || "strict";
+
+  if (decisionMode === "strict") {
+    // blocking+strict → BLOCKING_NOW (pauses)
+    // advisory+strict → BLOCKING_NOW (pauses)
+    // (informational already handled above)
+    return {
+      classification: "BLOCKING_NOW",
+      reason: `Required evidence is available but decision has not been made`,
+      revisit_stage: null,
+    };
+  }
+
+  // Autonomous mode
+  if (def.autonomy === "blocking") {
+    // blocking+autonomous → NEVER_BLOCKING (downgrade, auto-resolved)
+    return {
+      classification: "NEVER_BLOCKING",
+      reason: `Decision '${semanticKey}' is blocking but mode=autonomous — auto-resolved as non-blocking`,
+      revisit_stage: null,
+    };
+  }
+
+  // advisory+autonomous → DEFERRABLE (never blocks, but noted for user awareness)
   return {
-    classification: "BLOCKING_NOW",
-    reason: `Required evidence is available but decision has not been made`,
-    revisit_stage: null,
+    classification: "DEFERRABLE",
+    reason: `Decision '${semanticKey}' is advisory and mode=autonomous — deferred (never blocks pipeline)`,
+    revisit_stage: def.default_revisit_stage || null,
   };
 }
 
