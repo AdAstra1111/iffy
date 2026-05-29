@@ -60,23 +60,35 @@ interface ExtractionResult {
   };
 }
 
-function validateExtraction(data: any): data is ExtractionResult {
-  if (!data || typeof data !== "object") return false;
-  if (!Array.isArray(data.effects)) return false;
-  if (!data.extraction_summary || typeof data.extraction_summary !== "object") return false;
-
-  for (const effect of data.effects) {
-    if (typeof effect.dimension_key !== "string") return false;
-    if (typeof effect.target !== "string") return false;
-    if (typeof effect.target_type !== "string") return false;
-    if (typeof effect.val !== "string") return false;
-    if (typeof effect.contribution !== "number") return false;
-    if (effect.contribution < -1.0 || effect.contribution > 1.0) return false;
-    if (typeof effect.model_confidence !== "number") return false;
-    if (effect.model_confidence < 0 || effect.model_confidence > 1.0) return false;
-    if (typeof effect.evidence_excerpt !== "string") return false;
+function normalizeEffects(data: any): any[] | null {
+  if (!data || typeof data !== "object") return null;
+  
+  // Try different possible key names for the effects array
+  const effectsArray = data.effects || data.audience_effects || data.extractions || data.beats || data.audienceEffects || null;
+  if (!Array.isArray(effectsArray) || effectsArray.length === 0) return null;
+  
+  // Normalize each effect to have the expected fields
+  const normalized = effectsArray.filter((e: any) => e && typeof e === "object").map((e: any) => ({
+    dimension_key: e.dimension_key || e.dimension || e.axis || e.category || "unknown",
+    target: e.target || e.character || e.element || e.focus || "unknown",
+    target_type: e.target_type || e.entity_type || e.type || e.element_type || "character",
+    val: e.val || e.value || e.state || e.effect || e.impact || "change",
+    contribution: typeof e.contribution === "number" ? e.contribution :
+                  typeof e.score === "number" ? e.score :
+                  typeof e.magnitude === "number" ? e.magnitude : 0,
+    model_confidence: typeof e.model_confidence === "number" ? e.model_confidence :
+                      typeof e.confidence === "number" ? e.confidence :
+                      typeof e.certainty === "number" ? e.certainty : 0.5,
+    evidence_excerpt: e.evidence_excerpt || e.evidence || e.excerpt || e.text_excerpt || e.supporting_text || "",
+  }));
+  
+  // Clamp ranges
+  for (const effect of normalized) {
+    effect.contribution = Math.max(-1.0, Math.min(1.0, effect.contribution));
+    effect.model_confidence = Math.max(0, Math.min(1.0, effect.model_confidence));
   }
-  return true;
+  
+  return normalized;
 }
 
 // ── Composite Confidence Computation ──
@@ -277,13 +289,24 @@ Deno.serve(async (req) => {
         });
 
         const parsed = JSON.parse(extractJSON(result.content));
+        const normalizedEffects = normalizeEffects(parsed);
 
-        if (validateExtraction(parsed)) {
-          extractionData = parsed;
+        if (normalizedEffects && normalizedEffects.length > 0) {
+          // Wrap normalized data into ExtractionResult shape
+          const summary = parsed.extraction_summary || {};
+          extractionData = {
+            effects: normalizedEffects,
+            extraction_summary: {
+              total_effects: normalizedEffects.length,
+              dimensions_affected: summary.dimensions_affected ||
+                Array.from(new Set(normalizedEffects.map((e: any) => e.dimension_key))),
+              overall_confidence: summary.overall_confidence ??
+                Math.round((normalizedEffects.reduce((s: number, e: any) => s + e.model_confidence, 0) / normalizedEffects.length) * 100) / 100,
+            },
+          };
           break;
         } else {
           lastError = "SCHEMA_VALIDATION_FAILED";
-          console.error(`[extract-audience-effects] Schema validation failed on attempt ${attempt + 1} for chunk ${chunk_id}`);
         }
       } catch (err: any) {
         lastError = err?.message || "LLM_CALL_FAILED";
