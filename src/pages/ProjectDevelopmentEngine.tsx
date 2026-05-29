@@ -251,45 +251,57 @@ export default function ProjectDevelopmentEngine() {
       let pitchLogline: string | null = null;
       let pitchPremise: string | null = null;
 
-      // 1) From linked pitch_idea
-      if (data.source_pitch_idea_id) {
-        const { data: pitch } = await supabase
-          .from('pitch_ideas')
-          .select('logline, one_page_pitch')
-          .eq('id', data.source_pitch_idea_id)
-          .single();
-        if (pitch?.logline) pitchLogline = pitch.logline;
-        if (pitch?.one_page_pitch) pitchPremise = pitch.one_page_pitch;
-      }
-
-      // 2) Fallback: parse from latest idea document plaintext
-      if (!pitchLogline || !pitchPremise) {
-        const { data: ideaDoc } = await supabase
-          .from('project_documents')
-          .select('plaintext')
-          .eq('project_id', projectId!)
-          .eq('doc_type', 'idea')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        if (ideaDoc?.plaintext) {
-          const text = ideaDoc.plaintext;
-          if (!pitchLogline) {
-            const loglineMatch = text.match(/\*\*Logline:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Logline:\s*(.+?)(?:\n|$)/i);
-            if (loglineMatch) pitchLogline = loglineMatch[1].trim();
-          }
-          if (!pitchPremise) {
-            const premiseMatch = text.match(/## One-Page Pitch\s*\n([\s\S]+?)(?:\n##|\n\*\*|$)/i);
-            if (premiseMatch) pitchPremise = premiseMatch[1].trim();
+      try {
+        // 1) From linked pitch_idea
+        if (data.source_pitch_idea_id && data.source_pitch_idea_id !== prevPitchIdeaRef.current) {
+          prevPitchIdeaRef.current = data.source_pitch_idea_id;
+          console.log('[ui][pitch_idea_lookup] requested', { id: data.source_pitch_idea_id });
+          const { data: pitch } = await supabase
+            .from('pitch_ideas')
+            .select('logline, one_page_pitch')
+            .eq('id', data.source_pitch_idea_id)
+            .maybeSingle();
+          if (pitch) {
+            if (pitch?.logline) pitchLogline = pitch.logline;
+            if (pitch?.one_page_pitch) pitchPremise = pitch.one_page_pitch;
+            console.log('[ui][pitch_idea_lookup] resolved', { pitch_found: !!pitch, id: data.source_pitch_idea_id });
+          } else {
+            console.log('[ui][pitch_idea_lookup] missing_allowed', { id: data.source_pitch_idea_id });
           }
         }
+
+        // 2) Fallback: parse from latest idea document plaintext
+        if (!pitchLogline || !pitchPremise) {
+          const { data: ideaDoc } = await supabase
+            .from('project_documents')
+            .select('plaintext')
+            .eq('project_id', projectId!)
+            .eq('doc_type', 'idea')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (ideaDoc?.plaintext) {
+            const text = ideaDoc.plaintext;
+            if (!pitchLogline) {
+              const loglineMatch = text.match(/\*\*Logline:\*\*\s*(.+?)(?:\n|$)/i) || text.match(/Logline:\s*(.+?)(?:\n|$)/i);
+              if (loglineMatch) pitchLogline = loglineMatch[1].trim();
+            }
+            if (!pitchPremise) {
+              const premiseMatch = text.match(/## One-Page Pitch\s*\n([\s\S]+?)(?:\n##|\n\*\*|$)/i);
+              if (premiseMatch) pitchPremise = premiseMatch[1].trim();
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[ui][pitch_idea_lookup] db_error', err);
+        return { ...data, pitchLogline: null, pitchPremise: null };
       }
 
       return { ...data, pitchLogline, pitchPremise };
     },
     enabled: !!projectId,
     staleTime: 0,
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: (q) => q.state.status !== 'error',
     retry: false,
   });
 
@@ -344,6 +356,7 @@ export default function ProjectDevelopmentEngine() {
   const mutationRewriteParamsRef = useRef<{ decisions?: Record<string, string>; globalDirections?: any[] } | null>(null);
   const mutationHandledRef = useRef(false);
   const lastLoggedReason = useRef<string | null>(null);
+  const prevPitchIdeaRef = useRef<string | null>(null);
 
   // Canonical notes for NextActionsPanel
   const { data: canonicalNotes = [] } = useProjectNotes(projectId, {
@@ -2930,11 +2943,16 @@ export default function ProjectDevelopmentEngine() {
                         const logKey = `${selectedVersionId}:${result.reason}`;
                         if (lastLoggedReason.current !== logKey) {
                           lastLoggedReason.current = logKey;
-                          console.log('[Promote-to-Script] Hidden:', result.reason, {
+                          console.log('[Promote-to-Script] Gate:', result.reason, {
                             doc_type: selectedDoc?.doc_type,
                             version_id: selectedVersionId,
                           });
                         }
+                        // Telemetry: promotion visibility
+                        console.log('[ui][promotion_visibility]', result.eligible ? 'eligible' : 'hidden_reason:' + result.reason, {
+                          doc_type: selectedDoc?.doc_type,
+                          version_id: selectedVersionId,
+                        });
                         if (!result.eligible) {
                           return (
                             <div className="text-xs text-muted-foreground bg-muted/30 rounded px-3 py-2 border border-border/50">

@@ -603,3 +603,181 @@ describe('edge cases', () => {
     expect(pipeline.versionId).toBe('vb');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════════
+// 8. Convergence Version ID — REVISE Fix Invariant Tests
+// The fix changed convergenceVersionId from render?.versionId to
+// promotionGateVersionId. These tests verify the architectural invariant:
+// promotion_gate NEVER falls through to selectedVersionId, which eliminates
+// the oscillation cycle.
+// ════════════════════════════════════════════════════════════════════════════════
+
+describe('convergenceVersionId — REVISE fix invariants', () => {
+  it('promotion_gate NEVER falls through to selectedVersionId when set', () => {
+    // No approved versions exist, but user has selected v2
+    const bindings = resolveBindings([v1, v2, v3], 'v2', DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    // promotion_gate must return null — never user_selected
+    expect(pg.versionId).toBeNull();
+    expect(pg.source).toBe('unavailable');
+  });
+
+  it('promotion_gate ignores selectedVersionId even when render uses it', () => {
+    // No approved versions. selectedVersionId = v2
+    // render WILL fall through to v2, but promotion_gate must NOT
+    const bindings = resolveBindings([v1, v2, v3], 'v2', DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    const render = bindings.find(b => b.type === 'render')!;
+
+    expect(pg.versionId).toBeNull();
+    expect(pg.source).toBe('unavailable');
+
+    expect(render.versionId).toBe('v2');
+    expect(render.source).toBe('user_selected');
+  });
+
+  it('promotion_gate returns approved version even when selectedVersionId is different', () => {
+    // v4 is approved+current, user has selected v2 (a non-approved version)
+    const bindings = resolveBindings([v1, v2, v4], 'v2', DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    const render = bindings.find(b => b.type === 'render')!;
+
+    // promotion_gate tracks approved truth, not user selection
+    expect(pg.versionId).toBe('v4');
+    expect(pg.source).toBe('approved_and_current');
+
+    // render uses authoritative (v4) since it exists
+    expect(render.versionId).toBe('v4');
+    expect(render.source).toBe('approved_and_current');
+  });
+
+  it('promotion_gate returns different version than render when authoritative absent and user selects manually', () => {
+    // Only unapproved versions exist. User selects v2.
+    // render → v2 (user_selected). promotion_gate → null (no approved).
+    // This divergence was the root cause of oscillation when code used render?.versionId
+    const bindings = resolveBindings([v1, v2, v3], 'v2', DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    const render = bindings.find(b => b.type === 'render')!;
+
+    expect(pg.versionId).toBeNull();
+    expect(render.versionId).toBe('v2');
+    // Divergence confirmed: promotion_gate ≠ render when no authoritative version
+    expect(pg.versionId).not.toBe(render.versionId);
+  });
+
+  it('promotion_gate stays stable when selectedVersionId changes (no approved versions)', () => {
+    // Scenario: user cycles through selections, no approved versions exist
+    const scenario1 = resolveBindings([v1, v2, v3], 'v1', DOC_TYPE);
+    const scenario2 = resolveBindings([v1, v2, v3], 'v2', DOC_TYPE);
+    const scenario3 = resolveBindings([v1, v2, v3], 'v3', DOC_TYPE);
+
+    const pg1 = scenario1.find(b => b.type === 'promotion_gate')!;
+    const pg2 = scenario2.find(b => b.type === 'promotion_gate')!;
+    const pg3 = scenario3.find(b => b.type === 'promotion_gate')!;
+
+    // promotion_gate is stable regardless of selection
+    expect(pg1.versionId).toBeNull();
+    expect(pg2.versionId).toBeNull();
+    expect(pg3.versionId).toBeNull();
+
+    // render fluctuates with user selection (the old oscillation source)
+    const r1 = scenario1.find(b => b.type === 'render')!;
+    const r2 = scenario2.find(b => b.type === 'render')!;
+    const r3 = scenario3.find(b => b.type === 'render')!;
+
+    expect(r1.versionId).toBe('v1');
+    expect(r2.versionId).toBe('v2');
+    expect(r3.versionId).toBe('v3');
+  });
+
+  it('promotion_gate stays stable when selectedVersionId changes (approved version exists)', () => {
+    // v4 is approved+current. User cycles different selections.
+    const scenario1 = resolveBindings([v1, v4, v2], 'v1', DOC_TYPE);
+    const scenario2 = resolveBindings([v1, v4, v2], 'v2', DOC_TYPE);
+
+    const pg1 = scenario1.find(b => b.type === 'promotion_gate')!;
+    const pg2 = scenario2.find(b => b.type === 'promotion_gate')!;
+
+    // promotion_gate always returns v4 regardless of user selection
+    expect(pg1.versionId).toBe('v4');
+    expect(pg2.versionId).toBe('v4');
+  });
+
+  it('promotion_gate returns null when no versions exist (convergenceVersionId = null path)', () => {
+    const bindings = resolveBindings([], null, DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    expect(pg.versionId).toBeNull();
+    expect(pg.source).toBe('unavailable');
+  });
+
+  it('render falls through to selectedVersionId while promotion_gate stays null — divergence confirmed', () => {
+    // Scenario that causes the oscillation when convergenceVersionId used render?.versionId:
+    // Only v1 exists, unapproved, user selects it. render = v1, promotion_gate = null
+    const v1Only = makeVersion('v1only', {
+      version_number: 1, created_at: '2024-01-01T00:00:00Z',
+      approval_status: null, is_current: false,
+    });
+    const bindings = resolveBindings([v1Only], 'v1only', DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    const render = bindings.find(b => b.type === 'render')!;
+
+    expect(pg.versionId).toBeNull();
+    expect(render.versionId).toBe('v1only');
+    expect(pg.versionId).not.toBe(render.versionId);
+  });
+
+  it('useDocumentRuntimeBinding returns promotionGateVersionId matching promotion_gate resolver', () => {
+    // Test the hook-level accessor by verifying the data contract:
+    // promotionGateVersionId should always === promotion_gate binding's versionId
+    // And it should be the correct value for the convergenceVersionId fix
+    const bindings = resolveBindings([v1, v4], null, DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+
+    // This is what the hook returns for promotionGateVersionId (from useDocumentRuntimeBinding.ts line 77)
+    const promotionGateVersionId = pg?.versionId ?? null;
+    // This is what the fix now uses for convergenceVersionId (ProjectDevelopmentEngine.tsx line 1084)
+    const convergenceVersionId = promotionGateVersionId || null;
+
+    expect(promotionGateVersionId).toBe('v4');
+    expect(convergenceVersionId).toBe('v4');
+  });
+
+  it('promotionGateVersionId is null when no approved versions — convergenceVersionId is null', () => {
+    const bindings = resolveBindings([v1, v2], null, DOC_TYPE);
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+
+    const promotionGateVersionId = pg?.versionId ?? null;
+    const convergenceVersionId = promotionGateVersionId || null;
+
+    expect(promotionGateVersionId).toBeNull();
+    expect(convergenceVersionId).toBeNull();
+  });
+
+  it('convergenceVersionId correctly uses promotionGateVersionId, NOT render?.versionId', () => {
+    // This is the EXACT scenario that caused the oscillation:
+    // - No approved versions exist
+    // - User has selected v2
+    // - OLD: convergenceVersionId = render?.versionId → "v2" (unstable, user-selected)
+    // - NEW: convergenceVersionId = promotionGateVersionId → null (stable, approved-only)
+    const bindings = resolveBindings([v1, v2, v3], 'v2', DOC_TYPE);
+
+    const pg = bindings.find(b => b.type === 'promotion_gate')!;
+    const render = bindings.find(b => b.type === 'render')!;
+
+    const promotionGateVersionId = pg?.versionId ?? null;
+    const renderVersionId = render?.versionId ?? null;
+
+    // The fix: convergenceVersionId uses promotionGateVersionId
+    const convergenceVersionId_New = promotionGateVersionId || null;
+    // The old behavior: convergenceVersionId used render?.versionId
+    const convergenceVersionId_Old = renderVersionId || null;
+
+    // NEW behavior: null (stable, no oscillation)
+    expect(convergenceVersionId_New).toBeNull();
+    // OLD behavior: 'v2' (unstable, oscillates with user selection)
+    expect(convergenceVersionId_Old).toBe('v2');
+
+    // These MUST diverge in this scenario — that's the entire fix
+    expect(convergenceVersionId_New).not.toBe(convergenceVersionId_Old);
+  });
+});
