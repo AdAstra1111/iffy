@@ -25,6 +25,7 @@ import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
 import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
+import { buildSceneExpansionPlan, buildExpansionPromptBlock } from "../_shared/sceneExpansionEngine.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
@@ -243,7 +244,9 @@ async function generateScenePlanAndNCP(
   treatment: string,
   storyOutline: string,
   characterBible: string,
-  formatRules: string
+  formatRules: string,
+  expansionPlanBlock?: string,
+  expectedSceneCount?: number,
 ): Promise<{ scenes: ScenePlanEntry[]; narrativeContext: NarrativeContextPackage | null }> {
   const GL = "\n"; // Template literal helper to avoid escaping in heredoc
   const maxChars = 8000;
@@ -305,7 +308,7 @@ ${characterBible ? `CHARACTER BIBLE (for character names and arcs):\n${character
 ${formatRules ? `FORMAT RULES:\n${formatRules.slice(0, 2000)}\n\n` : ""}
 
 Generate the complete Scene Plan + Narrative Context Package JSON.
-Every beat must be expanded into 2-4 scenes. Total scenes should be 90-130 for a standard feature film.
+${expansionPlanBlock || `Every beat must be expanded into 2-4 scenes. Total scenes should be 90-130 for a standard feature film.`}
 The "scenes" array has the individual scene entries. The "narrative_context" object has the global story map, causal chain, tension curve, promise registry, and scene function registry.`;
 
   const response = await fetch(gatewayUrl, {
@@ -393,6 +396,20 @@ The "scenes" array has the individual scene entries. The "narrative_context" obj
 
   if (!Array.isArray(scenes) || scenes.length < 5) {
     throw new Error(`Scene Plan generated ${scenes.length} scenes — expected at least 5`);
+  }
+
+  // Phase 2A.5: If expansion plan specified a target, validate exact count
+  if (expectedSceneCount && scenes.length !== expectedSceneCount) {
+    // Allow ±15% tolerance before failing
+    const tolerance = Math.max(5, Math.round(expectedSceneCount * 0.15));
+    const diff = Math.abs(scenes.length - expectedSceneCount);
+    if (diff > tolerance) {
+      throw new Error(
+        `Scene Plan produced ${scenes.length} scenes but expansion plan requires ${expectedSceneCount} (±${tolerance} allowed). ` +
+        `Difference of ${diff} exceeds tolerance. Regenerate with exact target.`
+      );
+    }
+    console.log(`[generate-document] Scene Plan count validated: ${scenes.length} vs target ${expectedSceneCount} (${diff} off, tolerance ${tolerance})`);
   }
 
   // Validate each entry has required fields
@@ -2285,13 +2302,33 @@ ${existingCBContent.slice(0, 30000)}`;
           const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
           if (beatSheetText && beats && beats.length > 0) {
             try {
+              // Phase 2A.5: Build deterministic expansion plan before Scene Plan generation (resume path)
+              let resumeExpBlock: string | undefined;
+              let resumeExpCount: number | undefined;
+              if (beats && beats.length > 0) {
+                try {
+                  const expPlan = buildSceneExpansionPlan(beats, {
+                    genre: project.format || "thriller",
+                    runtime_minutes: 100,
+                    major_character_count: 4,
+                    subplot_count: 1,
+                  });
+                  resumeExpBlock = buildExpansionPromptBlock(expPlan);
+                  resumeExpCount = expPlan.total_scenes;
+                  console.log(`[generate-document] Resume scene expansion plan: ${expPlan.total_scenes} scenes, ${expPlan.sequences.length} sequences`);
+                } catch (expErr) {
+                  console.warn(`[generate-document] Scene expansion engine failed on resume: ${expErr}`);
+                }
+              }
               const { scenes: sp, narrativeContext: resumeNCP } = await generateScenePlanAndNCP(
                 apiKey, gw.url, project.title || "Untitled",
                 beatSheetText,
                 upstreamBlocks.get("treatment") || "",
                 upstreamBlocks.get("story_outline") || "",
                 upstreamBlocks.get("character_bible") || "",
-                upstreamBlocks.get("format_rules") || ""
+                upstreamBlocks.get("format_rules") || "",
+                resumeExpBlock,
+                resumeExpCount,
               );
               resumeScenePlanForMeta = sp;
               resumeSceneCountForPlan = sp.length;
@@ -2487,13 +2524,34 @@ ${existingCBContent.slice(0, 30000)}`;
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
         if (beatSheetText && beats && beats.length > 0) {
           try {
+            // Phase 2A.5: Build deterministic expansion plan before Scene Plan generation
+            let expansionBlock: string | undefined;
+            let expectedCount: number | undefined;
+            if (beats && beats.length > 0) {
+              try {
+                const expPlan = buildSceneExpansionPlan(beats, {
+                  genre: project.format || "thriller",
+                  runtime_minutes: 100,
+                  major_character_count: 4,
+                  subplot_count: 1,
+                });
+                expansionBlock = buildExpansionPromptBlock(expPlan);
+                expectedCount = expPlan.total_scenes;
+                console.log(`[generate-document] Scene expansion plan: ${expPlan.total_scenes} scenes, ${expPlan.sequences.length} sequences`);
+              } catch (expErr) {
+                console.warn(`[generate-document] Scene expansion engine failed: ${expErr}`);
+                // Continue without expansion plan — fall back to LLM-guided count
+              }
+            }
             const { scenes: scenePlan, narrativeContext: ncp } = await generateScenePlanAndNCP(
               apiKey, gw.url, project.title || "Untitled",
               beatSheetText,
               upstreamBlocks.get("treatment") || "",
               upstreamBlocks.get("story_outline") || "",
               upstreamBlocks.get("character_bible") || "",
-              upstreamBlocks.get("format_rules") || ""
+              upstreamBlocks.get("format_rules") || "",
+              expansionBlock,
+              expectedCount,
             );
             scenePlanForMeta = scenePlan;
             sceneCountForPlan = scenePlan.length;
@@ -2697,6 +2755,7 @@ ${existingCBContent.slice(0, 30000)}`;
                 chunks_completed: chunkResult.completedChunks,
                 scenes: scenePlanForMeta || undefined,
                 narrative_context: ncpForChunkPlan || undefined,
+                scene_expansion_plan: ncpForChunkPlan?.scene_expansion_plan || undefined,
               } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid

@@ -462,9 +462,27 @@ async function loadSceneBoundMoments(sb, projectId, canonJson, targetCount = 13)
       wardrobeBlocks
     };
   });
-  // 5. Select best moments by dramatic intensity, ensuring narrative coverage
+  // 5. Exclude scenes that already have hero frames generated
+  const { data: existingHeroScenes } = await sb
+    .from("project_images")
+    .select("generation_config->>scene_number")
+    .eq("project_id", projectId)
+    .eq("strategy_key", "hero_frames");
+  const existingSceneNumbers = new Set(
+    (existingHeroScenes || [])
+      .map((r: any) => r.scene_number?.toString())
+      .filter(Boolean)
+  );
+  const availableMoments = allMoments.filter(
+    (m) => !existingSceneNumbers.has(m.sceneNumber?.toString())
+  );
+
+  // If all scenes are already covered, fall back to a fresh selection
+  const pool = availableMoments.length > 0 ? availableMoments : allMoments;
+
+  // 6. Select best moments by dramatic intensity, ensuring narrative coverage
   const sortedByIntensity = [
-    ...allMoments
+    ...pool
   ].sort((a, b)=>b.dramaticIntensity - a.dramaticIntensity);
   const functionPriority = [
     'world_setup',

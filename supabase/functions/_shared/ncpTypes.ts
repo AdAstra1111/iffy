@@ -365,3 +365,56 @@ const ACT_PACING_MAP: Record<number, PacingDirective> = {
   2: "escalating",
   3: "fast",
 };
+
+// ── Phase 2A.5 — Scene Expansion Plan Types ─────────────────────────────
+
+export interface SceneExpansionPlan {
+  total_scenes: number;
+  per_act: ActSceneBudget[];
+  per_beat: BeatSceneAllocation[];
+  sequences: ExpansionSequence[];
+  scene_slots: ExpansionSceneSlot[];
+}
+
+export interface ActSceneBudget {
+  act: number;
+  label: string;
+  scene_count: number;
+  percentage: number;
+}
+
+export interface BeatSceneAllocation {
+  beat_number: number;
+  beat_title: string;
+  act: number;
+  scene_count: number;
+  is_major: boolean;
+}
+
+export interface ExpansionSequence {
+  number: number;
+  beat_numbers: number[];
+  scene_range: [number, number];
+  scene_count: number;
+  act: number;
+  purpose: SequencePurpose;
+}
+
+export interface ExpansionSceneSlot {
+  scene_slot_number: number;
+  act: number;
+  source_beat_number: number;
+  source_beat_title: string;
+  function_type: string;
+  sequence_hint: number;
+  estimated_pages: number;
+}
+
+export interface ProjectMetadata {
+  genre?: string;
+  runtime_minutes?: number;
+  major_character_count?: number;
+  subplot_count?: number;
+  complex_worldbuilding?: boolean;
+  high_mystery_density?: boolean;
+}
