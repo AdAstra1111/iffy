@@ -23,7 +23,6 @@ import { runChunkedGeneration, resumeChunkedGeneration } from "../_shared/chunkR
 import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_shared/chunkValidator.ts";
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
-import { atomizeVersion } from "../_shared/atomizeVersion.ts";
 import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
 import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
@@ -577,6 +576,59 @@ Deno.serve(async (req) => {
     if (!DEP_GRAPH_VALID) return jsonRes({ error: "DEP_GRAPH_INVALID", message: "UPSTREAM_DEPS contains a cycle or self-dependency. Cannot proceed." }, 500);
 
     const { projectId, docType, mode = "draft", generatorId = "generate-document", generatorRunId, additionalContext, sourceDocType, sourceVersionId } = body;
+
+    // ── EARLY FEATURE_SCRIPT SCENE RESUME ──
+    // If a version exists with saved scene contracts, resume directly without planning.
+    if (docType === "feature_script") {
+      try {
+        const sc = createClient(supabaseUrl, serviceKey);
+        const { data: docs } = await sc.from("project_documents").select("id").eq("project_id", projectId).eq("doc_type", "feature_script");
+        if (docs && docs.length > 0) {
+          const { data: v } = await sc.from("project_document_versions")
+            .select("id, version_number, meta_json")
+            .eq("document_id", docs[0].id)
+            .eq("meta_json->>bg_generating", "true")
+            .order("version_number", { ascending: false }).limit(1).maybeSingle();
+          if (v && v.meta_json) {
+            const m = v.meta_json as any;
+            const state = m.fs_state;
+            if ((state === "contracts_ready" || state === "scene_generation") && m.fs_contracts && m.fs_generated_scenes) {
+              const contracts: any[] = m.fs_contracts;
+              const generated: any[] = m.fs_generated_scenes;
+              let count = generated.length;
+              const total = contracts.length;
+              const START = Date.now();
+              const ok = (margin = 15_000) => (Date.now() - START) < (120_000 - margin);
+
+              // Refresh created_at to avoid stale guard
+              await sc.from("project_document_versions").update({ created_at: new Date().toISOString() }).eq("id", v.id);
+
+              while (count < total && ok()) {
+                const c = contracts[count];
+                const handoff = count > 0 ? generated[count - 1]?.output_handoff || "" : "";
+                const prompt = `Generate scene ${c.scene_number}: ${c.title}\n\nSCENE FUNCTION: ${c.scene_function}\nCHARACTERS: ${(c.required_characters || []).join(", ")}\nLOCATION: ${c.required_location || "Unknown"}\nEVENTS: ${c.required_events || "Not specified"}\n${handoff ? `PRIOR SCENE HANDOFF: ${handoff}\n` : ""}NEXT SCENE GOAL: ${c.next_scene_goal || ""}\n\nWrite a screenplay-formatted scene with slugline, action, dialogue. Target: 300-600 words.`;
+                const text = await callLLM(apiKey, "You are a screenwriter writing a feature film screenplay. Output ONLY the scene text with proper formatting.", prompt);
+                generated.push({ scene_number: c.scene_number, title: c.title, scene_text: text || "", input_handoff_used: handoff || null, output_handoff: `Scene ${c.scene_number} done.`, generated_at: new Date().toISOString() });
+                count++;
+                await sc.from("project_document_versions").update({ meta_json: { ...m, fs_state: count < total ? "scene_generation" : "assembly", fs_generated_scenes: generated, fs_completed: count, fs_next_scene: count < total ? contracts[count]?.scene_number : null } }).eq("id", v.id);
+                if (!ok(20_000) && count < total) {
+                  return jsonRes({ success: true, document_id: docs[0].id, version_id: v.id, version_number: v.version_number, generating: true, progress_state: "scene_generation", completed_scene_count: count, total_scene_count: total, next_scene: contracts[count]?.scene_number });
+                }
+              }
+              if (count >= total && total > 0) {
+                const assembled = generated.sort((a: any, b: any) => a.scene_number - b.scene_number).map((s: any) => s.scene_text).join("\n\n");
+                await sc.from("project_document_versions").update({ plaintext: assembled, status: "draft", is_current: true, meta_json: { ...m, bg_generating: false, fs_state: "complete", fs_script_length: assembled.length } }).eq("id", v.id);
+                await sc.from("project_documents").update({ latest_version_id: v.id, updated_at: new Date().toISOString() }).eq("id", docs[0].id);
+                return jsonRes({ success: true, document_id: docs[0].id, version_id: v.id, version_number: v.version_number, generating: false, progress_state: "complete", completed_scene_count: total, total_scene_count: total, script_length: assembled.length });
+              }
+            }
+          }
+        }
+      } catch (e: any) {
+        // Log and continue — early resume is optional, normal path will handle
+        console.log(`[generate-document] Early scene resume check failed: ${e?.message?.slice(0, 100)}`);
+      }
+    }
 
     // Extract nuance parameters (with defaults)
     const nuanceParams: NuanceParams = {
@@ -3503,30 +3555,7 @@ ${existingCBContent.slice(0, 30000)}`;
       }
     }
 
-    // ── Phase 5/6: Atomize version ──
-    // Non-blocking post-processing — extraction failure does NOT invalidate the document.
-    // Extracted atoms REPLACE previous atoms for this origin_doc_id.
-    // Staleness flags are generated for directly derived documents (one-hop only).
-    if (content && content.length > 50 && newVersion?.id) {
-      try {
-        const atomResult = await atomizeVersion(
-          supabase,
-          projectId,
-          docType,
-          newVersion.id,
-          content
-        );
-        if (atomResult.errors.length > 0) {
-          console.warn("[generate-document] Atomization had non-blocking errors:", atomResult.errors.slice(0, 3).join("; "));
-        }
-        console.log(`[generate-document] Atomization: ${atomResult.atoms_written} atoms, ${atomResult.dependencies_written} deps, ${atomResult.staleness_flags_generated} staleness flags`);
-      } catch (atomErr: any) {
-        // Non-blocking — document validity never depends on atom extraction
-        console.warn("[generate-document] Atomization failed (non-blocking):", atomErr?.message);
-      }
-    }
-
-    // 11) Update project_document pointer
+    // ── 11) Update project_document pointer
     const updatePayload: Record<string, any> = {
       latest_version_id: newVersion!.id,
       updated_at: new Date().toISOString(),

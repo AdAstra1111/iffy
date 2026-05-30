@@ -107,19 +107,30 @@ function resolveContextField(ctx: CPIEPCPContext, field: string): string | strin
   }
 }
 
+// ── Trigger Adapter: supports both array [f,op,v] and object {pcp_field,operator,value} ──
+function readTrigger(trigger: any): { pcp_field: string; operator: string; value: any } {
+  // Array format: [field, operator, value]
+  if (Array.isArray(trigger)) {
+    return { pcp_field: trigger[0], operator: trigger[1], value: trigger[2] };
+  }
+  // Object format: { pcp_field, operator, value }
+  return { pcp_field: trigger.pcp_field, operator: trigger.operator, value: trigger.value };
+}
+
 function matchTrigger(ctx: CPIEPCPContext, trigger: RegistryTrigger): boolean {
-  const ctxValue = resolveContextField(ctx, trigger.pcp_field);
+  const t = readTrigger(trigger);
+  const ctxValue = resolveContextField(ctx, t.pcp_field);
   if (ctxValue === null || ctxValue === undefined) return false;
-  switch (trigger.operator) {
-    case "eq": return String(ctxValue).toLowerCase() === String(trigger.value).toLowerCase();
-    case "not_eq": return String(ctxValue).toLowerCase() !== String(trigger.value).toLowerCase();
+  switch (t.operator) {
+    case "eq": return String(ctxValue).toLowerCase() === String(t.value).toLowerCase();
+    case "not_eq": return String(ctxValue).toLowerCase() !== String(t.value).toLowerCase();
     case "in": {
-      const vals = Array.isArray(trigger.value) ? trigger.value : String(trigger.value).split(",").map(v => v.trim());
+      const vals = Array.isArray(t.value) ? t.value : String(t.value).split(",").map((v: string) => v.trim());
       const ctxStr = String(ctxValue).toLowerCase();
-      return vals.some(v => ctxStr.includes(v.toLowerCase()));
+      return vals.some((v: string) => ctxStr.includes(v.toLowerCase()));
     }
     case "any": return true;
-    case "regex": { const re = new RegExp(String(trigger.value), "i"); return re.test(String(ctxValue)); }
+    case "regex": { const re = new RegExp(String(t.value), "i"); return re.test(String(ctxValue)); }
     default: return false;
   }
 }
@@ -136,17 +147,18 @@ function matchRules(
     let matchCount = 0;
     for (const trigger of rule.triggers) {
       let matched = false;
-      if (trigger.pcp_field === "profession" || trigger.pcp_field === "role_archetype") {
-        const entityVal = trigger.pcp_field === "profession" ? entity.profession : entity.role_archetype;
+      const t = readTrigger(trigger);
+      if (t.pcp_field === "profession" || t.pcp_field === "role_archetype") {
+        const entityVal = t.pcp_field === "profession" ? entity.profession : entity.role_archetype;
         if (entityVal) {
-          switch (trigger.operator) {
-            case "eq": matched = entityVal.toLowerCase() === String(trigger.value).toLowerCase(); break;
+          switch (t.operator) {
+            case "eq": matched = entityVal.toLowerCase() === String(t.value).toLowerCase(); break;
             case "in": {
-              const vals = Array.isArray(trigger.value) ? trigger.value : String(trigger.value).split(",").map((v: string) => v.trim());
+              const vals = Array.isArray(t.value) ? t.value : String(t.value).split(",").map((v: string) => v.trim());
               matched = vals.some((v: string) => entityVal!.toLowerCase().includes(v.toLowerCase()));
               break;
             }
-            case "not_eq": matched = entityVal.toLowerCase() !== String(trigger.value).toLowerCase(); break;
+            case "not_eq": matched = entityVal.toLowerCase() !== String(t.value).toLowerCase(); break;
             case "any": matched = true; break;
             default: matched = false;
           }

@@ -1032,6 +1032,29 @@ export async function persistVersion(
     }
   }
 
+  // ── 8. POST-WRITE: Atomize version (extract atoms + rebuild deps + staleness) ──
+  // Fires on content writes with substantive text.
+  // Non-blocking — version validity never depends on atom extraction.
+  // Handles all pathways: generation, rewrite, repair, reverse engineering, manual editing.
+  if (opts.projectId && version?.id && hasContent && isContentOp && opts.plaintext!.trim().length >= 50) {
+    try {
+      const { atomizeVersion } = await import("./atomizeVersion.ts");
+      const atomResult = await atomizeVersion(
+        supabase,
+        opts.projectId,
+        key,
+        version.id,
+        opts.plaintext!
+      );
+      if (atomResult.errors.length > 0) {
+        console.warn(`[persistVersion] Atomization non-blocking errors: ${atomResult.errors.slice(0, 3).join("; ")}`);
+      }
+      console.log(`[persistVersion] Atomization: ${atomResult.atoms_written} atoms, ${atomResult.dependencies_written} deps, ${atomResult.staleness_flags_generated} staleness flags`);
+    } catch (atomErr: any) {
+      console.warn(`[persistVersion] Atomization failed (non-blocking): ${atomErr?.message}`);
+    }
+  }
+
   return version;
 }
 export async function upsertDoc(supabase, opts) {

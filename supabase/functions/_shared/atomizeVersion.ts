@@ -1,7 +1,18 @@
 /**
- * atomizeVersion.ts — Phase 3 & 5: On-Generation Atomization + Staleness
+ * atomizeVersion.ts — Phase 3 & 5: Canonical Version Atomization + Staleness
  *
- * Called as post-processing step after generate-document writes a new version.
+ * Called as post-processing step AFTER any version write via persistVersion().
+ * Trigger: DOCUMENT_VERSION_CREATED (via persistVersion content-write path).
+ * NOT tied to generate-document — fires identically for ALL pathways:
+ *   - forward generation
+ *   - screenplay intake / reverse engineering
+ *   - rewrite operations
+ *   - repair operations
+ *   - applied decisions
+ *   - surgical section rewrites
+ *   - manual editing
+ *   - future document mutation systems
+ *
  * Non-blocking — extraction failure does NOT invalidate the document.
  * Extracted atoms REPLACE previous atoms for that origin_doc_id.
  *
@@ -35,8 +46,8 @@ export interface AtomizationResult {
 }
 
 /**
- * Main entry point — atomize a newly generated document version.
- * Called AFTER document write, BEFORE response return.
+ * Main entry point — atomize a newly written document version.
+ * Called AFTER persistVersion() completes its DB write.
  * Non-blocking: catches all errors and reports them without throwing.
  */
 export async function atomizeVersion(
