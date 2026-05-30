@@ -31,11 +31,16 @@ interface ImageRow {
   model?: string
   provider?: string
   created_at?: string
+  location_ref?: string
+  image_url?: string
   signedUrl?: string | null
 }
 
-/** Resolve a signed URL for an image row, matching VPP pattern. */
+/** Resolve a signed URL for an image row, preferring pre-stored image_url. */
 async function resolveSignedUrl(img: ImageRow): Promise<string | null> {
+  // Prefer pre-stored public URL if available (fast, no API call)
+  if (img.image_url) return img.image_url
+  // Fall back to signed URL
   if (img.signedUrl) return img.signedUrl
   if (!img.storage_path || !img.storage_bucket) return null
   try {
@@ -180,7 +185,7 @@ export const visualAdapter: VisualAdapter = {
     // Primary: match by subject field
     const { data: images, error } = await (supabase as any)
       .from('project_images')
-      .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
+      .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, image_url, created_at')
       .eq('project_id', projectId)
       .eq('asset_group', assetGroup)
       .eq('is_active', true)
@@ -200,7 +205,7 @@ export const visualAdapter: VisualAdapter = {
       if (type === 'location') {
         const { data: fallback } = await (supabase as any)
           .from('project_images')
-          .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
+          .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, image_url, created_at')
           .eq('project_id', projectId)
           .eq('asset_group', assetGroup)
           .eq('is_active', true)
@@ -434,7 +439,7 @@ async function determineEntityStatus(
 async function getAllHeroFramesRaw(projectId: string, assetGroup: string = 'hero_frame'): Promise<ImageRow[]> {
   const { data, error } = await (supabase as any)
     .from('project_images')
-    .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
+    .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, image_url, created_at')
     .eq('project_id', projectId)
     .eq('asset_group', assetGroup)
     .eq('is_active', true)
