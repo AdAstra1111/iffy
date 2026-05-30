@@ -793,8 +793,8 @@ Deno.serve(async (req)=>{
     } catch (authCatchErr) {
       console.warn(`[generate-hero-frames] Auth exception: ${authCatchErr.message}, falling through to service-role`);
     }
-    // Fallback user ID for service-role calls — uses the project's system user
-    const systemUserId = authedUser?.id || "00000000-0000-0000-0000-000000000000";
+    // Fallback user ID for service-role calls — null is fine since these fields are nullable
+    const systemUserId = authedUser?.id || null;
     // ── Governance gate: respect persisted hero_frames stage blockers ──
     const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
     const heroGate = await readVisualGovernanceGate(supabase, project_id, "hero_frames");
@@ -1083,7 +1083,7 @@ Deno.serve(async (req)=>{
         console.log(`[HERO_SCENE_BOUND] Frame ${i} quality gate:`, JSON.stringify(gateResult));
         const { data: imgRecord, error: insertErr } = await supabase.from("project_images").insert({
           project_id,
-          role: "hero_variant",
+          role: "character_variant",
           ...gateResult,
           entity_id: null,
           strategy_key: "hero_frames",
@@ -1147,7 +1147,6 @@ Deno.serve(async (req)=>{
           lane_key: "feature_film",
           prestige_style: "natural_prestige",
           location_ref: moment.locationKey,
-          moment_ref: moment.sceneNumber
         }).select("id").single();
         if (insertErr) {
           console.error(`[HERO_SCENE_BOUND] Insert error frame ${i}:`, insertErr.message);

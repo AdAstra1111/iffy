@@ -243,7 +243,7 @@ export function validateNarrativeContext(
   if (!ncp.global_story_map) errors.push("global_story_map is required");
   if (!ncp.sequence_map || ncp.sequence_map.length === 0) errors.push("sequence_map is required with at least 1 sequence");
   if (!ncp.causal_chain || ncp.causal_chain.length === 0) errors.push("causal_chain is required with at least 1 entry");
-  if (!ncp.tension_curve || ncp.tension_curve.length === 0) errors.push("tension_curve is required with at least 1 entry");
+  if (!ncp.tension_curve) errors.push("tension_curve is required with at least 1 entry");
   if (!ncp.promise_registry) warnings.push("promise_registry is optional — no promises tracked");
   if (!ncp.scene_function_registry || ncp.scene_function_registry.length === 0) errors.push("scene_function_registry is required with at least 1 entry");
 
@@ -261,9 +261,13 @@ export function validateNarrativeContext(
 
   // Validate tension_curve covers all scenes
   if (ncp.tension_curve) {
-    const tensionNums = new Set(ncp.tension_curve.map(t => t.scene_number));
-    for (let s = 1; s <= totalScenes; s++) {
-      if (!tensionNums.has(s)) errors.push(`scene ${s} missing from tension_curve`);
+    // Handle both array and {scenes: [...]} formats
+    const curveArray = Array.isArray(ncp.tension_curve) ? ncp.tension_curve : (ncp.tension_curve as any).scenes || [];
+    if (curveArray.length > 0) {
+      const tensionNums = new Set(curveArray.map((t: any) => t.scene_number));
+      for (let s = 1; s <= totalScenes; s++) {
+        if (!tensionNums.has(s)) errors.push(`scene ${s} missing from tension_curve`);
+      }
     }
   }
 

@@ -360,6 +360,21 @@ The "scenes" array has the individual scene entries. The "narrative_context" obj
     scenes = parsed.scenes;
     narrativeContext = parsed.narrative_context || null;
     
+    // Normalize NCP data — LLM may return arrays as objects with 'scenes' or 'entries' keys
+    if (narrativeContext) {
+      const arrayFields = [
+        'tension_curve', 'causal_chain', 'sequence_map', 
+        'scene_function_registry'
+      ];
+      for (const field of arrayFields) {
+        const val = (narrativeContext as any)[field];
+        if (val && !Array.isArray(val)) {
+          // Try common sub-keys: scenes, entries, items, data
+          (narrativeContext as any)[field] = (val.scenes || val.entries || val.items || val.data || []);
+        }
+      }
+    }
+    
     // Validate NCP if present
     if (narrativeContext) {
       const validation = validateNarrativeContext(narrativeContext, scenes.length);
