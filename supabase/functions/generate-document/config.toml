@@ -1,0 +1,9 @@
+[jwt]
+verify_jwt = false
+
+[functions]
+timeout = 3600
+
+[functions.generate-document]
+verify_jwt = false
+
