@@ -275,3 +275,102 @@ describe("Edge case — deploy.sh references updated edge functions", () => {
     expect(deploySource).toContain("auto-run");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2A — NCP + Sequence-Aware Generation
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Phase 2A — Narrative Context Package + Sequence Generation", () => {
+  let ncpTypesSource: string;
+  let largeRiskRouterSource: string;
+  let chunkRunnerSource: string;
+  let genDocSource: string;
+
+  beforeAll(() => {
+    ncpTypesSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/ncpTypes.ts"),
+      "utf-8"
+    );
+    largeRiskRouterSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/largeRiskRouter.ts"),
+      "utf-8"
+    );
+    chunkRunnerSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/chunkRunner.ts"),
+      "utf-8"
+    );
+    genDocSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/generate-document/index.ts"),
+      "utf-8"
+    );
+  });
+
+  it("ncpTypes.ts defines NarrativeContextPackage type", () => {
+    expect(ncpTypesSource).toContain("NarrativeContextPackage");
+    expect(ncpTypesSource).toContain("global_story_map");
+    expect(ncpTypesSource).toContain("causal_chain");
+    expect(ncpTypesSource).toContain("tension_curve");
+    expect(ncpTypesSource).toContain("promise_registry");
+    expect(ncpTypesSource).toContain("scene_function_registry");
+  });
+
+  it("ncpTypes.ts exports validateNarrativeContext", () => {
+    expect(ncpTypesSource).toContain("export function validateNarrativeContext");
+  });
+
+  it("largeRiskRouter.ts exports SEQUENCE_INDEXED_DOC_TYPES with feature_script", () => {
+    expect(largeRiskRouterSource).toContain('export const SEQUENCE_INDEXED_DOC_TYPES');
+    expect(largeRiskRouterSource).toContain('"feature_script"');
+  });
+
+  it("largeRiskRouter.ts strategyFor routes feature_script to sequence_indexed", () => {
+    expect(largeRiskRouterSource).toContain('SEQUENCE_INDEXED_DOC_TYPES.has(docType)');
+    expect(largeRiskRouterSource).toContain('return "sequence_indexed"');
+  });
+
+  it("largeRiskRouter.ts has sequence_indexed chunk plan logic", () => {
+    expect(largeRiskRouterSource).toContain('strategy === "sequence_indexed"');
+    expect(largeRiskRouterSource).toContain('sequenceNumber');
+    expect(largeRiskRouterSource).toContain('sequencePurpose');
+  });
+
+  it("largeRiskRouter.ts exports groupScenesIntoSequences function", () => {
+    expect(largeRiskRouterSource).toContain("export function groupScenesIntoSequences");
+  });
+
+  it("chunkRunner.ts maxTokensForChunk handles sequence_indexed", () => {
+    expect(chunkRunnerSource).toContain('strategy === "sequence_indexed"');
+    expect(chunkRunnerSource).toContain('return 32000');
+  });
+
+  it("chunkRunner.ts has sequence_indexed prompt builder", () => {
+    expect(chunkRunnerSource).toContain('plan.strategy === "sequence_indexed"');
+    expect(chunkRunnerSource).toContain("NARRATIVE CONTEXT PACKAGE");
+    expect(chunkRunnerSource).toContain("Sequence-by-sequence");
+  });
+
+  it("chunkRunner.ts assembly validates sequence_indexed output", () => {
+    expect(chunkRunnerSource).toContain('plan.strategy === "scene_indexed" || plan.strategy === "sequence_indexed"');
+    expect(chunkRunnerSource).toContain("metadata_pollution");
+    expect(chunkRunnerSource).toContain("missing_scene_markers");
+  });
+
+  it("generate-document imports NCP types from ncpTypes", () => {
+    expect(genDocSource).toContain("import { validateNarrativeContext } from");
+    expect(genDocSource).toContain("NarrativeContextPackage");
+  });
+
+  it("generate-document has generateScenePlanAndNCP function", () => {
+    expect(genDocSource).toContain("generateScenePlanAndNCP");
+    expect(genDocSource).toContain("narrative_context");
+    expect(genDocSource).toContain("scene_function_type");
+    expect(genDocSource).toContain("character_goal");
+  });
+
+  it("generate-document calls generateScenePlanAndNCP in fresh path", () => {
+    expect(genDocSource).toContain("generateScenePlanAndNCP(");
+  });
+
+  it("generate-document calls generateScenePlanAndNCP in resume path", () => {
+    expect(genDocSource).toContain("generateScenePlanAndNCP(");
+  });
+});

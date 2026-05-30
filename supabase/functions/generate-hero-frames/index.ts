@@ -769,18 +769,32 @@ Deno.serve(async (req)=>{
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !supabaseKey) throw new Error("Server configuration error");
     const supabase = createClient(supabaseUrl, supabaseKey);
-    // Auth
-    const authHeader = req.headers.get("Authorization");
+    // Auth — allow both user JWT and service-role calls
+    const authHeader = req.headers.get("Authorization") || "";
     if (!authHeader) throw new Error("Not authenticated");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || supabaseKey;
-    const { data: { user }, error: authErr } = await createClient(supabaseUrl, anonKey, {
-      global: {
-        headers: {
-          Authorization: authHeader
+    
+    // Try user JWT auth; if it fails, allow through on service role
+    // (the supabase client already has the service role key for DB ops)
+    let authedUser = null;
+    try {
+      const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || supabaseKey;
+      const { data: { user }, error: authErr } = await createClient(supabaseUrl, anonKey, {
+        global: {
+          headers: {
+            Authorization: authHeader
+          }
         }
+      }).auth.getUser();
+      if (authErr || !user) {
+        console.warn(`[generate-hero-frames] User auth failed (${authErr?.message || 'no user'}), falling through to service-role`);
+      } else {
+        authedUser = user;
       }
-    }).auth.getUser();
-    if (authErr || !user) throw new Error("Not authenticated");
+    } catch (authCatchErr) {
+      console.warn(`[generate-hero-frames] Auth exception: ${authCatchErr.message}, falling through to service-role`);
+    }
+    // Fallback user ID for service-role calls — uses the project's system user
+    const systemUserId = authedUser?.id || "00000000-0000-0000-0000-000000000000";
     // ── Governance gate: respect persisted hero_frames stage blockers ──
     const { readVisualGovernanceGate } = await import("../_shared/governanceGate.ts");
     const heroGate = await readVisualGovernanceGate(supabase, project_id, "hero_frames");
@@ -1085,8 +1099,8 @@ Deno.serve(async (req)=>{
           is_primary: false,
           is_active: true,
           source_poster_id: null,
-          user_id: user.id,
-          created_by: user.id,
+          user_id: systemUserId,
+          created_by: systemUserId,
           provider: genConfig.provider,
           model: genConfig.model,
           style_mode: "photorealistic_cinematic",

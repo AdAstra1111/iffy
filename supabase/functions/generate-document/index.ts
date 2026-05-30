@@ -23,6 +23,8 @@ import { runChunkedGeneration, resumeChunkedGeneration } from "../_shared/chunkR
 import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_shared/chunkValidator.ts";
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
+import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
+import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
@@ -233,7 +235,7 @@ interface ScenePlanEntry {
   pov_character?: string;
 }
 
-async function generateScenePlan(
+async function generateScenePlanAndNCP(
   apiKey: string,
   gatewayUrl: string,
   projectTitle: string,
@@ -242,17 +244,20 @@ async function generateScenePlan(
   storyOutline: string,
   characterBible: string,
   formatRules: string
-): Promise<ScenePlanEntry[]> {
+): Promise<{ scenes: ScenePlanEntry[]; narrativeContext: NarrativeContextPackage | null }> {
   const GL = "\n"; // Template literal helper to avoid escaping in heredoc
   const maxChars = 8000;
   
-  const systemPrompt = `You are a professional screenwriter creating a Scene Plan for a feature film.
+  const systemPrompt = `You are a professional screenwriter creating a Scene Plan with Narrative Context for a feature film.
+
 A Scene Plan bridges the structural Beat Sheet into individual screenplay scenes.
+The Narrative Context Package (NCP) provides the global story awareness that enables coherent, professional screenplay generation.
 
 Your task:
-1. Analyze the Beat Sheet - each beat is a structural unit (Opening Image, Theme Stated, etc.)
+1. Analyze the Beat Sheet — each beat is a structural unit (Opening Image, Theme Stated, etc.)
 2. Break each beat into 2-4 individual scenes that fulfill the beat's dramatic function
 3. For each scene, define its dramatic movement
+4. Generate the Narrative Context Package
 
 CRITICAL STRUCTURAL RULES:
 - Beat 1-15 → Act 1 (Opening Image through Break into Two)
@@ -273,11 +278,21 @@ For each scene, you MUST provide:
 - scene_turn: The emotional/story shift within this scene — how the situation changes from its beginning to its end
 - scene_outcome: The state left behind — how the world or character is changed by this scene
 
-Optional (include when relevant):
+Optional per scene (include when relevant):
 - estimated_pages: Rough page count (1 page = ~1 minute screen time)
 - pov_character: Whose perspective this scene is told from
+- scene_function_type: One of: exposition, conflict, reveal, aftermath, transition, set_piece, character_moment, confrontation, negotiation, discovery, suspense, reaction, preparation, montage, inciting_event
+- character_goal: What the protagonist wants in this scene (1 sentence max)
 
-Output ONLY valid JSON. No markdown. No preamble. No code fences. Start directly with [.`;
+NARRATIVE CONTEXT PACKAGE — You MUST also generate:
+1. global_story_map: act structure with key turning points and narrative trajectory
+2. causal_chain: For each scene, what triggered it (previous scene outcome) and what it enables
+3. tension_curve: Tension value (1-10) and trajectory (rising/sustaining/releasing/resetting/oscillating) for each scene
+4. promise_registry: Setups, character traits, props, mysteries, and statements that need payoff later
+5. scene_function_registry: For each scene, its function type and a brief structure guideline
+
+Output ONLY valid JSON with two root keys: "scenes" (array) and "narrative_context" (object).
+No markdown. No preamble. No code fences. Start directly with {.`;
 
   const userPrompt = `Project: "${projectTitle}"
 
@@ -289,8 +304,9 @@ ${storyOutline ? `STORY OUTLINE:\n${storyOutline.slice(0, 4000)}\n\n` : ""}
 ${characterBible ? `CHARACTER BIBLE (for character names and arcs):\n${characterBible.slice(0, 4000)}\n\n` : ""}
 ${formatRules ? `FORMAT RULES:\n${formatRules.slice(0, 2000)}\n\n` : ""}
 
-Generate the complete Scene Plan JSON array. Every beat must be expanded into 2-4 scenes.
-Total scenes should be 90-130 for a standard feature film.`;
+Generate the complete Scene Plan + Narrative Context Package JSON.
+Every beat must be expanded into 2-4 scenes. Total scenes should be 90-130 for a standard feature film.
+The "scenes" array has the individual scene entries. The "narrative_context" object has the global story map, causal chain, tension curve, promise registry, and scene function registry.`;
 
   const response = await fetch(gatewayUrl, {
     method: "POST",
@@ -329,14 +345,44 @@ Total scenes should be 90-130 for a standard feature film.`;
       ? cleanJson.split("\n").slice(1, -1).join("\n").trim()
       : cleanJson;
 
-  const parsed: ScenePlanEntry[] = JSON.parse(finalClean);
-  if (!Array.isArray(parsed) || parsed.length < 5) {
-    throw new Error(`Scene Plan generated ${parsed.length} scenes — expected at least 5`);
+  const parsed = JSON.parse(finalClean);
+  
+  // Two response formats supported:
+  // 1. Array (backward compat) — treat as scenes only, no NCP
+  // 2. { scenes, narrative_context } — Phase 2A format
+  let scenes: ScenePlanEntry[];
+  let narrativeContext: NarrativeContextPackage | null = null;
+
+  if (Array.isArray(parsed)) {
+    // Backward compatible mode — old format
+    scenes = parsed;
+  } else if (parsed && Array.isArray(parsed.scenes)) {
+    scenes = parsed.scenes;
+    narrativeContext = parsed.narrative_context || null;
+    
+    // Validate NCP if present
+    if (narrativeContext) {
+      const validation = validateNarrativeContext(narrativeContext, scenes.length);
+      if (!validation.valid) {
+        console.warn(`[generate-document] Narrative Context validation warnings: ${validation.warnings.join("; ")}`);
+        // Fail closed on errors (not warnings — warnings are soft)
+        if (validation.errors.length > 0 && validation.errors.some(e => !e.includes("causal_chain"))) {
+          console.warn(`[generate-document] Narrative Context errors: ${validation.errors.join("; ")} — proceeding without NCP`);
+          narrativeContext = null; // Fall back gracefully
+        }
+      }
+    }
+  } else {
+    throw new Error("Scene Plan response must be a scenes array or {scenes, narrative_context} object");
+  }
+
+  if (!Array.isArray(scenes) || scenes.length < 5) {
+    throw new Error(`Scene Plan generated ${scenes.length} scenes — expected at least 5`);
   }
 
   // Validate each entry has required fields
-  for (let i = 0; i < parsed.length; i++) {
-    const entry = parsed[i];
+  for (let i = 0; i < scenes.length; i++) {
+    const entry = scenes[i];
     const missing: string[] = [];
     if (!entry.scene_number) missing.push("scene_number");
     if (!entry.act) missing.push("act");
@@ -352,10 +398,10 @@ Total scenes should be 90-130 for a standard feature film.`;
   }
 
   // Normalize scene numbers sequentially
-  parsed.forEach((entry, i) => { entry.scene_number = i + 1; });
+  scenes.forEach((entry, i) => { entry.scene_number = i + 1; });
 
-  console.log(`[generate-document] Scene Plan generated: ${parsed.length} scenes from beat sheet`);
-  return parsed;
+  console.log(`[generate-document] Scene Plan + NCP generated: ${scenes.length} scenes, NCP ${narrativeContext ? "present" : "absent"}`);
+  return { scenes, narrativeContext };
 }
 
 interface ResolvedScene {
@@ -2224,7 +2270,7 @@ ${existingCBContent.slice(0, 30000)}`;
           const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
           if (beatSheetText && beats && beats.length > 0) {
             try {
-              const sp = await generateScenePlan(
+              const { scenes: sp, narrativeContext: resumeNCP } = await generateScenePlanAndNCP(
                 apiKey, gw.url, project.title || "Untitled",
                 beatSheetText,
                 upstreamBlocks.get("treatment") || "",
@@ -2425,7 +2471,7 @@ ${existingCBContent.slice(0, 30000)}`;
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
         if (beatSheetText && beats && beats.length > 0) {
           try {
-            const scenePlan = await generateScenePlan(
+            const { scenes: scenePlan, narrativeContext: ncp } = await generateScenePlanAndNCP(
               apiKey, gw.url, project.title || "Untitled",
               beatSheetText,
               upstreamBlocks.get("treatment") || "",

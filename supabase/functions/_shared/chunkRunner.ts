@@ -92,6 +92,7 @@ export function containsFailedPlaceholders(text: string): boolean {
 function maxTokensForChunk(strategy: string, docType: string): number {
   if (strategy === "episodic_indexed") return 16000;
   if (strategy === "beat_sequential") return 8000;
+  if (strategy === "sequence_indexed") return 32000; // 4-7 scenes per sequence
   if (docType.includes("script") || docType === "screenplay_draft" || docType === "production_draft") return 32000;
   if (docType.includes("treatment")) return 24000;
   return 16000;
@@ -493,6 +494,52 @@ UPSTREAM CONTEXT:
 ${upstreamContent}
 
 Generate the screenplay content for ${sceneRangeLabel} now. Full screenplay format. Complete scenes. Complete dialogue.`;
+  } else if (plan.strategy === "sequence_indexed") {
+    // ── Phase 2A: sequence_indexed — Generate screenplay sequence-by-sequence ──
+    // Each chunk contains 4-7 scenes forming a coherent dramatic sequence.
+
+    const seqNum = chunk.sequenceNumber || 1;
+    const seqName = chunk.sequenceName || `Sequence ${seqNum}`;
+    const seqPurpose = chunk.sequencePurpose || "transition";
+    const seqPacing = chunk.sequencePacingDirective || "medium";
+    const seqFuncDesc = chunk.sequenceFunctionDescription || "";
+    const seqAct = chunk.sequenceAct || 1;
+
+    chunkPrompt = `You are writing ${chunk.label} for "${projectTitle}".
+Document type: feature_script
+Strategy: Sequence-by-sequence — generating from Narrative Context Package.
+
+=== NARRATIVE CONTEXT PACKAGE ===
+
+SEQUENCE ${seqNum} OF ${plan.totalChunks}: "${seqName}"
+Act ${seqAct} | Purpose: ${seqPurpose} | Pacing: ${seqPacing}
+${seqFuncDesc ? `Description: ${seqFuncDesc}` : ""}
+
+${
+  previousChunkEnding && !previousChunkEnding.startsWith("PREVIOUS")
+    ? `PREVIOUS SEQUENCE OUTCOME:\n${previousChunkEnding}\n`
+    : ""
+}
+
+CRITICAL RULES:
+- Output ONLY screenplay content for ${chunk.label}.
+- Write COMPLETE scenes: INT./EXT. slugline, action paragraphs, character names, dialogue.
+- Every scene in this sequence MUST be expanded into full screenplay format.
+- Output SCENE N markers (SCENE 1, SCENE 2...) before each scene.
+- Do NOT compress, summarise, or skip any scene in this sequence.
+- Maintain consistent character voice, tone, and story continuity across ALL scenes.
+- Each scene must have its own slugline — do NOT merge adjacent scenes.
+- Action lines should be descriptive and visual. Dialogue should reveal character and advance plot.
+- Do NOT use placeholder text, "(CONTINUED)" markers, or "we see".
+- Do NOT include meta-commentary, analytical text, subtext tables, or dramatic function descriptions. Output ONLY screenplay content.
+- Do NOT include metadata headers. Start directly with SCENE 1, sluglines, and dialogue.
+- TARGET LENGTH: Each scene MUST be 2–4 pages (approx 3,000–6,000 characters). Write every scene in full.
+
+${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
+UPSTREAM CONTEXT:
+${upstreamContent}
+
+Generate the screenplay content for ${chunk.label} (Sequence ${seqNum}) now. Full screenplay format. Complete scenes. Complete dialogue.`;
   } else {
     chunkPrompt = `Generate chunk ${chunk.chunkIndex + 1} (${chunk.label}) for "${projectTitle}".
 ${upstreamContent}`;
@@ -1110,6 +1157,12 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
         previousEnding = chunk.chunkIndex > 0
           ? chunkContents[chunk.chunkIndex - 1].slice(-800)
           : undefined;
+      } else if (plan.strategy === "sequence_indexed") {
+        // Sequence indexed: sequences are sequential narrative units
+        // Pass the last 500 chars of the previous sequence's output for continuity
+        previousEnding = chunk.chunkIndex > 0
+          ? chunkContents[chunk.chunkIndex - 1].slice(-500)
+          : undefined;
       }
 
       // Mark as running with heartbeat timestamp
@@ -1606,13 +1659,14 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           repairAction: "regen_all",
         };
       }
-    } else if (plan.strategy === "scene_indexed") {
-      // scene_indexed: screenplay content has no section-key headings (SC##-SC##).
+    } else if (plan.strategy === "scene_indexed" || plan.strategy === "sequence_indexed") {
+      // scene_indexed / sequence_indexed: screenplay content has no section-key headings.
       // validateSectionedContent would ALWAYS fail looking for those keys in
       // screenplay prose, triggering infinite repair loops.
       // Instead: check sluglines + dialogue for basic screenplay structure.
       const sluglineCount = (assembledContent.match(/^(?:INT\.|EXT\.|INT\/EXT\.)\s/gm) || []).length;
       const dialogueCount = (assembledContent.match(/^[A-Z][A-Z\s]{2,}$/gm) || []).length;
+      const sceneMarkers = (assembledContent.match(/^SCENE \d+/gm) || []).length;
       const failures: any[] = [];
       if (sluglineCount < 2) {
         failures.push({ type: "missing_sluglines", detail: `Screenplay has only ${sluglineCount} sluglines` });
@@ -1620,9 +1674,21 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
       if (dialogueCount < 3) {
         failures.push({ type: "missing_dialogue", detail: `Screenplay has only ${dialogueCount} dialogue blocks` });
       }
+      if (plan.strategy === "sequence_indexed" && sceneMarkers < 2) {
+        failures.push({ type: "missing_scene_markers", detail: `Assembly has only ${sceneMarkers} SCENE N markers` });
+      }
       const bannedHit = hasBannedSummarizationLanguage(assembledContent);
       if (bannedHit) {
         failures.push({ type: "banned_phrase", detail: "Assembly contains banned summarization language" });
+      }
+      // Check for metadata pollution (for sequence_indexed only)
+      if (plan.strategy === "sequence_indexed") {
+        const metaHeaders = ["Deliverable Type", "Completion Status", "Completeness Check"];
+        for (const header of metaHeaders) {
+          if (assembledContent.includes(header)) {
+            failures.push({ type: "metadata_pollution", detail: `Assembly contains "${header}" metadata header` });
+          }
+        }
       }
       validationResult = {
         pass: failures.length === 0,

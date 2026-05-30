@@ -504,8 +504,69 @@ async function handleAllCharacters(
     .maybeSingle();
 
   if (!canon?.canon_json) {
-    report.errors.push("No project_canon found for this project");
-    return respond(report, 400);
+    // Fallback: read characters from atoms table
+    const { data: atomChars } = await sb
+      .from("atoms")
+      .select("canonical_name")
+      .eq("project_id", projectId)
+      .eq("atom_type", "character")
+      .neq("readiness_state", "stub")
+      .order("created_at", { ascending: true });
+
+    if (!atomChars || atomChars.length === 0) {
+      report.errors.push("No characters found in project_canon or atoms");
+      return respond(report, 400);
+    }
+
+    const allCharNames = new Set<string>();
+    for (const ac of atomChars) {
+      if (ac.canonical_name) allCharNames.add(ac.canonical_name);
+    }
+
+    const charNames = Array.from(allCharNames);
+    console.log(`[generate-visual-dna] Fallback: ${charNames.length} characters from atoms table`);
+
+    // Process each character
+    for (const charName of charNames) {
+      try {
+        const result = await handleCharacter(sb, functionBase, projectId, charName, mode);
+        const data = await result.json();
+        report.created += data.created || 0;
+        report.skipped += data.skipped || 0;
+        report.updated += data.updated || 0;
+        report.blocked += data.blocked || 0;
+        report.low_confidence += data.low_confidence || 0;
+        if (data.errors) {
+          report.errors.push(...data.errors.map((e: string) => `${charName}: ${e}`));
+        }
+      } catch (e: any) {
+        report.errors.push(`${charName}: ${e.message}`);
+      }
+    }
+
+    if (!suppressGovernance && mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
+      // Same governance call as below
+      try {
+        const governanceUrl = `${functionBase}/evaluate-visual-governance`;
+        const govResponse = await fetch(governanceUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
+          },
+          body: JSON.stringify({ projectId }),
+        });
+        if (govResponse.ok) {
+          report.governance_result = await govResponse.json();
+        } else {
+          report.errors.push(`evaluate-visual-governance returned ${govResponse.status}`);
+        }
+      } catch (e: any) {
+        report.errors.push(`evaluate-visual-governance call failed: ${e.message}`);
+      }
+    }
+
+    return respond(report);
   }
 
   const canonJson = canon.canon_json as Record<string, any>;
@@ -1720,6 +1781,11 @@ const NON_HUMAN_MARKERS = [
   const entityIsNonHuman = isNonHumanEntity(traits);
 
   // Track the highest-confidence evidence per category
+  // NOTE: traitConfidence and evidenceSource are declared outside the loop below so that
+  // updateField's closure can access them. Using const/let inside the for-of
+  // body creates a block scope that the outer closure can't reach.
+  let traitConfidence: string;
+  let evidenceSource: string = '';
   const updateField = (fieldName: string, fieldValue: string | string[]) => {
     if (!fieldValue || (Array.isArray(fieldValue) && fieldValue.length === 0)) return;
     const confScore = traitConfidence === "high" ? 3 : traitConfidence === "medium" ? 2 : 1;
@@ -1737,8 +1803,8 @@ const NON_HUMAN_MARKERS = [
     const rawLabel = (trait.label || "").trim();
     const label = rawLabel.toLowerCase().trim();
     const value = (trait.value || trait.label || "").trim();
-    let traitConfidence = (trait.confidence || "low").toLowerCase().trim();
-    const evidenceSource = trait.evidence_source || trait.source || `extract-visual-dna`;
+    traitConfidence = (trait.confidence || "low").toLowerCase().trim();
+    evidenceSource = trait.evidence_source || trait.source || `extract-visual-dna`;
 
     // Skip if label is generic (just the category name)
     if (isGenericLabel(label)) continue;
