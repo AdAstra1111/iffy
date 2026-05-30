@@ -204,8 +204,8 @@ async function resolveBeatsFromBeatSheet(
       .from("project_document_versions")
       .select("plaintext")
       .eq("document_id", beatDoc.id)
-      .eq("is_current", true)
-      .eq("approval_status", "approved")
+      .order("version_number", { ascending: false })
+      .limit(1)
       .maybeSingle();
     if (!beatVersion?.plaintext) return null;
 
