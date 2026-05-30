@@ -18,6 +18,7 @@ import ImageViewer from '@/components/visualize/ImageViewer'
 import GenerationControls from '@/components/visualize/GenerationControls'
 import EntityDetailPanel from '@/components/visualize/EntityDetailPanel'
 import { useExpertMode } from '@/hooks/useExpertMode'
+import { useVisualCanonStatus } from '@/hooks/useVisualCanonStatus'
 
 // ── Expert mode panel (lazy-loaded, never fetched when expert mode disabled) ──
 const ExpertVisualizePanel = React.lazy(() => import('@/components/visualize/ExpertVisualizePanel'))
@@ -110,12 +111,16 @@ const VisualizeWorkspace: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
+  // ── Canon Status ──────────────────────────────────────────────────────
+  const { data: canonStatus } = useVisualCanonStatus({ projectId })
+
   // Get entity count for a given type
   const entityCount = (type: string) =>
     entities.filter((e) => e.type === type).length
 
-  // Tabs — always show Characters and Locations
+  // Tabs — always show All Hero Frames, Characters, and Locations
   const tabs: EntityTab[] = [
+    { type: 'all', label: 'All Hero Frames', count: 0 },
     { type: 'character', label: 'Characters', count: entityCount('character') },
     { type: 'location', label: 'Locations', count: entityCount('location') },
   ]
@@ -249,6 +254,17 @@ const VisualizeWorkspace: React.FC = () => {
       setImages([])
       setSelectedImage(null)
     }
+
+    // Auto-select the "All Hero Frames" virtual entity when that tab is clicked
+    if (type === 'all') {
+      const allEntity: VisualEntity = {
+        id: '__all__',
+        name: 'All Hero Frames',
+        type: 'all',
+        status: 'has_images',
+      }
+      setSelectedEntity(allEntity)
+    }
   }
 
   const handleEntitySelect = (entity: VisualEntity) => {
@@ -378,6 +394,27 @@ const VisualizeWorkspace: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full">
+      {/* ── Certification Badge ──────────────────────────────────── */}
+      {canonStatus?.certified && (
+        <div className="px-4 py-1.5 bg-green-950/30 border-b border-green-800/20">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="font-semibold text-green-400">YETI V1 CANON-DRIVEN</span>
+            <span className="text-muted-foreground/50">|</span>
+            {canonStatus.canon_status?.identity?.active && (
+              <span className="text-green-500">ID ✅</span>
+            )}
+            {canonStatus.canon_status?.wardrobe?.active && (
+              <span className="text-green-500">WC ✅</span>
+            )}
+            {canonStatus.canon_status?.pd?.active && (
+              <span className="text-green-500">PD ✅</span>
+            )}
+            <span className="text-muted-foreground/40 text-[10px] ml-auto">
+              {canonStatus.certification}
+            </span>
+          </div>
+        </div>
+      )}
       {/* ── Top: Entity Navigation ─────────────────────────────── */}
       <EntityNavigation
         tabs={tabs}
@@ -652,6 +689,7 @@ const VisualizeWorkspace: React.FC = () => {
         <ImageViewer
           image={selectedImage}
           images={images}
+          projectId={projectId}
           onClose={() => setSelectedImage(null)}
           onApprove={handleApprove}
           onSetPrimary={handleSetPrimary}

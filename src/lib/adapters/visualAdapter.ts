@@ -144,16 +144,26 @@ export const visualAdapter: VisualAdapter = {
   async getEntityImages(type, id, projectId): Promise<VisualImage[]> {
     if (!projectId) return []
 
+    // Special type: 'all' loads ALL hero frames for the project (no entity filter)
+    if (type === 'all') {
+      return getAllHeroFrames(projectId)
+    }
+
     // Determine the entity name from id (needed for subject matching in project_images)
     let entityName = id
 
     if (type === 'character') {
-      const { data } = await (supabase as any)
-        .from('project_characters')
-        .select('name')
-        .eq('id', id)
-        .maybeSingle()
-      if (data?.name) entityName = data.name
+      // Normalize: for canon-Name IDs, extract the actual name
+      if (typeof id === 'string' && id.startsWith('canon-')) {
+        entityName = id.slice(6) // strip 'canon-' prefix
+      } else {
+        const { data } = await (supabase as any)
+          .from('project_characters')
+          .select('name')
+          .eq('id', id)
+          .maybeSingle()
+        if (data?.name) entityName = data.name
+      }
     } else if (type === 'location') {
       const { data } = await (supabase as any)
         .from('canon_locations')
@@ -167,9 +177,10 @@ export const visualAdapter: VisualAdapter = {
     const assetGroup = type === 'character' ? 'hero_frame' : 'location'
 
     // Query project_images for this entity
+    // Primary: match by subject field
     const { data: images, error } = await (supabase as any)
       .from('project_images')
-      .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, created_at')
+      .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
       .eq('project_id', projectId)
       .eq('asset_group', assetGroup)
       .eq('is_active', true)
@@ -181,7 +192,31 @@ export const visualAdapter: VisualAdapter = {
       return []
     }
 
-    const rows: ImageRow[] = images || []
+    let rows: ImageRow[] = images || []
+
+    // If no images matched by subject, try fallback matching
+    if (rows.length === 0) {
+      // For location entities, also check location_ref and generation_config.location_key
+      if (type === 'location') {
+        const { data: fallback } = await (supabase as any)
+          .from('project_images')
+          .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
+          .eq('project_id', projectId)
+          .eq('asset_group', assetGroup)
+          .eq('is_active', true)
+          .or(`location_ref.eq.${entityName},location_ref.ilike.%${entityName}%`)
+          .order('created_at', { ascending: false })
+          .limit(20)
+        if (fallback && fallback.length > 0) {
+          rows = fallback
+        }
+      }
+
+      // If still no results, fall back to all hero frames for this project
+      if (rows.length === 0) {
+        rows = await getAllHeroFramesRaw(projectId, assetGroup)
+      }
+    }
 
     // Resolve signed URLs for each image
     const result: VisualImage[] = []
@@ -370,6 +405,17 @@ async function determineEntityStatus(
     .limit(10)
 
   if (error || !data || data.length === 0) {
+    // Don't mark as empty if the project has ANY active hero frames
+    // (the entity may have unbound frames that will show via fallback)
+    if (assetGroup === 'hero_frame') {
+      const { count } = await (supabase as any)
+        .from('project_images')
+        .select('id', { count: 'exact', head: true })
+        .eq('project_id', projectId)
+        .eq('asset_group', 'hero_frame')
+        .eq('is_active', true)
+      if ((count ?? 0) > 0) return 'has_images'
+    }
     return 'empty'
   }
 
@@ -379,4 +425,57 @@ async function determineEntityStatus(
   if (hasApproved) return 'approved'
 
   return 'has_images'
+}
+
+/**
+ * Load ALL active hero frames for a project, without entity subject filtering.
+ * Used as fallback display and for the "All Hero Frames" view.
+ */
+async function getAllHeroFramesRaw(projectId: string, assetGroup: string = 'hero_frame'): Promise<ImageRow[]> {
+  const { data, error } = await (supabase as any)
+    .from('project_images')
+    .select('id, role, is_primary, curation_state, storage_path, storage_bucket, width, height, generation_config, model, provider, subject_type, subject, location_ref, created_at')
+    .eq('project_id', projectId)
+    .eq('asset_group', assetGroup)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(100)
+
+  if (error) {
+    console.error('[visualAdapter] getAllHeroFrames error:', error)
+    return []
+  }
+  return data || []
+}
+
+/**
+ * Get ALL active hero frames for a project, resolved to VisualImage[].
+ * Exposed on the adapter surface for the "All Hero Frames" section.
+ */
+async function getAllHeroFrames(projectId: string): Promise<VisualImage[]> {
+  const rows = await getAllHeroFramesRaw(projectId)
+  const result: VisualImage[] = []
+  for (const img of rows) {
+    const url = await resolveSignedUrl(img)
+    result.push({
+      id: img.id,
+      url: url || '',
+      entityType: 'all',
+      entityId: '',
+      status: mapCurationState(img.curation_state),
+      isPrimary: !!img.is_primary,
+      metadata: {
+        width: img.width,
+        height: img.height,
+        role: img.role,
+        model: img.model,
+        provider: img.provider,
+        subject: img.subject,
+        subjectType: img.subject_type,
+        generationConfig: img.generation_config,
+        createdAt: img.created_at,
+      },
+    })
+  }
+  return result
 }

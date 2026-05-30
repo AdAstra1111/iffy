@@ -15,7 +15,7 @@ export interface GenerationResult {
 export interface VisualEntity {
   id: string
   name: string
-  type: 'character' | 'location' | 'costume' | 'style' | 'lookbook' | 'poster'
+  type: 'character' | 'location' | 'costume' | 'style' | 'lookbook' | 'poster' | 'all'
   primaryImage?: string
   status: 'empty' | 'has_images' | 'approved'
 }
@@ -76,6 +76,7 @@ export interface DocLadderAdapter {
 export interface VisualAdapter {
   getEntities(type: string, projectId: string): Promise<VisualEntity[]>
   getEntityImages(type: string, id: string, projectId: string): Promise<VisualImage[]>
+  getAllHeroFrames?(projectId: string): Promise<VisualImage[]>
   generateImage(entityType: string, entityId: string, intent: GenerationIntent, projectId: string): Promise<GenerationResult>
   approveImage(imageId: string): Promise<void>
   setPrimaryImage(entityType: string, entityId: string, imageId: string, projectId: string): Promise<void>
