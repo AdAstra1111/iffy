@@ -597,7 +597,74 @@ async function handleGenerate(projectId: string) {
             return `[${sv.slugline || "SCENE"}] (tension: ${sv.tension_delta || 0}) — ${excerpt}`;
           });
 
-          const prompt = `You are a props master and visual story analyst for a film/TV production. Generate a rich, production-ready prop atom for the following prop.
+          
+
+          // ── CPIE Inference Integration ──
+          // Fetch deterministic CPIE results for this prop's context
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+          if (cpieUrl) {
+            try {
+              const { data: pcpRow } = await admin
+                .from("project_context_profiles")
+                .select("profile")
+                .eq("project_id", projectId)
+                .maybeSingle();
+
+              if (pcpRow?.profile) {
+                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+                const cpieCtx = {
+                  project_id: projectId,
+                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+                  pcp_resolution_timestamp: new Date().toISOString(),
+                };
+
+                const cpieResponse = await fetch(cpieUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ pcp: cpieCtx, domains: ["props"] }),
+                });
+
+                if (cpieResponse.ok) {
+                  const cpieResult = await cpieResponse.json();
+                  const entityResults = cpieResult.domains?.props || [];
+                  if (entityResults.length > 0) {
+                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+                      field: inf.field, value: inf.value,
+                      confidence: inf.confidence_score, reasoning: inf.reasoning,
+                    }));
+                  }
+                }
+              }
+            } catch (cpieErr) {
+              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
+            }
+          }
+
+          const cpieContext = cpieInferences.length > 0
+            ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence})`).join("\n")
+            : "  (no CPIE data available)";
+const prompt = `You are a props master and visual story analyst for a film/TV production. ENHANCEMENT MODE — Core prop decisions made by CPIE.
+
+DETERMINISTIC CPIE INFERENCES (must use):
+${cpieContext}
+
+PROP: ${propName}
+SCENE COUNT: ${sceneCount}
+SCENES MENTIONING THIS PROP:
+${sceneContexts.length > 0 ? sceneContexts.join("\n\n") : "No direct scene context found — infer from prop name and story context."}
+
+Generate a complete PropAtomAttributes JSON object. Use CPIE values above as GROUND TRUTH. Add DETAIL for:
+1. PHYSICAL DESCRIPTION — what does it look like? Size, shape, materials, color.
+2. PRODUCTION IMPLICATIONS — how complex is this to source/fabricate?
+3. NARRATIVE FUNCTION — how does this prop serve the story?
+4. STATE CHANGES — does this prop change state across scenes?
+5. SYMBOLIC MEANING — what does this prop represent thematically?
 
 PROP: ${propName}
 SCENE COUNT: ${sceneCount}
@@ -705,7 +772,20 @@ confidence should reflect how much scene context was available. readinessBadge s
             generationStatus: "completed",
           };
 
-          const { error: updateErr } = await admin
+          
+
+          // Merge CPIE provenance
+          if (cpieInferences.length > 0) {
+            finalAttributes.cpie_inferences_used = cpieInferences.length;
+            finalAttributes.cpie_provenance = cpieInferences.map(i => ({
+              field: i.field, value: i.value,
+              source_type: "inferred",
+              confidence_score: i.confidence,
+              reasoning: i.reasoning,
+            }));
+          }
+          finalAttributes.generated_from_cpie = true;
+const { error: updateErr } = await admin
             .from("atoms")
             .update({
               generation_status: "complete",

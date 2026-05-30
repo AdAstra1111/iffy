@@ -700,6 +700,18 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── ROOT DOCUMENT PROVENANCE ──
+    // Documents with no upstream dependencies (like "idea") generate from
+    // project metadata (guardrails_config, dev seed). The provenance gate in
+    // createVersion blocks empty inputsUsed for system generators, so we
+    // populate it with a reference to the project itself as the generative source.
+    if (upstreamTypes.length === 0 && Object.keys(inputsUsed).length === 0) {
+      inputsUsed["_project_seed"] = {
+        source: "projects.guardrails_config.story_setup",
+        project_id: projectId,
+      };
+    }
+
     // 3b) Extract convergence guidance as compact preface (truncation-safe)
     const guidanceExtract = extractConvergenceGuidance(upstreamBlocks);
     if (guidanceExtract) {
@@ -2478,9 +2490,14 @@ ${existingCBContent.slice(0, 30000)}`;
             } else {
               // Partial completion — do NOT promote to is_current or latest_version_id
               console.error(`[generate-document][IEL] Resume PARTIAL — NOT promoting: ${docType} versionId=${resumeVersionId} completed=${resumeResult.completedChunks}/${resumeResult.totalChunks} failed=${resumeResult.failedChunks}`);
+              const { data: curMetaForResumePart } = await serviceClient
+                .from("project_document_versions").select("meta_json")
+                .eq("id", resumeVersionId).maybeSingle();
+              const existingMetaForResumePart = (curMetaForResumePart?.meta_json || {});
               await serviceClient.from("project_document_versions")
                 .update({
                   meta_json: {
+                    ...existingMetaForResumePart,
                     ...rearmedMeta,
                     bg_generating: false,
                     bg_failed: true,
@@ -2495,9 +2512,13 @@ ${existingCBContent.slice(0, 30000)}`;
                 .eq("id", resumeVersionId);
             }
           } catch (bgErr: any) {
-            console.error(`[generate-document] Resume FAILED: ${docType} — ${bgErr?.message}`);
-            await serviceClient.from("project_document_versions")
-              .update({ meta_json: { ...rearmedMeta, bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
+          console.error(`[generate-document] Resume FAILED: ${docType} — ${bgErr?.message}`);
+          const { data: curMetaForResumeErr } = await serviceClient
+            .from("project_document_versions").select("meta_json")
+            .eq("id", resumeVersionId).maybeSingle();
+          const existingMetaForResumeErr = (curMetaForResumeErr?.meta_json || {});
+          await serviceClient.from("project_document_versions")
+            .update({ meta_json: { ...existingMetaForResumeErr, ...rearmedMeta, bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
               .eq("id", resumeVersionId);
           }
         })();
@@ -2945,8 +2966,14 @@ ${existingCBContent.slice(0, 30000)}`;
             // ── END SCENE GRAPH BOOTSTRAP ───────────────────────────────────────
 
           if (chunkResult.success) {
+            // Read existing meta to preserve fields (e.g. identity_stack_shadow)
+            const { data: curMetaForSuccess } = await serviceClient
+              .from("project_document_versions").select("meta_json")
+              .eq("id", chunkVersion!.id).maybeSingle();
+            const existingMetaForSuccess = (curMetaForSuccess?.meta_json || {});
             await serviceClient.from("project_document_versions")
               .update({ is_current: true, meta_json: { 
+                ...existingMetaForSuccess,
                 bg_generating: false, 
                 bg_completed_at: new Date().toISOString(), 
                 chunks_total: chunkResult.totalChunks, 
@@ -3017,10 +3044,16 @@ ${existingCBContent.slice(0, 30000)}`;
           } else {
             // Failed or incomplete: persist for observability but do NOT promote to is_current/latest
             const isIncomplete = chunkResult.completedChunks > 0 && chunkResult.completedChunks < chunkResult.totalChunks;
+            // Read existing meta to preserve fields (e.g. identity_stack_shadow)
+            const { data: curMetaForFail } = await serviceClient
+              .from("project_document_versions").select("meta_json")
+              .eq("id", chunkVersion!.id).maybeSingle();
+            const existingMetaForFail = (curMetaForFail?.meta_json || {});
             await serviceClient.from("project_document_versions")
               .update({
                 is_current: false,
                 meta_json: {
+                  ...existingMetaForFail,
                   bg_generating: false,
                   bg_failed: !isIncomplete,
                   incomplete_generation: isIncomplete,
@@ -3049,8 +3082,13 @@ ${existingCBContent.slice(0, 30000)}`;
                   requestId,
                 });
                 if (resumeResult.success) {
+                  const { data: curMetaForResume } = await serviceClient
+                    .from("project_document_versions").select("meta_json")
+                    .eq("id", chunkVersion!.id).maybeSingle();
+                  const existingMetaForResume = (curMetaForResume?.meta_json || {});
                   await serviceClient.from("project_document_versions")
                     .update({ is_current: true, meta_json: { 
+                      ...existingMetaForResume,
                       bg_generating: false, 
                       bg_completed_at: new Date().toISOString(), 
                       chunks_total: resumeResult.totalChunks, 
@@ -3074,8 +3112,13 @@ ${existingCBContent.slice(0, 30000)}`;
           }
         } catch (bgErr: any) {
           console.error(`[generate-document] Chunked background generation FAILED: ${docType} — ${bgErr?.message}`);
+          // Read existing meta to preserve fields (e.g. identity_stack_shadow)
+          const { data: curMetaForBgErr } = await serviceClient
+            .from("project_document_versions").select("meta_json")
+            .eq("id", chunkVersion!.id).maybeSingle();
+          const existingMetaForBgErr = (curMetaForBgErr?.meta_json || {});
           await serviceClient.from("project_document_versions")
-            .update({ meta_json: { bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
+            .update({ meta_json: { ...existingMetaForBgErr, bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
             .eq("id", chunkVersion!.id);
         }
       })();

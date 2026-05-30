@@ -880,12 +880,19 @@ export async function explodeBeatSheetChunks(
     await supabase.from("project_document_chunks").insert(batch);
   }
 
-  // Update version meta to record the explosion
+  // Update version meta to record the explosion — merge to preserve existing meta (e.g. identity_stack_shadow)
+  const { data: curVerForExplode } = await supabase
+    .from("project_document_versions")
+    .select("meta_json")
+    .eq("id", versionId)
+    .maybeSingle();
+  const existingMetaForExplode = (curVerForExplode?.meta_json || {});
   await supabase
     .from("project_document_versions")
     .update({
       assembled_chunk_count: beats.length,
       meta_json: {
+        ...existingMetaForExplode,
         beat_exploded: true,
         beat_count: beats.length,
         act_chunk_count: oldChunkCount,

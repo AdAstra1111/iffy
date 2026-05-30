@@ -508,6 +508,62 @@ async function handleGenerate(projectId: string) {
           const sceneCount = attrs?.frequencyInScript || 0;
           const sourceType = attrs?.sourceType || 'extracted';
 
+
+          // ── CPIE Inference Integration ──
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+          if (cpieUrl) {
+            try {
+              const { data: pcpRow } = await admin
+                .from("project_context_profiles")
+                .select("profile")
+                .eq("project_id", projectId)
+                .maybeSingle();
+              if (pcpRow?.profile) {
+                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+                const cpieCtx = {
+                  project_id: projectId,
+                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+                  infrastructure: pcp.technology_context?.infrastructure?.value || "",
+                  geography: pcp.geographic_context?.primary_region?.value || "",
+                  economy: pcp.economic_context?.wealth_distribution?.value || "",
+                  class_structure: pcp.economic_context?.class_structure?.value || "",
+                  biome: pcp.geographic_context?.primary_biome?.value || "",
+                  mythology: pcp.cultural_context?.belief_systems?.value?.join(",") || "",
+                  threat_role: "",
+                  intelligence: "",
+                  narrative_function: "",
+                  pcp_resolution_timestamp: new Date().toISOString(),
+                };
+                const cpieResponse = await fetch(cpieUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ pcp: cpieCtx, domains: ["vehicle"] }),
+                });
+                if (cpieResponse.ok) {
+                  const cpieResult = await cpieResponse.json();
+                  const entityResults = cpieResult.domains?.vehicle || [];
+                  if (entityResults.length > 0) {
+                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+                      field: inf.field, value: inf.value,
+                      confidence: inf.confidence_score, reasoning: inf.reasoning,
+                    }));
+                  }
+                }
+              }
+            } catch (cpieErr) {
+              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
+            }
+          }
+          const cpieContext = cpieInferences.length > 0
+            ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence})`).join("\n")
+            : "  (no CPIE data available)";
+
           // ── Gather project context for prompt injection ──
           const { data: projMeta } = await admin
             .from("projects")
@@ -530,7 +586,7 @@ async function handleGenerate(projectId: string) {
             projBudget ? `BUDGET: ${projBudget}` : "",
           ].filter(Boolean).join("\n");
 
-          const prompt = `You are a production designer and transportation coordinator for film/TV. Generate a rich, production-ready vehicle atom for the following vehicle based on the project's actual context.
+          const prompt = `You are a production designer and transportation coordinator for film/TV. ENHANCEMENT MODE — Core vehicle decisions made by CPIE.\n\nDETERMINISTIC CPIE INFERENCES (must use as ground truth):\n${cpieContext}\n\nVEHICLE: ${atom.canonical_name}
 
 ${projectContextStr}
 VEHICLE: ${atom.canonical_name}
@@ -622,6 +678,17 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
             continue;
           }
 
+                    // Merge CPIE provenance
+          if (cpieInferences.length > 0) {
+            generatedAttrs.cpie_inferences_used = cpieInferences.length;
+            generatedAttrs.cpie_provenance = cpieInferences.map((i: any) => ({
+              field: i.field, value: i.value,
+              source_type: "inferred",
+              confidence_score: i.confidence,
+              reasoning: i.reasoning,
+            }));
+            generatedAttrs.generated_from_cpie = true;
+          }
           // Merge — ensure critical fields are set
           const finalAttributes = {
             ...generatedAttrs,

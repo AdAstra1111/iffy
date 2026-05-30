@@ -455,7 +455,132 @@ async function handleGenerate(projectId: string) {
             }
           }
 
-          const prompt = `You are a costume designer and character visual analyst. Generate a production-ready costume atom for the following specific costume.\n\nCHARACTER: ${charName}\nSPECIFIC COSTUME: ${costumeName}\nCHARACTER PHYSICAL PROFILE:
+          
+
+          // ── CPIE Inference Integration ──
+          // Fetch deterministic CPIE results for this character
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+          if (cpieUrl) {
+            try {
+              // Fetch project PCP and run CPIE inference
+              // First get PCP context
+              const { data: pcpRow } = await admin
+                .from("project_context_profiles")
+                .select("profile")
+                .eq("project_id", projectId)
+                .maybeSingle();
+
+              if (pcpRow?.profile) {
+                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+                // Build CPIE-compatible PCP context
+                const cpieCtx = {
+                  project_id: projectId,
+                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+                  pcp_resolution_timestamp: new Date().toISOString(),
+                };
+
+                const cpieResponse = await fetch(cpieUrl, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ pcp: cpieCtx, domains: ["wardrobe"] }),
+                });
+
+                if (cpieResponse.ok) {
+                  const cpieResult = await cpieResponse.json();
+                  const entityResults = cpieResult.domains?.wardrobe || [];
+                  // Find inferences for this character
+                  const charEntityKey = Object.keys(cpieCtx.profession_map).find(
+                    k => cpieCtx.profession_map[k]?.character_name?.toLowerCase() === charName.toLowerCase()
+                  );
+                  if (charEntityKey) {
+                    const charResult = entityResults.find((r: any) => r.entity_key === charEntityKey);
+                    if (charResult?.inferences) {
+                      cpieInferences = charResult.inferences.map((inf: any) => ({
+                        field: inf.field, value: inf.value,
+                        confidence: inf.confidence_score, reasoning: inf.reasoning,
+                      }));
+                    }
+                  }
+                  // Fallback: use first available result
+                  if (cpieInferences.length === 0 && entityResults.length > 0) {
+                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+                      field: inf.field, value: inf.value,
+                      confidence: inf.confidence_score, reasoning: inf.reasoning,
+                    }));
+                  }
+                }
+              }
+            } catch (cpieErr) {
+              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
+            }
+          }
+
+          // Build CPIE context string for prompt injection
+          const cpieContext = cpieInferences.length > 0
+            ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence}, reasoning: ${i.reasoning.join(", ")})`).join("\n")
+            : "  (no CPIE data available)";
+const prompt = `You are a costume designer and character visual analyst. ENHANCEMENT MODE — Core decisions have been made by CPIE.
+
+DETERMINISTIC CPIE INFERENCES (must use):
+${cpieContext}
+
+YOUR ROLE: Generate detailed production notes, fabric descriptions, weathering details, and styling nuances for the items above. Do NOT override the CPIE-determined values — enhance them.
+
+CHARACTER: ${charName}
+SPECIFIC COSTUME: ${costumeName}
+CHARACTER PHYSICAL PROFILE:
+${characterAtomDescription || "No physical profile available — infer from character name and story context."}
+CHARACTER ARC: ${characterArcSummary || "Unknown"}
+SCENE COUNT: ${sceneCount}
+
+ASSOCIATED CHARACTERS (for contrast/similarity): ${relations.length > 0 ? relations.join(", ") : "unknown"}
+ASSOCIATED LOCATIONS (era/setting context): ${associatedLocations.length > 0 ? associatedLocations.join(", ") : "unknown"}
+
+SCENE CONTEXTS (wardrobe cues):
+${sceneContexts.length > 0 ? sceneContexts.join("\n\n") : "No scene context available — infer from character name and story world context."}
+
+Generate a complete CostumeAtomAttributes JSON object. Use the CPIE inferences above as GROUND TRUTH for core decisions (era alignment, silhouette, primary outfit). Add ENHANCEMENT DETAILS for:
+1. FABRIC & TEXTURE — specific materials, weaves, finishes
+2. KEY PIECES — the 3-5 statement items that define the look
+3. PRODUCTION REQUIREMENTS — how hard to build/rent/source
+4. WARDROBE EVOLUTION — how the costume changes across acts
+5. STYLING DETAIL — accessories, distressing, fit notes
+
+IMPORTANT: Keep the CPIE-inferred values. The primaryOutfit, eraAlignment, and silhouette should ALIGN WITH the CPIE values above.
+
+Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the following fields:
+- characterName (string — use: "${charName}")
+- characterId (string — use: "${atom.entity_id || ''}")
+- primaryOutfit (string — must align with CPIE inferences)
+- eraAlignment (string — must align with CPIE inferences)
+- silhouette (string — must align with CPIE inferences)
+- dominantColors (array of 2-4 colors)
+- fabricAndTexture (array of 3-5 fabric details)
+- keyPieces (array of 3-5 statement pieces)
+- characterSignal (string — what does the costume communicate about this character?)
+- condition (string — pristine/worn/deliberately distressed)
+- distinctiveElements (array of 3-5 unique details)
+- fitAndMovement (string — tailored power/flowing ease/restricted)
+- associatedLocations (array of location names)
+- associatedCharacters (array of character names with similar/contrasting aesthetic)
+- wardrobeEvolution (array of objects with fields: act, description, trigger — only if costume changes meaningfully, else empty array)
+- alternateOutfits (array of objects with fields: sceneSlugline, description, reasonForChange — only if multiple distinct outfits, else empty array)
+- productionComplexity (string: "simple" / "moderate" / "complex")
+- wardrobeRequirements (array of sourcing/fabrication needs)
+- specialConsiderations (array of production flags: stunts, weather, quick changes)
+- wigOrHairSystem (string — if applicable, else empty string)
+- makeupRequirements (array — if applicable, else empty array)
+- referenceImageTerms (array of 3-5 mood board search terms)
+- costumeBudgetEstimate (string — e.g. "$200-500 rental", "$1500 custom build")
+- confidence (number 0.0-1.0 — base on CPIE confidence + detail availability)
+- readinessBadge (string: "foundation" / "rich" / "verified")
+- generationStatus (string: "completed") Generate a production-ready costume atom for the following specific costume.\n\nCHARACTER: ${charName}\nSPECIFIC COSTUME: ${costumeName}\nCHARACTER PHYSICAL PROFILE:
 ${characterAtomDescription || "No physical profile available — infer from character name and story context."}
 CHARACTER ARC: ${characterArcSummary || "Unknown"}
 SCENE COUNT: ${sceneCount}
@@ -570,7 +695,21 @@ confidence should reflect how much visual and narrative information was availabl
             generationStatus: "completed",
           };
 
-          const { error: updateErr } = await admin
+          
+
+          // Merge CPIE provenance into atom
+          if (cpieInferences.length > 0) {
+            finalAttributes.cpie_inferences_used = cpieInferences.length;
+            finalAttributes.cpie_provenance = cpieInferences.map(i => ({
+              field: i.field, value: i.value,
+              source_type: "inferred",
+              confidence_score: i.confidence,
+              reasoning: i.reasoning,
+            }));
+          }
+          // Mark as generated by CPIE pipeline
+          finalAttributes.generated_from_cpie = true;
+const { error: updateErr } = await admin
             .from("atoms")
             .update({
               generation_status: "complete",
