@@ -361,7 +361,11 @@ function buildSequenceHints(
     });
   }
 
-  return sequences;
+  // Sort sequences by their first slot number for correct generation order
+  sequences.sort((a, b) => a.slot_range[0] - b.slot_range[0]);
+
+  // Renumber sequences in sorted order
+  return sequences.map((seq, idx) => ({ ...seq, number: idx + 1 }));
 }
 
 /** Resolve sequence purpose from its movements */

@@ -26,6 +26,8 @@ import type {
   SpectacleSetPieceEntry,
   BreathingRoomEntry,
   DramaticSceneSlot,
+  StoredCIP,
+  StoredComparableGrammar,
 } from "./ncpTypes.ts";
 import { resolveGateway } from "./llm.ts";
 
@@ -281,6 +283,74 @@ export function validateDramaticArchitectureBlueprint(
   };
 }
 
+// ── Phase 4.3 — CIP + Comparable Grammar Context Block Builders ──
+
+/**
+ * Build CIP context block for DAB prompt injection.
+ * Returns empty string if CIP is null.
+ */
+export function buildCIPContextBlock(cip: StoredCIP | null | undefined): string {
+  if (!cip) return "";
+  const chars = cip.facts.characters;
+  const events = cip.facts.key_events;
+  const primitives = cip.payload.primitives;
+  const populatedPrims = Object.entries(primitives)
+    .filter(([_, v]) => v)
+    .map(([k, _]) => k.toUpperCase())
+    .join(", ");
+
+  return `=== CANON IDENTITY PROFILE ===
+GENRE: ${cip.payload.genre}
+CENTRAL THEME: ${cip.theme.central_question}
+CHARACTERS: ${chars.map(c => `${c.name} (${c.role})`).join(", ")}
+KEY EVENTS: ${events.slice(0, 5).map(e => e.description).join(" | ")}
+SETTING: ${cip.facts.setting.world}; ${cip.facts.setting.time_period}
+ESTIMATED STRUCTURE: ${cip.narrative_shape.total_estimated_scenes} scenes across ${cip.narrative_shape.act_distribution.length} acts | trajectory: ${cip.narrative_shape.trajectory}
+PAYLOAD PRIMITIVES: ${populatedPrims || "Not specified"}
+THREE SENTENCE SUMMARY: ${cip.narrative_shape.three_sentence_summary.slice(0, 200)}
+
+CANON IDENTITY INSTRUCTION: The above profile defines WHAT this story IS.
+Design the DAB architecture to PRESERVE this identity across all dramatic movements.
+Critical: protagonist cannot be removed, character arcs must advance,
+theme must be tested by dramatic movements, and scene count must be respected.
+When in doubt, follow the CIP. It is the authoritative identity of this story.
+=== END CANON IDENTITY PROFILE ===`;
+}
+
+/**
+ * Build Comparable Grammar context block for DAB prompt injection.
+ * Returns empty string if grammar is null.
+ */
+export function buildGrammarContextBlock(grammar: StoredComparableGrammar | null | undefined): string {
+  if (!grammar) return "";
+  const g = grammar.grammar;
+  const parts: string[] = ["=== COMPARABLE GENRE GRAMMAR ==="];
+
+  if (g.reveal_strategy?.length) parts.push(`REVEAL STRATEGY: ${g.reveal_strategy.join(", ")}`);
+  if (g.pressure_pattern?.length) parts.push(`PRESSURE PATTERN: ${g.pressure_pattern.join(", ")}`);
+  if (g.spectacle_escalation?.length) parts.push(`SPECTACLE ESCALATION: ${g.spectacle_escalation.join(", ")}`);
+  if (g.antagonist_function?.length) parts.push(`ANTAGONIST FUNCTION: ${g.antagonist_function.join(", ")}`);
+  if (g.emotional_access?.length) parts.push(`EMOTIONAL ACCESS: ${g.emotional_access.join(", ")}`);
+  if (g.pacing_pattern?.length) parts.push(`PACING PATTERN: ${g.pacing_pattern.join(", ")}`);
+  if (g.resolution_style?.length) parts.push(`RESOLUTION STYLE: ${g.resolution_style.join(", ")}`);
+  if (g.mystery_architecture?.length) parts.push(`MYSTERY ARCHITECTURE: ${g.mystery_architecture.join(", ")}`);
+  if (g.relationship_framing?.length) parts.push(`RELATIONSHIP FRAMING: ${g.relationship_framing.join(", ")}`);
+  if (g.agency_distribution?.length) parts.push(`AGENCY DISTRIBUTION: ${g.agency_distribution.join(", ")}`);
+  if (g.tension_architecture?.length) parts.push(`TENSION ARCHITECTURE: ${g.tension_architecture.join(", ")}`);
+  if (g.scale_escalation?.length) parts.push(`SCALE ESCALATION: ${g.scale_escalation.join(", ")}`);
+
+  parts.push(`
+GENRE GRAMMAR INSTRUCTION: The above grammar describes HOW comparable
+films in this genre deliver audience satisfaction. Use this as creative
+guidance for movement structure, pacing, payoff timing, and scene function distribution.
+Do NOT copy specific plots, characters, scenes, or dialogue from any comparable film.
+Only apply the structural patterns listed above.
+CIP takes precedence over grammar — if grammar contradicts CIP, follow CIP.
+=== END COMPARABLE GENRE GRAMMAR ===`);
+
+  return parts.join("\n");
+}
+
 // ── Generation ──
 
 /**
@@ -299,14 +369,21 @@ export async function generateDramaticArchitectureBlueprint(
   storyOutline: string,
   conceptBrief?: string,
   formatRules?: string,
+  // Phase 4.3 — CIP + Comparable Grammar
+  cip?: StoredCIP | null,
+  comparableGrammar?: StoredComparableGrammar | null,
 ): Promise<DramaticArchitectureBlueprint> {
   const GL = "\n";
+
+  // Phase 4.3: Build CIP + Grammar context blocks
+  const cipBlock = buildCIPContextBlock(cip || null);
+  const grammarBlock = buildGrammarContextBlock(comparableGrammar || null);
 
   const userPrompt = `Project: "${projectTitle}"
 
 Generate the Dramatic Architecture Blueprint JSON for this feature film.
 
-BEAT SHEET:
+${cipBlock ? `${cipBlock}\n\n` : ""}${grammarBlock ? `${grammarBlock}\n\n` : ""}BEAT SHEET:
 ${(beatSheet || "N/A").slice(0, MAX_INPUT_CHARS)}
 
 TREATMENT:

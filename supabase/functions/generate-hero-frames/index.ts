@@ -221,6 +221,68 @@ async function resolveLocationDatasetById(sb, projectId, canonLocationId, locati
     promptBlock: promptParts.join('\n')
   };
 }
+// ── PRODUCTION DESIGN CANON RESOLVER ────────────────────────────────
+async function resolveProductionDesignCanon(sb, projectId, locationKey) {
+  if (!locationKey) return null;
+  const normKey = locationKey.toLowerCase().replace(/\.[a-z]+$/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const displayName = normKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
+  // Try exact match first, then normalized, then display name, then fuzzy
+  let { data: locDesign } = await sb
+    .from("pd_location_design")
+    .select("*, pd_design_templates!template_id(*)")
+    .eq("project_id", projectId)
+    .or(`location_key.eq.${locationKey},location_key.eq.${normKey},display_name.ilike.%${displayName}%`)
+    .limit(1)
+    .maybeSingle();
+  if (!locDesign) {
+    const coreWords = normKey.split('_').filter(w => !['ext','int','i','e','the','a','an'].includes(w));
+    for (const word of coreWords) {
+      const { data: fuzzy } = await sb
+        .from("pd_location_design")
+        .select("*, pd_design_templates!template_id(*)")
+        .eq("project_id", projectId)
+        .ilike("location_key", `%${word}%`)
+        .limit(1)
+        .maybeSingle();
+      if (fuzzy) { locDesign = fuzzy; break; }
+    }
+  }
+  if (!locDesign) return null;
+  const template = locDesign.pd_design_templates || {};
+  // Build structured design block
+  const parts = [];
+  parts.push(`[PRODUCTION DESIGN CANON — ${locDesign.display_name || locationKey}]`);
+  if (template.architectural_style) parts.push(`Architecture: ${template.architectural_style}`);
+  if (template.primary_materials) parts.push(`Materials: ${Array.isArray(template.primary_materials) ? template.primary_materials.join(', ') : template.primary_materials}`);
+  if (template.color_palette) parts.push(`Color Palette: ${Array.isArray(template.color_palette) ? template.color_palette.join(', ') : template.color_palette}`);
+  if (template.construction_method) parts.push(`Construction: ${template.construction_method}`);
+  if (template.climate_adaptation) parts.push(`Climate: ${template.climate_adaptation}`);
+  if (template.lighting_natural) parts.push(`Lighting (Natural): ${template.lighting_natural}`);
+  if (template.lighting_artificial) parts.push(`Lighting (Artificial): ${template.lighting_artificial}`);
+  if (template.condition_default) parts.push(`Condition: ${template.condition_default}`);
+  if (template.shape_language) parts.push(`Shape Language: ${template.shape_language}`);
+  if (template.cultural_motifs) parts.push(`Motifs: ${Array.isArray(template.cultural_motifs) ? template.cultural_motifs.join(', ') : template.cultural_motifs}`);
+  return {
+    promptBlock: parts.join('\n'),
+    locationDesignId: locDesign.id,
+    templateId: template.id || null,
+    templateName: template.template_name || null,
+    canonSources: ['pd_location_design', 'pd_design_templates', 'pd_world_rules']
+  };
+}// ── CANON WARDROBE RESOLVER ─────────────────────────────────────────
+async function resolveCanonWardrobe(sb, projectId, sceneNumber) {
+  if (!sceneNumber) return { assignments: [], canonSources: [] };
+  const { data: assignments } = await sb
+    .from("scene_wardrobe_assignments")
+    .select("character_name, wardrobe_state")
+    .eq("project_id", projectId)
+    .eq("scene_number", String(sceneNumber));
+  if (!assignments || assignments.length === 0) return { assignments: [], canonSources: [] };
+  return {
+    assignments: assignments.map(a => ({ character: a.character_name, state: a.wardrobe_state })),
+    canonSources: ['scene_wardrobe_assignments']
+  };
+}
 function resolveWardrobePromptBlocks(wardrobeStateMap, canonJson) {
   if (!wardrobeStateMap || Object.keys(wardrobeStateMap).length === 0) return [];
   const wardrobeProfiles = canonJson?.character_wardrobe_profiles;
@@ -440,18 +502,45 @@ async function loadSceneBoundMoments(sb, projectId, canonJson, targetCount = 13)
   }
   // 4. Build scene-bound moments
   const total = sceneEntries.length;
+  // ── RESOLVE CANON WARDROBE ASSIGNMENTS ──
+  const sceneNumbers = sceneEntries.map(e => e.scene_number).filter(Boolean);
+  const { data: canonWardrobeRows } = await sb
+    .from("scene_wardrobe_assignments")
+    .select("scene_number, character_name, wardrobe_state")
+    .eq("project_id", projectId)
+    .in("scene_number", sceneNumbers);
+  const canonWardrobeMap = new Map();
+  for (const row of canonWardrobeRows || []) {
+    const sn = String(row.scene_number);
+    if (!canonWardrobeMap.has(sn)) canonWardrobeMap.set(sn, {});
+    canonWardrobeMap.get(sn)[row.character_name.toLowerCase().trim()] = row.wardrobe_state;
+  }
   const allMoments = sceneEntries.map((entry, idx)=>{
     const sceneContent = sceneContentMap.get(entry.scene_number) || null;
     const summary = sceneContent?.summary || entry.title || '';
     const chars = entry.character_keys.length > 0 ? entry.character_keys : sceneContent?.characters || [];
     const content = sceneContent?.content || '';
-    const wardrobeBlocks = resolveWardrobePromptBlocks(entry.wardrobe_state_map, canonJson);
+    // Canon wardrobe as primary, legacy map as fallback
+    const sceneCanonWardrobe = canonWardrobeMap.get(String(entry.scene_number)) || {};
+    const effectiveWardrobe = { ...entry.wardrobe_state_map };
+    // Override with canonical entries where they exist
+    for (const [charName, state] of Object.entries(sceneCanonWardrobe)) {
+      const matchedChar = Object.keys(effectiveWardrobe).find(
+        k => k.toLowerCase().trim() === charName
+      );
+      if (matchedChar) effectiveWardrobe[matchedChar] = state as string;
+      else effectiveWardrobe[charName] = state as string;
+    }
+    const wardrobeBlocks = resolveWardrobePromptBlocks(effectiveWardrobe, canonJson);
     return {
       sceneNumber: entry.scene_number,
       title: entry.title,
       locationKey: entry.location_key,
       characterKeys: chars,
       wardrobeStateMap: entry.wardrobe_state_map,
+      wardrobeCanonUsed: Object.keys(sceneCanonWardrobe).length > 0,
+      wardrobeStateCount: Object.keys(effectiveWardrobe).length,
+      wardrobeFallbackMap: Object.keys(entry.wardrobe_state_map).length > 0,
       slugline: sceneContent?.slugline || '',
       summary,
       content,
@@ -660,6 +749,11 @@ function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, character
     lines.push(styleBlock);
     lines.push("");
   }
+  // ── E2. PRODUCTION DESIGN CANON ──
+  if (moment.pdCanon?.promptBlock) {
+    lines.push(moment.pdCanon.promptBlock);
+    lines.push("");
+  }
   // ── F. SCENE GROUNDING ──
   lines.push("[SCENE GROUNDING — SPECIFIC MOMENT FROM THE STORY]");
   lines.push(`Scene: ${moment.sceneNumber}`);
@@ -854,6 +948,19 @@ Deno.serve(async (req)=>{
     const logline = canonJson?.logline || "";
     // ── IEL GUARD: SCENE INDEX REQUIRED ──
     const moments = await loadSceneBoundMoments(supabase, project_id, canonJson);
+    // ── RESOLVE PRODUCTION DESIGN CANON FOR ALL UNIQUE LOCATIONS ──
+    const uniqueLocationKeys = [...new Set(moments.map(m => m.locationKey).filter(Boolean))];
+    const pdCanonMap = new Map();
+    for (const lk of uniqueLocationKeys) {
+      const canon = await resolveProductionDesignCanon(supabase, project_id, lk);
+      if (canon) pdCanonMap.set(lk, canon);
+    }
+    // Inject PD canon block into each moment
+    for (const moment of moments) {
+      if (moment.locationKey && pdCanonMap.has(moment.locationKey)) {
+        moment.pdCanon = pdCanonMap.get(moment.locationKey);
+      }
+    }
     if (moments.length === 0) {
       console.error("[HERO_SCENE_BOUND_REQUIRED] No scene_index data available for project", project_id);
       return new Response(JSON.stringify({
@@ -1139,6 +1246,15 @@ Deno.serve(async (req)=>{
             pd_bound: !!moment.locationDataset,
             character_keys: moment.characterKeys,
             wardrobe_state_map: moment.wardrobeStateMap,
+            // Wardrobe Canon provenance
+            wardrobe_canon_used: moment.wardrobeCanonUsed || false,
+            wardrobe_state_count: moment.wardrobeStateCount || 0,
+            wardrobe_fallback_map: moment.wardrobeFallbackMap ? moment.wardrobeStateMap : null,
+            // Canon source tracking — which canonical truth layers were consumed
+            canon_sources_used: moment.pdCanon?.canonSources?.length > 0 ? moment.pdCanon.canonSources : [],
+            pd_location_design_id: moment.pdCanon?.locationDesignId || null,
+            pd_template_id: moment.pdCanon?.templateId || null,
+            pd_template_name: moment.pdCanon?.templateName || null,
             // Identity — honest provenance
             identity_mode: allRefUrls.length > 0 ? "anchors_injected" : "descriptive_only",
             identity_locked: allRefUrls.length > 0,

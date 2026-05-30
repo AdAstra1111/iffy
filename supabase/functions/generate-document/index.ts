@@ -27,9 +27,12 @@ import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
 import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
 import { buildSceneExpansionPlan, buildExpansionPromptBlock } from "../_shared/sceneExpansionEngine.ts";
-import { generateDramaticArchitectureBlueprint, buildDABPromptBlock, validateDramaticArchitectureBlueprint, getDABEstimatedSceneCount } from "../_shared/dramaticArchitectureBlueprint.ts";
+import { generateDramaticArchitectureBlueprint, buildDABPromptBlock, validateDramaticArchitectureBlueprint, getDABEstimatedSceneCount, buildCIPContextBlock, buildGrammarContextBlock } from "../_shared/dramaticArchitectureBlueprint.ts";
 import { buildSceneArchitecture, buildSceneArchitecturePromptBlock, validateSceneArchitecture } from "../_shared/sceneArchitecture.ts";
-import type { SceneArchitecture } from "../_shared/ncpTypes.ts";
+import type { SceneArchitecture, StoredCIP, StoredComparableGrammar, P0Telemetry } from "../_shared/ncpTypes.ts";
+import { CIP_ENABLED, GRAMMAR_ENABLED } from "../_shared/ncpTypes.ts";
+import { extractCIP, countCIPSize } from "../_shared/cipExtractor.ts";
+import { extractComparableGrammar, countGrammarDimensions, countGrammarTotalValues, detectCIPGrammarConflicts } from "../_shared/comparableGrammarExtractor.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
@@ -252,6 +255,9 @@ async function generateScenePlanAndNCP(
   expansionPlanBlock?: string,
   expectedSceneCount?: number,
   dabBlock?: string,
+  // Phase 4.3 — CIP + Comparable Grammar context
+  cipBlock?: string,
+  grammarBlock?: string,
 ): Promise<{ scenes: ScenePlanEntry[]; narrativeContext: NarrativeContextPackage | null }> {
   const GL = "\n"; // Template literal helper to avoid escaping in heredoc
   const maxChars = 8000;
@@ -304,7 +310,7 @@ No markdown. No preamble. No code fences. Start directly with {.`;
 
   const userPrompt = `Project: "${projectTitle}"
 
-BEAT SHEET:
+${cipBlock ? `${cipBlock}\n\n` : ""}${grammarBlock ? `${grammarBlock}\n\n` : ""}BEAT SHEET:
 ${beatSheet.slice(0, maxChars)}
 
 ${treatment ? `TREATMENT (for narrative context):\n${treatment.slice(0, 6000)}\n\n` : ""}
@@ -2355,6 +2361,9 @@ ${existingCBContent.slice(0, 30000)}`;
                 resumeExpBlock,
                 resumeExpCount,
                 resumeDabBlock,  // Phase 2B.1: DAB context block
+                // Phase 4.3 — CIP + Comparable Grammar context (TBD for resume path — CIP not extracted here)
+                undefined,
+                undefined,
               );
               resumeScenePlanForMeta = sp;
               resumeSceneCountForPlan = sp.length;
@@ -2452,6 +2461,13 @@ ${existingCBContent.slice(0, 30000)}`;
                     chunks_completed: resumeResult.completedChunks,
                     scenes: resumeScenePlanForMeta || undefined,
                     dramatic_architecture_blueprint: resumeDab || undefined,
+                    // Phase 4.3 — CIP + Comparable Grammar telemetry (resume: minimal — no extraction in resume path)
+                    p0_telemetry: { cip_present: false, cip_version: null, cip_size: null, cip_generation_ms: null,
+                      comparable_grammar_present: false, grammar_version: null, grammar_size: null, grammar_comp_count: null,
+                      grammar_generation_ms: null, cip_injected_to_dab: false, grammar_injected_to_dab: false,
+                      cip_injected_to_scene_plan: false, grammar_injected_to_scene_plan: false,
+                      cip_conflicts_detected: false, identity_profile_version: null, cip_extraction_version: null,
+                    },
                   },
                 })
                 .eq("id", resumeVersionId);
@@ -2546,6 +2562,19 @@ ${existingCBContent.slice(0, 30000)}`;
       let scenePlanUpstreamBlock = "";
       let sceneCountForPlan: number | null = null;
       let ncpForChunkPlan: any = null;
+
+      // Phase 4.3 — CIP + Comparable Grammar extraction (feature_script only)
+      let p0CIP: StoredCIP | null = null;
+      let p0Grammar: StoredComparableGrammar | null = null;
+      let p0CIPBlock: string = "";
+      let p0GrammarBlock: string = "";
+      let p0Telemetry: P0Telemetry = {
+        cip_present: false, cip_version: null, cip_size: null, cip_generation_ms: null,
+        comparable_grammar_present: false, grammar_version: null, grammar_size: null, grammar_comp_count: null, grammar_generation_ms: null,
+        cip_injected_to_dab: false, grammar_injected_to_dab: false,
+        cip_injected_to_scene_plan: false, grammar_injected_to_scene_plan: false,
+        cip_conflicts_detected: false, identity_profile_version: null, cip_extraction_version: null,
+      };
       let dab: DramaticArchitectureBlueprint | null = null;   // Phase 2B.1 — hoisted for completion meta_json
       let dabBlock: string | undefined;                       // Phase 2B.1 — hoisted for prompt injection
       let sa: SceneArchitecture | null = null;                // Phase 2B.2 — hoisted for completion meta_json
@@ -2553,6 +2582,93 @@ ${existingCBContent.slice(0, 30000)}`;
       if (docType === "feature_script") {
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
         if (beatSheetText && beats && beats.length > 0) {
+          // Phase 4.3 — Extract CIP + Comparable Grammar (feature_script only, behind feature flags)
+          if (CIP_ENABLED) {
+            const cipStart = Date.now();
+            try {
+              p0CIP = extractCIP(
+                upstreamBlocks.get("concept_brief") || null,
+                upstreamBlocks.get("treatment") || null,
+                upstreamBlocks.get("character_bible") || null,
+                upstreamBlocks.get("story_outline") || null,
+                beatSheetText,
+                project.format,
+              );
+              if (p0CIP) {
+                p0CIPBlock = buildCIPContextBlock(p0CIP);
+                p0Telemetry.cip_present = true;
+                p0Telemetry.cip_version = p0CIP.version;
+                p0Telemetry.cip_size = countCIPSize(p0CIP);
+                p0Telemetry.cip_extraction_version = p0CIP.version;
+                p0Telemetry.identity_profile_version = p0CIP.version;
+                console.log(`[generate-document] CIP extracted: ${p0CIP.facts.characters.length} characters, ${p0CIP.facts.key_events.length} events`);
+              }
+            } catch (cipErr: any) {
+              console.warn(`[generate-document] CIP extraction failed (non-fatal): ${cipErr?.message?.slice(0, 200)}`);
+            }
+            p0Telemetry.cip_generation_ms = Date.now() - cipStart;
+          }
+
+          if (GRAMMAR_ENABLED) {
+            const grammarStart = Date.now();
+            try {
+              // Load comparables from canon_json or project_comparables
+              const { data: canon } = await supabase
+                .from("project_canon")
+                .select("canon_json")
+                .eq("project_id", projectId)
+                .maybeSingle();
+              const cj = canon?.canon_json || {};
+              let compsArray: Array<{ title: string; rationale?: string }> = [];
+
+              if (Array.isArray(cj.comparables) && cj.comparables.length > 0) {
+                compsArray = cj.comparables.slice(0, 12).map((c: any) => ({
+                  title: c.title || c.name || "",
+                  rationale: c.reason || c.rationale || "",
+                }));
+              }
+              if (compsArray.length < 2) {
+                // Fall back to project_comparables
+                const { data: pcRows } = await supabase
+                  .from("project_comparables")
+                  .select("title, extraction_meta")
+                  .eq("project_id", projectId)
+                  .limit(12);
+                if (pcRows && pcRows.length >= 2) {
+                  compsArray = pcRows.map((c: any) => ({
+                    title: c.title,
+                    rationale: c.extraction_meta?.rationale || "",
+                  }));
+                }
+              }
+
+              if (compsArray.length >= 2) {
+                p0Grammar = await extractComparableGrammar(
+                  project.format || "Unknown",
+                  compsArray,
+                );
+                if (p0Grammar) {
+                  p0GrammarBlock = buildGrammarContextBlock(p0Grammar);
+                  p0Telemetry.comparable_grammar_present = true;
+                  p0Telemetry.grammar_version = p0Grammar.version;
+                  p0Telemetry.grammar_size = countGrammarDimensions(p0Grammar);
+                  p0Telemetry.grammar_comp_count = compsArray.length;
+
+                  // Conflict detection: CIP vs Grammar
+                  if (p0CIP && detectCIPGrammarConflicts(p0CIP, p0Grammar)) {
+                    p0Telemetry.cip_conflicts_detected = true;
+                    console.warn(`[generate-document] CIP-Grammar conflict detected — following CIP`);
+                  }
+
+                  console.log(`[generate-document] Comparable Grammar extracted: ${countGrammarTotalValues(p0Grammar)} total values across ${p0Telemetry.grammar_size} dimensions`);
+                }
+              }
+            } catch (grammarErr: any) {
+              console.warn(`[generate-document] Grammar extraction failed (non-fatal): ${grammarErr?.message?.slice(0, 200)}`);
+            }
+            p0Telemetry.grammar_generation_ms = Date.now() - grammarStart;
+          }
+
           try {
             // Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan
             try {
@@ -2564,7 +2680,14 @@ ${existingCBContent.slice(0, 30000)}`;
                 upstreamBlocks.get("story_outline") || "",
                 upstreamBlocks.get("concept_brief"),
                 upstreamBlocks.get("format_rules"),
+                // Phase 4.3 — CIP + Comparable Grammar
+                p0CIP,
+                p0Grammar,
               );
+              // Phase 4.3 — telemetry: mark DAB injection
+              if (p0CIP) p0Telemetry.cip_injected_to_dab = true;
+              if (p0Grammar) p0Telemetry.grammar_injected_to_dab = true;
+
               dabBlock = buildDABPromptBlock(dab);
               // Phase 2B.2: Convert DAB to Scene Architecture
               try {
@@ -2588,6 +2711,8 @@ ${existingCBContent.slice(0, 30000)}`;
             }
 
             // Phase 2B.2: Use Scene Architecture as expansion block if available
+            let expansionBlock: string | undefined;
+            let expectedCount: number | undefined;
             if (sa) {
               expansionBlock = buildSceneArchitecturePromptBlock(sa);
               expectedCount = sa.total_slots;
@@ -2618,10 +2743,17 @@ ${existingCBContent.slice(0, 30000)}`;
               expansionBlock,
               expectedCount,
               dabBlock,  // Phase 2B.1: DAB context block
+              // Phase 4.3 — CIP + Comparable Grammar context
+              p0CIPBlock || undefined,
+              p0GrammarBlock || undefined,
             );
             scenePlanForMeta = scenePlan;
             sceneCountForPlan = scenePlan.length;
             ncpForChunkPlan = ncp;
+
+            // Phase 4.3 — telemetry: mark injection
+            if (p0CIPBlock) p0Telemetry.cip_injected_to_scene_plan = true;
+            if (p0GrammarBlock) p0Telemetry.grammar_injected_to_scene_plan = true;
 
             // Build SCENE PLAN block for upstream context
             const planBlocks = scenePlan.map((scene) => {
@@ -2824,6 +2956,8 @@ ${existingCBContent.slice(0, 30000)}`;
                 scene_expansion_plan: ncpForChunkPlan?.scene_expansion_plan || undefined,
                 dramatic_architecture_blueprint: dab || undefined,
                 scene_architecture: sa || undefined,
+                // Phase 4.3 — CIP + Comparable Grammar telemetry
+                p0_telemetry: p0Telemetry,
               } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid

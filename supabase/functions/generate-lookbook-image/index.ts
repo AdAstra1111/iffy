@@ -478,6 +478,74 @@ async function resolveCharacterBindings(sb, projectId, sectionKey, explicitChara
   }
   return bindings;
 }
+// ── PRODUCTION DESIGN CANON RESOLVER (lookbook) ─────────────────
+async function resolveLookbookPDCanon(sb, projectId, locationName) {
+  if (!locationName) return null;
+  const normKey = locationName.toLowerCase().replace(/\.[a-z]+$/, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  let { data: locDesign } = await sb
+    .from("pd_location_design")
+    .select("id, location_key, display_name, template_id, narrative_function")
+    .eq("project_id", projectId)
+    .or(`location_key.eq.${locationName},location_key.eq.${normKey},display_name.ilike.%${normKey.replace(/_/g,' ')}%`)
+    .limit(1)
+    .maybeSingle();
+  if (!locDesign && normKey) {
+    const core = normKey.split('_').filter(w => !['ext','int','i','e','the','a','an','hq','day','night','dawn','dusk'].includes(w));
+    for (const w of core) {
+      const { data: f } = await sb.from("pd_location_design").select("id,location_key,display_name,template_id,narrative_function").eq("project_id", projectId).ilike("location_key", `%${w}%`).limit(1).maybeSingle();
+      if (f) { locDesign = f; break; }
+    }
+  }
+  if (!locDesign) return null;
+  let template = null;
+  if (locDesign.template_id) {
+    const { data: t } = await sb.from("pd_design_templates").select("*").eq("id", locDesign.template_id).maybeSingle();
+    template = t;
+  }
+  return { locDesign, template, canonSources: ['pd_location_design', 'pd_design_templates', 'pd_world_rules'] };
+}
+// ── WARDROBE CANON RESOLVER (lookbook) ─────────────────────────────
+async function resolveLookbookWardrobeCanon(sb, projectId, characterName, stateKey) {
+  if (!characterName || !stateKey) return null;
+  const normName = characterName.toLowerCase().trim();
+  // Get character wardrobe profile
+  const { data: profile } = await sb
+    .from("character_wardrobe_profiles")
+    .select("id, character_name, active_states")
+    .eq("project_id", projectId)
+    .eq("is_current", true)
+    .or(`character_name.ilike.${normName},character_name.ilike.%${normName}%`)
+    .limit(1)
+    .maybeSingle();
+  if (!profile) return null;
+  let states = profile.active_states;
+  if (typeof states === 'string') try { states = JSON.parse(states); } catch {}
+  const stateMatch = (Array.isArray(states) ? states : []).find(s => s.state_key === stateKey);
+  // Get taxonomy entry
+  const { data: taxonomy } = await sb
+    .from("wardrobe_state_taxonomy")
+    .select("state_key, display_name, description, narrative_tags")
+    .eq("state_key", stateKey)
+    .maybeSingle();
+  let stateName = stateKey;
+  let stateDesc = '';
+  let stateTags = [];
+  if (taxonomy) {
+    stateName = taxonomy.display_name || stateKey;
+    stateDesc = taxonomy.description || '';
+    stateTags = taxonomy.narrative_tags || [];
+  }
+  return {
+    consumed: true,
+    profileId: profile.id,
+    stateKey,
+    stateName,
+    stateDescription: stateDesc,
+    narrativeTags: stateTags,
+    stateMatch: stateMatch || null,
+    profileStates: Array.isArray(states) ? states.map(s => s.state_key) : []
+  };
+}
 async function resolveLocationBindings(sb, projectId, sectionKey, explicitLocationId, explicitLocationName, explicitLocationIds) {
   if (!SECTION_BINDING_RELEVANCE[sectionKey]?.locations) return [];
   // If exact IDs provided, query those specifically
@@ -2023,6 +2091,11 @@ serve(async (req)=>{
     }
     // ── CANONICAL VISUAL BINDING: Auto-resolve character, location, world ──
     const canonicalBindings = await resolveCanonicalBindings(supabase, project_id, section, canon?.canon_json || null, character_name, location_id, location_name, requestedCharacterNames, requestedLocationIds);
+    // ── RESOLVE PRODUCTION DESIGN CANON ──
+    const locationForPD = location_name || (canonicalBindings.locations?.[0]?.canonical_name) || null;
+    const pdCanonResult = locationForPD ? await resolveLookbookPDCanon(supabase, project_id, locationForPD) : null;
+    // ── RESOLVE WARDROBE CANON ──
+    const wardrobeCanon = (character_name && state_key) ? await resolveLookbookWardrobeCanon(supabase, project_id, character_name, state_key) : null;
     const stylePolicy = resolveStylePolicy(project.format || "film", project.genres || []);
     const imageRole = SECTION_TO_ROLE[section];
     const styleMode = stylePolicy.mode;
@@ -2046,7 +2119,9 @@ serve(async (req)=>{
       characterBindingBlock: canonicalBindings.characterPromptBlock,
       boundCharacterNames: canonicalBindings.characters.map((c)=>c.character_name),
       narrativeMoments,
-      shotPlanContext: shotPlanContextRaw
+      shotPlanContext: shotPlanContextRaw,
+      pdCanon: pdCanonResult,  // Production Design Canon context
+      wardrobeCanon  // Wardrobe Canon context
     };
     // ── Resolve identity anchor signed URLs if provided ──
     const identityReferenceUrls = [];
@@ -2284,6 +2359,17 @@ FRAMING RULES:
       if (state_prompt_modifier) {
         prompt += `\n\nSTATE VARIANT: ${state_prompt_modifier}\nThis is a state-specific reference showing the subject in this particular condition/state. Maintain visual continuity with the base reference while clearly showing the state change. The PERSON remains the same — only the state changes.`;
       }
+      // Wardrobe Canon block — replaces costume atom fallback as primary
+      if (ctx.wardrobeCanon?.consumed) {
+        const wc = ctx.wardrobeCanon;
+        const wb = [];
+        wb.push(`[WARDROBE CANON — ${wc.stateName}]`);
+        if (wc.stateDescription) wb.push(`State Purpose: ${wc.stateDescription}`);
+        if (wc.stateMatch?.role) wb.push(`Role: ${wc.stateMatch.role}`);
+        wb.push(`State Key: ${wc.stateKey}`);
+        wb.push(`Profile states available: ${wc.profileStates.join(', ')}`);
+        prompt += `\n\n${wb.join('\n')}`;
+      }
       // Step 7: Shot-type specific identity constraints
       if (identityLockUsed && shotType && SHOT_TYPE_IDENTITY_CONSTRAINTS[shotType]) {
         prompt += `\n\nSHOT-TYPE CONSTRAINT: ${SHOT_TYPE_IDENTITY_CONSTRAINTS[shotType]}`;
@@ -2377,6 +2463,25 @@ FRAMING RULES:
         // Atom enrichment: inject atomiser location data for richer visual prompt
         if (assetGroup === 'world' && ctx.locationAtomBlock) {
           prompt += `\n\n${ctx.locationAtomBlock}`;
+        }
+        // Production Design Canon injection — overrides atom fallback when available
+        if (ctx.pdCanon) {
+          const pdBlock = [];
+          pdBlock.push(`[PRODUCTION DESIGN CANON — ${ctx.pdCanon.locDesign?.display_name || ctx.locationName || 'Location'}]`);
+          // Template level (inherited)
+          if (ctx.pdCanon.template) {
+            const t = ctx.pdCanon.template;
+            if (t.architectural_style) pdBlock.push(`Architecture: ${t.architectural_style}`);
+            if (t.primary_materials) pdBlock.push(`Materials: ${Array.isArray(t.primary_materials) ? t.primary_materials.join(', ') : t.primary_materials}`);
+            if (t.color_palette) pdBlock.push(`Color Palette: ${Array.isArray(t.color_palette) ? t.color_palette.join(', ') : t.color_palette}`);
+            if (t.lighting_natural) pdBlock.push(`Lighting: ${t.lighting_natural}`);
+            if (t.condition_default) pdBlock.push(`Condition: ${t.condition_default}`);
+            if (t.shape_language) pdBlock.push(`Shape Language: ${t.shape_language}`);
+            if (t.cultural_motifs) pdBlock.push(`Motifs: ${Array.isArray(t.cultural_motifs) ? t.cultural_motifs.join(', ') : t.cultural_motifs}`);
+          } else {
+            pdBlock.push(`(Resolved location design — ${ctx.pdCanon.locDesign?.narrative_function || 'setting'})`);
+          }
+          prompt += `\n\n${pdBlock.join('\n')}`;
         }
       }
       // World binding always applies (even to identity shots — grounds the project universe)
@@ -2489,6 +2594,18 @@ FRAMING RULES:
             canonical_binding_status: canonicalBindings.binding_status,
             canonical_binding_missing: canonicalBindings.missing,
             targeting_mode: canonicalBindings.targeting_mode,
+            // Production Design Canon provenance
+            pd_canon_consumed: !!ctx.pdCanon,
+            pd_location_design_id: ctx.pdCanon?.locDesign?.id || null,
+            pd_template_id: ctx.pdCanon?.template?.id || null,
+            pd_template_name: ctx.pdCanon?.template?.template_name || null,
+            pd_canon_sources: ctx.pdCanon?.canonSources || [],
+            // Wardrobe Canon provenance
+            wardrobe_canon_consumed: !!ctx.wardrobeCanon?.consumed,
+            wardrobe_profile_id: ctx.wardrobeCanon?.profileId || null,
+            wardrobe_state_key: ctx.wardrobeCanon?.stateKey || null,
+            wardrobe_state_name: ctx.wardrobeCanon?.stateName || null,
+            wardrobe_profile_states: ctx.wardrobeCanon?.profileStates?.join(',') || null,
             requested_character_names: requestedCharacterNames || (character_name ? [
               character_name
             ] : []),

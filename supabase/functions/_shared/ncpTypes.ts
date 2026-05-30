@@ -591,6 +591,105 @@ export interface ArchitectureSourceRef {
   detail: string;
 }
 
+// ── Phase 4.3 — CIP + Comparable Grammar Types ────────────────────────────
+
+/**
+ * Canon Identity Profile stored in project_canon.canon_json.identity_profile
+ * Defines WHAT the story IS — self-contained, constitutional, immutable.
+ */
+export interface StoredCIP {
+  version: number;
+  extracted_at: string;        // ISO timestamp
+  extracted_from: {
+    concept_brief_version_id?: string;
+    treatment_version_id: string;
+    character_bible_version_id: string;
+    story_outline_version_id: string;
+    beat_sheet_version_id: string;
+  };
+  facts: {
+    characters: Array<{ name: string; role: string }>;
+    key_events: Array<{ description: string }>;
+    relationships: Array<{ pair: string[] }>;
+    setting: { world: string; time_period: string };
+  };
+  payload: {
+    genre: string;
+    primitives: {
+      pressure?: string;
+      transformation?: string;
+      connection?: string;
+      wonder?: string;
+      meaning?: string;
+    };
+  };
+  theme: {
+    central_question: string;
+  };
+  narrative_shape: {
+    total_estimated_scenes: number;
+    act_distribution: Array<{ act: number; estimated_scenes: number }>;
+    trajectory: string;
+    key_positions: Array<{ label: string; estimated_scene: number }>;
+    three_sentence_summary: string;
+  };
+}
+
+/**
+ * Comparable Grammar stored in project_canon.canon_json.comparable_grammar
+ * Defines HOW to deliver the story — advisory, external, swappable.
+ * Phase 4.2 validated: audience_promise removed from grammar (exists in DAB's audience_promise_registry).
+ */
+export interface StoredComparableGrammar {
+  version: number;
+  extracted_at: string;
+  comps_used: string[];           // Which comparables were used for extraction
+  grammar: {
+    reveal_strategy: string[];    // e.g., ["withhold_full_visibility", "gradual_unmasking"]
+    pressure_pattern: string[];   // e.g., ["absence_creates_dread", "action_escalation"]
+    spectacle_escalation: string[]; // e.g., ["glimpse_partial_full", "late_full_reveal"]
+    antagonist_function: string[]; // e.g., ["creature_as_threat", "paranoia_as_enemy"]
+    emotional_access: string[];   // e.g., ["survival_imperative", "personal_loss_anchor"]
+    pacing_pattern: string[];     // e.g., ["short_punchy_scenes", "long_build_release"]
+    resolution_style: string[];   // e.g., ["pyrrhic_victory", "cathartic_defeat"]
+    mystery_architecture: string[]; // e.g., ["audience_ahead_of_protagonist", "discover_with_protagonist"]
+    relationship_framing: string[]; // e.g., ["romantic_anchor", "family_bond"]
+    agency_distribution: string[]; // e.g., ["protagonist_driven", "ensemble_shared"]
+    tension_architecture: string[]; // e.g., ["rising_then_sustaining", "oscillating_peaks"]
+    scale_escalation: string[];   // e.g., ["personal_community_global", "contained_escalation"]
+  };
+  anti_copying: {
+    multi_film_attested: boolean;  // Every grammar value attested by 2+ films
+  };
+}
+
+/** P0 telemetry for CIP + Comparable Grammar observation */
+export interface P0Telemetry {
+  cip_present: boolean;
+  cip_version: number | null;
+  cip_size: number | null;          // Total object key count
+  cip_generation_ms: number | null;  // How long CIP extraction took
+
+  comparable_grammar_present: boolean;
+  grammar_version: number | null;
+  grammar_size: number | null;       // Total grammar dimensions populated
+  grammar_comp_count: number | null;  // How many comparables contributed
+  grammar_generation_ms: number | null; // How long grammar extraction took
+
+  cip_injected_to_dab: boolean;
+  grammar_injected_to_dab: boolean;
+  cip_injected_to_scene_plan: boolean;
+  grammar_injected_to_scene_plan: boolean;
+
+  cip_conflicts_detected: boolean;
+  identity_profile_version: number | null;
+  cip_extraction_version: number | null;
+}
+
+/** Feature flags for Phase 4.3 P0 */
+export const CIP_ENABLED = false;     // Default: OFF — flip to true for testing
+export const GRAMMAR_ENABLED = false; // Default: OFF — flip to true for testing
+
 /** A sequence grouping within the Scene Architecture (used by chunkRunner) */
 export interface SceneArchitectureSequence {
   number: number;
