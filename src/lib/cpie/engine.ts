@@ -12,6 +12,8 @@ import { inferCharacterProps } from './props';
 import { inferVehicle } from './vehicle';
 import type { VehicleInferenceOutput } from './vehicle';
 import { inferCreature } from './creature';
+import { inferLocation } from './location';
+import type { LocationInferenceOutput } from './location';
 import type { CreatureInferenceOutput } from './creature';
 import type { WardrobeInferenceOutput } from './wardrobe';
 import type { PropInferenceOutput } from './props';
@@ -26,6 +28,7 @@ export interface CPIESessionResult {
     props: PropInferenceOutput[];
     vehicle: VehicleInferenceOutput[];
     creature: CreatureInferenceOutput[];
+    location: LocationInferenceOutput[];
   };
   ics: Record<string, number>;
   registry_metadata: ReturnType<typeof getRegistryMetadata>;
@@ -41,6 +44,7 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
   const domainProps: PropInferenceOutput[] = [];
   const domainVehicle: VehicleInferenceOutput[] = [];
   const domainCreature: CreatureInferenceOutput[] = [];
+  const domainLocation: LocationInferenceOutput[] = [];
 
   // Iterate over all entities in the PCP profession_map
   for (const [entityKey, entry] of Object.entries(context.profession_map)) {
@@ -74,6 +78,14 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
     if (creatureResult.inference_count > 0) {
       domainCreature.push(creatureResult);
     }
+
+    // Location inference
+    if (entityKey === 'venue' || entityKey === 'location') {
+      const locationResult = inferLocation(context, entity);
+      if (locationResult.inference_count > 0) {
+        domainLocation.push(locationResult);
+      }
+    }
   }
 
   // Calculate ICS per domain
@@ -82,11 +94,12 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
   ics.props = calculateICS(domainProps.flatMap(p => p.inferences), 'props');
   ics.vehicle = calculateICS(domainVehicle.flatMap(v => v.inferences), 'vehicle');
   ics.creature = calculateICS(domainCreature.flatMap(c => c.inferences), 'creature');
+  ics.location = calculateICS(domainLocation.flatMap(l => l.inferences), 'location');
 
   return {
     project_id: context.project_id,
     context,
-    domains: { wardrobe: domainWardrobe, props: domainProps, vehicle: domainVehicle, creature: domainCreature },
+    domains: { wardrobe: domainWardrobe, props: domainProps, vehicle: domainVehicle, creature: domainCreature, location: domainLocation },
     ics,
     registry_metadata: getRegistryMetadata(),
     generated_at: new Date().toISOString(),

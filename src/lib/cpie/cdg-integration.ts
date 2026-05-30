@@ -22,6 +22,7 @@ const DOMAIN_NODE_MAP: Record<string, string> = {
   prop: 'D2',
   vehicle: 'D3',
   creature: 'D4',
+  location: 'D5',
 };
 
 const CPIE_NODE_MAP: Record<string, string> = {
@@ -29,6 +30,7 @@ const CPIE_NODE_MAP: Record<string, string> = {
   prop: 'C2',
   vehicle: 'C3',
   creature: 'C4',
+  location: 'C5',
 };
 
 export interface CDGRegistrationBundle {

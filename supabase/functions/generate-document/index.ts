@@ -2856,37 +2856,40 @@ ${existingCBContent.slice(0, 30000)}`;
 
       console.log(`[generate-document] Chunked background generation starting: ${docType} v${chunkVersionNum}, ${plan.totalChunks} chunks`);
 
-      // Fire generation as background task
-      const bgChunkTask = (async () => {
-        // Use serviceClient throughout: rlsClient silently blocks writes on
-        // project_document_versions and project_document_chunks via RLS.
-        try {
-          // Scene Plan already generated in handler before chunk planning.
-          // scenePlanForMeta and scenePlanUpstreamBlock are pre-populated
-          // from the main handler and should never be null for native feature_script.
-          const finalUpstreamContent = scenePlanUpstreamBlock
-            ? upstreamContent + scenePlanUpstreamBlock
-            : upstreamContent;
-          
-          const chunkResult = await runChunkedGeneration({
-            supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
-            documentId: chunkDocRecord!.id, versionId: chunkVersion!.id,
-            docType, plan, systemPrompt: system, upstreamContent: finalUpstreamContent,
-            projectTitle: project.title || "Untitled",
-            additionalContext, model: "google/gemini-2.5-flash",
-            episodeCount: resolvedQuals?.season_episode_count,
-            requestId,
-            projectFormat: project.format || undefined,
-          });
-          // runChunkedGeneration already writes plaintext to the version — promote only on full success
+      // ── INLINE CHUNK GENERATION ──
+      // Replaced EdgeRuntime.waitUntil(bgChunkTask) with inline await.
+      // waitUntil is unreliable — the isolate terminates before content is written.
+      // Inline await keeps the function alive for the duration of generation.
+      // runChunkedGeneration persists each chunk incrementally and writes final
+      // plaintext through persistVersion (canonical boundary), so even on
+      // edge function timeout the partial progress is never lost.
+      try {
+        // Scene Plan already generated in handler before chunk planning.
+        // scenePlanForMeta and scenePlanUpstreamBlock are pre-populated
+        // from the main handler and should never be null for native feature_script.
+        const finalUpstreamContent = scenePlanUpstreamBlock
+          ? upstreamContent + scenePlanUpstreamBlock
+          : upstreamContent;
+        
+        const chunkResult = await runChunkedGeneration({
+          supabase: serviceClient, apiKey, gatewayUrl: gw.url, projectId,
+          documentId: chunkDocRecord!.id, versionId: chunkVersion!.id,
+          docType, plan, systemPrompt: system, upstreamContent: finalUpstreamContent,
+          projectTitle: project.title || "Untitled",
+          additionalContext, model: "google/gemini-2.5-flash",
+          episodeCount: resolvedQuals?.season_episode_count,
+          requestId,
+          projectFormat: project.format || undefined,
+        });
+        // runChunkedGeneration already writes plaintext to the version — promote only on full success
 
-            // ── PRE-PROMOTION SCENE GRAPH BOOTSTRAP ────────────────────────────
-            // For screenplay-class docs (feature_script only — production_draft has
-            // resolvedSceneCount so it skips this), auto-extract scenes from the
-            // generated text BEFORE version promotion so auto-run never sees the
-            // version as complete before scenes are indexed.
-            const SCREENPLAY_BOOTSTRAP_TYPES = new Set(["feature_script", "production_draft"]);
-            if (SCREENPLAY_BOOTSTRAP_TYPES.has(docType) && !resolvedSceneCount) {
+        // ── PRE-PROMOTION SCENE GRAPH BOOTSTRAP ────────────────────────────
+        // For screenplay-class docs (feature_script only — production_draft has
+        // resolvedSceneCount so it skips this), auto-extract scenes from the
+        // generated text BEFORE version promotion so auto-run never sees the
+        // version as complete before scenes are indexed.
+        const SCREENPLAY_BOOTSTRAP_TYPES = new Set(["feature_script", "production_draft"]);
+        if (SCREENPLAY_BOOTSTRAP_TYPES.has(docType) && !resolvedSceneCount) {
               const bootstrapTag = `[generate-document][scene-bootstrap]`;
               try {
                 // Gate: verify assembled plaintext exists and has screenplay-class length
@@ -3110,24 +3113,17 @@ ${existingCBContent.slice(0, 30000)}`;
             }
             // ── END AUTO-RESUME ────────────────────────────────────────────
           }
-        } catch (bgErr: any) {
-          console.error(`[generate-document] Chunked background generation FAILED: ${docType} — ${bgErr?.message}`);
-          // Read existing meta to preserve fields (e.g. identity_stack_shadow)
-          const { data: curMetaForBgErr } = await serviceClient
-            .from("project_document_versions").select("meta_json")
-            .eq("id", chunkVersion!.id).maybeSingle();
-          const existingMetaForBgErr = (curMetaForBgErr?.meta_json || {});
-          await serviceClient.from("project_document_versions")
-            .update({ meta_json: { ...existingMetaForBgErr, bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
-            .eq("id", chunkVersion!.id);
-        }
-      })();
-
-      // @ts-ignore — EdgeRuntime available in Supabase edge function context
-      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) {
-        EdgeRuntime.waitUntil(bgChunkTask);
+      } catch (bgErr: any) {
+        console.error(`[generate-document] Chunked background generation FAILED: ${docType} — ${bgErr?.message}`);
+        // Read existing meta to preserve fields (e.g. identity_stack_shadow)
+        const { data: curMetaForBgErr } = await serviceClient
+          .from("project_document_versions").select("meta_json")
+          .eq("id", chunkVersion!.id).maybeSingle();
+        const existingMetaForBgErr = (curMetaForBgErr?.meta_json || {});
+        await serviceClient.from("project_document_versions")
+          .update({ meta_json: { ...existingMetaForBgErr, bg_generating: false, bg_failed: true, bg_failed_at: new Date().toISOString() } })
+          .eq("id", chunkVersion!.id);
       }
-
       return new Response(JSON.stringify({
         success: true,
         document_id: chunkDocRecord!.id,
@@ -3137,7 +3133,7 @@ ${existingCBContent.slice(0, 30000)}`;
         resolver_hash: currentHash,
         inputs_used: inputsUsed,
         depends_on: dependsOnFields,
-        generating: true,
+        generating: false,
         chunked: true,
         chunk_plan: { total_chunks: plan.totalChunks, strategy: plan.strategy },
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } })

@@ -1310,6 +1310,7 @@ export const WARDROBE_RULE_COUNT = WARDROBE_ANCHORS.length;
 export const PROP_RULE_COUNT = PROP_ANCHORS.length;
 export const VEHICLE_RULE_COUNT = VEHICLE_ANCHORS.length;
 export const CREATURE_RULE_COUNT = CREATURE_ANCHORS.length;
+export const LOCATION_RULE_COUNT = LOCATION_ANCHORS.length;
 
 // ── Resolvers ────────────────────────────────────────────────────────
 
@@ -1395,9 +1396,38 @@ export function resolveCreature(
 }
 
 /** Update metadata to include vehicle and creature rules */
+
+/** Resolve location inference for a single entity. */
+export function resolveLocation(
+  context: CPIEPCPContext,
+  spatialFunction: string,
+  entity: { entity_key: string; canonical_name: string },
+): Map<string, CPIEInference> {
+  const augmentedCtx = {
+    ...context,
+    spatial_function: spatialFunction,
+    geography: context.geography ?? '',
+    economy: context.economy ?? '',
+    class_structure: context.class_structure ?? '',
+    biome: context.biome ?? '',
+  } as CPIEPCPContext & { spatial_function: string };
+  const matched = matchRules(LOCATION_ANCHORS, 'location', augmentedCtx as any, {
+    entity_key: entity.entity_key,
+    canonical_name: entity.canonical_name,
+  });
+  const now = new Date().toISOString();
+  const deps = ['period', 'spatial_function', 'climate', 'culture', 'genre',
+    'economy', 'geography', 'biome', 'mythology', 'technology_level'];
+  const result = new Map<string, CPIEInference>();
+  for (const [field, anchor] of matched) {
+    result.set(field, anchorToInference(anchor, entity.entity_key, deps, now));
+  }
+  return result;
+}
+
 export function getRegistryMetadata(): CPIERegistryMetadata {
   // Collect coverage stats
-  const rules = [...WARDROBE_ANCHORS, ...PROP_ANCHORS, ...VEHICLE_ANCHORS, ...CREATURE_ANCHORS];
+  const rules = [...WARDROBE_ANCHORS, ...PROP_ANCHORS, ...VEHICLE_ANCHORS, ...CREATURE_ANCHORS, ...LOCATION_ANCHORS];
   const professions = new Set<string>();
   const genres = new Set<string>();
   const climates = new Set<string>();
@@ -1429,3 +1459,1262 @@ export function getRegistryMetadata(): CPIERegistryMetadata {
     period_coverage: Array.from(periods).sort(),
   };
 }
+
+
+// ══════════════════════════════════════════════════════════════════════
+//  LOCATION ANCHORS — Context-Driven Spatial Inference
+// ══════════════════════════════════════════════════════════════════════
+// Ownership: Location Canon = permanent spatial truth.
+// PD owns modifications, VL owns how photographed.
+// Unchanged fields reset to null.
+// This file is READ-ONLY architecture. Do NOT modify outside registry.
+  anchor('lc_base_pre_industrial_residential_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'pre_industrial_residential', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_residential', 'period=pre_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_pre_industrial_residential_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'residential']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_residential', 'period=pre_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_pre_industrial_residential_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_residential', 'period=pre_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_pre_industrial_residential_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'residential']]],
+    'lighting_character', 'warm_domestic', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_residential', 'period=pre_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_pre_industrial_residential_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'residential']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_residential', 'period=pre_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_pre_industrial_commercial_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'pre_industrial_commercial', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_commercial', 'period=pre_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_pre_industrial_commercial_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'commercial']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_commercial', 'period=pre_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_pre_industrial_commercial_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_commercial', 'period=pre_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_pre_industrial_commercial_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'commercial']]],
+    'lighting_character', 'functional_bright', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_commercial', 'period=pre_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_pre_industrial_commercial_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'commercial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_commercial', 'period=pre_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_pre_industrial_civic_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'pre_industrial_civic', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_civic', 'period=pre_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_pre_industrial_civic_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'civic']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_civic', 'period=pre_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_pre_industrial_civic_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_civic', 'period=pre_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_pre_industrial_civic_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'civic']]],
+    'lighting_character', 'grand_natural_daylight', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_civic', 'period=pre_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_pre_industrial_civic_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'civic']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_civic', 'period=pre_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_pre_industrial_military_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'pre_industrial_military', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_military', 'period=pre_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_pre_industrial_military_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'military']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_military', 'period=pre_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_pre_industrial_military_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'military']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_military', 'period=pre_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_pre_industrial_military_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'military']]],
+    'lighting_character', 'harsh_functional', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_military', 'period=pre_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_pre_industrial_military_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'military']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_military', 'period=pre_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_pre_industrial_religious_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'pre_industrial_religious', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_religious', 'period=pre_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_pre_industrial_religious_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'religious']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_religious', 'period=pre_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_pre_industrial_religious_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'religious']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_religious', 'period=pre_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_pre_industrial_religious_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'religious']]],
+    'lighting_character', 'reverent_dim_candlelight', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_religious', 'period=pre_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_pre_industrial_religious_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'religious']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_religious', 'period=pre_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_pre_industrial_industrial_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'pre_industrial_industrial', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_industrial', 'period=pre_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_pre_industrial_industrial_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'industrial']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_industrial', 'period=pre_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_pre_industrial_industrial_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'industrial']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_industrial', 'period=pre_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_pre_industrial_industrial_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'industrial']]],
+    'lighting_character', 'harsh_fluorescent', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_industrial', 'period=pre_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_pre_industrial_industrial_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'industrial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_industrial', 'period=pre_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_pre_industrial_transportation_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'pre_industrial_transportation', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_transportation', 'period=pre_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_pre_industrial_transportation_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'transportation']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_transportation', 'period=pre_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_pre_industrial_transportation_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'transportation']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_transportation', 'period=pre_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_pre_industrial_transportation_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'transportation']]],
+    'lighting_character', 'bright_terminal', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_transportation', 'period=pre_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_pre_industrial_transportation_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'transportation']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_transportation', 'period=pre_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_pre_industrial_hospitality_arch', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'pre_industrial_hospitality', 0.88, 100,
+    'registry_rule: lc_base_pre_industrial_hospitality', 'period=pre_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_pre_industrial_hospitality_era', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'hospitality']]],
+    'construction_era', 'pre_industrial', 0.87, 100,
+    'registry_rule: lc_base_pre_industrial_hospitality', 'period=pre_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_pre_industrial_hospitality_mat', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'hospitality']]],
+    'material_palette', 'wood_stone_thatch', 0.82, 100,
+    'registry_rule: lc_base_pre_industrial_hospitality', 'period=pre_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_pre_industrial_hospitality_light', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'hospitality']]],
+    'lighting_character', 'warm_social_dim', 0.8, 100,
+    'registry_rule: lc_base_pre_industrial_hospitality', 'period=pre_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_pre_industrial_hospitality_density', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age'], ['spatial_function', 'eq', 'hospitality']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_pre_industrial_hospitality', 'period=pre_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_early_industrial_residential_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'early_industrial_residential', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_residential', 'period=early_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_early_industrial_residential_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'residential']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_residential', 'period=early_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_early_industrial_residential_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_residential', 'period=early_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_early_industrial_residential_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'residential']]],
+    'lighting_character', 'warm_domestic', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_residential', 'period=early_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_early_industrial_residential_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'residential']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_residential', 'period=early_industrial', 'spatial_function=residential'),
+
+  anchor('lc_base_early_industrial_commercial_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'early_industrial_commercial', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_commercial', 'period=early_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_early_industrial_commercial_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'commercial']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_commercial', 'period=early_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_early_industrial_commercial_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_commercial', 'period=early_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_early_industrial_commercial_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'commercial']]],
+    'lighting_character', 'functional_bright', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_commercial', 'period=early_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_early_industrial_commercial_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'commercial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_commercial', 'period=early_industrial', 'spatial_function=commercial'),
+
+  anchor('lc_base_early_industrial_civic_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'early_industrial_civic', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_civic', 'period=early_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_early_industrial_civic_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'civic']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_civic', 'period=early_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_early_industrial_civic_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_civic', 'period=early_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_early_industrial_civic_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'civic']]],
+    'lighting_character', 'grand_natural_daylight', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_civic', 'period=early_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_early_industrial_civic_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'civic']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_civic', 'period=early_industrial', 'spatial_function=civic'),
+
+  anchor('lc_base_early_industrial_military_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'early_industrial_military', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_military', 'period=early_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_early_industrial_military_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'military']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_military', 'period=early_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_early_industrial_military_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'military']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_military', 'period=early_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_early_industrial_military_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'military']]],
+    'lighting_character', 'harsh_functional', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_military', 'period=early_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_early_industrial_military_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'military']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_military', 'period=early_industrial', 'spatial_function=military'),
+
+  anchor('lc_base_early_industrial_religious_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'early_industrial_religious', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_religious', 'period=early_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_early_industrial_religious_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'religious']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_religious', 'period=early_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_early_industrial_religious_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'religious']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_religious', 'period=early_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_early_industrial_religious_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'religious']]],
+    'lighting_character', 'reverent_dim_candlelight', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_religious', 'period=early_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_early_industrial_religious_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'religious']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_religious', 'period=early_industrial', 'spatial_function=religious'),
+
+  anchor('lc_base_early_industrial_industrial_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'early_industrial_industrial', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_industrial', 'period=early_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_early_industrial_industrial_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'industrial']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_industrial', 'period=early_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_early_industrial_industrial_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'industrial']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_industrial', 'period=early_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_early_industrial_industrial_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'industrial']]],
+    'lighting_character', 'harsh_fluorescent', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_industrial', 'period=early_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_early_industrial_industrial_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'industrial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_industrial', 'period=early_industrial', 'spatial_function=industrial'),
+
+  anchor('lc_base_early_industrial_transportation_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'early_industrial_transportation', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_transportation', 'period=early_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_early_industrial_transportation_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'transportation']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_transportation', 'period=early_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_early_industrial_transportation_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'transportation']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_transportation', 'period=early_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_early_industrial_transportation_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'transportation']]],
+    'lighting_character', 'bright_terminal', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_transportation', 'period=early_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_early_industrial_transportation_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'transportation']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_transportation', 'period=early_industrial', 'spatial_function=transportation'),
+
+  anchor('lc_base_early_industrial_hospitality_arch', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'early_industrial_hospitality', 0.88, 100,
+    'registry_rule: lc_base_early_industrial_hospitality', 'period=early_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_early_industrial_hospitality_era', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'hospitality']]],
+    'construction_era', 'early_industrial', 0.87, 100,
+    'registry_rule: lc_base_early_industrial_hospitality', 'period=early_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_early_industrial_hospitality_mat', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'hospitality']]],
+    'material_palette', 'brick_stone_iron', 0.82, 100,
+    'registry_rule: lc_base_early_industrial_hospitality', 'period=early_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_early_industrial_hospitality_light', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'hospitality']]],
+    'lighting_character', 'warm_social_dim', 0.8, 100,
+    'registry_rule: lc_base_early_industrial_hospitality', 'period=early_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_early_industrial_hospitality_density', 'location',
+    [[['period', 'regex', 'renaissance|colonial|victorian|18th|19th|1700|1800'], ['spatial_function', 'eq', 'hospitality']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_early_industrial_hospitality', 'period=early_industrial', 'spatial_function=hospitality'),
+
+  anchor('lc_base_modern_war_residential_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'modern_war_residential', 0.88, 100,
+    'registry_rule: lc_base_modern_war_residential', 'period=modern_war', 'spatial_function=residential'),
+
+  anchor('lc_base_modern_war_residential_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'residential']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_residential', 'period=modern_war', 'spatial_function=residential'),
+
+  anchor('lc_base_modern_war_residential_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_residential', 'period=modern_war', 'spatial_function=residential'),
+
+  anchor('lc_base_modern_war_residential_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'residential']]],
+    'lighting_character', 'warm_domestic', 0.8, 100,
+    'registry_rule: lc_base_modern_war_residential', 'period=modern_war', 'spatial_function=residential'),
+
+  anchor('lc_base_modern_war_residential_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'residential']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_residential', 'period=modern_war', 'spatial_function=residential'),
+
+  anchor('lc_base_modern_war_commercial_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'modern_war_commercial', 0.88, 100,
+    'registry_rule: lc_base_modern_war_commercial', 'period=modern_war', 'spatial_function=commercial'),
+
+  anchor('lc_base_modern_war_commercial_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'commercial']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_commercial', 'period=modern_war', 'spatial_function=commercial'),
+
+  anchor('lc_base_modern_war_commercial_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_commercial', 'period=modern_war', 'spatial_function=commercial'),
+
+  anchor('lc_base_modern_war_commercial_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'commercial']]],
+    'lighting_character', 'functional_bright', 0.8, 100,
+    'registry_rule: lc_base_modern_war_commercial', 'period=modern_war', 'spatial_function=commercial'),
+
+  anchor('lc_base_modern_war_commercial_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'commercial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_commercial', 'period=modern_war', 'spatial_function=commercial'),
+
+  anchor('lc_base_modern_war_civic_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'modern_war_civic', 0.88, 100,
+    'registry_rule: lc_base_modern_war_civic', 'period=modern_war', 'spatial_function=civic'),
+
+  anchor('lc_base_modern_war_civic_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'civic']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_civic', 'period=modern_war', 'spatial_function=civic'),
+
+  anchor('lc_base_modern_war_civic_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_civic', 'period=modern_war', 'spatial_function=civic'),
+
+  anchor('lc_base_modern_war_civic_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'civic']]],
+    'lighting_character', 'grand_natural_daylight', 0.8, 100,
+    'registry_rule: lc_base_modern_war_civic', 'period=modern_war', 'spatial_function=civic'),
+
+  anchor('lc_base_modern_war_civic_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'civic']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_civic', 'period=modern_war', 'spatial_function=civic'),
+
+  anchor('lc_base_modern_war_military_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'modern_war_military', 0.88, 100,
+    'registry_rule: lc_base_modern_war_military', 'period=modern_war', 'spatial_function=military'),
+
+  anchor('lc_base_modern_war_military_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'military']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_military', 'period=modern_war', 'spatial_function=military'),
+
+  anchor('lc_base_modern_war_military_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'military']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_military', 'period=modern_war', 'spatial_function=military'),
+
+  anchor('lc_base_modern_war_military_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'military']]],
+    'lighting_character', 'harsh_functional', 0.8, 100,
+    'registry_rule: lc_base_modern_war_military', 'period=modern_war', 'spatial_function=military'),
+
+  anchor('lc_base_modern_war_military_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'military']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_military', 'period=modern_war', 'spatial_function=military'),
+
+  anchor('lc_base_modern_war_religious_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'modern_war_religious', 0.88, 100,
+    'registry_rule: lc_base_modern_war_religious', 'period=modern_war', 'spatial_function=religious'),
+
+  anchor('lc_base_modern_war_religious_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'religious']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_religious', 'period=modern_war', 'spatial_function=religious'),
+
+  anchor('lc_base_modern_war_religious_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'religious']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_religious', 'period=modern_war', 'spatial_function=religious'),
+
+  anchor('lc_base_modern_war_religious_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'religious']]],
+    'lighting_character', 'reverent_dim_candlelight', 0.8, 100,
+    'registry_rule: lc_base_modern_war_religious', 'period=modern_war', 'spatial_function=religious'),
+
+  anchor('lc_base_modern_war_religious_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'religious']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_religious', 'period=modern_war', 'spatial_function=religious'),
+
+  anchor('lc_base_modern_war_industrial_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'modern_war_industrial', 0.88, 100,
+    'registry_rule: lc_base_modern_war_industrial', 'period=modern_war', 'spatial_function=industrial'),
+
+  anchor('lc_base_modern_war_industrial_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'industrial']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_industrial', 'period=modern_war', 'spatial_function=industrial'),
+
+  anchor('lc_base_modern_war_industrial_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'industrial']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_industrial', 'period=modern_war', 'spatial_function=industrial'),
+
+  anchor('lc_base_modern_war_industrial_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'industrial']]],
+    'lighting_character', 'harsh_fluorescent', 0.8, 100,
+    'registry_rule: lc_base_modern_war_industrial', 'period=modern_war', 'spatial_function=industrial'),
+
+  anchor('lc_base_modern_war_industrial_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'industrial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_industrial', 'period=modern_war', 'spatial_function=industrial'),
+
+  anchor('lc_base_modern_war_transportation_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'modern_war_transportation', 0.88, 100,
+    'registry_rule: lc_base_modern_war_transportation', 'period=modern_war', 'spatial_function=transportation'),
+
+  anchor('lc_base_modern_war_transportation_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'transportation']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_transportation', 'period=modern_war', 'spatial_function=transportation'),
+
+  anchor('lc_base_modern_war_transportation_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'transportation']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_transportation', 'period=modern_war', 'spatial_function=transportation'),
+
+  anchor('lc_base_modern_war_transportation_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'transportation']]],
+    'lighting_character', 'bright_terminal', 0.8, 100,
+    'registry_rule: lc_base_modern_war_transportation', 'period=modern_war', 'spatial_function=transportation'),
+
+  anchor('lc_base_modern_war_transportation_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'transportation']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_transportation', 'period=modern_war', 'spatial_function=transportation'),
+
+  anchor('lc_base_modern_war_hospitality_arch', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'modern_war_hospitality', 0.88, 100,
+    'registry_rule: lc_base_modern_war_hospitality', 'period=modern_war', 'spatial_function=hospitality'),
+
+  anchor('lc_base_modern_war_hospitality_era', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'hospitality']]],
+    'construction_era', 'modern_war', 0.87, 100,
+    'registry_rule: lc_base_modern_war_hospitality', 'period=modern_war', 'spatial_function=hospitality'),
+
+  anchor('lc_base_modern_war_hospitality_mat', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'hospitality']]],
+    'material_palette', 'concrete_brick_iron', 0.82, 100,
+    'registry_rule: lc_base_modern_war_hospitality', 'period=modern_war', 'spatial_function=hospitality'),
+
+  anchor('lc_base_modern_war_hospitality_light', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'hospitality']]],
+    'lighting_character', 'warm_social_dim', 0.8, 100,
+    'registry_rule: lc_base_modern_war_hospitality', 'period=modern_war', 'spatial_function=hospitality'),
+
+  anchor('lc_base_modern_war_hospitality_density', 'location',
+    [[['period', 'regex', 'wwi|interwar|1940s|wwii|1930s|1910|1920'], ['spatial_function', 'eq', 'hospitality']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_modern_war_hospitality', 'period=modern_war', 'spatial_function=hospitality'),
+
+  anchor('lc_base_contemporary_residential_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'contemporary_residential', 0.88, 100,
+    'registry_rule: lc_base_contemporary_residential', 'period=contemporary', 'spatial_function=residential'),
+
+  anchor('lc_base_contemporary_residential_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'residential']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_residential', 'period=contemporary', 'spatial_function=residential'),
+
+  anchor('lc_base_contemporary_residential_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_residential', 'period=contemporary', 'spatial_function=residential'),
+
+  anchor('lc_base_contemporary_residential_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'residential']]],
+    'lighting_character', 'warm_domestic', 0.8, 100,
+    'registry_rule: lc_base_contemporary_residential', 'period=contemporary', 'spatial_function=residential'),
+
+  anchor('lc_base_contemporary_residential_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'residential']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_residential', 'period=contemporary', 'spatial_function=residential'),
+
+  anchor('lc_base_contemporary_commercial_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'contemporary_commercial', 0.88, 100,
+    'registry_rule: lc_base_contemporary_commercial', 'period=contemporary', 'spatial_function=commercial'),
+
+  anchor('lc_base_contemporary_commercial_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'commercial']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_commercial', 'period=contemporary', 'spatial_function=commercial'),
+
+  anchor('lc_base_contemporary_commercial_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_commercial', 'period=contemporary', 'spatial_function=commercial'),
+
+  anchor('lc_base_contemporary_commercial_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'commercial']]],
+    'lighting_character', 'functional_bright', 0.8, 100,
+    'registry_rule: lc_base_contemporary_commercial', 'period=contemporary', 'spatial_function=commercial'),
+
+  anchor('lc_base_contemporary_commercial_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'commercial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_commercial', 'period=contemporary', 'spatial_function=commercial'),
+
+  anchor('lc_base_contemporary_civic_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'contemporary_civic', 0.88, 100,
+    'registry_rule: lc_base_contemporary_civic', 'period=contemporary', 'spatial_function=civic'),
+
+  anchor('lc_base_contemporary_civic_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'civic']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_civic', 'period=contemporary', 'spatial_function=civic'),
+
+  anchor('lc_base_contemporary_civic_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_civic', 'period=contemporary', 'spatial_function=civic'),
+
+  anchor('lc_base_contemporary_civic_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'civic']]],
+    'lighting_character', 'grand_natural_daylight', 0.8, 100,
+    'registry_rule: lc_base_contemporary_civic', 'period=contemporary', 'spatial_function=civic'),
+
+  anchor('lc_base_contemporary_civic_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'civic']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_civic', 'period=contemporary', 'spatial_function=civic'),
+
+  anchor('lc_base_contemporary_military_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'contemporary_military', 0.88, 100,
+    'registry_rule: lc_base_contemporary_military', 'period=contemporary', 'spatial_function=military'),
+
+  anchor('lc_base_contemporary_military_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'military']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_military', 'period=contemporary', 'spatial_function=military'),
+
+  anchor('lc_base_contemporary_military_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'military']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_military', 'period=contemporary', 'spatial_function=military'),
+
+  anchor('lc_base_contemporary_military_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'military']]],
+    'lighting_character', 'harsh_functional', 0.8, 100,
+    'registry_rule: lc_base_contemporary_military', 'period=contemporary', 'spatial_function=military'),
+
+  anchor('lc_base_contemporary_military_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'military']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_military', 'period=contemporary', 'spatial_function=military'),
+
+  anchor('lc_base_contemporary_religious_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'contemporary_religious', 0.88, 100,
+    'registry_rule: lc_base_contemporary_religious', 'period=contemporary', 'spatial_function=religious'),
+
+  anchor('lc_base_contemporary_religious_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'religious']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_religious', 'period=contemporary', 'spatial_function=religious'),
+
+  anchor('lc_base_contemporary_religious_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'religious']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_religious', 'period=contemporary', 'spatial_function=religious'),
+
+  anchor('lc_base_contemporary_religious_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'religious']]],
+    'lighting_character', 'reverent_dim_candlelight', 0.8, 100,
+    'registry_rule: lc_base_contemporary_religious', 'period=contemporary', 'spatial_function=religious'),
+
+  anchor('lc_base_contemporary_religious_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'religious']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_religious', 'period=contemporary', 'spatial_function=religious'),
+
+  anchor('lc_base_contemporary_industrial_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'contemporary_industrial', 0.88, 100,
+    'registry_rule: lc_base_contemporary_industrial', 'period=contemporary', 'spatial_function=industrial'),
+
+  anchor('lc_base_contemporary_industrial_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'industrial']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_industrial', 'period=contemporary', 'spatial_function=industrial'),
+
+  anchor('lc_base_contemporary_industrial_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'industrial']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_industrial', 'period=contemporary', 'spatial_function=industrial'),
+
+  anchor('lc_base_contemporary_industrial_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'industrial']]],
+    'lighting_character', 'harsh_fluorescent', 0.8, 100,
+    'registry_rule: lc_base_contemporary_industrial', 'period=contemporary', 'spatial_function=industrial'),
+
+  anchor('lc_base_contemporary_industrial_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'industrial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_industrial', 'period=contemporary', 'spatial_function=industrial'),
+
+  anchor('lc_base_contemporary_transportation_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'contemporary_transportation', 0.88, 100,
+    'registry_rule: lc_base_contemporary_transportation', 'period=contemporary', 'spatial_function=transportation'),
+
+  anchor('lc_base_contemporary_transportation_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'transportation']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_transportation', 'period=contemporary', 'spatial_function=transportation'),
+
+  anchor('lc_base_contemporary_transportation_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'transportation']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_transportation', 'period=contemporary', 'spatial_function=transportation'),
+
+  anchor('lc_base_contemporary_transportation_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'transportation']]],
+    'lighting_character', 'bright_terminal', 0.8, 100,
+    'registry_rule: lc_base_contemporary_transportation', 'period=contemporary', 'spatial_function=transportation'),
+
+  anchor('lc_base_contemporary_transportation_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'transportation']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_transportation', 'period=contemporary', 'spatial_function=transportation'),
+
+  anchor('lc_base_contemporary_hospitality_arch', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'contemporary_hospitality', 0.88, 100,
+    'registry_rule: lc_base_contemporary_hospitality', 'period=contemporary', 'spatial_function=hospitality'),
+
+  anchor('lc_base_contemporary_hospitality_era', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'hospitality']]],
+    'construction_era', 'contemporary', 0.87, 100,
+    'registry_rule: lc_base_contemporary_hospitality', 'period=contemporary', 'spatial_function=hospitality'),
+
+  anchor('lc_base_contemporary_hospitality_mat', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'hospitality']]],
+    'material_palette', 'concrete_steel_glass', 0.82, 100,
+    'registry_rule: lc_base_contemporary_hospitality', 'period=contemporary', 'spatial_function=hospitality'),
+
+  anchor('lc_base_contemporary_hospitality_light', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'hospitality']]],
+    'lighting_character', 'warm_social_dim', 0.8, 100,
+    'registry_rule: lc_base_contemporary_hospitality', 'period=contemporary', 'spatial_function=hospitality'),
+
+  anchor('lc_base_contemporary_hospitality_density', 'location',
+    [[['period', 'regex', '1950s|1960s|1970s|1980s|1990s|2000s|2020s|contemporary'], ['spatial_function', 'eq', 'hospitality']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_contemporary_hospitality', 'period=contemporary', 'spatial_function=hospitality'),
+
+  anchor('lc_base_future_residential_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'future_residential', 0.88, 100,
+    'registry_rule: lc_base_future_residential', 'period=future', 'spatial_function=residential'),
+
+  anchor('lc_base_future_residential_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'residential']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_residential', 'period=future', 'spatial_function=residential'),
+
+  anchor('lc_base_future_residential_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_residential', 'period=future', 'spatial_function=residential'),
+
+  anchor('lc_base_future_residential_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'residential']]],
+    'lighting_character', 'warm_domestic', 0.8, 100,
+    'registry_rule: lc_base_future_residential', 'period=future', 'spatial_function=residential'),
+
+  anchor('lc_base_future_residential_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'residential']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_residential', 'period=future', 'spatial_function=residential'),
+
+  anchor('lc_base_future_commercial_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'future_commercial', 0.88, 100,
+    'registry_rule: lc_base_future_commercial', 'period=future', 'spatial_function=commercial'),
+
+  anchor('lc_base_future_commercial_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'commercial']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_commercial', 'period=future', 'spatial_function=commercial'),
+
+  anchor('lc_base_future_commercial_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_commercial', 'period=future', 'spatial_function=commercial'),
+
+  anchor('lc_base_future_commercial_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'commercial']]],
+    'lighting_character', 'functional_bright', 0.8, 100,
+    'registry_rule: lc_base_future_commercial', 'period=future', 'spatial_function=commercial'),
+
+  anchor('lc_base_future_commercial_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'commercial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_commercial', 'period=future', 'spatial_function=commercial'),
+
+  anchor('lc_base_future_civic_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'future_civic', 0.88, 100,
+    'registry_rule: lc_base_future_civic', 'period=future', 'spatial_function=civic'),
+
+  anchor('lc_base_future_civic_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'civic']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_civic', 'period=future', 'spatial_function=civic'),
+
+  anchor('lc_base_future_civic_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_civic', 'period=future', 'spatial_function=civic'),
+
+  anchor('lc_base_future_civic_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'civic']]],
+    'lighting_character', 'grand_natural_daylight', 0.8, 100,
+    'registry_rule: lc_base_future_civic', 'period=future', 'spatial_function=civic'),
+
+  anchor('lc_base_future_civic_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'civic']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_civic', 'period=future', 'spatial_function=civic'),
+
+  anchor('lc_base_future_military_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'future_military', 0.88, 100,
+    'registry_rule: lc_base_future_military', 'period=future', 'spatial_function=military'),
+
+  anchor('lc_base_future_military_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'military']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_military', 'period=future', 'spatial_function=military'),
+
+  anchor('lc_base_future_military_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'military']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_military', 'period=future', 'spatial_function=military'),
+
+  anchor('lc_base_future_military_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'military']]],
+    'lighting_character', 'harsh_functional', 0.8, 100,
+    'registry_rule: lc_base_future_military', 'period=future', 'spatial_function=military'),
+
+  anchor('lc_base_future_military_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'military']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_military', 'period=future', 'spatial_function=military'),
+
+  anchor('lc_base_future_religious_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'future_religious', 0.88, 100,
+    'registry_rule: lc_base_future_religious', 'period=future', 'spatial_function=religious'),
+
+  anchor('lc_base_future_religious_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'religious']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_religious', 'period=future', 'spatial_function=religious'),
+
+  anchor('lc_base_future_religious_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'religious']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_religious', 'period=future', 'spatial_function=religious'),
+
+  anchor('lc_base_future_religious_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'religious']]],
+    'lighting_character', 'reverent_dim_candlelight', 0.8, 100,
+    'registry_rule: lc_base_future_religious', 'period=future', 'spatial_function=religious'),
+
+  anchor('lc_base_future_religious_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'religious']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_religious', 'period=future', 'spatial_function=religious'),
+
+  anchor('lc_base_future_industrial_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'future_industrial', 0.88, 100,
+    'registry_rule: lc_base_future_industrial', 'period=future', 'spatial_function=industrial'),
+
+  anchor('lc_base_future_industrial_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'industrial']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_industrial', 'period=future', 'spatial_function=industrial'),
+
+  anchor('lc_base_future_industrial_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'industrial']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_industrial', 'period=future', 'spatial_function=industrial'),
+
+  anchor('lc_base_future_industrial_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'industrial']]],
+    'lighting_character', 'harsh_fluorescent', 0.8, 100,
+    'registry_rule: lc_base_future_industrial', 'period=future', 'spatial_function=industrial'),
+
+  anchor('lc_base_future_industrial_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'industrial']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_industrial', 'period=future', 'spatial_function=industrial'),
+
+  anchor('lc_base_future_transportation_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'future_transportation', 0.88, 100,
+    'registry_rule: lc_base_future_transportation', 'period=future', 'spatial_function=transportation'),
+
+  anchor('lc_base_future_transportation_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'transportation']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_transportation', 'period=future', 'spatial_function=transportation'),
+
+  anchor('lc_base_future_transportation_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'transportation']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_transportation', 'period=future', 'spatial_function=transportation'),
+
+  anchor('lc_base_future_transportation_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'transportation']]],
+    'lighting_character', 'bright_terminal', 0.8, 100,
+    'registry_rule: lc_base_future_transportation', 'period=future', 'spatial_function=transportation'),
+
+  anchor('lc_base_future_transportation_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'transportation']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_transportation', 'period=future', 'spatial_function=transportation'),
+
+  anchor('lc_base_future_hospitality_arch', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'future_hospitality', 0.88, 100,
+    'registry_rule: lc_base_future_hospitality', 'period=future', 'spatial_function=hospitality'),
+
+  anchor('lc_base_future_hospitality_era', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'hospitality']]],
+    'construction_era', 'future', 0.87, 100,
+    'registry_rule: lc_base_future_hospitality', 'period=future', 'spatial_function=hospitality'),
+
+  anchor('lc_base_future_hospitality_mat', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'hospitality']]],
+    'material_palette', 'composite_glass_alloy', 0.82, 100,
+    'registry_rule: lc_base_future_hospitality', 'period=future', 'spatial_function=hospitality'),
+
+  anchor('lc_base_future_hospitality_light', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'hospitality']]],
+    'lighting_character', 'warm_social_dim', 0.8, 100,
+    'registry_rule: lc_base_future_hospitality', 'period=future', 'spatial_function=hospitality'),
+
+  anchor('lc_base_future_hospitality_density', 'location',
+    [[['period', 'regex', 'distant_future|near_future|2087|post_apocalyptic|2050'], ['spatial_function', 'eq', 'hospitality']]],
+    'visual_density', 'moderate', 0.78, 100,
+    'registry_rule: lc_base_future_hospitality', 'period=future', 'spatial_function=hospitality'),
+
+  anchor('lc_mod_mediterranean_arch', 'location',
+    [[['culture', 'regex', 'mediterranean|italian|greek|spanish'], ['spatial_function', 'any', '']]],
+    'architecture_style', 'whitewash_terracotta', 0.9, 110,
+    'registry_rule: lc_mod_mediterranean', 'region=mediterranean', 'regional_modifier'),
+
+  anchor('lc_mod_mediterranean_mat', 'location',
+    [[['culture', 'regex', 'mediterranean|italian|greek|spanish'], ['spatial_function', 'any', '']]],
+    'material_palette', 'stone_terracotta_plaster', 0.85, 110,
+    'registry_rule: lc_mod_mediterranean', 'region=mediterranean', 'regional_modifier'),
+
+  anchor('lc_mod_mediterranean_light', 'location',
+    [[['culture', 'regex', 'mediterranean|italian|greek|spanish'], ['spatial_function', 'any', '']]],
+    'lighting_character', 'warm_amber_outdoor', 0.83, 110,
+    'registry_rule: lc_mod_mediterranean', 'region=mediterranean', 'regional_modifier'),
+
+  anchor('lc_mod_east_asian_arch', 'location',
+    [[['culture', 'regex', 'east_asian|japanese|chinese|korean'], ['spatial_function', 'any', '']]],
+    'architecture_style', 'wooden_pagoda_style', 0.9, 110,
+    'registry_rule: lc_mod_east_asian', 'region=east_asian', 'regional_modifier'),
+
+  anchor('lc_mod_east_asian_mat', 'location',
+    [[['culture', 'regex', 'east_asian|japanese|chinese|korean'], ['spatial_function', 'any', '']]],
+    'material_palette', 'wood_paper_stone', 0.85, 110,
+    'registry_rule: lc_mod_east_asian', 'region=east_asian', 'regional_modifier'),
+
+  anchor('lc_mod_east_asian_light', 'location',
+    [[['culture', 'regex', 'east_asian|japanese|chinese|korean'], ['spatial_function', 'any', '']]],
+    'lighting_character', 'lantern_warm', 0.83, 110,
+    'registry_rule: lc_mod_east_asian', 'region=east_asian', 'regional_modifier'),
+
+  anchor('lc_mod_arabian_arch', 'location',
+    [[['culture', 'regex', 'arabian|middle_east|arabic'], ['spatial_function', 'any', '']]],
+    'architecture_style', 'courtyard_arches', 0.9, 110,
+    'registry_rule: lc_mod_arabian', 'region=arabian', 'regional_modifier'),
+
+  anchor('lc_mod_arabian_mat', 'location',
+    [[['culture', 'regex', 'arabian|middle_east|arabic'], ['spatial_function', 'any', '']]],
+    'material_palette', 'stone_plaster_tile', 0.85, 110,
+    'registry_rule: lc_mod_arabian', 'region=arabian', 'regional_modifier'),
+
+  anchor('lc_mod_arabian_light', 'location',
+    [[['culture', 'regex', 'arabian|middle_east|arabic'], ['spatial_function', 'any', '']]],
+    'lighting_character', 'shaded_filtered_sun', 0.83, 110,
+    'registry_rule: lc_mod_arabian', 'region=arabian', 'regional_modifier'),
+
+  anchor('lc_mod_african_arch', 'location',
+    [[['culture', 'regex', 'african|sub_saharan|west_african'], ['spatial_function', 'any', '']]],
+    'architecture_style', 'compound_round_hut', 0.9, 110,
+    'registry_rule: lc_mod_african', 'region=african', 'regional_modifier'),
+
+  anchor('lc_mod_african_mat', 'location',
+    [[['culture', 'regex', 'african|sub_saharan|west_african'], ['spatial_function', 'any', '']]],
+    'material_palette', 'mud_brick_thatch', 0.85, 110,
+    'registry_rule: lc_mod_african', 'region=african', 'regional_modifier'),
+
+  anchor('lc_mod_african_light', 'location',
+    [[['culture', 'regex', 'african|sub_saharan|west_african'], ['spatial_function', 'any', '']]],
+    'lighting_character', 'bright_outdoor_filtered', 0.83, 110,
+    'registry_rule: lc_mod_african', 'region=african', 'regional_modifier'),
+
+  anchor('lc_mod_south_asian_arch', 'location',
+    [[['culture', 'regex', 'south_asian|indian|pakistani|bangladeshi'], ['spatial_function', 'any', '']]],
+    'architecture_style', 'verandah_bungalow', 0.9, 110,
+    'registry_rule: lc_mod_south_asian', 'region=south_asian', 'regional_modifier'),
+
+  anchor('lc_mod_south_asian_mat', 'location',
+    [[['culture', 'regex', 'south_asian|indian|pakistani|bangladeshi'], ['spatial_function', 'any', '']]],
+    'material_palette', 'sandstone_wood_marble', 0.85, 110,
+    'registry_rule: lc_mod_south_asian', 'region=south_asian', 'regional_modifier'),
+
+  anchor('lc_mod_south_asian_light', 'location',
+    [[['culture', 'regex', 'south_asian|indian|pakistani|bangladeshi'], ['spatial_function', 'any', '']]],
+    'lighting_character', 'warm_humid_diffuse', 0.83, 110,
+    'registry_rule: lc_mod_south_asian', 'region=south_asian', 'regional_modifier'),
+
+  anchor('lc_climate_arid_mat', 'location',
+    [[['climate', 'in', 'hot_arid,arid,desert']]],
+    'material_palette', 'stone_mudbrick_adobe', 0.82, 105,
+    'registry_rule: lc_climate_arid_mat', 'arid_climate_uses_thermal_mass'),
+
+  anchor('lc_climate_rainy_mat', 'location',
+    [[['climate', 'in', 'temperate_rainy,rainy,wet,tropical_humid']]],
+    'material_palette', 'waterproofed_wood_stone_tile', 0.8, 105,
+    'registry_rule: lc_climate_rainy_mat', 'rainy_climate_uses_waterproofed'),
+
+  anchor('lc_climate_snowy_mat', 'location',
+    [[['climate', 'in', 'cold_snowy,arctic,sub_arctic']]],
+    'material_palette', 'insulated_timber_stone_felt', 0.82, 105,
+    'registry_rule: lc_climate_snowy_mat', 'snowy_climate_uses_insulated'),
+
+  anchor('lc_wild_cave_arch', 'location',
+    [[['climate', 'any', 'temperate']]],
+    'architecture_style', 'natural_cavern', 0.9, 100,
+    'registry_rule: lc_wild_cave_arch', 'cave_environments'),
+
+  anchor('lc_wild_forest_arch', 'location',
+    [[['biome', 'in', 'forest,jungle,woods']]],
+    'architecture_style', 'forest_clearing', 0.85, 100,
+    'registry_rule: lc_wild_forest_arch', 'forest_environments'),
+
+  anchor('lc_wild_desert_arch', 'location',
+    [[['climate', 'in', 'hot_arid,arid']]],
+    'architecture_style', 'open_desert_plain', 0.85, 100,
+    'registry_rule: lc_wild_desert_arch', 'desert_environments'),
+
+  anchor('lc_agri_pre', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval']]],
+    'architecture_style', 'timber_barn_thatch', 0.82, 95,
+    'registry_rule: lc_agri_pre', 'pre_industrial_agricultural'),
+
+  anchor('lc_agri_mod', 'location',
+    [[['period', 'regex', 'contemporary|modern|2000|2020']]],
+    'architecture_style', 'modern_agricultural_shed', 0.8, 95,
+    'registry_rule: lc_agri_mod', 'modern_agricultural'),
+
+  anchor('lc_pub_pre', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|renaissance']]],
+    'architecture_style', 'cobblestone_urban_plaza', 0.8, 95,
+    'registry_rule: lc_pub_pre', 'pre_industrial_public_realm'),
+
+  anchor('lc_pub_mod', 'location',
+    [[['period', 'regex', 'contemporary|modern|2000|2020']]],
+    'architecture_style', 'paved_streetscape', 0.78, 95,
+    'registry_rule: lc_pub_mod', 'modern_public_realm'),
+
+  anchor('lc_light_noir', 'location',
+    [[['genre', 'in', 'noir,crime,thriller']]],
+    'lighting_character', 'shadow_high_contrast', 0.85, 110,
+    'registry_rule: lc_light_noir', 'noir_lighting'),
+
+  anchor('lc_light_horror', 'location',
+    [[['genre', 'in', 'horror,suspense']]],
+    'lighting_character', 'dim_ominous_unstable', 0.85, 110,
+    'registry_rule: lc_light_horror', 'horror_lighting'),
+
+  anchor('lc_tech_future', 'location',
+    [[['period', 'regex', 'future|distant_future|2087']]],
+    'tech_integration', 'full_digital_automated', 0.88, 105,
+    'registry_rule: lc_tech_future', 'future_tech'),
+
+  anchor('lc_tech_modern', 'location',
+    [[['period', 'regex', 'contemporary|modern|2000|2020']]],
+    'tech_integration', 'digital_networked', 0.82, 100,
+    'registry_rule: lc_tech_modern', 'modern_tech'),
+
+  anchor('lc_tech_pre', 'location',
+    [[['period', 'regex', 'ancient|medieval|fantasy_medieval|bronze_age']]],
+    'tech_integration', 'pre_industrial_none', 0.9, 100,
+    'registry_rule: lc_tech_pre', 'pre_industrial_tech'),
+
+  anchor('lc_cond_affl', 'location',
+    [[['economy', 'in', 'post_scarcity,industrial,developed']]],
+    'condition', 'pristine_maintained', 0.8, 95,
+    'registry_rule: lc_cond_affl', 'affluent_condition'),
+
+  anchor('lc_cond_work', 'location',
+    [[['economy', 'in', 'industrial,agrarian']]],
+    'condition', 'functional_worn', 0.78, 95,
+    'registry_rule: lc_cond_work', 'working_class_condition'),
+
+  anchor('lc_cond_feud', 'location',
+    [[['economy', 'in', 'feudal,subsistence']]],
+    'condition', 'weathered_utilitarian', 0.8, 95,
+    'registry_rule: lc_cond_feud', 'feudal_condition'),
+
+  anchor('lc_catch_res_arch', 'location',
+    [[['spatial_function', 'eq', 'residential']]],
+    'architecture_style', 'domestic_interior', 0.3, 0,
+    'registry_rule: lc_catch_res', 'low_confidence_catchall'),
+
+  anchor('lc_catch_res_mat', 'location',
+    [[['spatial_function', 'eq', 'residential']]],
+    'material_palette', 'generic_home_materials', 0.3, 0,
+    'registry_rule: lc_catch_res', 'low_confidence_catchall'),
+
+  anchor('lc_catch_com_arch', 'location',
+    [[['spatial_function', 'eq', 'commercial']]],
+    'architecture_style', 'retail_interior', 0.3, 0,
+    'registry_rule: lc_catch_com', 'low_confidence_catchall'),
+
+  anchor('lc_catch_com_mat', 'location',
+    [[['spatial_function', 'eq', 'commercial']]],
+    'material_palette', 'generic_commercial_materials', 0.3, 0,
+    'registry_rule: lc_catch_com', 'low_confidence_catchall'),
+
+  anchor('lc_catch_civic_arch', 'location',
+    [[['spatial_function', 'eq', 'civic']]],
+    'architecture_style', 'public_institutional', 0.3, 0,
+    'registry_rule: lc_catch_civic', 'low_confidence_catchall'),
+
+  anchor('lc_catch_civic_mat', 'location',
+    [[['spatial_function', 'eq', 'civic']]],
+    'material_palette', 'generic_civic_materials', 0.3, 0,
+    'registry_rule: lc_catch_civic', 'low_confidence_catchall'),
+
+  anchor('lc_catch_mil_arch', 'location',
+    [[['spatial_function', 'eq', 'military']]],
+    'architecture_style', 'military_installation', 0.3, 0,
+    'registry_rule: lc_catch_mil', 'low_confidence_catchall'),
+
+  anchor('lc_catch_ind_arch', 'location',
+    [[['spatial_function', 'eq', 'industrial']]],
+    'architecture_style', 'industrial_space', 0.3, 0,
+    'registry_rule: lc_catch_ind', 'low_confidence_catchall'),
+
+  anchor('lc_catch_rel_arch', 'location',
+    [[['spatial_function', 'eq', 'religious']]],
+    'architecture_style', 'religious_structure', 0.3, 0,
+    'registry_rule: lc_catch_rel', 'low_confidence_catchall'),
+
+  anchor('lc_catch_tran_arch', 'location',
+    [[['spatial_function', 'eq', 'transportation']]],
+    'architecture_style', 'transportation_infrastructure', 0.3, 0,
+    'registry_rule: lc_catch_tran', 'low_confidence_catchall'),
+
+  anchor('lc_catch_hosp_arch', 'location',
+    [[['spatial_function', 'eq', 'hospitality']]],
+    'architecture_style', 'social_venue', 0.3, 0,
+    'registry_rule: lc_catch_hosp', 'low_confidence_catchall'),
+
+  anchor('lc_catch_agri_arch', 'location',
+    [[['spatial_function', 'eq', 'agricultural']]],
+    'architecture_style', 'agricultural_facility', 0.3, 0,
+    'registry_rule: lc_catch_agri', 'low_confidence_catchall'),
+
+  anchor('lc_catch_wild_arch', 'location',
+    [[['spatial_function', 'eq', 'wilderness']]],
+    'architecture_style', 'natural_terrain', 0.3, 0,
+    'registry_rule: lc_catch_wild', 'low_confidence_catchall'),
+
+  anchor('lc_catch_pub_arch', 'location',
+    [[['spatial_function', 'eq', 'public_realm']]],
+    'architecture_style', 'public_thoroughfare', 0.3, 0,
+    'registry_rule: lc_catch_pub', 'low_confidence_catchall'),
+
+  anchor('lc_catch_gen_arch', 'location',
+    [[['spatial_function', 'any', '']]],
+    'architecture_style', 'generic_interior_exterior', 0.3, 0,
+    'registry_rule: lc_catch_gen', 'low_confidence_catchall'),
+
+  anchor('lc_catch_gen_mat', 'location',
+    [[['spatial_function', 'any', '']]],
+    'material_palette', 'assorted_construction_materials', 0.3, 0,
+    'registry_rule: lc_catch_gen', 'low_confidence_catchall'),
+
+
+];
+
+
+// ── Rule Counts
