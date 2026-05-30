@@ -296,8 +296,23 @@ const BEAT_SHEET_SECTIONS = [
       sequences = groupScenesIntoSequences(scenes);
     } else {
       // Fall back to scene_indexed with per-scene chunks
+      // IMPORTANT: Do NOT call chunkPlanFor() again — it would loop (sequence_indexed routes back here)
       console.warn(`[largeRiskRouter] sequence_indexed: no scenes array, falling back to scene_indexed`);
-      return chunkPlanFor(docType, { ...context, sceneCount: sceneCount || 50 });
+      const fallbackSceneCount = sceneCount || 50;
+      const fallbackChunks = [];
+      for (let start = 1; start <= fallbackSceneCount; start++) {
+        fallbackChunks.push({
+          chunkIndex: start - 1,
+          chunkKey: `SC${String(start).padStart(2, "0")}-SC${String(start).padStart(2, "0")}`,
+          label: `Scenes ${start}–${start}`,
+        });
+      }
+      return {
+        strategy: "scene_indexed",
+        chunks: fallbackChunks,
+        totalChunks: fallbackChunks.length,
+        docType,
+      };
     }
 
     const chunks = [];

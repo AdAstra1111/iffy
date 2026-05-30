@@ -2481,6 +2481,7 @@ ${existingCBContent.slice(0, 30000)}`;
       let scenePlanForMeta: any = null;
       let scenePlanUpstreamBlock = "";
       let sceneCountForPlan: number | null = null;
+      let ncpForChunkPlan: any = null;
       const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
       if (docType === "feature_script") {
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
@@ -2496,6 +2497,7 @@ ${existingCBContent.slice(0, 30000)}`;
             );
             scenePlanForMeta = scenePlan;
             sceneCountForPlan = scenePlan.length;
+            ncpForChunkPlan = ncp;
 
             // Build SCENE PLAN block for upstream context
             const planBlocks = scenePlan.map((scene) => {
@@ -2550,10 +2552,12 @@ ${existingCBContent.slice(0, 30000)}`;
 
       const plan = chunkPlanFor(docType, {
         episodeCount: resolvedQuals?.season_episode_count,
-        scenes: resolvedScenes,
+        scenes: scenePlanForMeta, // ScenePlanEntry[] for sequence_indexed
         sceneCount: sceneCountForPlan ?? undefined,
         batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
         beats: docType === "feature_script" ? beats : null,
+        // Pass sequence map from NCP for sequence_indexed chunk planning
+        sequenceMap: ncpForChunkPlan?.sequence_map || null,
       });
 
       // ── PREFLIGHT CONTRACT GUARD (all episode-indexed docs) ──
@@ -2692,6 +2696,7 @@ ${existingCBContent.slice(0, 30000)}`;
                 chunks_total: chunkResult.totalChunks, 
                 chunks_completed: chunkResult.completedChunks,
                 scenes: scenePlanForMeta || undefined,
+                narrative_context: ncpForChunkPlan || undefined,
               } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid
@@ -2790,6 +2795,7 @@ ${existingCBContent.slice(0, 30000)}`;
                       chunks_total: resumeResult.totalChunks, 
                       chunks_completed: resumeResult.completedChunks,
                       scenes: scenePlanForMeta || undefined,
+                      narrative_context: ncpForChunkPlan || undefined,
                     } })
                     .eq("id", chunkVersion!.id);
                   await serviceClient.from("project_documents")
