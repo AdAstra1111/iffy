@@ -43,7 +43,7 @@ const CREATURE_NOUNS = [
   "snake", "snakes", "viper",
   "rabbit", "rabbits", "hare",
   "fox", "foxes",
-  // Military / WWII relevant
+  // Work / transport animals
   "warhorse", "dispatch horse", "pack animal",
   "german shepherd", "alsatian",
   // Fictional
@@ -377,14 +377,37 @@ async function handleGenerate(projectId: string) {
 
           const occurrences = (atom.attributes as any)?.occurrences_in_script || 1;
 
-          const prompt = `You are a production designer and visual effects supervisor for a WWII spy thriller set in North Africa and Europe. Generate a rich, production-ready creature atom for the following animal/creature.
+          // ── Gather project context for prompt injection ──
+          const { data: projectMeta } = await admin
+            .from("projects")
+            .select("title, format, logline, genres, premise, budget_range")
+            .eq("id", projectId)
+            .maybeSingle();
+          const projTitle = (projectMeta as any)?.title || "";
+          const projFormat = (projectMeta as any)?.format || "";
+          const projGenres = (projectMeta as any)?.genres || "";
+          const projLogline = (projectMeta as any)?.logline || "";
+          const projPremise = (projectMeta as any)?.premise || "";
+          const projBudget = (projectMeta as any)?.budget_range || "";
+
+          const projectContextStr = [
+            projTitle ? `PROJECT TITLE: ${projTitle}` : "",
+            projFormat ? `FORMAT: ${projFormat}` : "",
+            projGenres ? `GENRES: ${projGenres}` : "",
+            projLogline ? `LOGLINE: ${projLogline}` : "",
+            projPremise ? `PREMISE: ${projPremise}` : "",
+            projBudget ? `BUDGET: ${projBudget}` : "",
+          ].filter(Boolean).join("\n");
+
+          const prompt = `You are a production designer and visual effects supervisor. Generate a rich, production-ready creature atom for the following animal/creature based on the project's actual context.
+
+${projectContextStr}
 
 CREATURE: ${atom.canonical_name}
 OCCURRENCES IN SCRIPT: ${occurrences}
-SETTING CONTEXT: WWII era spy thriller, North Africa and Europe. Period accuracy is critical.
 
 SCENE CONTEXTS WHERE THIS CREATURE APPEARS:
-${sceneContexts.length > 0 ? sceneContexts.join("\n\n") : "No specific scene context available — infer from creature type and WWII setting."}
+${sceneContexts.length > 0 ? sceneContexts.join("\n\n") : "No specific scene context available — infer from the project context above.\nUse the project's genre, period, and setting to determine appropriate creature design. Do NOT assume military/WWII unless the project evidence supports it."}
 
 Generate a complete creature atom JSON object for production planning.
 
@@ -405,7 +428,7 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
 - availability (string: "readily_available" | "limited_availability" | "requires_training" | "custom_build")
 - reference_images_needed (array of 3-5 strings: types of reference images needed for production)
 - cultural_period_accuracy (string: "accurate" | "stylised" | "anachronistic")
-- casting_type_tags (array of strings: e.g. ["animal", "period-piece", "WWII-compatible", "trained"])
+- casting_type_tags (array of strings: e.g. ["animal", "period-piece", "trained", "CGI_required"])
 - animal_welfare_notes (string: welfare protocols, rest requirements, legal compliance, AHA guidelines)
 - production_notes (string: scheduling considerations, weather dependencies, handler availability, breed sourcing)`;
 

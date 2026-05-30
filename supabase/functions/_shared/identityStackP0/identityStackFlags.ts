@@ -10,4 +10,4 @@
  * Phase 7.2B — shadow integration only.
  */
 
-export const IDENTITY_STACK_SHADOW_ENABLED = false;
+export const IDENTITY_STACK_SHADOW_ENABLED = true;

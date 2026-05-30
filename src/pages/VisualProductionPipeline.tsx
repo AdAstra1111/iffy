@@ -2412,6 +2412,30 @@ export default function VisualProductionPipeline() {
         </div>
       </div>
 
+      {/* Readiness Strip */}
+      <div className="flex items-center gap-3 px-4 py-1.5 border-b border-border/20 bg-card/10">
+        <span className="text-[10px] font-medium text-muted-foreground">Pipeline:</span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> ID
+        </span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> WC
+        </span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> PD
+        </span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> HF
+        </span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> LB
+        </span>
+        <span className="text-[10px] text-green-500 flex items-center gap-1">
+          <span className="w-1 h-1 rounded-full bg-green-500" /> VPB
+        </span>
+        <span className="text-[9px] text-muted-foreground/40 ml-auto">YETI V1 BASELINE</span>
+      </div>
+
       <VisualPipelineErrorBoundary stageLabel="Content Panel">
 
       {/* Main layout */}

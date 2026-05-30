@@ -48,6 +48,22 @@ export interface StaleRiskTimestamps {
   posterGeneratedAt?: string;
   /** Most recent update of lookbook_sections. */
   lookbookGeneratedAt?: string;
+
+  // ── Dependency-specific timestamps (for precise stale detection) ──
+  /** Most recent update of character_visual_dna. */
+  characterVisualDnaUpdatedAt?: string;
+  /** Most recent update of pd_location_design. */
+  pdLocationDesignUpdatedAt?: string;
+  /** Most recent update of pd_world_rules. */
+  pdWorldRulesUpdatedAt?: string;
+  /** Most recent update of scene_index. */
+  sceneIndexUpdatedAt?: string;
+  /** Most recent update of character_wardrobe_profiles. */
+  wardrobeProfilesUpdatedAt?: string;
+  /** Most recent update of scene_wardrobe_assignments. */
+  sceneWardrobeAssignmentsUpdatedAt?: string;
+  /** Most recent update of project_visual_language. */
+  visualLanguageUpdatedAt?: string;
 }
 
 /** Reason code and metadata for a hash-based stale detection event. */
@@ -220,17 +236,21 @@ export function isStageEligible(
 // ── Stale-risk computation ───────────────────────────────────────────────────
 
 /**
- * Compute stale-risk for a single stage based on timestamp comparisons.
+ * Compute stale-risk for a single stage based on dependency-specific timestamp comparisons.
  *
- * Rules (mirrors frontend computeStaleRiskForStage):
- * - source_truth: stale if source docs are newer than canon
- * - visual_canon: stale if canon is newer than visual style
- * - cast: stale if canon is newer than cast assignments
- * - hero_frames: stale if canon, cast, or PD is newer than generated frames
- * - production_design: stale if cast is newer than PD sets
- * - visual_language: stale if canon or hero frames are newer than style approval
- * - poster: stale if hero frames are newer than poster candidates
- * - lookbook: stale if cast or PD is newer than lookbook sections
+ * Staleness is dependency-aware: a stage is stale only when a direct upstream
+ * dependency that the stage actually consumes has changed since the stage was generated.
+ *
+ * Rules:
+ * - source_truth: stale if source docs are newer than canon (narrative source changed)
+ * - visual_canon: stale if visual style or visual language changed
+ * - cast: stale if character_visual_dna or project_ai_cast changed (NOT generic canon/wardrobe)
+ * - hero_frames: stale if scene_index, character_visual_dna, scene_wardrobe_assignments,
+ *   pd_location_design, or pd_world_rules changed after generation
+ * - production_design: stale if PD canon tables changed after creation
+ * - visual_language: stale if visual style/language was re-approved
+ * - poster: stale if hero frames or poster candidates changed
+ * - lookbook: stale if identity, wardrobe, or PD canon changed
  */
 export function computeStaleRiskForStage(
   stage: PipelineStage,
@@ -238,8 +258,8 @@ export function computeStaleRiskForStage(
 ): { isStale: boolean; reasons: { label: string; detail: string; severity: string }[] } | null {
   const reasons: { label: string; detail: string; severity: string }[] = [];
 
-  const canonTime = ts.canonUpdatedAt ? new Date(ts.canonUpdatedAt).getTime() : 0;
   const sourceDocTime = ts.sourceDocUpdatedAt ? new Date(ts.sourceDocUpdatedAt).getTime() : 0;
+  const canonTime = ts.canonUpdatedAt ? new Date(ts.canonUpdatedAt).getTime() : 0;
   const styleTime = ts.visualStyleUpdatedAt ? new Date(ts.visualStyleUpdatedAt).getTime() : 0;
   const castTime = ts.castUpdatedAt ? new Date(ts.castUpdatedAt).getTime() : 0;
   const pdTime = ts.pdUpdatedAt ? new Date(ts.pdUpdatedAt).getTime() : 0;
@@ -247,8 +267,18 @@ export function computeStaleRiskForStage(
   const posterTime = ts.posterGeneratedAt ? new Date(ts.posterGeneratedAt).getTime() : 0;
   const lbTime = ts.lookbookGeneratedAt ? new Date(ts.lookbookGeneratedAt).getTime() : 0;
 
+  // Dependency-specific timestamps
+  const dnaTime = ts.characterVisualDnaUpdatedAt ? new Date(ts.characterVisualDnaUpdatedAt).getTime() : 0;
+  const pdLocTime = ts.pdLocationDesignUpdatedAt ? new Date(ts.pdLocationDesignUpdatedAt).getTime() : 0;
+  const pdWorldTime = ts.pdWorldRulesUpdatedAt ? new Date(ts.pdWorldRulesUpdatedAt).getTime() : 0;
+  const sceneTime = ts.sceneIndexUpdatedAt ? new Date(ts.sceneIndexUpdatedAt).getTime() : 0;
+  const wProfTime = ts.wardrobeProfilesUpdatedAt ? new Date(ts.wardrobeProfilesUpdatedAt).getTime() : 0;
+  const wAssignTime = ts.sceneWardrobeAssignmentsUpdatedAt ? new Date(ts.sceneWardrobeAssignmentsUpdatedAt).getTime() : 0;
+  const vlTime = ts.visualLanguageUpdatedAt ? new Date(ts.visualLanguageUpdatedAt).getTime() : 0;
+
   switch (stage) {
     case 'source_truth':
+      // Dependency: source documents → canon.json
       if (sourceDocTime > 0 && canonTime > 0 && sourceDocTime > canonTime) {
         reasons.push({
           label: 'Source documents updated',
@@ -259,60 +289,98 @@ export function computeStaleRiskForStage(
       break;
 
     case 'visual_canon':
+      // Dependencies: visual style, visual language
       if (canonTime > 0 && styleTime > 0 && canonTime > styleTime) {
         reasons.push({
-          label: 'Canon updated',
+          label: 'Canon updated after style profile',
           detail: 'Canon was updated after the visual style profile was defined.',
+          severity: 'medium',
+        });
+      }
+      if (vlTime > 0 && styleTime > 0 && vlTime > styleTime) {
+        reasons.push({
+          label: 'Visual language updated after style profile',
+          detail: 'Visual language was updated after the style profile was defined.',
           severity: 'medium',
         });
       }
       break;
 
     case 'cast':
-      if (canonTime > 0 && castTime > 0 && canonTime > castTime) {
+      // Dependencies: character_visual_dna, project_ai_cast, active character set
+      // NOT: generic canon updates, wardrobe profiles, PD canon, hero frames, scene index
+      if (dnaTime > 0 && castTime > 0 && dnaTime > castTime) {
         reasons.push({
-          label: 'Canon updated',
-          detail: 'Canon was updated after cast assignments were made.',
+          label: 'Character visual DNA updated',
+          detail: 'Character visual DNA was updated after cast assignments were made.',
           severity: 'high',
         });
       }
       break;
 
     case 'hero_frames':
-      if (canonTime > 0 && hfTime > 0 && canonTime > hfTime) {
+      // Dependencies: scene_index, character_visual_dna, scene_wardrobe_assignments,
+      // pd_location_design, pd_world_rules
+      // NOT: generic canon timestamp
+      if (sceneTime > 0 && hfTime > 0 && sceneTime > hfTime) {
         reasons.push({
-          label: 'Canon updated',
-          detail: 'Canon was updated after hero frames were generated.',
+          label: 'Scene index updated',
+          detail: 'Scene index was updated after hero frames were generated.',
           severity: 'high',
+        });
+      }
+      if (dnaTime > 0 && hfTime > 0 && dnaTime > hfTime) {
+        reasons.push({
+          label: 'Character visual DNA updated',
+          detail: 'Character visual DNA was updated after hero frames were generated.',
+          severity: 'high',
+        });
+      }
+      if (wAssignTime > 0 && hfTime > 0 && wAssignTime > hfTime) {
+        reasons.push({
+          label: 'Wardrobe assignments updated',
+          detail: 'Scene wardrobe assignments were updated after hero frames were generated.',
+          severity: 'medium',
+        });
+      }
+      if (pdLocTime > 0 && hfTime > 0 && pdLocTime > hfTime) {
+        reasons.push({
+          label: 'Production Design locations updated',
+          detail: 'PD location designs were updated after hero frames were generated.',
+          severity: 'medium',
+        });
+      }
+      if (pdWorldTime > 0 && hfTime > 0 && pdWorldTime > hfTime) {
+        reasons.push({
+          label: 'World rules updated',
+          detail: 'PD world rules were updated after hero frames were generated.',
+          severity: 'medium',
         });
       }
       if (castTime > 0 && hfTime > 0 && castTime > hfTime) {
         reasons.push({
           label: 'Cast updated',
-          detail: 'Cast was updated after hero frames were generated.',
-          severity: 'medium',
-        });
-      }
-      if (pdTime > 0 && hfTime > 0 && pdTime > hfTime) {
-        reasons.push({
-          label: 'Production Design updated',
-          detail: 'Production Design was updated after hero frames were generated.',
-          severity: 'medium',
+          detail: 'Cast bindings were updated after hero frames were generated.',
+          severity: 'high',
         });
       }
       break;
 
     case 'production_design':
-      if (castTime > 0 && pdTime > 0 && castTime > pdTime) {
+      // Dependencies: PD canon tables themselves
+      // If PD tables were updated after the last generation/lock, they're current.
+      // Only stale if source truth changed and PD hasn't been re-evaluated.
+      if (canonTime > 0 && pdTime > 0 && canonTime > pdTime) {
         reasons.push({
-          label: 'Cast updated',
-          detail: 'Cast was updated after Production Design sets were created.',
+          label: 'Source truth updated',
+          detail: 'Source truth was updated after Production Design was created.',
           severity: 'high',
         });
       }
       break;
 
     case 'visual_language':
+      // Dependencies: visual style, visual language profile
       if (canonTime > 0 && styleTime > 0 && canonTime > styleTime) {
         reasons.push({
           label: 'Canon updated',
@@ -340,7 +408,6 @@ export function computeStaleRiskForStage(
       break;
 
     case 'concept_brief':
-      // Concept brief stale risk follows same pattern as poster: check if hero frames updated after brief
       if (hfTime > 0 && posterTime > 0 && hfTime > posterTime) {
         reasons.push({
           label: 'Hero frames updated',
@@ -351,17 +418,25 @@ export function computeStaleRiskForStage(
       break;
 
     case 'lookbook':
-      if (castTime > 0 && lbTime > 0 && castTime > lbTime) {
+      // Dependencies: identity canon, wardrobe canon, PD canon
+      if (dnaTime > 0 && lbTime > 0 && dnaTime > lbTime) {
         reasons.push({
-          label: 'Cast updated',
-          detail: 'Cast was updated after lookbook was assembled.',
+          label: 'Character visual DNA updated',
+          detail: 'Character visual DNA was updated after lookbook was assembled.',
           severity: 'high',
         });
       }
-      if (pdTime > 0 && lbTime > 0 && pdTime > lbTime) {
+      if (wAssignTime > 0 && lbTime > 0 && wAssignTime > lbTime) {
         reasons.push({
-          label: 'Production Design updated',
-          detail: 'Production Design was updated after lookbook was assembled.',
+          label: 'Wardrobe assignments updated',
+          detail: 'Wardrobe assignments were updated after lookbook was assembled.',
+          severity: 'high',
+        });
+      }
+      if (pdLocTime > 0 && lbTime > 0 && pdLocTime > lbTime) {
+        reasons.push({
+          label: 'Production Design locations updated',
+          detail: 'PD location designs were updated after lookbook was assembled.',
           severity: 'high',
         });
       }
@@ -381,7 +456,11 @@ export function computeStaleRiskForStage(
  * Returns a map of stage_id → StageStaleReason[].
  *
  * Only returns reasons when the hash has changed (prevHash !== currentHash).
- * Maps timestamp comparisons to specific stale reason codes per stage.
+ * Uses dependency-aware timestamp comparisons — a stage is stale only when
+ * one of its actual consumed dependencies has changed.
+ *
+ * Rules mirror computeStaleRiskForStage but return StructuredStaleReason objects
+ * with codes for downstream stage inference.
  */
 export function computeStageSpecificStaleReasons(
   prevHash: string | null,
@@ -399,9 +478,16 @@ export function computeStageSpecificStaleReasons(
   const canonTime = ts.canonUpdatedAt ? new Date(ts.canonUpdatedAt).getTime() : 0;
   const styleTime = ts.visualStyleUpdatedAt ? new Date(ts.visualStyleUpdatedAt).getTime() : 0;
   const castTime = ts.castUpdatedAt ? new Date(ts.castUpdatedAt).getTime() : 0;
-  const pdTime = ts.pdUpdatedAt ? new Date(ts.pdUpdatedAt).getTime() : 0;
   const hfTime = ts.heroFrameGeneratedAt ? new Date(ts.heroFrameGeneratedAt).getTime() : 0;
   const posterTime = ts.posterGeneratedAt ? new Date(ts.posterGeneratedAt).getTime() : 0;
+
+  // Dependency-specific timestamps
+  const dnaTime = ts.characterVisualDnaUpdatedAt ? new Date(ts.characterVisualDnaUpdatedAt).getTime() : 0;
+  const pdLocTime = ts.pdLocationDesignUpdatedAt ? new Date(ts.pdLocationDesignUpdatedAt).getTime() : 0;
+  const pdWorldTime = ts.pdWorldRulesUpdatedAt ? new Date(ts.pdWorldRulesUpdatedAt).getTime() : 0;
+  const sceneTime = ts.sceneIndexUpdatedAt ? new Date(ts.sceneIndexUpdatedAt).getTime() : 0;
+  const wAssignTime = ts.sceneWardrobeAssignmentsUpdatedAt ? new Date(ts.sceneWardrobeAssignmentsUpdatedAt).getTime() : 0;
+  const vlTime = ts.visualLanguageUpdatedAt ? new Date(ts.visualLanguageUpdatedAt).getTime() : 0;
 
   // sourceDocUpdatedAt > canonUpdatedAt → DOC_VERSION_CHANGED → source_truth
   if (sourceDocTime > 0 && canonTime > 0 && sourceDocTime > canonTime) {
@@ -417,84 +503,149 @@ export function computeStageSpecificStaleReasons(
     ];
   }
 
-  // canonUpdatedAt > visualStyleUpdatedAt → CANON_NEWER_THAN_STAGE (visual_canon)
-  //                                   → VISUAL_STYLE_OUTDATED (visual_language)
+  // visual_canon: stale only if visual style or visual language changed after profile
   if (canonTime > 0 && styleTime > 0 && canonTime > styleTime) {
     reasons['visual_canon'] = [
       {
         code: STALE_REASON_CODES.CANON_NEWER_THAN_STAGE,
-        label: 'Canon updated',
+        label: 'Canon updated after style profile',
         detail: 'Canon was updated after the visual style profile was defined.',
         severity: 'medium',
         sourceTimestamp: ts.canonUpdatedAt,
         affectedDownstreamStages: ['cast', 'hero_frames'],
       },
     ];
-    reasons['visual_language'] = [
-      {
-        code: STALE_REASON_CODES.VISUAL_STYLE_OUTDATED,
-        label: 'Visual style outdated',
-        detail: 'Canon updated after visual language was approved.',
-        severity: 'medium',
-        sourceTimestamp: ts.canonUpdatedAt,
-        affectedDownstreamStages: [],
-      },
-    ];
+  }
+  if (vlTime > 0 && styleTime > 0 && vlTime > styleTime) {
+    const existing = reasons['visual_canon'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.VISUAL_STYLE_OUTDATED,
+      label: 'Visual language updated',
+      detail: 'Visual language was updated after the style profile.',
+      severity: 'medium',
+      sourceTimestamp: ts.visualLanguageUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['visual_canon'] = existing;
+  }
+  // visual_language stale if canon or visual language changed after approval
+  if (canonTime > 0 && styleTime > 0 && canonTime > styleTime) {
+    const existing = reasons['visual_language'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.VISUAL_STYLE_OUTDATED,
+      label: 'Visual style outdated',
+      detail: 'Canon updated after visual language was approved.',
+      severity: 'medium',
+      sourceTimestamp: ts.canonUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['visual_language'] = existing;
   }
 
-  // canonUpdatedAt > castUpdatedAt → CANON_NEWER_THAN_STAGE → cast
-  if (canonTime > 0 && castTime > 0 && canonTime > castTime) {
+  // cast: stale only if character_visual_dna changed (NOT scene index, canon, wardrobe, or PD)
+  if (dnaTime > 0 && castTime > 0 && dnaTime > castTime) {
     reasons['cast'] = [
       {
         code: STALE_REASON_CODES.CANON_NEWER_THAN_STAGE,
-        label: 'Canon updated',
-        detail: 'Canon was updated after cast assignments were made.',
+        label: 'Character visual DNA updated',
+        detail: 'Character visual DNA was updated after cast assignments were made.',
         severity: 'high',
-        sourceTimestamp: ts.canonUpdatedAt,
+        sourceTimestamp: ts.characterVisualDnaUpdatedAt,
         affectedDownstreamStages: ['hero_frames', 'production_design', 'lookbook'],
       },
     ];
   }
 
-  // castUpdatedAt > heroFrameGeneratedAt → CAST_NEWER_THAN_HERO_FRAMES → hero_frames
-  if (castTime > 0 && hfTime > 0 && castTime > hfTime) {
+  // hero_frames: stale only if scene_index, visual DNA, wardrobe assignments,
+  // pd_location_design, or pd_world_rules changed after generation
+  if (sceneTime > 0 && hfTime > 0 && sceneTime > hfTime) {
     reasons['hero_frames'] = [
       {
         code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
-        label: 'Cast updated',
-        detail: 'Cast was updated after hero frames were generated.',
-        severity: 'medium',
-        sourceTimestamp: ts.castUpdatedAt,
+        label: 'Scene index updated',
+        detail: 'Scene index was updated after hero frames were generated.',
+        severity: 'high',
+        sourceTimestamp: ts.sceneIndexUpdatedAt,
         affectedDownstreamStages: ['poster', 'visual_language', 'concept_brief'],
       },
     ];
   }
+  if (dnaTime > 0 && hfTime > 0 && dnaTime > hfTime) {
+    const existing = reasons['hero_frames'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
+      label: 'Character visual DNA updated',
+      detail: 'Character visual DNA was updated after hero frames were generated.',
+      severity: 'high',
+      sourceTimestamp: ts.characterVisualDnaUpdatedAt,
+      affectedDownstreamStages: ['poster', 'visual_language', 'concept_brief'],
+    });
+    reasons['hero_frames'] = existing;
+  }
+  if (wAssignTime > 0 && hfTime > 0 && wAssignTime > hfTime) {
+    const existing = reasons['hero_frames'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
+      label: 'Wardrobe assignments updated',
+      detail: 'Wardrobe assignments were updated after hero frames were generated.',
+      severity: 'medium',
+      sourceTimestamp: ts.sceneWardrobeAssignmentsUpdatedAt,
+      affectedDownstreamStages: ['poster', 'visual_language', 'concept_brief'],
+    });
+    reasons['hero_frames'] = existing;
+  }
+  if (pdLocTime > 0 && hfTime > 0 && pdLocTime > hfTime) {
+    const existing = reasons['hero_frames'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+      label: 'PD locations updated',
+      detail: 'PD location designs were updated after hero frames were generated.',
+      severity: 'medium',
+      sourceTimestamp: ts.pdLocationDesignUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['hero_frames'] = existing;
+  }
+  if (pdWorldTime > 0 && hfTime > 0 && pdWorldTime > hfTime) {
+    const existing = reasons['hero_frames'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+      label: 'World rules updated',
+      detail: 'PD world rules were updated after hero frames were generated.',
+      severity: 'medium',
+      sourceTimestamp: ts.pdWorldRulesUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['hero_frames'] = existing;
+  }
+  if (castTime > 0 && hfTime > 0 && castTime > hfTime) {
+    const existing = reasons['hero_frames'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
+      label: 'Cast updated',
+      detail: 'Cast bindings were updated after hero frames were generated.',
+      severity: 'high',
+      sourceTimestamp: ts.castUpdatedAt,
+      affectedDownstreamStages: ['poster', 'visual_language', 'concept_brief'],
+    });
+    reasons['hero_frames'] = existing;
+  }
 
-  // castUpdatedAt > pdUpdatedAt → PD_NEWER_THAN_LOOKBOOK → production_design, lookbook
-  if (castTime > 0 && pdTime > 0 && castTime > pdTime) {
+  // production_design: stale only if source truth changed after PD creation
+  if (canonTime > 0 && pdWorldTime > 0 && canonTime > pdWorldTime) {
     reasons['production_design'] = [
       {
         code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
-        label: 'Production Design outdated',
-        detail: 'Cast was updated after Production Design sets were created.',
+        label: 'Source truth updated',
+        detail: 'Source truth was updated after Production Design was created.',
         severity: 'high',
-        sourceTimestamp: ts.castUpdatedAt,
+        sourceTimestamp: ts.canonUpdatedAt,
         affectedDownstreamStages: ['hero_frames', 'lookbook'],
-      },
-    ];
-    reasons['lookbook'] = [
-      {
-        code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
-        label: 'Production Design outdated',
-        detail: 'Cast was updated after lookbook was assembled.',
-        severity: 'high',
-        sourceTimestamp: ts.castUpdatedAt,
-        affectedDownstreamStages: [],
       },
     ];
   }
 
-  // heroFrameGeneratedAt > posterGeneratedAt → HERO_FRAMES_NEWER_THAN_POSTER → poster
+  // poster: stale if hero frames changed after poster candidates
   if (hfTime > 0 && posterTime > 0 && hfTime > posterTime) {
     reasons['poster'] = [
       {
@@ -508,8 +659,47 @@ export function computeStageSpecificStaleReasons(
     ];
   }
 
+  // lookbook: stale if identity, wardrobe, or PD canon changed after assembly
+  if (dnaTime > 0 && hfTime > 0 && dnaTime > hfTime) {
+    reasons['lookbook'] = [
+      {
+        code: STALE_REASON_CODES.CAST_NEWER_THAN_HERO_FRAMES,
+        label: 'Character visual DNA updated',
+        detail: 'Character visual DNA was updated after lookbook assembly.',
+        severity: 'high',
+        sourceTimestamp: ts.characterVisualDnaUpdatedAt,
+        affectedDownstreamStages: [],
+      },
+    ];
+  }
+  if (wAssignTime > 0 && hfTime > 0 && wAssignTime > hfTime) {
+    const existing = reasons['lookbook'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+      label: 'Wardrobe assignments updated',
+      detail: 'Wardrobe assignments were updated after lookbook assembly.',
+      severity: 'high',
+      sourceTimestamp: ts.sceneWardrobeAssignmentsUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['lookbook'] = existing;
+  }
+  if (pdLocTime > 0 && hfTime > 0 && pdLocTime > hfTime) {
+    const existing = reasons['lookbook'] || [];
+    existing.push({
+      code: STALE_REASON_CODES.PD_NEWER_THAN_LOOKBOOK,
+      label: 'PD locations updated',
+      detail: 'PD location designs were updated after lookbook assembly.',
+      severity: 'high',
+      sourceTimestamp: ts.pdLocationDesignUpdatedAt,
+      affectedDownstreamStages: [],
+    });
+    reasons['lookbook'] = existing;
+  }
+
   // Fallback: if hash changed but no timestamp condition matched,
-  // mark all stages with SOURCE_SNAPSHOT_CHANGED
+  // mark all stages with SOURCE_SNAPSHOT_CHANGED — informational only
+  // (low severity, never blocks a stage by itself)
   if (Object.keys(reasons).length === 0) {
     const allStageIds = [
       'source_truth', 'visual_canon', 'cast', 'hero_frames',
@@ -522,7 +712,7 @@ export function computeStageSpecificStaleReasons(
           code: STALE_REASON_CODES.SOURCE_SNAPSHOT_CHANGED,
           label: 'Source snapshot changed',
           detail: 'The source data snapshot hash has changed since the last evaluation.',
-          severity: 'medium',
+          severity: 'low', // informational only — never blocks a completed stage
           sourceTimestamp: undefined,
           affectedDownstreamStages: [],
         },
@@ -571,8 +761,8 @@ export function computeProvenanceForStage(
       };
     case 'production_design':
       return {
-        sourceType: 'visual_sets',
-        sourceDetail: `${inputs.pdLockedFamilies}/${inputs.pdTotalFamilies} families locked · ${inputs.pdCreatedFamilies} created`,
+        sourceType: 'pd_canon_tables (pd_world_rules / pd_design_templates / pd_location_design)',
+        sourceDetail: `${inputs.pdLockedFamilies}/${inputs.pdTotalFamilies} families · ${inputs.pdCreatedFamilies} created`,
         generatedAsset: 'production_design_sets',
       };
     case 'visual_language':
@@ -850,10 +1040,13 @@ export async function resolveStageGovernance(
     }
 
     // Stale-risk: hash-based detection (additive — merges into timestamp-based)
+    // Principle: hash mismatch alone cannot downgrade a completed stage.
+    // Only explicit timestamp-based dependency failures can mark a stage stale.
     const stageHashReasons = hashBasedStaleReasons[s.stage_id];
     if (stageHashReasons && stageHashReasons.length > 0) {
+      const hasHighSeverityHashReason = stageHashReasons.some((hr) => hr.severity === 'high' || hr.severity === 'medium');
       if (!s.stale_risk) {
-        s.stale_risk = { isStale: true, reasons: [] };
+        s.stale_risk = { isStale: hasHighSeverityHashReason, reasons: [] };
       }
       for (const hr of stageHashReasons) {
         s.stale_risk.reasons.push({
@@ -862,7 +1055,13 @@ export async function resolveStageGovernance(
           severity: hr.severity,
         });
       }
-      s.stale_risk.isStale = true;
+      // Only high/medium severity hash reasons can override completed stages.
+      // Low-severity (SOURCE_SNAPSHOT_CHANGED) is informational and never blocks.
+      if (hasHighSeverityHashReason) {
+        s.stale_risk.isStale = true;
+      }
+      // If the stage is already locked/approved and only has low-severity hash reasons,
+      // keep isStale as whatever timestamp-based detection said (or false).
     }
 
     // Provenance: source doc/table, version, generated asset
@@ -908,16 +1107,10 @@ export async function computeSourceSnapshotHash(inputs: PipelineInputs): Promise
     `pdTotalFamilies:${inputs.pdTotalFamilies}`,
     `posterCandidateCount:${inputs.posterCandidateCount ?? 0}`,
     `totalCharacters:${inputs.totalCharacters}`,
-
-    // Stale-risk timestamps (if present)
-    `sourceDocUpdatedAt:${inputs.staleRiskTimestamps?.sourceDocUpdatedAt ?? ''}`,
-    `canonUpdatedAt:${inputs.staleRiskTimestamps?.canonUpdatedAt ?? ''}`,
-    `visualStyleUpdatedAt:${inputs.staleRiskTimestamps?.visualStyleUpdatedAt ?? ''}`,
-    `castUpdatedAt:${inputs.staleRiskTimestamps?.castUpdatedAt ?? ''}`,
-    `pdUpdatedAt:${inputs.staleRiskTimestamps?.pdUpdatedAt ?? ''}`,
-    `heroFrameGeneratedAt:${inputs.staleRiskTimestamps?.heroFrameGeneratedAt ?? ''}`,
-    `posterGeneratedAt:${inputs.staleRiskTimestamps?.posterGeneratedAt ?? ''}`,
-    `lookbookGeneratedAt:${inputs.staleRiskTimestamps?.lookbookGeneratedAt ?? ''}`,
+    // NOTE: Timestamps are deliberately excluded from the hash.
+    // They belong in timestamp-based staleness detection (computeStaleRiskForStage).
+    // Including them would make the hash change on every evaluation,
+    // causing spurious SOURCE_SNAPSHOT_CHANGED flags on all stages.
   ];
 
   const canonicalString = canonicalParts.join('|');

@@ -7,6 +7,84 @@ import { emitTransition, TRANSITION_EVENTS } from "./transitionLedger.ts";
 // ── Identity Stack P0 shadow telemetry (Phase 7.4A) ──
 import { IDENTITY_STACK_SHADOW_ENABLED } from "./identityStackP0/identityStackFlags.ts";
 import { computeIdentityStackShadow } from "./identityStackP0/index.ts";
+
+// ── Phase 7.5C: PersistVersion — canonical persistence boundary ──
+// All version writes to project_document_versions MUST route through this.
+// Handles INSERT, UPDATE, and UPSERT patterns.
+
+/**
+ * Operation types for persistVersion().
+ * Content writes trigger Identity Stack. Placeholder and metadata-only writes skip it.
+ */
+export type PersistVersionOperationType =
+  // ── Content Writes (Identity Stack fires) ──
+  | "CREATE_FINAL"         // INSERT with full content — new version with analyzable text
+  | "UPDATE_CONTENT"       // UPDATE — fill placeholder with assembled content (chunk assembly complete)
+  | "UPSERT_CONTENT"       // UPSERT — create-or-replace with full content (single-beat rewrite)
+  | "CONVERT_FORMAT"       // INSERT — format conversion (convert-to-plaintext)
+  | "REWRITE_FINAL"        // INSERT — surgical/beat rewrite producing new version
+  | "PROMOTE_DERIVATIVE"   // INSERT — derived document from existing content
+  // ── Placeholder (Identity Stack skips — no content to analyze) ──
+  | "CREATE_PLACEHOLDER"   // INSERT with empty/placeholder text (bg_generating)
+  // ── Metadata-Only (Identity Stack skips — no content change) ──
+  | "UPDATE_METADATA_ONLY" // Update meta_json without content changes
+  | "UPDATE_STATUS_ONLY"   // Update approval_status, is_current without content changes
+  | "SUPERSEDE";           // Mark parent version as non-current
+
+/** Operations that trigger Identity Stack shadow computation. */
+export const CONTENT_WRITE_OPERATIONS = new Set<PersistVersionOperationType>([
+  "CREATE_FINAL",
+  "UPDATE_CONTENT",
+  "UPSERT_CONTENT",
+  "CONVERT_FORMAT",
+  "REWRITE_FINAL",
+  "PROMOTE_DERIVATIVE",
+]);
+
+/** Options for persistVersion(). */
+export interface PersistVersionArgs {
+  supabase: any;
+  projectId: string;
+  documentId: string;
+  docType: string;
+  operation: PersistVersionOperationType;
+  // ── Target version (required for UPDATE/UPSERT) ──
+  versionId?: string;
+  // ── Content ──
+  plaintext?: string;
+  // ── Version Identity ──
+  label?: string;
+  createdBy?: string;
+  generatorId?: string;
+  inputsUsed?: Record<string, any>;
+  parentVersionId?: string;
+  sourceDocumentIds?: string[];
+  dependsOn?: Record<string, any>;
+  dependsOnResolverHash?: string;
+  deliverableType?: string;
+  // ── Meta JSON (merged into existing, never overwrites) ──
+  metaJson?: Record<string, any>;
+  // ── Version State ──
+  approvalStatus?: string;
+  isCurrent?: boolean;
+  status?: string;
+  // ── Chunk Assembly ──
+  assembledFromChunks?: boolean;
+  assembledChunkCount?: number;
+  // ── Format ──
+  format?: string;
+  // ── Inheritance ──
+  inheritedCore?: any;
+  // ── Convergence ──
+  isStale?: boolean;
+  staleReason?: string;
+  generatorRunId?: string;
+  styleTemplateVersionId?: string;
+  // ── Version Number Override (bypasses next-sequential) ──
+  versionNumberOverride?: number;
+  // ── Branch ──
+  branchId?: string;
+}
 // ── Deterministic resolver hash (no crypto dependency) ──
 function simpleHash(str) {
   let hash = 0;
@@ -529,10 +607,28 @@ const CANON_ALIGNMENT_EXEMPT_FALLBACK = new Set([
  * PROVENANCE INVARIANT: System-generated versions (generatorId in SYSTEM_GENERATOR_IDS)
  * MUST provide non-empty inputsUsed or the call will throw PROVENANCE_MISSING.
  * Seed-trigger versions are exempt (they are DB-trigger generated).
- */ export async function createVersion(supabase, opts) {
+ * 
+ * NOTE: This function now wraps persistVersion() — the canonical persistence boundary.
+ * New callers SHOULD use persistVersion() directly.
+ */
+export async function createVersion(supabase, opts) {
+  // Map createVersion opts to persistVersion format
+  // Determine operation type based on content presence
+  const hasContent = !!(opts.plaintext && opts.plaintext.trim().length > 0);
+  const op: PersistVersionOperationType = hasContent ? "CREATE_FINAL" : "CREATE_PLACEHOLDER";
+  
+  // Resolve projectId from document
+  let resolvedProjectId: string | null = null;
+  try {
+    const { data: docRow } = await supabase.from("project_documents")
+      .select("project_id").eq("id", opts.documentId).maybeSingle();
+    resolvedProjectId = docRow?.project_id || null;
+  } catch {}
+
   const { key } = resolveDocType(opts.docType, opts.format);
-  // ── PATCH 3: Provenance enforcement hard gate ──
   const effectiveGeneratorId = opts.generatorId || "system";
+
+  // Provenance enforcement still runs at this layer (blocking gate)
   const isSystemGenerated = (SYSTEM_GENERATOR_IDS.has(effectiveGeneratorId) || opts.generatorId && opts.generatorId.length > 0) && effectiveGeneratorId !== "seed-trigger";
   const hasProvenance = opts.inputsUsed && Object.keys(opts.inputsUsed).length > 0;
   if (isSystemGenerated && !hasProvenance) {
@@ -540,14 +636,13 @@ const CANON_ALIGNMENT_EXEMPT_FALLBACK = new Set([
     console.error(`[doc-os] ${msg}`);
     throw new Error(msg);
   }
-  // ── PAL: Lane-aware canon alignment gate ──
-  // Uses format-aware check if format is available; falls back to legacy exempt set otherwise.
+
+  // PAL: Lane-aware canon alignment gate (blocking gate)
   const runAlignment = (()=>{
     if (!isSystemGenerated || !opts.plaintext) return false;
     if (opts.format) {
       return shouldRunCanonAlignment(opts.format, key, effectiveGeneratorId);
     }
-    // Legacy fallback: exempt set (for callers that don't pass format)
     return !CANON_ALIGNMENT_EXEMPT_FALLBACK.has(key);
   })();
   if (runAlignment) {
@@ -567,164 +662,377 @@ const CANON_ALIGNMENT_EXEMPT_FALLBACK = new Set([
       }
     } catch (err) {
       if (err?.message?.startsWith("CANON_MISMATCH:")) throw err;
-      // FAIL-CLOSED: unexpected canon-gate errors (DB failures, network errors)
-      // must not silently bypass invariant enforcement.
       const gateErr = `CANON_GATE_ERROR: doc_type="${key}" generator="${effectiveGeneratorId}" error="${err?.message}"`;
       console.error(`[doc-os] ${gateErr}`);
       throw new Error(gateErr);
     }
   }
-  // Get next version number
-  const { data: maxRow } = await supabase.from("project_document_versions").select("version_number").eq("document_id", opts.documentId).order("version_number", {
-    ascending: false
-  }).limit(1);
-  const nextVersion = (maxRow?.[0]?.version_number || 0) + 1;
-  // ── Conflict detection: check if parent version is still current ──
-  let shouldPromote = true;
-  if (opts.parentVersionId) {
-    const { data: parentRow } = await supabase.from("project_document_versions").select("id, is_current, version_number").eq("id", opts.parentVersionId).maybeSingle();
+
+  // Delegate to persistVersion for the actual DB write
+  return await persistVersion(supabase, {
+    projectId: resolvedProjectId || undefined,
+    documentId: opts.documentId,
+    docType: opts.docType,
+    operation: op,
+    plaintext: opts.plaintext,
+    label: opts.label,
+    createdBy: opts.createdBy,
+    generatorId: effectiveGeneratorId,
+    inputsUsed: opts.inputsUsed,
+    parentVersionId: opts.parentVersionId,
+    sourceDocumentIds: opts.sourceDocumentIds,
+    dependsOn: opts.dependsOn,
+    dependsOnResolverHash: opts.dependsOnResolverHash,
+    deliverableType: opts.deliverableType || key,
+    metaJson: opts.metaJson,
+    approvalStatus: opts.approvalStatus,
+    status: opts.status,
+    format: opts.format,
+    inheritedCore: opts.inheritedCore,
+    isStale: opts.isStale,
+    staleReason: opts.staleReason,
+    generatorRunId: opts.generatorRunId,
+    styleTemplateVersionId: opts.styleTemplateVersionId,
+    changeSummary: opts.changeSummary,
+    branchId: opts.branchId,
+  });
+}
+
+/**
+ * persistVersion — Canonical version persistence boundary.
+ * 
+ * ALL version writes to project_document_versions MUST route through this function.
+ * Handles INSERT (content & placeholder), UPDATE (content & metadata), and UPSERT patterns.
+ * Fires Identity Stack shadow on content writes only.
+ * 
+ * Key design decisions:
+ * - DB write happens FIRST (identity stack is post-write, non-fatal)
+ * - Content writes trigger identity stack shadow computation
+ * - Placeholder and metadata-only writes skip identity stack
+ * - Dedup guards prevent double computation
+ * - createVersion() wraps this function for backward compatibility
+ */
+export async function persistVersion(
+  supabase: any,
+  opts: PersistVersionArgs,
+): Promise<any> {
+  const { key } = resolveDocType(opts.docType, opts.format);
+
+  // ── Phase 7.5C: Operation Classification ──
+  const isContentOp = CONTENT_WRITE_OPERATIONS.has(opts.operation);
+  const hasContent = !!(opts.plaintext && opts.plaintext.trim().length > 0);
+  const effectiveGeneratorId = opts.generatorId || "system";
+
+  // ── 1. DETERMINE VERSION NUMBER (for INSERT operations) ──
+  // For UPDATE operations, use existing version number
+  let versionNumber: number | undefined;
+
+  if (opts.versionNumberOverride) {
+    versionNumber = opts.versionNumberOverride;
+  } else if (opts.operation === "UPDATE_CONTENT" || opts.operation === "UPDATE_METADATA_ONLY" || opts.operation === "UPDATE_STATUS_ONLY" || opts.operation === "SUPERSEDE") {
+    // UPDATE — version number already exists, don't change it
+    versionNumber = undefined;
+  } else {
+    // INSERT/UPSERT — get next sequential version number
+    const { data: maxRow } = await supabase.from("project_document_versions")
+      .select("version_number")
+      .eq("document_id", opts.documentId)
+      .order("version_number", { ascending: false })
+      .limit(1);
+    versionNumber = (maxRow?.[0]?.version_number || 0) + 1;
+  }
+
+  // ── 2. CONFLICT DETECTION (for INSERT parent version check) ──
+  let shouldPromote = opts.isCurrent !== undefined ? opts.isCurrent : true;
+
+  if (opts.parentVersionId && (opts.operation === "CREATE_FINAL" || opts.operation === "CREATE_PLACEHOLDER" || opts.operation === "CONVERT_FORMAT" || opts.operation === "REWRITE_FINAL" || opts.operation === "PROMOTE_DERIVATIVE")) {
+    const { data: parentRow } = await supabase.from("project_document_versions")
+      .select("id, is_current, version_number")
+      .eq("id", opts.parentVersionId)
+      .maybeSingle();
     if (parentRow && !parentRow.is_current) {
-      // Parent is no longer current — a newer version exists (e.g. from Writers' Room)
-      // Create the version but do NOT auto-promote to current
       shouldPromote = false;
-      console.warn(`[doc-os] VERSION_CONFLICT: parent ${opts.parentVersionId} (v${parentRow.version_number}) is no longer current. New version v${nextVersion} will NOT be auto-promoted. generator="${opts.generatorId || 'system'}"`);
+      console.warn(`[persistVersion] VERSION_CONFLICT: parent ${opts.parentVersionId} (v${parentRow.version_number}) is no longer current. v${versionNumber} will NOT be auto-promoted.`);
     }
   }
-  if (shouldPromote) {
-    // Clear current flag
-    await supabase.from("project_document_versions").update({
-      is_current: false
-    }).eq("document_id", opts.documentId).eq("is_current", true);
-  }
-  // ── Deterministic resolver hash default ──
-  const resolvedHash = opts.dependsOnResolverHash || computeDefaultResolverHash(key, effectiveGeneratorId, opts.label);
-  // Insert new version
-  const insertPayload = {
-    document_id: opts.documentId,
-    version_number: nextVersion,
-    plaintext: opts.plaintext,
-    is_current: shouldPromote,
-    status: opts.status || "draft",
-    label: opts.label,
-    created_by: opts.createdBy,
-    approval_status: opts.approvalStatus || "draft",
-    deliverable_type: opts.deliverableType || key,
-    meta_json: opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson) ? opts.metaJson : {},
-    generator_id: effectiveGeneratorId,
-    depends_on_resolver_hash: resolvedHash
-  };
-  if (opts.changeSummary) insertPayload.change_summary = opts.changeSummary;
-  if (opts.inheritedCore) insertPayload.inherited_core = opts.inheritedCore;
-  if (opts.sourceDocumentIds) insertPayload.source_document_ids = opts.sourceDocumentIds;
-  if (opts.dependsOn) insertPayload.depends_on = opts.dependsOn;
-  if (opts.generatorId) insertPayload.generator_id = opts.generatorId;
-  // Convergence fields
-  if (opts.isStale !== undefined) insertPayload.is_stale = opts.isStale;
-  if (opts.staleReason !== undefined) insertPayload.stale_reason = opts.staleReason;
-  if (opts.generatorRunId) insertPayload.generator_run_id = opts.generatorRunId;
-  if (opts.styleTemplateVersionId) insertPayload.style_template_version_id = opts.styleTemplateVersionId;
-  // Persist inputs_used for provenance
-  if (hasProvenance) {
-    insertPayload.inputs_used = opts.inputsUsed;
-  }
-  const { data: newVersion, error } = await supabase.from("project_document_versions").insert(insertPayload).select().single();
-  if (error) throw new Error(`createVersion(${key} v${nextVersion}): ${error.message}`);
-  // ── PATCH A1: Set latest_version_id only when version has renderable content ──
-  // Empty/placeholder versions must NOT become latest — prevents FK-blocked deletions
-  // and ensures latest always points to a usable version.
-  const hasRenderableContent = opts.plaintext && opts.plaintext.trim().length > 10;
-  if (hasRenderableContent) {
-    const { error: lvErr } = await supabase.from("project_documents").update({
-      latest_version_id: newVersion.id,
-      char_count: opts.plaintext.trim().length
-    }).eq("id", opts.documentId);
-    if (lvErr) {
-      console.warn(`[doc-os] failed to set latest_version_id for doc ${opts.documentId}: ${lvErr.message}`);
-    } else {
-      console.log(`[doc-os] latest_version_id set for doc ${opts.documentId} → version ${newVersion.id}`);
+
+  // ── 3. PERFORM DB WRITE ──
+  let version: any;
+
+  if (opts.operation === "UPDATE_CONTENT" && opts.versionId) {
+    // UPDATE_CONTENT — fill placeholder with assembled content
+    // Compute merged meta_json
+    const existingMeta = opts.metaJson || {};
+    const mergedMeta = {
+      ...existingMeta,
+      bg_generating: false,
+      ...(opts.assembledFromChunks ? { assembled_from_chunks: true } : {}),
+      ...(opts.assembledChunkCount !== undefined ? { assembled_chunk_count: opts.assembledChunkCount } : {}),
+    };
+
+    const { data: updated, error } = await supabase
+      .from("project_document_versions")
+      .update({
+        plaintext: opts.plaintext,
+        meta_json: mergedMeta,
+        ...(opts.assembledFromChunks ? { assembled_from_chunks: true } : {}),
+        ...(opts.assembledChunkCount !== undefined ? { assembled_chunk_count: opts.assembledChunkCount } : {}),
+      })
+      .eq("id", opts.versionId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation}): ${error.message}`);
+    version = updated;
+
+    // Promote to current if needed
+    if (shouldPromote) {
+      await supabase.from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", opts.documentId)
+        .eq("is_current", true);
+      await supabase.from("project_document_versions")
+        .update({ is_current: true })
+        .eq("id", opts.versionId);
+    }
+  } else if (opts.operation === "UPDATE_METADATA_ONLY" && opts.versionId) {
+    // UPDATE_METADATA_ONLY — merge meta_json only
+    const updatePayload: any = {};
+    if (opts.metaJson) {
+      // Merge meta_json — read existing, merge, write back
+      const { data: curVer } = await supabase.from("project_document_versions")
+        .select("meta_json").eq("id", opts.versionId).maybeSingle();
+      const curMeta = (curVer?.meta_json || {});
+      updatePayload.meta_json = { ...curMeta, ...opts.metaJson };
+    }
+
+    const { data: updated, error } = await supabase
+      .from("project_document_versions")
+      .update(updatePayload)
+      .eq("id", opts.versionId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation}): ${error.message}`);
+    version = updated;
+  } else if (opts.operation === "UPDATE_STATUS_ONLY" && opts.versionId) {
+    // UPDATE_STATUS_ONLY — update approval_status, is_current
+    const updatePayload: any = {};
+    if (opts.approvalStatus) updatePayload.approval_status = opts.approvalStatus;
+    if (opts.isCurrent !== undefined) updatePayload.is_current = opts.isCurrent;
+
+    const { data: updated, error } = await supabase
+      .from("project_document_versions")
+      .update(updatePayload)
+      .eq("id", opts.versionId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation}): ${error.message}`);
+    version = updated;
+  } else if (opts.operation === "SUPERSEDE" && opts.versionId) {
+    // SUPERSEDE — mark parent as non-current
+    const { data: updated, error } = await supabase
+      .from("project_document_versions")
+      .update({
+        is_current: false,
+        superseded_at: new Date().toISOString(),
+        superseded_by: opts.parentVersionId || null,
+      })
+      .eq("id", opts.versionId)
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation}): ${error.message}`);
+    version = updated;
+  } else if (opts.operation === "UPSERT_CONTENT" && opts.versionId) {
+    // UPSERT_CONTENT with explicit versionId — update existing version
+    // (Used by beat-rewrite which targets a specific version)
+    const resolvedOnConflict = opts.generatorId === "dev-engine-v2-beat-rewrite"
+      ? ["document_id", "version_number"]
+      : undefined;
+
+    const upsertPayload: any = {
+      document_id: opts.documentId,
+      version_number: versionNumber,
+      plaintext: opts.plaintext,
+      is_current: shouldPromote,
+      status: opts.status || "draft",
+      label: opts.label,
+      created_by: opts.createdBy,
+      approval_status: opts.approvalStatus || "draft",
+      deliverable_type: opts.deliverableType || key,
+      meta_json: opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson) ? opts.metaJson : {},
+      generator_id: effectiveGeneratorId,
+    };
+    if (opts.changeSummary) upsertPayload.change_summary = opts.changeSummary;
+    if (opts.inheritedCore) upsertPayload.inherited_core = opts.inheritedCore;
+    if (opts.sourceDocumentIds) upsertPayload.source_document_ids = opts.sourceDocumentIds;
+    if (opts.dependsOn) upsertPayload.depends_on = opts.dependsOn;
+    if (opts.dependsOnResolverHash) upsertPayload.depends_on_resolver_hash = opts.dependsOnResolverHash;
+    if (opts.branchId) upsertPayload.branch_id = opts.branchId;
+    if (opts.generatorRunId) upsertPayload.generator_run_id = opts.generatorRunId;
+    if (opts.styleTemplateVersionId) upsertPayload.style_template_version_id = opts.styleTemplateVersionId;
+
+    const { data: upserted, error } = await supabase
+      .from("project_document_versions")
+      .upsert(upsertPayload, { onConflict: resolvedOnConflict })
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation}): ${error.message}`);
+    version = upserted;
+
+    // Promote to current if flagged
+    if (shouldPromote) {
+      await supabase.from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", opts.documentId)
+        .neq("id", version.id);
     }
   } else {
-    console.log(`[doc-os] SKIPPED latest_version_id — version ${newVersion.id} has no renderable content (placeholder/bg_generating)`);
+    // ── INSERT operations: CREATE_FINAL, CREATE_PLACEHOLDER, CONVERT_FORMAT, REWRITE_FINAL, PROMOTE_DERIVATIVE ──
+    // Also UPSERT without versionId (create with upsert)
+    const isPlaceholder = opts.operation === "CREATE_PLACEHOLDER";
+
+    if (shouldPromote && !isPlaceholder) {
+      // Clear current flag on existing version before creating new one
+      await supabase.from("project_document_versions")
+        .update({ is_current: false })
+        .eq("document_id", opts.documentId)
+        .eq("is_current", true);
+    }
+
+    const insertPayload: any = {
+      document_id: opts.documentId,
+      version_number: versionNumber,
+      plaintext: opts.plaintext || "",
+      is_current: isPlaceholder ? false : shouldPromote,
+      status: opts.status || "draft",
+      label: opts.label,
+      created_by: opts.createdBy,
+      approval_status: opts.approvalStatus || "draft",
+      deliverable_type: opts.deliverableType || key,
+      meta_json: opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson) ? opts.metaJson : {},
+      generator_id: effectiveGeneratorId,
+    };
+
+    if (opts.changeSummary) insertPayload.change_summary = opts.changeSummary;
+    if (opts.inheritedCore) insertPayload.inherited_core = opts.inheritedCore;
+    if (opts.sourceDocumentIds) insertPayload.source_document_ids = opts.sourceDocumentIds;
+    if (opts.dependsOn) insertPayload.depends_on = opts.dependsOn;
+    if (opts.dependsOnResolverHash) insertPayload.depends_on_resolver_hash = opts.dependsOnResolverHash;
+    if (opts.generatorRunId) insertPayload.generator_run_id = opts.generatorRunId;
+    if (opts.styleTemplateVersionId) insertPayload.style_template_version_id = opts.styleTemplateVersionId;
+    if (opts.branchId) insertPayload.branch_id = opts.branchId;
+    if (opts.isStale !== undefined) insertPayload.is_stale = opts.isStale;
+    if (opts.staleReason !== undefined) insertPayload.stale_reason = opts.staleReason;
+    if (opts.parentVersionId) insertPayload.parent_version_id = opts.parentVersionId;
+
+    // Persist inputs_used for provenance
+    const hasProvenance = opts.inputsUsed && Object.keys(opts.inputsUsed).length > 0;
+    if (hasProvenance) {
+      insertPayload.inputs_used = opts.inputsUsed;
+    }
+
+    const { data: newVersion, error } = await supabase
+      .from("project_document_versions")
+      .insert(insertPayload)
+      .select()
+      .single();
+
+    if (error) throw new Error(`persistVersion(${opts.operation} v${versionNumber}): ${error.message}`);
+    version = newVersion;
   }
-  // ── TRANSITION LEDGER: version_created (fail-closed) ──
-  // Resolve project_id from document for ledger context
-  let transitionProjectId = null;
-  try {
-    const { data: docForProject } = await supabase.from("project_documents").select("project_id").eq("id", opts.documentId).maybeSingle();
-    transitionProjectId = docForProject?.project_id || null;
-  } catch  {}
-  if (transitionProjectId) {
-    await emitTransition(supabase, {
-      projectId: transitionProjectId,
-      eventType: TRANSITION_EVENTS.VERSION_CREATED,
-      docType: key,
-      resultingVersionId: newVersion.id,
-      sourceVersionId: opts.parentVersionId || undefined,
-      generatorId: effectiveGeneratorId,
-      trigger: opts.label,
-      sourceOfTruth: "doc-os.createVersion",
-      resultingState: {
-        version_number: nextVersion,
-        is_current: shouldPromote,
-        approval_status: opts.approvalStatus || "draft",
-        has_provenance: !!hasProvenance,
-        content_length: opts.plaintext?.length || 0
-      },
-      createdBy: opts.createdBy
-    });
-  }
-  // ── NIT v2.1: Auto entity mention extraction (fail-closed) ──
-  // Fires for every successfully created version. Character mentions are extracted
-  // deterministically using parseSections + exact canonical_name matching.
-  // Unsupported doc types skip silently. Never throws — version write is never blocked.
-  if (transitionProjectId && newVersion?.id && opts.plaintext) {
-    try {
-      const { extractEntityMentionsForVersion } = await import("./narrativeEntityEngine.ts");
-      const mentionResult = await extractEntityMentionsForVersion(supabase, transitionProjectId, opts.documentId, newVersion.id, key, opts.plaintext);
-      if (mentionResult.skipped_reason) {
-        console.log(`[doc-os] NIT v2.1 mention sync skipped version=${newVersion.id} doc_type=${key} reason=${mentionResult.skipped_reason}`);
-      } else {
-        console.log(`[doc-os] NIT v2.1 mention sync ok version=${newVersion.id} doc_type=${key} mentions=${mentionResult.mentions_upserted}`);
-      }
-    } catch (nitErr) {
-      // Non-fatal: mention extraction failure must never block the pipeline
-      console.warn(`[doc-os] NIT v2.1 mention sync non-fatal error version=${newVersion?.id}: ${nitErr?.message}`);
+
+  // ── 4. POST-WRITE: Set latest_version_id for documents with renderable content ──
+  if (hasContent && version?.id) {
+    const { error: lvErr } = await supabase.from("project_documents").update({
+      latest_version_id: version.id,
+      char_count: opts.plaintext!.trim().length
+    }).eq("id", opts.documentId);
+    if (lvErr) {
+      console.warn(`[persistVersion] failed to set latest_version_id: ${lvErr.message}`);
     }
   }
-  // ── IDENTITY STACK SHADOW: compute silently, store in meta_json ──
-  // Phase 7.4A: relocated from dev-engine-v2/writeVersionSafe() to canonical createVersion()
-  // boundary so ALL production version creation paths (auto-run, seed-pack, generate-document)
-  // automatically get shadow telemetry without per-generator instrumentation.
-  if (transitionProjectId && newVersion?.id && opts.plaintext && opts.deliverableType && IDENTITY_STACK_SHADOW_ENABLED) {
-    // Avoid duplicate computation — skip if shadow already exists on this version
-    const existingMeta = newVersion.meta_json || {};
-    if (existingMeta.identity_stack_shadow) {
-      console.log(`[doc-os] IDENTITY_STACK shadow already exists for version ${newVersion.id} — skipping`);
-    } else {
-      try {
+
+  // ── 5. POST-WRITE: Transition Ledger (for INSERT operations) ──
+  if (opts.projectId && version?.id && (opts.operation === "CREATE_FINAL" || opts.operation === "CREATE_PLACEHOLDER" || opts.operation === "CONVERT_FORMAT" || opts.operation === "REWRITE_FINAL" || opts.operation === "PROMOTE_DERIVATIVE")) {
+    try {
+      await emitTransition(supabase, {
+        projectId: opts.projectId,
+        eventType: TRANSITION_EVENTS.VERSION_CREATED,
+        docType: key,
+        resultingVersionId: version.id,
+        sourceVersionId: opts.parentVersionId || undefined,
+        generatorId: effectiveGeneratorId,
+        trigger: opts.label,
+        sourceOfTruth: "doc-os.persistVersion",
+        resultingState: {
+          version_number: versionNumber,
+          is_current: shouldPromote,
+          approval_status: opts.approvalStatus || "draft",
+          has_provenance: !!(opts.inputsUsed && Object.keys(opts.inputsUsed).length > 0),
+          content_length: opts.plaintext?.length || 0,
+          operation: opts.operation,
+        },
+        createdBy: opts.createdBy
+      });
+    } catch (ledgerErr) {
+      console.warn(`[persistVersion] Transition ledger non-fatal: ${ledgerErr?.message}`);
+    }
+  }
+
+  // ── 6. POST-WRITE: NIT v2.1 Auto entity mention extraction ──
+  if (opts.projectId && version?.id && hasContent && isContentOp) {
+    try {
+      const { extractEntityMentionsForVersion } = await import("./narrativeEntityEngine.ts");
+      const mentionResult = await extractEntityMentionsForVersion(
+        supabase, opts.projectId, opts.documentId, version.id, key, opts.plaintext!
+      );
+      if (mentionResult.skipped_reason) {
+        console.log(`[persistVersion] NIT mention sync skipped version=${version.id} reason=${mentionResult.skipped_reason}`);
+      } else {
+        console.log(`[persistVersion] NIT mention sync ok version=${version.id} mentions=${mentionResult.mentions_upserted}`);
+      }
+    } catch (nitErr) {
+      console.warn(`[persistVersion] NIT mention sync non-fatal version=${version?.id}: ${nitErr?.message}`);
+    }
+  }
+
+  // ── 7. POST-WRITE: Identity Stack Shadow ──
+  // Only fires on content-write operations with non-empty content
+  if (opts.projectId && version?.id && hasContent && isContentOp && IDENTITY_STACK_SHADOW_ENABLED) {
+    try {
+      const curMeta = version.meta_json || {};
+      if (curMeta.identity_stack_shadow) {
+        console.log(`[persistVersion] Identity Stack shadow already exists for version ${version.id} — skipping`);
+      } else {
         const { data: canon } = await supabase.from("project_canon")
-          .select("canon_json").eq("project_id", transitionProjectId).maybeSingle();
+          .select("canon_json")
+          .eq("project_id", opts.projectId)
+          .maybeSingle();
         const cip = canon?.canon_json?.identity_profile ?? null;
         const shadow = computeIdentityStackShadow(
           opts.plaintext,
-          opts.deliverableType,
+          opts.deliverableType || key,
           cip,
           null, // DAB not available at this layer
         );
         if (shadow) {
-          // Merge shadow into existing meta_json — never overwrite other fields
-          const curMeta = newVersion.meta_json || {};
+          const existingMeta = version.meta_json || {};
           await supabase.from("project_document_versions").update({
-            meta_json: { ...curMeta, identity_stack_shadow: shadow }
-          }).eq("id", newVersion.id);
+            meta_json: { ...existingMeta, identity_stack_shadow: shadow }
+          }).eq("id", version.id);
         }
-      } catch (e) {
-        // Non-fatal: shadow failure never blocks version creation
-        console.warn("[IDENTITY_STACK] Shadow computation failed (non-fatal):", e?.message || e);
       }
+    } catch (e) {
+      // Non-fatal: shadow failure never blocks version persistence
+      console.warn("[persistVersion] Identity Stack shadow failed (non-fatal):", e?.message || e);
     }
   }
-  return newVersion;
+
+  return version;
 }
 export async function upsertDoc(supabase, opts) {
   const slot = await ensureDocSlot(supabase, opts.projectId, opts.userId, opts.docType, {

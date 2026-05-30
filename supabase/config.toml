@@ -328,3 +328,6 @@ verify_jwt = false
 
 [functions.tmdb-lookup]
 verify_jwt = false
+
+[functions.infer-pd-canon]
+verify_jwt = false

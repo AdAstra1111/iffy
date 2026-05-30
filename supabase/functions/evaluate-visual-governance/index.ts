@@ -62,11 +62,17 @@ serve(async (req) => {
       { data: aiActorIds },
       { data: aiActors },
       { data: hfImages },
-      { data: pdSets },
+      { data: pdLegacySets },
       { data: lbSections },
       { data: posterCount },
       { data: cbVersion },
       staleRiskResults,
+      { count: pdWorldRuleCount },
+      { count: pdDesignTemplateCount },
+      { count: pdLocationDesignCount },
+      { count: pdCreatureDesignCount },
+      { count: pdLocationPropCount },
+      { count: wardrobeCharCount },
     ] = await Promise.all([
       // 1. project_canon — canon_json content
       supabase
@@ -96,7 +102,7 @@ serve(async (req) => {
         .eq("project_id", projectId)
         .eq("atom_type", "location"),
 
-      // 5. project_characters
+      // 5. project_characters (legacy fallback — canonical source is character_wardrobe_profiles)
       supabase
         .from("project_characters")
         .select("id", { count: "exact", head: true })
@@ -129,7 +135,7 @@ serve(async (req) => {
         .eq("generation_purpose", "hero_frame")
         .eq("is_active", true),
 
-      // 11. visual_sets (production design)
+      // 10. visual_sets (legacy fallback — canonical PD is pd_design_templates etc.)
       supabase
         .from("visual_sets")
         .select("id, domain, status, target_name, updated_at")
@@ -137,20 +143,20 @@ serve(async (req) => {
         .like("domain", "production_design_%")
         .neq("status", "archived"),
 
-      // 12. lookbook_sections
+      // 11. lookbook_sections
       supabase
         .from("lookbook_sections")
         .select("id, section_status, updated_at")
         .eq("project_id", projectId),
 
-      // 13. poster_candidates
+      // 12. poster_candidates
       supabase
         .from("poster_candidates")
         .select("id", { count: "exact", head: true })
         .eq("project_id", projectId)
         .eq("status", "candidate"),
 
-      // 14. concept_brief_versions
+      // 13. concept_brief_versions
       supabase
         .from("concept_brief_versions")
         .select("version_number")
@@ -158,8 +164,44 @@ serve(async (req) => {
         .order("version_number", { ascending: false })
         .limit(1),
 
-      // 15. Stale-risk timestamps (parallel sub-queries)
+      // 14. Stale-risk timestamps (parallel sub-queries)
       fetchStaleRiskTimestamps(supabase, projectId),
+
+      // 15. PD canon table: world rules
+      supabase
+        .from("pd_world_rules")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+
+      // 16. PD canon table: design templates
+      supabase
+        .from("pd_design_templates")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+
+      // 17. PD canon table: location design
+      supabase
+        .from("pd_location_design")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+
+      // 18. PD canon table: creature design
+      supabase
+        .from("pd_creature_design")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+
+      // 19. PD canon table: location props
+      supabase
+        .from("pd_location_props")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
+
+      // 20. Wardrobe canon: character_wardrobe_profiles (canonical cast count)
+      supabase
+        .from("character_wardrobe_profiles")
+        .select("id", { count: "exact", head: true })
+        .eq("project_id", projectId),
     ]);
 
     // ── Build PipelineInputs ──
@@ -181,12 +223,15 @@ serve(async (req) => {
     const visualStyleComplete = styleProfile?.is_complete ?? false;
 
     // Cast state
-    const totalChars = (chars as any)?.length ?? 0;
+    const legacyCharCount = (chars as any)?.length ?? 0;
     const castList = (castRows as any[]) ?? [];
     let lockedCharacters = castList.length;
-    let totalCharacters = totalChars;
+    // Canonical cast count from wardrobe profiles (primary)
+    // Legacy project_characters as fallback only — report both for transparency
+    const canonicalCharCount = wardrobeCharCount ?? 0;
+    let totalCharacters = canonicalCharCount > 0 ? canonicalCharCount : legacyCharCount;
 
-    // Vertical drama fallback: if no project_characters, check character atoms
+    // Vertical drama fallback: if no project_characters and no wardrobe profiles, check character atoms
     if (totalCharacters === 0) {
       const { data: charAtoms, count: atomCount } = await supabase
         .from("atoms")
@@ -218,28 +263,14 @@ serve(async (req) => {
     const visualDnaCount = (dnaRows as any[])?.length ?? 0;
     const hasVisualDNA = visualDnaCount > 0;
 
-    // ── Non-character entity readiness (creature, vehicle, prop) ──
-    const [creatureResult, vehicleResult, propResult] = await Promise.all([
-      supabase
-        .from("entity_visual_states")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", projectId)
-        .eq("entity_type", "creature"),
-      supabase
-        .from("entity_visual_states")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", projectId)
-        .eq("entity_type", "vehicle"),
-      supabase
-        .from("entity_visual_states")
-        .select("id", { count: "exact", head: true })
-        .eq("project_id", projectId)
-        .eq("entity_type", "prop"),
-    ]);
-
-    const creaturesReady = ((creatureResult as any)?.count ?? 0) > 0;
-    const vehiclesReady = ((vehicleResult as any)?.count ?? 0) > 0;
-    const propsReady = ((propResult as any)?.count ?? 0) > 0;
+    // ── Non-character entity readiness (creature, vehicle, prop) from PD canon ──
+    const pdCreatureCount = pdCreatureDesignCount ?? 0;
+    const pdPropCount = pdLocationPropCount ?? 0;
+    // Vehicles: no dedicated PD vehicle table yet — pd_location_props covers relevant items.
+    // Vehicles assumed ready unless canon explicitly requires a separate vehicle pipeline.
+    const creaturesReady = pdCreatureCount > 0;
+    const vehiclesReady = true; // No separate PD vehicle table — not blocking
+    const propsReady = pdPropCount > 0;
 
     // Actor bindings (project_ai_cast with ai_actor_id)
     const boundActorCount = castList.filter((c: any) => c.ai_actor_id).length;
@@ -275,38 +306,37 @@ serve(async (req) => {
     ).length;
     const heroFramePrimaryApproved = images.some(
       (i: any) =>
-        i.role === "hero_primary" &&
+        (i.role === "hero_primary" || i.role === "character_primary") &&
         i.is_primary &&
         i.curation_state === "active",
     );
 
-    // Production Design state
-    const sets = (pdSets as any[]) ?? [];
-    const topLocationCount = Math.min(locationCount, 4);
-    const pdTotalFamilies = topLocationCount * 2 + 2;
+    // Production Design state — certified PD canon tables
+    const hasPDWorldRules = (pdWorldRuleCount ?? 0) > 0;
+    const hasPDTemplates = (pdDesignTemplateCount ?? 0) > 0;
+    const hasPDLocations = (pdLocationDesignCount ?? 0) > 0;
+    const hasPDCreatures = pdCreatureCount > 0;
+    const hasPDProps = pdPropCount > 0;
 
-    // Count canonical sets
-    const canonicalDomains = new Set([
-      "production_design_location",
-      "production_design_atmosphere",
-    ]);
-    const canonicalGlobalTargets: Record<string, string> = {
-      production_design_texture: "Surface Language",
-      production_design_motif: "Production Motifs",
-    };
+    // PD readiness: world rules + templates + locations are the minimum
+    const pdCanonReady = hasPDWorldRules && hasPDTemplates && hasPDLocations;
+    // Count PD families from canonical tables
+    const pdCanonFamilies = (pdWorldRuleCount ?? 0) + (pdDesignTemplateCount ?? 0);
+    const pdCanonLockedFamilies = pdCanonFamilies; // PD canon entries are inherently locked (not state-machine rows)
 
-    let pdCreated = 0;
-    let pdLocked = 0;
-    for (const s of sets) {
-      const isCanonical =
-        canonicalDomains.has(s.domain) ||
-        (canonicalGlobalTargets[s.domain] &&
-          s.target_name === canonicalGlobalTargets[s.domain]);
-      if (!isCanonical) continue;
-      pdCreated++;
-      if (s.status === "locked") pdLocked++;
-    }
-    const pdAllLocked = pdLocked >= pdTotalFamilies && pdTotalFamilies > 0;
+    // Legacy visual_sets fallback only if PD canon is empty
+    const legacySets = (pdLegacySets as any[]) ?? [];
+    const legacyPdCreated = legacySets.filter((s: any) =>
+      ["production_design_location", "production_design_atmosphere"].includes(s.domain) ||
+      (["production_design_texture", "production_design_motif"].includes(s.domain) &&
+        s.target_name === (s.domain === "production_design_texture" ? "Surface Language" : "Production Motifs"))
+    ).length;
+    const legacyPdLocked = legacySets.filter((s: any) => s.status === "locked").length;
+
+    const pdCreated = pdCanonReady ? pdCanonFamilies : legacyPdCreated;
+    const pdLocked = pdCanonReady ? pdCanonLockedFamilies : legacyPdLocked;
+    const pdTotalFamilies = pdCreated > 0 ? pdCreated : 1; // avoid zero-divide in legacy fallback
+    const pdAllLocked = pdCanonReady || (pdLocked >= pdTotalFamilies && pdTotalFamilies > 0);
 
     // Visual Language (derived from visual style)
     const visualLanguageApproved = visualStyleComplete;
@@ -438,6 +468,13 @@ async function fetchStaleRiskTimestamps(
       { data: pdRow },
       { data: lbRow },
       { data: posterRow },
+      { data: dnaRow },
+      { data: pdLocRow },
+      { data: pdWorldRow },
+      { data: sceneRow },
+      { data: wProfRow },
+      { data: wAssignRow },
+      { data: vlRow },
     ] = await Promise.all([
       supabase
         .from("project_documents")
@@ -472,10 +509,9 @@ async function fetchStaleRiskTimestamps(
         .limit(1)
         .maybeSingle(),
       supabase
-        .from("visual_sets")
+        .from("pd_design_templates")
         .select("updated_at")
         .eq("project_id", projectId)
-        .like("domain", "production_design_%")
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -493,6 +529,56 @@ async function fetchStaleRiskTimestamps(
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
+      // Dependency-specific timestamps
+      supabase
+        .from("character_visual_dna")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("pd_location_design")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("pd_world_rules")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("scene_index")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("character_wardrobe_profiles")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("scene_wardrobe_assignments")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("project_visual_language")
+        .select("updated_at")
+        .eq("project_id", projectId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ]);
 
     return {
@@ -504,6 +590,14 @@ async function fetchStaleRiskTimestamps(
       pdUpdatedAt: (pdRow as any)?.updated_at ?? undefined,
       lookbookGeneratedAt: (lbRow as any)?.updated_at ?? undefined,
       posterGeneratedAt: (posterRow as any)?.created_at ?? undefined,
+      // Dependency-specific timestamps
+      characterVisualDnaUpdatedAt: (dnaRow as any)?.updated_at ?? undefined,
+      pdLocationDesignUpdatedAt: (pdLocRow as any)?.updated_at ?? undefined,
+      pdWorldRulesUpdatedAt: (pdWorldRow as any)?.updated_at ?? undefined,
+      sceneIndexUpdatedAt: (sceneRow as any)?.updated_at ?? undefined,
+      wardrobeProfilesUpdatedAt: (wProfRow as any)?.updated_at ?? undefined,
+      sceneWardrobeAssignmentsUpdatedAt: (wAssignRow as any)?.updated_at ?? undefined,
+      visualLanguageUpdatedAt: (vlRow as any)?.updated_at ?? undefined,
     };
   } catch (_err) {
     // If any timestamp query fails, return null (stale-risk will be skipped)

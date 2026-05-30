@@ -65,8 +65,8 @@ function extractVehicleTerms(text: string): Map<string, number> {
 function canonicalise(term: string): string {
   const map: Record<string, string> = {
     // Military jeeps
-    'jeep': 'WWII Jeep (Willys MB)',
-    'willys': 'WWII Jeep (Willys MB)',
+    'jeep': 'Jeep (Willys MB)',
+    'willys': 'Jeep (Willys MB)',
     // Tanks
     'tank': 'Military Tank',
     'tiger tank': 'Tiger I Tank',
@@ -77,7 +77,7 @@ function canonicalise(term: string): string {
     'panther tank': 'Panther Tank',
     'king tiger': 'Tiger II Tank',
     // Aircraft
-    'aircraft': 'Military Aircraft',
+    'aircraft': 'Aircraft',
     'plane': 'Aircraft',
     'aeroplane': 'Aircraft',
     'airplane': 'Aircraft',
@@ -508,15 +508,37 @@ async function handleGenerate(projectId: string) {
           const sceneCount = attrs?.frequencyInScript || 0;
           const sourceType = attrs?.sourceType || 'extracted';
 
-          const prompt = `You are a production designer and transportation coordinator for film/TV. Generate a rich, production-ready vehicle atom for the following vehicle.
+          // ── Gather project context for prompt injection ──
+          const { data: projMeta } = await admin
+            .from("projects")
+            .select("title, format, logline, genres, premise, budget_range")
+            .eq("id", projectId)
+            .maybeSingle();
+          const projTitle = (projMeta as any)?.title || "";
+          const projFormat = (projMeta as any)?.format || "";
+          const projGenres = (projMeta as any)?.genres || "";
+          const projLogline = (projMeta as any)?.logline || "";
+          const projPremise = (projMeta as any)?.premise || "";
+          const projBudget = (projMeta as any)?.budget_range || "";
 
-PROJECT CONTEXT: WWII-era drama/thriller (assume period accuracy is critical)
+          const projectContextStr = [
+            projTitle ? `PROJECT TITLE: ${projTitle}` : "",
+            projFormat ? `FORMAT: ${projFormat}` : "",
+            projGenres ? `GENRES: ${projGenres}` : "",
+            projLogline ? `LOGLINE: ${projLogline}` : "",
+            projPremise ? `PREMISE: ${projPremise}` : "",
+            projBudget ? `BUDGET: ${projBudget}` : "",
+          ].filter(Boolean).join("\n");
+
+          const prompt = `You are a production designer and transportation coordinator for film/TV. Generate a rich, production-ready vehicle atom for the following vehicle based on the project's actual context.
+
+${projectContextStr}
 VEHICLE: ${atom.canonical_name}
 SCENE COUNT: ${sceneCount}
 SOURCE: ${sourceType === 'entity' ? 'Named entity from script analysis' : 'Extracted from scene content'}
 
 SCENE CONTEXTS WHERE THIS VEHICLE APPEARS:
-${sceneContexts.length > 0 ? sceneContexts.slice(0, 8).join("\n\n") : "No specific scene context — infer from vehicle type and WWII context."}
+${sceneContexts.length > 0 ? sceneContexts.slice(0, 8).join("\n\n") : "No specific scene context — infer from the project context above.\nUse the project's genre, period, and setting to determine appropriate vehicle design. Do NOT assume military/WWII context unless the project evidence supports it."}
 
 ASSOCIATED CHARACTERS: ${associatedCharacters.length > 0 ? associatedCharacters.slice(0, 10).join(", ") : "Unknown"}
 
@@ -530,21 +552,21 @@ Generate a complete vehicle atom as a JSON object. Focus on:
 7. PRODUCTION IMPLICATIONS — how hard to source/build? CGI needed?
 
 Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the following fields:
-- vehicle_type (string: specific vehicle category e.g. "WWII Military Jeep", "Fighter Aircraft", "Horse-drawn Cart")
-- era_alignment (string: e.g. "1940s WWII", "1943 North Africa", "Early Cold War")
+- vehicle_type (string: specific vehicle category e.g. "Military Jeep", "Fighter Aircraft", "Horse-drawn Cart")
+- era_alignment (string: e.g. "1940s Period", "Contemporary", "Near Future", determined from project evidence)
 - make_model (string: specific make/model e.g. "Willys MB", "Messerschmitt Bf 109", "Horse" — empty string if unknown)
-- period_accuracy (string: "accurate" | "stylised" | "anachronistic")
-- ownership (string: "military" | "civilian" | "government" | "character-personal" | "enemy-forces")
+- period_accuracy (string: "accurate" | "stylised" | "anachronistic" | "contemporary")
+- ownership (string: "military" | "civilian" | "government" | "character-personal" | "commercial")
 - character_association (string: which character(s) primarily use this vehicle, or "various")
-- condition (string: "pristine" | "worn" | "battle-damaged" | "destroyed" | "modified" | "period-correct")
+- condition (string: "pristine" | "worn" | "damaged" | "destroyed" | "modified" | "period-correct")
 - distinctive_features (string: visual details that make this vehicle recognisable on screen)
 - modification_level (string: "stock" | "mildly_customised" | "heavily_modified")
 - visual_complexity (string: "simple" | "moderate" | "complex")
 - set_requirements (string: "practical_vehicle" | "CGI_replacement" | "partial_practical" | "full_CGI" | "prop_only")
 - driving_context (string: "chase" | "transport" | "combat" | "evacuation" | "ceremonial" | "reconnaissance" | "civilian_transport")
-- sound_profile (string: brief description of engine sound/character e.g. "flat-4 diesel rumble", "Merlin V12 howl")
+- sound_profile (string: brief description of engine sound/character e.g. "V8 rumble", "electric hum", "diesel clatter")
 - budget_estimate (string: "budget" | "moderate" | "expensive" | "prohibitively_expensive")
-- availability_notes (string: sourcing notes e.g. "Period originals available via military museums", "CGI required for aerial shots")
+- availability_notes (string: sourcing notes e.g. "Period originals available via collectors", "CGI required for aerial shots")
 - reference_images_needed (array of 3-5 strings: types of reference needed)
 - casting_type_tags (array of 3-5 strings: production category tags)
 - anachronism_flags (array of strings: any period accuracy concerns, empty if accurate)

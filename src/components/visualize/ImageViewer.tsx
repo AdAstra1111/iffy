@@ -1,9 +1,21 @@
-import React, { useCallback, useEffect, useRef } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { VisualImage } from '@/lib/adapters/AdapterTypes'
+import { supabase } from '@/integrations/supabase/client'
+
+interface CanonProvenance {
+  identity_mode?: string
+  wardrobe_canon_used?: boolean
+  wardrobe_state_name?: string
+  pd_canon_consumed?: boolean
+  pd_template_name?: string
+  fallback_used?: boolean
+  canon_sources_used?: string[]
+}
 
 interface ImageViewerProps {
   image: VisualImage | null
   images: VisualImage[]
+  projectId?: string
   onClose: () => void
   onApprove: (imageId: string) => void
   onSetPrimary: (imageId: string) => void
@@ -15,6 +27,7 @@ interface ImageViewerProps {
 const ImageViewer: React.FC<ImageViewerProps> = ({
   image,
   images,
+  projectId,
   onClose,
   onApprove,
   onSetPrimary,
@@ -23,6 +36,9 @@ const ImageViewer: React.FC<ImageViewerProps> = ({
   onNavigate,
 }) => {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const [showProvenance, setShowProvenance] = useState(false)
+  const [provenance, setProvenance] = useState<CanonProvenance | null>(null)
+  const [provLoading, setProvLoading] = useState(false)
 
   // Close on Escape
   useEffect(() => {
@@ -208,7 +224,61 @@ const ImageViewer: React.FC<ImageViewerProps> = ({
               Delete
             </button>
           )}
+
+          {/* Canon Sources */}
+          <button
+            onClick={() => {
+              if (!showProvenance && !provenance && projectId) {
+                setProvLoading(true)
+                supabase.functions.invoke('visual-canon-status', {
+                  body: { project_id: projectId, image_id: image.id }
+                }).then(({ data }) => {
+                  setProvenance(data?.provenance || null)
+                  setProvLoading(false)
+                }).catch(() => setProvLoading(false))
+              }
+              setShowProvenance(!showProvenance)
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            {showProvenance ? 'Hide Sources' : 'Canon Sources'}
+          </button>
         </div>
+
+        {/* Provenance Drawer */}
+        {showProvenance && (
+          <div className="border-t border-white/10 bg-white/5 backdrop-blur-xl">
+            <div className="max-w-3xl mx-auto px-4 py-3">
+              {provLoading ? (
+                <p className="text-white/50 text-xs">Loading canon sources...</p>
+              ) : provenance ? (
+                <div className="grid grid-cols-4 gap-4 text-xs">
+                  <div>
+                    <p className="text-white/40 mb-1">Identity</p>
+                    <p className="text-white/80">{provenance.identity_mode || 'consumed'}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 mb-1">Wardrobe</p>
+                    <p className="text-white/80">{provenance.wardrobe_state_name || (provenance.wardrobe_canon_used ? 'consumed' : 'none')}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 mb-1">Production Design</p>
+                    <p className="text-white/80">{provenance.pd_template_name || (provenance.pd_canon_consumed ? 'consumed' : 'none')}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 mb-1">Fallback</p>
+                    <p className="text-white/80">{provenance.fallback_used ? 'used' : 'not used'}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-white/50 text-xs">No provenance data for this image.</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
