@@ -78,7 +78,8 @@ function BeatCard({ beat, index }: { beat: Record<string, any>; index: number })
   const name = beat.name || beat.title || `Beat ${num}`;
   const page = beat.page_range || beat.page || '';
 
-  const excludeKeys = new Set(['number', 'name', 'title', 'page_range', 'page']);
+  // description rendered as primary body below (see beat.description); summary excluded defensively
+  const excludeKeys = new Set(['number', 'name', 'title', 'page_range', 'page', 'description', 'summary']);
   const fields = Object.entries(beat).filter(([k, v]) => !excludeKeys.has(k) && v != null && v !== '');
 
   return (
@@ -129,7 +130,8 @@ function MomentCard({ entry, index }: { entry: Record<string, any>; index: numbe
   const num = entry.number ?? index + 1;
   const title = entry.title || entry.name || `Moment ${num}`;
 
-  const excludeKeys = new Set(['number', 'title', 'name', 'subtitle']);
+  // description rendered as primary body below (see entry.description); summary excluded defensively
+  const excludeKeys = new Set(['number', 'title', 'name', 'subtitle', 'description', 'summary']);
   const fields = Object.entries(entry).filter(([k, v]) => !excludeKeys.has(k) && v != null && v !== '');
 
   return (
