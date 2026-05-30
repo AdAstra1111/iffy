@@ -4,6 +4,9 @@
  * ALL edge functions MUST use these helpers for project_documents + project_document_versions writes.
  */ import { buildCanonEntitiesFromDB, validateCanonAlignment } from "./docPolicyRegistry.ts";
 import { emitTransition, TRANSITION_EVENTS } from "./transitionLedger.ts";
+// ── Identity Stack P0 shadow telemetry (Phase 7.4A) ──
+import { IDENTITY_STACK_SHADOW_ENABLED } from "./identityStackP0/identityStackFlags.ts";
+import { computeIdentityStackShadow } from "./identityStackP0/index.ts";
 // ── Deterministic resolver hash (no crypto dependency) ──
 function simpleHash(str) {
   let hash = 0;
@@ -686,6 +689,39 @@ const CANON_ALIGNMENT_EXEMPT_FALLBACK = new Set([
     } catch (nitErr) {
       // Non-fatal: mention extraction failure must never block the pipeline
       console.warn(`[doc-os] NIT v2.1 mention sync non-fatal error version=${newVersion?.id}: ${nitErr?.message}`);
+    }
+  }
+  // ── IDENTITY STACK SHADOW: compute silently, store in meta_json ──
+  // Phase 7.4A: relocated from dev-engine-v2/writeVersionSafe() to canonical createVersion()
+  // boundary so ALL production version creation paths (auto-run, seed-pack, generate-document)
+  // automatically get shadow telemetry without per-generator instrumentation.
+  if (transitionProjectId && newVersion?.id && opts.plaintext && opts.deliverableType && IDENTITY_STACK_SHADOW_ENABLED) {
+    // Avoid duplicate computation — skip if shadow already exists on this version
+    const existingMeta = newVersion.meta_json || {};
+    if (existingMeta.identity_stack_shadow) {
+      console.log(`[doc-os] IDENTITY_STACK shadow already exists for version ${newVersion.id} — skipping`);
+    } else {
+      try {
+        const { data: canon } = await supabase.from("project_canon")
+          .select("canon_json").eq("project_id", transitionProjectId).maybeSingle();
+        const cip = canon?.canon_json?.identity_profile ?? null;
+        const shadow = computeIdentityStackShadow(
+          opts.plaintext,
+          opts.deliverableType,
+          cip,
+          null, // DAB not available at this layer
+        );
+        if (shadow) {
+          // Merge shadow into existing meta_json — never overwrite other fields
+          const curMeta = newVersion.meta_json || {};
+          await supabase.from("project_document_versions").update({
+            meta_json: { ...curMeta, identity_stack_shadow: shadow }
+          }).eq("id", newVersion.id);
+        }
+      } catch (e) {
+        // Non-fatal: shadow failure never blocks version creation
+        console.warn("[IDENTITY_STACK] Shadow computation failed (non-fatal):", e?.message || e);
+      }
     }
   }
   return newVersion;

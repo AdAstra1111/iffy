@@ -18,8 +18,6 @@ import { composeSystem, resolveGateway } from "../_shared/llm.ts";
 import { buildBeatGuidanceBlock, computeBeatTargets } from "../_shared/verticalDramaBeats.ts";
 import { loadLanePrefs, loadTeamVoiceProfile } from "../_shared/prefs.ts";
 import { buildTeamVoicePromptBlock } from "../_shared/teamVoice.ts";
-import { IDENTITY_STACK_SHADOW_ENABLED } from "../_shared/identityStackP0/identityStackFlags.ts";
-import { computeIdentityStackShadow } from "../_shared/identityStackP0/index.ts";
 import { isLargeRiskDocType, chunkPlanFor } from "../_shared/largeRiskRouter.ts";
 // Inlined from chunkRunner.ts — avoids bundler failing on chunkRunner.ts parse
 const FAILED_CHUNK_PLACEHOLDER_RE = /\[SECTION \d+ GENERATION FAILED/;
@@ -189,27 +187,6 @@ async function writeVersionSafe(supabaseClient, opts) {
     cceResult = await runCCEPostGeneration(supabaseClient, opts.projectId, opts.plaintext, opts.deliverableType || "other", `dev-engine-v2:${generatorId}`, opts.metaJson?.reverse_engineered === true);
     cceMeta = cceResult.metaPatch;
   }
-  // ── IDENTITY STACK SHADOW: compute silently, store in meta_json ──
-  const identityStackShadow = opts.projectId && opts.plaintext && opts.deliverableType && IDENTITY_STACK_SHADOW_ENABLED
-    ? await (async () => {
-        try {
-          const { data: canon } = await supabaseClient.from("project_canon")
-            .select("canon_json").eq("project_id", opts.projectId).maybeSingle();
-          const cip = canon?.canon_json?.identity_profile ?? null;
-          // DAB from existing meta_json if available
-          const dab = opts.metaJson?.dramatic_architecture_blueprint?.movements ?? null;
-          return computeIdentityStackShadow(
-            opts.plaintext,
-            opts.deliverableType,
-            cip,
-            dab,
-          );
-        } catch (e) {
-          console.warn("[IDENTITY_STACK] Shadow computation failed (non-fatal):", e?.message || e);
-          return null;
-        }
-      })()
-    : null;
   // Guard: prevent string→object coercion from double-serialized meta_json
   const safeMetaJson = opts.metaJson && typeof opts.metaJson === 'object' && !Array.isArray(opts.metaJson) ? opts.metaJson : {};
   try {
@@ -229,7 +206,6 @@ async function writeVersionSafe(supabaseClient, opts) {
         ...safeMetaJson,
         content_hash: contentHash,
         ...cceMeta,
-        ...(identityStackShadow ? { identity_stack_shadow: identityStackShadow } : {}),
       },
       parentVersionId: opts.parentVersionId || undefined,
       inputsUsed: opts.inputsUsed || {
