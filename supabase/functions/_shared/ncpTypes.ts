@@ -240,17 +240,25 @@ export function validateNarrativeContext(
   const errors: string[] = [];
   const warnings: string[] = [];
 
+  // Helper: extract an array from a field that may be either array or object-with-sub-array
+  function extractArray(val: any): any[] {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    return val.scenes || val.entries || val.items || val.data || [];
+  }
+
   if (!ncp.global_story_map) errors.push("global_story_map is required");
-  if (!ncp.sequence_map || ncp.sequence_map.length === 0) errors.push("sequence_map is required with at least 1 sequence");
-  if (!ncp.causal_chain || ncp.causal_chain.length === 0) errors.push("causal_chain is required with at least 1 entry");
+  if (!ncp.sequence_map || extractArray(ncp.sequence_map).length === 0) errors.push("sequence_map is required with at least 1 sequence");
+  if (!ncp.causal_chain || extractArray(ncp.causal_chain).length === 0) errors.push("causal_chain is required with at least 1 entry");
   if (!ncp.tension_curve) errors.push("tension_curve is required with at least 1 entry");
   if (!ncp.promise_registry) warnings.push("promise_registry is optional — no promises tracked");
-  if (!ncp.scene_function_registry || ncp.scene_function_registry.length === 0) errors.push("scene_function_registry is required with at least 1 entry");
+  if (!ncp.scene_function_registry || extractArray(ncp.scene_function_registry).length === 0) errors.push("scene_function_registry is required with at least 1 entry");
 
   // Validate sequence_map covers all scenes
-  if (ncp.sequence_map) {
+  const seqArray = extractArray(ncp.sequence_map);
+  if (seqArray.length > 0) {
     const seqSceneNums = new Set<number>();
-    for (const seq of ncp.sequence_map) {
+    for (const seq of seqArray) {
       const [start, end] = seq.scene_range;
       for (let s = start; s <= end; s++) seqSceneNums.add(s);
     }
@@ -260,28 +268,27 @@ export function validateNarrativeContext(
   }
 
   // Validate tension_curve covers all scenes
-  if (ncp.tension_curve) {
-    // Handle both array and {scenes: [...]} formats
-    const curveArray = Array.isArray(ncp.tension_curve) ? ncp.tension_curve : (ncp.tension_curve as any).scenes || [];
-    if (curveArray.length > 0) {
-      const tensionNums = new Set(curveArray.map((t: any) => t.scene_number));
-      for (let s = 1; s <= totalScenes; s++) {
-        if (!tensionNums.has(s)) errors.push(`scene ${s} missing from tension_curve`);
-      }
+  const curveArray = extractArray(ncp.tension_curve);
+  if (curveArray.length > 0) {
+    const tensionNums = new Set(curveArray.map((t: any) => t.scene_number));
+    for (let s = 1; s <= totalScenes; s++) {
+      if (!tensionNums.has(s)) errors.push(`scene ${s} missing from tension_curve`);
     }
   }
 
   // Validate causal_chain covers all scenes
-  if (ncp.causal_chain) {
-    const causalNums = new Set(ncp.causal_chain.map(c => c.scene_number));
+  const causalArray = extractArray(ncp.causal_chain);
+  if (causalArray.length > 0) {
+    const causalNums = new Set(causalArray.map((c: any) => c.scene_number));
     for (let s = 1; s <= totalScenes; s++) {
-      if (!causalNums.has(s)) warnings.push(`scene ${s} missing from causal_chain`); // Warning, not error — scene 1 has no trigger
+      if (!causalNums.has(s)) warnings.push(`scene ${s} missing from causal_chain`);
     }
   }
 
   // Validate scene_function_registry covers all scenes
-  if (ncp.scene_function_registry) {
-    const funcNums = new Set(ncp.scene_function_registry.map(f => f.scene_number));
+  const funcArray = extractArray(ncp.scene_function_registry);
+  if (funcArray.length > 0) {
+    const funcNums = new Set(funcArray.map((f: any) => f.scene_number));
     for (let s = 1; s <= totalScenes; s++) {
       if (!funcNums.has(s)) errors.push(`scene ${s} missing from scene_function_registry`);
     }
