@@ -945,6 +945,16 @@ function buildIdentityPrompt(characterName, shotType, ctx) {
     `- The same person must be recognizable across all identity reference images`,
     `- Consistent facial structure, skin tone, hair, and body proportions`,
     ``,
+    `REALISM ANCHOR — LIVE-ACTION CASTING REFERENCE:`,
+    `- This is a professional live-action casting photograph`,
+    `- Real human skin texture — pores, natural variation, micro-details visible`,
+    `- Natural facial anatomy — real bone structure, genuine proportions`,
+    `- Natural photographic lighting — soft key fill, no stylized or colored light`,
+    `- No beauty retouching, no skin smoothing, no idealized proportions`,
+    `- No illustration, painting, animation, or concept-art rendering`,
+    `- Must be indistinguishable from a photograph taken on a real casting set`,
+    `- Professional film-industry casting dossier quality`,
+    ``,
     `PHOTOREALISM: ${ctx.stylePolicy.styleDirectives}`,
     ``,
     `ABSOLUTE PROHIBITIONS:`,
@@ -2436,7 +2446,7 @@ FRAMING RULES:
           entity_id: entity_id || null,
           strategy_key: isIdentityGeneration ? "character_identity" : `lookbook_${section}`,
           prompt_used: prompt,
-          negative_prompt: isIdentityGeneration ? "cinematic scene, environmental context, narrative elements, dramatic lighting, props, costumes, action poses, text, watermarks, illustration, painting, CGI" : [
+          negative_prompt: isIdentityGeneration ? "environmental context, narrative elements, dramatic lighting, props, costumes, action poses, text, watermarks, illustration, painting, CGI" : [
             stylePolicy.negativeStyleConstraints,
             prestigeComposite.negativeBlock
           ].filter(Boolean).join(", "),

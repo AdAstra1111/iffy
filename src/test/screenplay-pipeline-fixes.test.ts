@@ -374,3 +374,90 @@ describe("Phase 2A — Narrative Context Package + Sequence Generation", () => {
     expect(genDocSource).toContain("generateScenePlanAndNCP(");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2B.1 — Dramatic Architecture Blueprint
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Phase 2B.1 — Dramatic Architecture Blueprint", () => {
+  let dabSource: string;
+  let ncpTypesSource: string;
+  let genDocSource: string;
+
+  beforeAll(() => {
+    dabSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/dramaticArchitectureBlueprint.ts"),
+      "utf-8"
+    );
+    ncpTypesSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/ncpTypes.ts"),
+      "utf-8"
+    );
+    genDocSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/generate-document/index.ts"),
+      "utf-8"
+    );
+  });
+
+  it("DAB module exists with validateDramaticArchitectureBlueprint", () => {
+    expect(dabSource).toContain("validateDramaticArchitectureBlueprint");
+  });
+
+  it("DAB module exists with generateDramaticArchitectureBlueprint", () => {
+    expect(dabSource).toContain("generateDramaticArchitectureBlueprint");
+  });
+
+  it("DAB module exports buildDABPromptBlock", () => {
+    expect(dabSource).toContain("buildDABPromptBlock");
+  });
+
+  it("ncpTypes.ts exports DramaticArchitectureBlueprint type", () => {
+    expect(ncpTypesSource).toContain("DramaticArchitectureBlueprint");
+  });
+
+  it("ncpTypes.ts exports DramaticMovement type with required fields", () => {
+    expect(ncpTypesSource).toContain("movement_number");
+    expect(ncpTypesSource).toContain("dramatic_payoff");
+    expect(ncpTypesSource).toContain("scene_cluster");
+    expect(ncpTypesSource).toContain("breathing_room_required_after");
+  });
+
+  it("ncpTypes.ts exports DramaticSceneSlot without Scene Plan fields", () => {
+    expect(ncpTypesSource).toContain("DramaticSceneSlot");
+    expect(ncpTypesSource).toContain("slot_in_movement");
+    // These should NOT be in DramaticSceneSlot
+    const slotDefStart = ncpTypesSource.indexOf("export interface DramaticSceneSlot");
+    const slotDefEnd = ncpTypesSource.indexOf("}", slotDefStart);
+    const slotDef = ncpTypesSource.slice(slotDefStart, slotDefEnd + 1);
+    expect(slotDef).not.toContain("slugline");
+    expect(slotDef).not.toContain("scene_number");
+    expect(slotDef).not.toContain("time_of_day");
+    expect(slotDef).not.toContain("characters_present");
+  });
+
+  it("generate-document imports DAB types", () => {
+    expect(genDocSource).toContain("import type { DramaticArchitectureBlueprint }");
+  });
+
+  it("generate-document imports DAB module", () => {
+    expect(genDocSource).toContain("generateDramaticArchitectureBlueprint");
+    expect(genDocSource).toContain("buildDABPromptBlock");
+    expect(genDocSource).toContain("getDABEstimatedSceneCount");
+  });
+
+  it("generate-document hoists dab variable for completion meta_json", () => {
+    expect(genDocSource).toContain("let dab: DramaticArchitectureBlueprint | null = null;");
+    expect(genDocSource).toContain("let dabBlock: string | undefined;");
+  });
+
+  it("generate-document stores DAB in completion meta_json", () => {
+    expect(genDocSource).toContain("dramatic_architecture_blueprint: dab || undefined");
+  });
+
+  it("generate-document generates DAB before Scene Plan in fresh path", () => {
+    expect(genDocSource).toContain("Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan");
+  });
+
+  it("generate-document generates DAB before Scene Plan in resume path", () => {
+    expect(genDocSource).toContain("Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan (resume path)");
+  });
+});

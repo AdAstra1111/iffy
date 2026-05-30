@@ -25,7 +25,9 @@ import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
 import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
+import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
 import { buildSceneExpansionPlan, buildExpansionPromptBlock } from "../_shared/sceneExpansionEngine.ts";
+import { generateDramaticArchitectureBlueprint, buildDABPromptBlock, validateDramaticArchitectureBlueprint, getDABEstimatedSceneCount } from "../_shared/dramaticArchitectureBlueprint.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
@@ -247,6 +249,7 @@ async function generateScenePlanAndNCP(
   formatRules: string,
   expansionPlanBlock?: string,
   expectedSceneCount?: number,
+  dabBlock?: string,
 ): Promise<{ scenes: ScenePlanEntry[]; narrativeContext: NarrativeContextPackage | null }> {
   const GL = "\n"; // Template literal helper to avoid escaping in heredoc
   const maxChars = 8000;
@@ -309,6 +312,7 @@ ${formatRules ? `FORMAT RULES:\n${formatRules.slice(0, 2000)}\n\n` : ""}
 
 Generate the complete Scene Plan + Narrative Context Package JSON.
 ${expansionPlanBlock || `Every beat must be expanded into 2-4 scenes. Total scenes should be 90-130 for a standard feature film.`}
+${dabBlock ? `\n\n${dabBlock}\n\nUse the Dramatic Architecture Blueprint above as your guide. Ensure the Scene Plan fulfills the dramatic architecture described in each movement. The movement structure, audience promises, character arcs, and breathing room requirements should all be respected in the scene list.\n` : ""}
 The "scenes" array has the individual scene entries. The "narrative_context" object has the global story map, causal chain, tension curve, promise registry, and scene function registry.`;
 
   const response = await fetch(gatewayUrl, {
@@ -2302,6 +2306,25 @@ ${existingCBContent.slice(0, 30000)}`;
           const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
           if (beatSheetText && beats && beats.length > 0) {
             try {
+              // Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan (resume path)
+              let resumeDabBlock: string | undefined;
+              let resumeDab: DramaticArchitectureBlueprint | null = null;
+              try {
+                resumeDab = await generateDramaticArchitectureBlueprint(
+                  apiKey, gw.url, project.title || "Untitled",
+                  upstreamBlocks.get("treatment") || "",
+                  upstreamBlocks.get("character_bible") || "",
+                  beatSheetText,
+                  upstreamBlocks.get("story_outline") || "",
+                  upstreamBlocks.get("concept_brief"),
+                  upstreamBlocks.get("format_rules"),
+                );
+                resumeDabBlock = buildDABPromptBlock(resumeDab);
+                console.log(`[generate-document] Resume DAB generated: ${getDABEstimatedSceneCount(resumeDab)} estimated scenes across ${resumeDab.dramatic_movements.length} movements`);
+              } catch (dabErr: any) {
+                console.warn(`[generate-document] Resume DAB generation failed (non-fatal): ${dabErr?.message?.slice(0, 200)}`);
+              }
+
               // Phase 2A.5: Build deterministic expansion plan before Scene Plan generation (resume path)
               let resumeExpBlock: string | undefined;
               let resumeExpCount: number | undefined;
@@ -2329,6 +2352,7 @@ ${existingCBContent.slice(0, 30000)}`;
                 upstreamBlocks.get("format_rules") || "",
                 resumeExpBlock,
                 resumeExpCount,
+                resumeDabBlock,  // Phase 2B.1: DAB context block
               );
               resumeScenePlanForMeta = sp;
               resumeSceneCountForPlan = sp.length;
@@ -2425,6 +2449,7 @@ ${existingCBContent.slice(0, 30000)}`;
                     chunks_total: resumeResult.totalChunks,
                     chunks_completed: resumeResult.completedChunks,
                     scenes: resumeScenePlanForMeta || undefined,
+                    dramatic_architecture_blueprint: resumeDab || undefined,
                   },
                 })
                 .eq("id", resumeVersionId);
@@ -2519,11 +2544,31 @@ ${existingCBContent.slice(0, 30000)}`;
       let scenePlanUpstreamBlock = "";
       let sceneCountForPlan: number | null = null;
       let ncpForChunkPlan: any = null;
+      let dab: DramaticArchitectureBlueprint | null = null;   // Phase 2B.1 — hoisted for completion meta_json
+      let dabBlock: string | undefined;                       // Phase 2B.1 — hoisted for prompt injection
       const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
       if (docType === "feature_script") {
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
         if (beatSheetText && beats && beats.length > 0) {
           try {
+            // Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan
+            try {
+              dab = await generateDramaticArchitectureBlueprint(
+                apiKey, gw.url, project.title || "Untitled",
+                upstreamBlocks.get("treatment") || "",
+                upstreamBlocks.get("character_bible") || "",
+                beatSheetText,
+                upstreamBlocks.get("story_outline") || "",
+                upstreamBlocks.get("concept_brief"),
+                upstreamBlocks.get("format_rules"),
+              );
+              dabBlock = buildDABPromptBlock(dab);
+              console.log(`[generate-document] DAB generated: ${getDABEstimatedSceneCount(dab)} estimated scenes across ${dab.dramatic_movements.length} movements`);
+            } catch (dabErr: any) {
+              // DAB failure is NOT fatal for feature_script — Scene Plan can still proceed
+              console.warn(`[generate-document] DAB generation failed (non-fatal): ${dabErr?.message?.slice(0, 200)}`);
+            }
+
             // Phase 2A.5: Build deterministic expansion plan before Scene Plan generation
             let expansionBlock: string | undefined;
             let expectedCount: number | undefined;
@@ -2552,6 +2597,7 @@ ${existingCBContent.slice(0, 30000)}`;
               upstreamBlocks.get("format_rules") || "",
               expansionBlock,
               expectedCount,
+              dabBlock,  // Phase 2B.1: DAB context block
             );
             scenePlanForMeta = scenePlan;
             sceneCountForPlan = scenePlan.length;
@@ -2756,6 +2802,7 @@ ${existingCBContent.slice(0, 30000)}`;
                 scenes: scenePlanForMeta || undefined,
                 narrative_context: ncpForChunkPlan || undefined,
                 scene_expansion_plan: ncpForChunkPlan?.scene_expansion_plan || undefined,
+                dramatic_architecture_blueprint: dab || undefined,
               } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid
