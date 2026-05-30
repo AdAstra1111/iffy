@@ -1370,7 +1370,17 @@ Deno.serve(async (req: Request) => {
       || message.includes("not found")
       || message.includes("Unknown action")
       || message.includes("Unauthorized");
-    return new Response(JSON.stringify({ error: message }), {
+    // Return structured error response with diagnostic info
+    const errorCode = isValidation ? "VALIDATION_ERROR" : "INTERNAL_ERROR";
+    return new Response(JSON.stringify({
+      error: message,
+      error_code: errorCode,
+      received_keys: Object.keys(body || {}),
+      expected_shape: {
+        action: "ingest | status | review | review_action | diff | runs",
+        projectId: "string (required for all actions except status which accepts project_id)",
+      },
+    }), {
       status: isValidation ? 400 : 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -38,30 +38,6 @@ export class SafeRouteBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    // Detect transient removeChild errors from Suspense+portal race conditions
-    const isRemoveChildError = error instanceof DOMException &&
-      error.name === 'NotFoundError' &&
-      error.message.includes('removeChild');
-    if (isRemoveChildError) {
-      this.recoveryAttempts++;
-      if (this.recoveryAttempts > MAX_RECOVERY_ATTEMPTS) {
-        console.error(
-          `[SafeRouteBoundary] Max recovery attempts (${MAX_RECOVERY_ATTEMPTS}) reached for removeChild errors. Showing permanent error. Refresh the page to retry.`,
-          error,
-        );
-        return;
-      }
-      console.warn(
-        `[SafeRouteBoundary] Transient removeChild error (Suspense+portal race) — recovering (attempt ${this.recoveryAttempts}/${MAX_RECOVERY_ATTEMPTS})`,
-      );
-      recoveryInFlightRef.current = true;
-      setTimeout(() => {
-        recoveryInFlightRef.current = false;
-        this.setState({ hasError: false, error: null });
-      }, 500);
-      return;
-    }
-
     // Detect "useAuth must be used within AuthProvider" — permanent provider error, never retry
     const isProviderError = error.message?.includes('useAuth must be used within AuthProvider');
     if (isProviderError) {

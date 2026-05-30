@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { InfoTooltip } from '@/components/InfoTooltip';
 import { useSeriesWriter, type SeriesEpisode, type SeriesProgress } from '@/hooks/useSeriesWriter';
@@ -451,6 +451,9 @@ function ScriptReaderDialog({
             <BookOpen className="h-4 w-4 text-primary" />
             {episode ? `EP ${String(episode.episode_number).padStart(2, '0')} — ${episode.title || `Episode ${episode.episode_number}`}` : 'Script'}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Viewing saved episode script content
+          </DialogDescription>
         </DialogHeader>
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -862,6 +865,9 @@ export function SeriesWriterPanel({ projectId }: Props) {
               <BookOpen className="h-4 w-4 text-primary" />
               Last Saved Draft
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Viewing last saved document content
+            </DialogDescription>
           </DialogHeader>
           {lastDocLoading ? (
             <div className="flex items-center justify-center py-12">

@@ -3,7 +3,7 @@
  * via the canon-decisions edge function.
  */
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,6 +81,9 @@ export function ResolveRenameDialog({
           <DialogTitle className="text-sm flex items-center gap-2">
             Resolve Name Conflict
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Resolve a name conflict for "{oldName}"
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <div>

@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { VisualPanelErrorBoundary } from '@/components/visual/VisualPanelErrorBoundary';
 import {
@@ -185,7 +185,8 @@ export function VisualUnitCandidateCard({
       {/* Reject Dialog */}
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle className="text-sm">Reject Candidate</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-sm">Reject Candidate</DialogTitle>
+          <DialogDescription className="sr-only">Reject this visual unit candidate</DialogDescription></DialogHeader>
           <Textarea placeholder="Reason (optional)" value={rejectReason} onChange={e => setRejectReason(e.target.value)} className="text-xs" />
           <DialogFooter>
             <Button size="sm" variant="outline" onClick={() => setRejectOpen(false)}>Cancel</Button>
@@ -197,7 +198,8 @@ export function VisualUnitCandidateCard({
       {/* Modify Dialog */}
       <Dialog open={modifyOpen} onOpenChange={setModifyOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle className="text-sm">Modify Candidate</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="text-sm">Modify Candidate</DialogTitle>
+          <DialogDescription className="sr-only">Modify this visual unit candidate with a JSON patch</DialogDescription></DialogHeader>
           <Textarea placeholder='JSON patch, e.g. {"logline": "Updated..."}'
             value={modifyPatch} onChange={e => setModifyPatch(e.target.value)}
             className="text-xs font-mono min-h-[120px]" />

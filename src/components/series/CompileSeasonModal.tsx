@@ -2,7 +2,7 @@
  * CompileSeasonModal — Dialog to compile all episode scripts into a master season document.
  */
 import { useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -125,6 +125,9 @@ export function CompileSeasonModal({
             <Sparkles className="h-4 w-4 text-primary" />
             Compile Season to Master Script
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            Compile selected episode scripts into a single master season document
+          </DialogDescription>
         </DialogHeader>
 
         <ScrollArea className="flex-1 min-h-0">

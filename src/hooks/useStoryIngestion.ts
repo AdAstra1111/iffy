@@ -166,7 +166,24 @@ export function useStoryIngestion(projectId: string | undefined) {
       });
       return data;
     } catch (err: any) {
-      console.error('[useStoryIngestion] Error:', err);
+      // Log full error context for diagnosis
+      const errorContext: Record<string, any> = {
+        message: err.message,
+        name: err.name,
+      };
+      // FunctionsHttpError carries response body in .context
+      if (err.context) {
+        errorContext.status = err.context.status;
+        errorContext.responseBody = err.context.data;
+      }
+      // Log request shape for contract validation
+      errorContext.requestPayload = {
+        action: 'ingest',
+        projectId,
+        force: opts?.force ?? true,
+        sourceKind: opts?.sourceKind ?? 'feature_script',
+      };
+      console.error('[useStoryIngestion] Error:', JSON.stringify(errorContext, null, 2), err);
       toast.error(err.message || 'Ingestion failed');
       return null;
     } finally {
