@@ -468,7 +468,7 @@ Generate each scene according to its assigned dramatic purpose. Let the scene tu
     const sceneRangeKey = chunk.chunkKey;
     const sceneRangeLabel = chunk.label;
     const modeLabel = docType === "production_draft" ? "expanding feature_script scenes" : "generating from Scene Plan";
-    chunkPrompt = `You are generating screenplay content for ${sceneRangeLabel} of "$${projectTitle}".
+    chunkPrompt = `You are generating screenplay content for ${sceneRangeLabel} of "${projectTitle}".
 Document type: ${docType.replace(/_/g, " ")}
 Strategy: Scene-by-scene — ${modeLabel}.
 
@@ -477,13 +477,15 @@ CRITICAL RULES:
 - Output ONLY screenplay content for ${sceneRangeLabel}.
 - Write COMPLETE scenes: INT./EXT. slugline, action paragraphs, character names, dialogue.
 - Every scene in this batch must be expanded into full screenplay format.
-|- Output SCENE N markers (SCENE 1, SCENE 2...) before each scene for consistent numbering across the assembled document.
+- Output SCENE N markers (SCENE 1, SCENE 2...) before each scene for consistent numbering across the assembled document.
 - Do NOT compress, summarise, or skip any scene in this batch.
 - Maintain consistent character voice, tone, and story continuity.
 - Each scene must have its own slugline — do NOT merge adjacent scenes.
 - Action lines should be descriptive and visual. Dialogue should reveal character and advance plot.
 - Do NOT use placeholder text, "(CONTINUED)" markers, or transitional phrases like "we see".
-|- Do NOT include meta-commentary, subtext tables, meaning shift sections, analytical/deconstructive text, or any material describing dramatic function. Output ONLY screenplay content — no tables, bullet points, or analysis.
+- Do NOT include meta-commentary, subtext tables, meaning shift sections, analytical/deconstructive text, or any material describing dramatic function. Output ONLY screenplay content — no tables, bullet points, or analysis.
+- Do NOT include metadata headers like "Deliverable Type", "Completion Status", or "Completeness Check". Start directly with SCENE 1, sluglines, and dialogue.
+- ${docType === "feature_script" ? "TARGET LENGTH — FEATURE FILM: This screenplay must reach 90–120 pages (approximately 135,000–180,000 characters). Each scene MUST be 2–4 pages of full screenplay format (approximately 3,000–6,000 characters) with complete sluglines, action, and dialogue. Do NOT stop writing until each scene is fully dramatized." : "Write each scene in full screenplay format with complete action and dialogue."}
 
 ${additionalContext ? `CREATIVE DIRECTION:\n${additionalContext}\n` : ""}
 ${previousChunkEnding ? `PREVIOUS SCENE BATCH ENDING (for continuity):\n...${previousChunkEnding}\n` : ""}
