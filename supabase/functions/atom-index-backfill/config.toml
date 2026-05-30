@@ -1,0 +1,8 @@
+[jwt]
+verify_jwt = false
+
+[functions]
+timeout = 300
+
+[functions.atom-index-backfill]
+verify_jwt = false

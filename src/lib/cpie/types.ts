@@ -42,6 +42,10 @@ export interface CPIEPCPContext {
   intelligence?: string;         // e.g. "animal", "sapient", "instinctual", "swarm"
   symbolism?: string;            // e.g. "power", "wisdom", "fear", "freedom", "none"
   narrative_function?: string;   // e.g. "transport", "companion", "antagonist", "ambient"
+  // Visual Language fields (project-level inference)
+  visual_tone?: string;            // "dark" | "bright" | "moody" | "vibrant" | "monochromatic" (from PCP VisualContext)
+  style_influences?: string[];     // ["film_noir", "german_expressionism"] (from PCP VisualContext)  
+  production_language?: string;    // "gritty_realism" | "heightened_reality" | "magical_realism" | "minimalist" (from PCP VisualContext)
 }
 
 // Registry rule types

@@ -23,6 +23,7 @@ import { runChunkedGeneration, resumeChunkedGeneration } from "../_shared/chunkR
 import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_shared/chunkValidator.ts";
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
 import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
+import { atomizeVersion } from "../_shared/atomizeVersion.ts";
 import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
 import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
@@ -3499,6 +3500,29 @@ ${existingCBContent.slice(0, 30000)}`;
         console.error("[generate-document] treatment_acts insert failed:", taErr.message);
       } else {
         console.log("[generate-document] treatment_acts: inserted " + taRows.length + " rows for treatment_id=" + docRecord!.id);
+      }
+    }
+
+    // ── Phase 5/6: Atomize version ──
+    // Non-blocking post-processing — extraction failure does NOT invalidate the document.
+    // Extracted atoms REPLACE previous atoms for this origin_doc_id.
+    // Staleness flags are generated for directly derived documents (one-hop only).
+    if (content && content.length > 50 && newVersion?.id) {
+      try {
+        const atomResult = await atomizeVersion(
+          supabase,
+          projectId,
+          docType,
+          newVersion.id,
+          content
+        );
+        if (atomResult.errors.length > 0) {
+          console.warn("[generate-document] Atomization had non-blocking errors:", atomResult.errors.slice(0, 3).join("; "));
+        }
+        console.log(`[generate-document] Atomization: ${atomResult.atoms_written} atoms, ${atomResult.dependencies_written} deps, ${atomResult.staleness_flags_generated} staleness flags`);
+      } catch (atomErr: any) {
+        // Non-blocking — document validity never depends on atom extraction
+        console.warn("[generate-document] Atomization failed (non-blocking):", atomErr?.message);
       }
     }
 

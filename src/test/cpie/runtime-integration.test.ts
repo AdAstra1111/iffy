@@ -266,7 +266,9 @@ describe('Provenance Survival', () => {
 
     // Check all inferences carry full provenance
     for (const [domain, domainResults] of Object.entries(result.domains)) {
-      for (const entityResult of domainResults) {
+      // VL is a single object (project-level), not an array
+      const entityResults = Array.isArray(domainResults) ? domainResults : (domainResults ? [domainResults] : []);
+      for (const entityResult of entityResults) {
         for (const inf of entityResult.inferences) {
           expect(inf.source_type).toMatch(/inferred/);
           expect(inf.confidence_score).toBeGreaterThanOrEqual(0);
@@ -329,10 +331,12 @@ describe('Enforcement — No Inference Bypass', () => {
 
     // Verify all inferences come from registry anchors
     for (const domainResults of Object.values(result.domains)) {
-      for (const entityResult of domainResults) {
+      // VL is a single object (project-level), not an array
+      const entityResults = Array.isArray(domainResults) ? domainResults : (domainResults ? [domainResults] : []);
+      for (const entityResult of entityResults) {
         for (const inf of entityResult.inferences) {
           // Every inference references a registry anchor
-          expect(inf.registry_anchor_id).toMatch(/^w[d_]|^p[r_]|^v[h_]|^c[r_]/);
+          expect(inf.registry_anchor_id).toMatch(/^w[d_]|^p[r_]|^v[h_]|^c[r_]|^vl_|^pd_/);
           // Reasoning always starts with registry_rule
           expect(inf.reasoning[0]).toMatch(/^registry_rule/);
         }

@@ -13,7 +13,11 @@ import { inferVehicle } from './vehicle';
 import type { VehicleInferenceOutput } from './vehicle';
 import { inferCreature } from './creature';
 import { inferLocation } from './location';
+import { inferVL } from './vl';
+import { inferPD } from './pd';
 import type { LocationInferenceOutput } from './location';
+import type { VLInferenceOutput } from './vl';
+import type { PDInferenceOutput } from './pd';
 import type { CreatureInferenceOutput } from './creature';
 import type { WardrobeInferenceOutput } from './wardrobe';
 import type { PropInferenceOutput } from './props';
@@ -29,6 +33,8 @@ export interface CPIESessionResult {
     vehicle: VehicleInferenceOutput[];
     creature: CreatureInferenceOutput[];
     location: LocationInferenceOutput[];
+    vl: VLInferenceOutput;
+    pd: PDInferenceOutput[];
   };
   ics: Record<string, number>;
   registry_metadata: ReturnType<typeof getRegistryMetadata>;
@@ -45,6 +51,8 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
   const domainVehicle: VehicleInferenceOutput[] = [];
   const domainCreature: CreatureInferenceOutput[] = [];
   const domainLocation: LocationInferenceOutput[] = [];
+  let domainVL: VLInferenceOutput = { project_id: context.project_id, inferences: [], inference_count: 0, generated_at: new Date().toISOString() };
+  const domainPD: PDInferenceOutput[] = [];
 
   // Iterate over all entities in the PCP profession_map
   for (const [entityKey, entry] of Object.entries(context.profession_map)) {
@@ -78,12 +86,22 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
     if (creatureResult.inference_count > 0) {
       domainCreature.push(creatureResult);
     }
+  }
 
-    // Location inference
-    if (entityKey === 'venue' || entityKey === 'location') {
-      const locationResult = inferLocation(context, entity);
-      if (locationResult.inference_count > 0) {
-        domainLocation.push(locationResult);
+  // Visual Language inference (project-level — single call after entity loop)
+  domainVL = inferVL(context);
+
+  // Production Design inference (venue-level — per-entity)
+  // PD uses spatial_function from LC context
+  for (const [entityKey, entry] of Object.entries(context.profession_map)) {
+    for (const spFunc of ['hospitality', 'residential', 'civic', 'commercial', 'military', 'industrial', 'religious']) {
+      const pdResult = inferPD(context, {
+        entity_key: entityKey,
+        canonical_name: entry.character_name,
+        spatial_function: spFunc,
+      });
+      if (pdResult.inference_count > 0) {
+        domainPD.push(pdResult);
       }
     }
   }
@@ -95,11 +113,13 @@ export function runCPIEInference(context: CPIEPCPContext): CPIESessionResult {
   ics.vehicle = calculateICS(domainVehicle.flatMap(v => v.inferences), 'vehicle');
   ics.creature = calculateICS(domainCreature.flatMap(c => c.inferences), 'creature');
   ics.location = calculateICS(domainLocation.flatMap(l => l.inferences), 'location');
+  ics.vl = calculateICS(domainVL.inferences, 'vl');
+  ics.pd = calculateICS(domainPD.flatMap(p => p.inferences), 'pd');
 
   return {
     project_id: context.project_id,
     context,
-    domains: { wardrobe: domainWardrobe, props: domainProps, vehicle: domainVehicle, creature: domainCreature, location: domainLocation },
+    domains: { wardrobe: domainWardrobe, props: domainProps, vehicle: domainVehicle, creature: domainCreature, location: domainLocation, vl: domainVL, pd: domainPD },
     ics,
     registry_metadata: getRegistryMetadata(),
     generated_at: new Date().toISOString(),
