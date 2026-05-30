@@ -1604,6 +1604,32 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
           repairAction: "regen_all",
         };
       }
+    } else if (plan.strategy === "scene_indexed") {
+      // scene_indexed: screenplay content has no section-key headings (SC##-SC##).
+      // validateSectionedContent would ALWAYS fail looking for those keys in
+      // screenplay prose, triggering infinite repair loops.
+      // Instead: check sluglines + dialogue for basic screenplay structure.
+      const sluglineCount = (assembledContent.match(/^(?:INT\.|EXT\.|INT\/EXT\.)\s/gm) || []).length;
+      const dialogueCount = (assembledContent.match(/^[A-Z][A-Z\s]{2,}$/gm) || []).length;
+      const failures: any[] = [];
+      if (sluglineCount < 2) {
+        failures.push({ type: "missing_sluglines", detail: `Screenplay has only ${sluglineCount} sluglines` });
+      }
+      if (dialogueCount < 3) {
+        failures.push({ type: "missing_dialogue", detail: `Screenplay has only ${dialogueCount} dialogue blocks` });
+      }
+      const bannedHit = hasBannedSummarizationLanguage(assembledContent);
+      if (bannedHit) {
+        failures.push({ type: "banned_phrase", detail: "Assembly contains banned summarization language" });
+      }
+      validationResult = {
+        pass: failures.length === 0,
+        failures,
+        missingIndices: [],
+        missingSections: [],
+        bannedPhraseHits: bannedHit ? ["banned_language_in_assembly"] : [],
+        repairAction: failures.length > 0 ? "regen_all" : "none",
+      };
     } else {
       validationResult = validateSectionedContent(
         assembledContent,
