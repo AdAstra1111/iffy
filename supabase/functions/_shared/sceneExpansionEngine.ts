@@ -18,7 +18,9 @@ import type {
   ProjectMetadata,
   SequencePurpose,
   PacingDirective,
+  SceneArchitecture,
 } from "./ncpTypes.ts";
+import { buildSceneArchitecturePromptBlock } from "./sceneArchitecture.ts";
 
 // ── Constants ──
 
@@ -536,8 +538,19 @@ function inferSeqPurpose(slots: ExpansionSceneSlot[], seqNum: number): SequenceP
 /**
  * Build the human-readable scene expansion block for the LLM prompt.
  * This tells the LLM exactly how many scenes to generate and what each should do.
+ *
+ * If a SceneArchitecture is provided, it overrides the formulaic expansion
+ * with DAB-driven scene slot requirements.
  */
-export function buildExpansionPromptBlock(plan: SceneExpansionPlan): string {
+export function buildExpansionPromptBlock(
+  plan: SceneExpansionPlan,
+  sceneArchitecture?: SceneArchitecture,
+): string {
+  // If SceneArchitecture provided, use DAB-driven prompt block
+  // (imported dynamically to avoid circular dependency)
+  if (sceneArchitecture) {
+    return buildSceneArchitecturePromptBlock(sceneArchitecture);
+  }
   const lines: string[] = [];
 
   lines.push(`=== SCENE EXPANSION PLAN ===`);

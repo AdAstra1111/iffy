@@ -28,6 +28,8 @@ import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpType
 import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
 import { buildSceneExpansionPlan, buildExpansionPromptBlock } from "../_shared/sceneExpansionEngine.ts";
 import { generateDramaticArchitectureBlueprint, buildDABPromptBlock, validateDramaticArchitectureBlueprint, getDABEstimatedSceneCount } from "../_shared/dramaticArchitectureBlueprint.ts";
+import { buildSceneArchitecture, buildSceneArchitecturePromptBlock, validateSceneArchitecture } from "../_shared/sceneArchitecture.ts";
+import type { SceneArchitecture } from "../_shared/ncpTypes.ts";
 import { findSectionDef } from "../_shared/deliverableSectionRegistry.ts";
 import { findOrCreateCharacterEntity } from "../_shared/characterDedupUtils.ts";
 import {
@@ -2546,6 +2548,7 @@ ${existingCBContent.slice(0, 30000)}`;
       let ncpForChunkPlan: any = null;
       let dab: DramaticArchitectureBlueprint | null = null;   // Phase 2B.1 — hoisted for completion meta_json
       let dabBlock: string | undefined;                       // Phase 2B.1 — hoisted for prompt injection
+      let sa: SceneArchitecture | null = null;                // Phase 2B.2 — hoisted for completion meta_json
       const beats = docType === "feature_script" ? await resolveBeatsFromBeatSheet(supabase, projectId) : null;
       if (docType === "feature_script") {
         const beatSheetText = upstreamBlocks.get("beat_sheet") || "";
@@ -2563,16 +2566,34 @@ ${existingCBContent.slice(0, 30000)}`;
                 upstreamBlocks.get("format_rules"),
               );
               dabBlock = buildDABPromptBlock(dab);
+              // Phase 2B.2: Convert DAB to Scene Architecture
+              try {
+                const saValidation = validateDramaticArchitectureBlueprint(dab);
+                if (saValidation.valid) {
+                  sa = buildSceneArchitecture(dab);
+                  const saValidation2 = validateSceneArchitecture(sa);
+                  if (!saValidation2.valid) {
+                    throw new Error(`Scene Architecture validation failed: ${saValidation2.errors.join("; ")}`);
+                  }
+                  console.log(`[generate-document] Scene Architecture built: ${sa.total_slots} slots across ${sa.sequence_hints.length} sequences`);
+                }
+              } catch (saErr: any) {
+                console.warn(`[generate-document] Scene Architecture conversion failed (SA-driven expansion unavailable): ${saErr?.message?.slice(0, 200)}`);
+                sa = null;
+              }
               console.log(`[generate-document] DAB generated: ${getDABEstimatedSceneCount(dab)} estimated scenes across ${dab.dramatic_movements.length} movements`);
             } catch (dabErr: any) {
               // DAB failure is NOT fatal for feature_script — Scene Plan can still proceed
               console.warn(`[generate-document] DAB generation failed (non-fatal): ${dabErr?.message?.slice(0, 200)}`);
             }
 
-            // Phase 2A.5: Build deterministic expansion plan before Scene Plan generation
-            let expansionBlock: string | undefined;
-            let expectedCount: number | undefined;
-            if (beats && beats.length > 0) {
+            // Phase 2B.2: Use Scene Architecture as expansion block if available
+            if (sa) {
+              expansionBlock = buildSceneArchitecturePromptBlock(sa);
+              expectedCount = sa.total_slots;
+              console.log(`[generate-document] Using DAB-driven Scene Architecture: ${sa.total_slots} slots (replaces formulaic expansion)`);
+            } else {
+              // Phase 2A.5: Fallback to formulaic expansion plan
               try {
                 const expPlan = buildSceneExpansionPlan(beats, {
                   genre: project.format || "thriller",
@@ -2582,10 +2603,9 @@ ${existingCBContent.slice(0, 30000)}`;
                 });
                 expansionBlock = buildExpansionPromptBlock(expPlan);
                 expectedCount = expPlan.total_scenes;
-                console.log(`[generate-document] Scene expansion plan: ${expPlan.total_scenes} scenes, ${expPlan.sequences.length} sequences`);
+                console.log(`[generate-document] Scene expansion plan (formulaic): ${expPlan.total_scenes} scenes, ${expPlan.sequences.length} sequences`);
               } catch (expErr) {
                 console.warn(`[generate-document] Scene expansion engine failed: ${expErr}`);
-                // Continue without expansion plan — fall back to LLM-guided count
               }
             }
             const { scenes: scenePlan, narrativeContext: ncp } = await generateScenePlanAndNCP(
@@ -2803,6 +2823,7 @@ ${existingCBContent.slice(0, 30000)}`;
                 narrative_context: ncpForChunkPlan || undefined,
                 scene_expansion_plan: ncpForChunkPlan?.scene_expansion_plan || undefined,
                 dramatic_architecture_blueprint: dab || undefined,
+                scene_architecture: sa || undefined,
               } })
               .eq("id", chunkVersion!.id);
             // NOW set latest_version_id — content is confirmed valid

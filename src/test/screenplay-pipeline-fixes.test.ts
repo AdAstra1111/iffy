@@ -461,3 +461,84 @@ describe("Phase 2B.1 — Dramatic Architecture Blueprint", () => {
     expect(genDocSource).toContain("Phase 2B.1: Generate Dramatic Architecture Blueprint before Scene Plan (resume path)");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 2B.2 — Scene Architecture Conversion
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Phase 2B.2 — Scene Architecture Conversion", () => {
+  let sceneArchSource: string;
+  let ncpTypesSource: string;
+  let genDocSource: string;
+  let seeSource: string;
+
+  beforeAll(() => {
+    sceneArchSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/sceneArchitecture.ts"),
+      "utf-8"
+    );
+    ncpTypesSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/ncpTypes.ts"),
+      "utf-8"
+    );
+    genDocSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/generate-document/index.ts"),
+      "utf-8"
+    );
+    seeSource = readFileSync(
+      resolve(PROJECT_ROOT, "supabase/functions/_shared/sceneExpansionEngine.ts"),
+      "utf-8"
+    );
+  });
+
+  it("SceneArchitecture types exist in ncpTypes.ts", () => {
+    expect(ncpTypesSource).toContain("SceneArchitecture");
+    expect(ncpTypesSource).toContain("SceneArchitectureSlot");
+    expect(ncpTypesSource).toContain("SceneArchitectureSequence");
+  });
+
+  it("SceneArchitecture module exports buildSceneArchitecture", () => {
+    expect(sceneArchSource).toContain("buildSceneArchitecture");
+  });
+
+  it("SceneArchitecture module exports validateSceneArchitecture", () => {
+    expect(sceneArchSource).toContain("validateSceneArchitecture");
+  });
+
+  it("SceneArchitecture module exports buildSceneArchitecturePromptBlock", () => {
+    expect(sceneArchSource).toContain("buildSceneArchitecturePromptBlock");
+  });
+
+  it("SEE imports buildSceneArchitecturePromptBlock", () => {
+    expect(seeSource).toContain("buildSceneArchitecturePromptBlock");
+  });
+
+  it("SEE buildExpansionPromptBlock accepts SceneArchitecture override", () => {
+    expect(seeSource).toContain("sceneArchitecture?: SceneArchitecture");
+  });
+
+  it("generate-document imports SceneArchitecture module", () => {
+    expect(genDocSource).toContain("buildSceneArchitecture");
+    expect(genDocSource).toContain("validateSceneArchitecture");
+  });
+
+  it("generate-document hoists sa variable", () => {
+    expect(genDocSource).toContain("let sa: SceneArchitecture | null = null;");
+  });
+
+  it("generate-document builds SceneArchitecture after DAB", () => {
+    expect(genDocSource).toContain("Phase 2B.2: Convert DAB to Scene Architecture");
+  });
+
+  it("generate-document uses SA-driven expansion when available", () => {
+    expect(genDocSource).toContain("Using DAB-driven Scene Architecture");
+  });
+
+  it("generate-document stores SceneArchitecture in meta_json", () => {
+    expect(genDocSource).toContain("scene_architecture: sa || undefined");
+  });
+
+  it("SEE formulaic expansion still works as fallback", () => {
+    expect(seeSource).toContain("buildSceneExpansionPlan");
+    expect(genDocSource).toContain("Scene expansion plan (formulaic)");
+  });
+});

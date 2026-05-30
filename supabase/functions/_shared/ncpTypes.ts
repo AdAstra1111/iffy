@@ -548,3 +548,56 @@ export interface DramaticSceneSlot {
   function: string;
   purpose: string;
 }
+
+// ── Phase 2B.2 — Scene Architecture Types ──────────────────────────────────
+
+export type SceneWeight = "light" | "light-medium" | "medium" | "medium-heavy" | "heavy";
+export type PacingMode = "slow" | "medium" | "fast" | "escalating" | "de-escalating" | "oscillating";
+export type EmotionalTarget = string;
+
+/**
+ * The full Scene Architecture — a deterministic conversion of the DAB
+ * into numbered scene slots that the Scene Plan LLM must fill.
+ */
+export interface SceneArchitecture {
+  total_slots: number;
+  slots: SceneArchitectureSlot[];
+  slots_by_movement: Record<number, number[]>;  // movement_number → slot_numbers
+  per_act: Record<number, number>;              // act → slot count
+  sequence_hints: SceneArchitectureSequence[];
+}
+
+/** A single scene slot in the Scene Architecture */
+export interface SceneArchitectureSlot {
+  slot_number: number;
+  act: number;
+  movement_number: number;
+  movement_name: string;
+  source_reference: string;
+  function_type: string;
+  scene_weight: SceneWeight;
+  pacing: PacingMode;
+  emotional_target: EmotionalTarget;
+  dramatic_reason: string;
+  breathing_room_after: boolean;
+  spectacle_flag: boolean;
+  required_by_dab_section: string;
+  estimated_pages: number;
+}
+
+/** Reference back to DAB section that required this slot */
+export interface ArchitectureSourceRef {
+  section: "character_arc" | "relationship_arc" | "mystery" | "spectacle" | "emotional" | "genre_obligation" | "breathing_room";
+  detail: string;
+}
+
+/** A sequence grouping within the Scene Architecture (used by chunkRunner) */
+export interface SceneArchitectureSequence {
+  number: number;
+  movement_numbers: number[];
+  slot_range: [number, number];
+  slot_count: number;
+  act: number;
+  purpose: string;
+  pacing_directive: PacingMode;
+}
