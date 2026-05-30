@@ -14,6 +14,7 @@
 import { resolveGateway } from "./llm.ts";
 import { type ChunkPlan, type ChunkPlanEntry, chunkPlanFor, isEpisodicDocType, resolveBeatAct } from "./largeRiskRouter.ts";
 import { validateEpisodicChunk, validateEpisodicContent, validateSectionedContent, validateBeatSequentialChunk, hasBannedSummarizationLanguage, hasScreenplayFormat } from "./chunkValidator.ts";
+import { persistVersion } from "./doc-os.ts";
 
 // ── Types ──
 
@@ -1899,15 +1900,21 @@ export async function runChunkedGeneration(opts: ChunkRunnerOptions): Promise<Ch
     } : {}),
   };
 
-  await supabase
-    .from("project_document_versions")
-    .update({
-      plaintext: assembledContent,
-      assembled_from_chunks: true,
-      assembled_chunk_count: plan.totalChunks,
-      meta_json: mergedMeta,
-    })
-    .eq("id", versionId);
+  // ── Phase 7.5D: Route assembly write through persistVersion() ──
+  // This fires Identity Stack shadow on the now-complete content.
+  await persistVersion(supabase, {
+    projectId: opts.projectId,
+    documentId,
+    docType,
+    versionId,
+    operation: "UPDATE_CONTENT",
+    plaintext: assembledContent,
+    metaJson: mergedMeta,
+    assembledFromChunks: true,
+    assembledChunkCount: plan.totalChunks,
+    generatorId: "dev-engine-v2-rewrite-chunked",
+    status: "draft",
+  });
 
   // ── BEAT SHEET EXPLOSION: After assembly, parse act-level output into individual beat chunks ──
   // Each beat becomes its own chunk in project_document_chunks, enabling per-beat rewrite.

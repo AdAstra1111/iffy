@@ -4971,32 +4971,13 @@ Deno.serve(async (req)=>{
         awaiting_approval: job.awaiting_approval,
         pending_decisions_count: Array.isArray(job.pending_decisions) ? job.pending_decisions.length : 0
       }));
-      // Fire self-chain to trigger run-next (same pattern as lines ~12519-12533)
-      const selfUrl = `${supabaseUrl}/functions/v1/auto-run`;
-      const chainPromise = fetch(selfUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${serviceKey}`
-        },
-        body: JSON.stringify({
-          action: "run-next",
-          jobId
-        })
-      }).then((r)=>{
-        if (!r.ok) console.error("[auto-run] recover self-chain HTTP error", {
-          status: r.status,
-          jobId
-        });
-        else console.log("[auto-run] recover self-chain success", {
-          jobId,
-          status: r.status
-        });
-      }).catch((e)=>console.error("[auto-run] recover self-chain fetch failed", {
-          jobId,
-          error: e?.message
-        }));
-      waitUntilSafe(chainPromise);
+      // Instead of firing a self-chain fetch (which may freeze again), set job to
+      // waiting_for_next and let the frontend polling loop pick up the next step.
+      await supabase.from("auto_run_jobs").update({
+        status: "waiting_for_next",
+        is_processing: false,
+        updated_at: new Date().toISOString(),
+      }).eq("id", jobId);
       return respondWithJob(supabase, jobId, "run-next");
     }
     // ═══════════════════════════════════════
@@ -13266,37 +13247,21 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
                     }
                   }
                   if (shouldContinue) {
-                    console.log("[auto-run] self-chaining run-next after bg task", {
+                    console.log("[auto-run] persistent_step_complete — setting waiting_for_next", {
                       jobId,
                       step: postJob.step_count,
                       max: postJob.max_total_steps
                     });
-                    const selfUrl = `${supabaseUrl}/functions/v1/auto-run`;
-                    const chainPromise = fetch(selfUrl, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        "Authorization": `Bearer ${serviceKey}`
-                      },
-                      body: JSON.stringify({
-                        action: "run-next",
-                        jobId
-                      })
-                    }).then((r)=>{
-                      if (!r.ok) console.error("[auto-run] self-chain HTTP error", {
-                        status: r.status,
-                        jobId
-                      });
-                      else console.log("[auto-run] self-chain success", {
-                        jobId,
-                        status: r.status
-                      });
-                    }).catch((e)=>console.error("[auto-run] self-chain fetch failed", {
-                        jobId,
-                        error: e?.message
-                      }));
-                    // Track the chain fetch in waitUntil so isolate stays alive
-                    waitUntilSafe(chainPromise);
+                    // Update job state to waiting instead of firing an unreliable self-chain fetch.
+                    // The frontend's polling loop (runLoop) will pick up the waiting state
+                    // and fire the next explicit processNextStep invocation.
+                    // This avoids the self-chain freeze caused by EdgeRuntime.waitUntil
+                    // not reliably keeping the Deno isolate alive for the HTTP fetch to complete.
+                    delay(updateJobStatus, 100)(supabase, jobId, {
+                      status: "waiting_for_next",
+                      is_processing: false,
+                      updated_at: new Date().toISOString()
+                    });
                   }
                 } else {
                   console.log("[auto-run] self-chain skipped: step budget exhausted", {
