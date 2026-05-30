@@ -126,7 +126,14 @@ export function useStoryIngestion(projectId: string | undefined) {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // FunctionsHttpError — extract actual error message from response body
+        const actualMessage = (error as any)?.context?.data?.error
+          || (error as any)?.context?.data
+          || error.message
+          || 'Unknown error';
+        throw new Error(actualMessage);
+      }
       if (data?.error) throw new Error(data.error);
 
       const manifest = data.manifest as IngestionManifest;

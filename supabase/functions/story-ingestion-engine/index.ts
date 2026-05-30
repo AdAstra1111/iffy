@@ -1363,8 +1363,15 @@ Deno.serve(async (req: Request) => {
     throw new Error(`Unknown action: ${action}`);
   } catch (err: any) {
     console.error("[story-ingestion] Error:", err);
-    return new Response(JSON.stringify({ error: err.message || String(err) }), {
-      status: 400,
+    const message = err.message || String(err);
+    // Distinguish validation errors (400) from internal errors (500)
+    const isValidation = message.includes("required")
+      || message.includes("Invalid")
+      || message.includes("not found")
+      || message.includes("Unknown action")
+      || message.includes("Unauthorized");
+    return new Response(JSON.stringify({ error: message }), {
+      status: isValidation ? 400 : 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
