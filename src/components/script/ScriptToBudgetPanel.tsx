@@ -68,23 +68,27 @@ export function ScriptToBudgetPanel({ projectId, scriptText, format, genres, bud
     const maxAttempts = 20; // ~60s total polling
     const tryFetch = async () => {
       if (cancelled) return;
-      const { data } = await supabase
-        .from('project_documents')
-        .select('extracted_text')
-        .eq('project_id', projectId)
-        .not('extracted_text', 'is', null)
-        .limit(1)
-        .maybeSingle();
-      if (cancelled) return;
-      if (data?.extracted_text) {
-        setResolvedText(data.extracted_text);
-      } else {
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(tryFetch, 3000);
-        } else {
-          setFetchFailed(true);
+      try {
+        const { data } = await supabase
+          .from('project_documents')
+          .select('extracted_text')
+          .eq('project_id', projectId)
+          .not('extracted_text', 'is', null)
+          .limit(1)
+          .maybeSingle();
+        if (cancelled) return;
+        if (data?.extracted_text) {
+          setResolvedText(data.extracted_text);
+          return;
         }
+      } catch (err) {
+        console.warn('[ScriptToBudget] extraction fetch error (non-fatal, retrying):', err);
+      }
+      attempts++;
+      if (attempts < maxAttempts) {
+        setTimeout(tryFetch, 3000);
+      } else {
+        setFetchFailed(true);
       }
     };
     tryFetch();
