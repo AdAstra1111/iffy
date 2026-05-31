@@ -362,13 +362,13 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
         const { data, error } = await supabase
           .from('atoms')
           .upsert(record)
-          .select('id, status')
+          .select('id')
           .maybeSingle();
 
         if (error) {
           result.errors.push(`upsert ${emission.entity_key}: ${error.message}`);
         } else if (data) {
-          result.atoms.push(data as { id: string; status: string });
+          result.atoms.push(data as { id: string });
           result.inserted_count++;
         }
       }
