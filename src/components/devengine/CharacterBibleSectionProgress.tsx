@@ -49,7 +49,7 @@ export function CharacterBibleSectionProgress({
     let current: { title: string; content: string } | null = null;
 
     for (const line of lines) {
-      const isHeader = /^##\s+/i.test(line.trim()) || /^###\s+/i.test(line.trim());
+      const isHeader = /^##\s+(?!\#)/i.test(line.trim());
       if (isHeader && line.trim()) {
         if (current && current.content.trim()) {
           result.push(current);
