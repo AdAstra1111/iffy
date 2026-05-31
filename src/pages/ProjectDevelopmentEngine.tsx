@@ -1742,14 +1742,35 @@ export default function ProjectDevelopmentEngine() {
         }
       }
 
-      // Character bibles: route to the sectioned chunk-based rewrite pipeline
-      // (rather than single-pass per-character rewrite which hits 150s timeout)
-      // The pipeline splits by ## headers and rewrites each section independently.
-      // Skip the per-character path — falls through to SECTIONED_REWRITE_TYPES below.
-      if (false && (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
-        // This block is disabled — character_bible routes through the sectioned rewrite pipeline
-        // which provides real progress tracking and avoids the 150s edge function timeout
-        // that the per-character rewrite (backend line 9355) repeatedly hits.
+      // Character bibles: rewrite each character section independently
+      // to avoid the 150s timeout when all 4+ characters are processed in a single call.
+      // Each per-character call is fast (~30s) and fits comfortably within the timeout.
+      // Sections are chained so each rewrite builds on the previous one.
+      if ((selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
+        const fullText = selectedVersion?.plaintext || selectedDoc?.plaintext || '';
+        // Parse character sections by ### headers (e.g. "### 1. Marcus Cole (Protagonist)")
+        const lines = fullText.split('\n');
+        const charSections: { name: string; content: string; startLine: number; endLine: number }[] = [];
+        let currentSection: { name: string; content: string; startLine: number; endLine: number } | null = null;
+        for (let li = 0; li < lines.length; li++) {
+          const line = lines[li];
+          if (/^###\s+\d+\.\s+/.test(line.trim())) {
+            if (currentSection) {
+              currentSection.content = lines.slice(currentSection.startLine, li).join('\n');
+              charSections.push(currentSection);
+            }
+            const nameMatch = line.match(/^###\s+\d+\.\s+(.+?)(?:\s*\(|$)/);
+            const name = nameMatch ? nameMatch[1].trim() : line.replace(/^###\s+\d+\.\s+/, '').trim();
+            currentSection = { name, content: '', startLine: li, endLine: li };
+          }
+        }
+        if (currentSection) {
+          currentSection.content = lines.slice(currentSection.startLine).join('\n');
+          charSections.push(currentSection);
+        }
+
+        console.log(`[CHAR_BIBLE_REWRITE] per_character_start characters=${charSections.map(s => s.name).join(', ')} total=${charSections.length}`);
+
         const charSelectedOptions = decisions
           ? Object.entries(decisions)
               .filter(([, v]) => !!v)
@@ -1759,32 +1780,42 @@ export default function ProjectDevelopmentEngine() {
                 custom_direction: (notesCustomDirections as Record<string, string>)?.[noteId] || undefined,
               }))
           : undefined;
-        rewrite.mutate({
-          approvedNotes: enrichedNotes,
-          protectItems,
-          deliverableType: selectedDeliverableType,
-          developmentBehavior: projectBehavior,
-          format: projectFormat,
-          selectedOptions: charSelectedOptions,
-          globalDirections: globalDirections || [],
-        }, {
-          onSuccess: (data: any) => {
-            postOperationVersionId.current = data?.newVersion?.id || null;
-            pendingOptionsTriggerRef.current = data?.newVersion?.id || null;
-            afterRewrite();
-          },
-          onError: (err: any) => {
-            // Fallback to chunked pipeline if server rejects
-            if (err?.needsPipeline && selectedDocId && selectedVersionId) {
-              console.log(`[ui] needsPipeline fallback: single-pass rejected (${err.charCount} chars), redirecting to chunked pipeline`);
-              toast.info('Document too large for single-pass — using chunked rewrite pipeline.');
-              rewritePipeline.startRewrite(selectedDocId, selectedVersionId, enrichedNotes, protectItems);
-              afterRewrite();
-            } else {
-              toast.error(err?.message || 'Rewrite failed');
-            }
-          },
-        });
+
+        // Rewrite each character sequentially, chaining versions
+        let currentVersionId = selectedVersionId;
+        for (let ci = 0; ci < charSections.length; ci++) {
+          const section = charSections[ci];
+          console.log(`[CHAR_BIBLE_REWRITE] character_start index=${ci} name="${section.name}" versionId="${currentVersionId?.slice(0,12)}"`);
+
+          // eslint-disable-next-line no-await-in-loop
+          const result = await callEngineV2('rewrite', {
+            projectId,
+            documentId: selectedDocId,
+            versionId: currentVersionId,
+            approvedNotes: enrichedNotes,
+            protectItems,
+            deliverableType: selectedDeliverableType,
+            developmentBehavior: projectBehavior,
+            format: projectFormat,
+            selectedOptions: charSelectedOptions,
+            globalDirections: globalDirections || [],
+          });
+
+          if (result?.newVersion?.id) {
+            currentVersionId = result.newVersion.id;
+            console.log(`[CHAR_BIBLE_REWRITE] character_complete index=${ci} name="${section.name}" newVersionId="${currentVersionId?.slice(0,12)}"`);
+          } else {
+            console.error(`[CHAR_BIBLE_REWRITE] character_failed index=${ci} name="${section.name}" — no version returned`);
+            throw new Error(`Rewrite failed for character: ${section.name}`);
+          }
+        }
+
+        // All characters done — select the final version
+        console.log(`[CHAR_BIBLE_REWRITE] all_complete finalVersionId="${currentVersionId?.slice(0,12)}"`);
+        postOperationVersionId.current = currentVersionId;
+        pendingOptionsTriggerRef.current = currentVersionId;
+        setSelectedVersionId(currentVersionId);
+        afterRewrite();
         return;
       }
       // NOTE: beat_sheet intentionally removed from SECTIONED_REWRITE_TYPES (Fix 2).
