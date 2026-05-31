@@ -267,6 +267,7 @@ async function handleGenerate(projectId: string) {
   const { storyOutline, beatSheet, characterBible, creativeBrief, canon, seasonArc, verticalEpisodeBeats, scenes } = await fetchProjectDocuments(admin, projectId);
 
   // @ts-ignore
+  if (typeof EdgeRuntime !== "undefined") {
   EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
@@ -365,6 +366,7 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
       console.log(`Theme atomiser complete for ${pendingAtoms.length} atoms`);
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }

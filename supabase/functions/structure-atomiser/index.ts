@@ -278,6 +278,7 @@ async function handleGenerate(projectId: string) {
   await admin.from("atoms").update({ generation_status: "running", updated_at: new Date().toISOString() }).in("id", atomIds);
 
   // @ts-ignore
+  if (typeof EdgeRuntime !== "undefined") {
   EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
@@ -395,6 +396,7 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL fields:
       }
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }

@@ -390,6 +390,7 @@ async function handleGenerate(projectId: string) {
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
+  if (typeof EdgeRuntime !== "undefined") {
   EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
@@ -675,6 +676,7 @@ confidence should reflect how much visual/narrative information was available.`;
       console.log(`Location atomiser generation complete for ${pendingAtoms.length} atoms`);
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }

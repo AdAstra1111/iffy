@@ -349,7 +349,8 @@ async function handleGenerate(projectId: string) {
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
-  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(
+  if (typeof EdgeRuntime !== "undefined") {
+  EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
         try {
@@ -793,6 +794,7 @@ const updateErr = await repo.updateAtom(projectId, atom.id, {
       console.log(`Costume atomiser generation complete for ${pendingAtoms.length} atoms`);
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }

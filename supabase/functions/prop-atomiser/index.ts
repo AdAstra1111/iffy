@@ -577,6 +577,7 @@ async function handleGenerate(projectId: string) {
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
+  if (typeof EdgeRuntime !== "undefined") {
   EdgeRuntime.waitUntil(
     (async () => {
       // Load all scene content once for context assembly
@@ -864,6 +865,7 @@ const updateErr = await repo.updateAtom(projectId, atom.id, {
       console.log(`Prop atomiser generation complete for ${pendingAtoms.length} atoms`);
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }

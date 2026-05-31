@@ -1752,6 +1752,7 @@ export default function ProjectDevelopmentEngine() {
       // The single-pass approach takes ~30s per character + overhead = ~130s for 4.
       if ((selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
         setIsApplyingRewrite(true);
+        setPerCharStatus([]); // Clear any stale per-char status from previous runs
         const charSelectedOptions = decisions
           ? Object.entries(decisions)
               .filter(([, v]) => !!v)

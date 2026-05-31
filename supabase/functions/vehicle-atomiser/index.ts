@@ -482,6 +482,7 @@ async function handleGenerate(projectId: string) {
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
+  if (typeof EdgeRuntime !== "undefined") {
   EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
@@ -782,6 +783,7 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
       console.log(`Vehicle atomiser generation complete for ${pendingAtoms.length} atoms`);
     })()
   );
+  }
 
   return { spawned: true, count: pendingAtoms.length };
 }
