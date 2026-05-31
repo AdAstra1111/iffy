@@ -606,19 +606,17 @@ Deno.serve(async (req: Request) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, supabaseKey);
 
-    // ── Determine version number ──
+    // ── Determine version number (always increment) ──
     let versionNumber = 1;
-    if (!regenerate) {
-      const { data: latest } = await sb
-        .from("vpb_versions")
-        .select("version_number")
-        .eq("project_id", projectId)
-        .order("version_number", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (latest) {
-        versionNumber = latest.version_number + 1;
-      }
+    const { data: latest } = await sb
+      .from("vpb_versions")
+      .select("version_number")
+      .eq("project_id", projectId)
+      .order("version_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (latest) {
+      versionNumber = latest.version_number + 1;
     }
 
     // ── Assemble all sections in parallel ──

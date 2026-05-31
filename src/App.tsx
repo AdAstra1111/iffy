@@ -122,6 +122,7 @@ const CastWorkspace = lazy(() => import("./pages/workspaces/CastWorkspace"));
 const ProduceWorkspace = lazy(() => import("./pages/workspaces/ProduceWorkspace"));
 const PackageWorkspace = lazy(() => import("./pages/workspaces/PackageWorkspace"));
 const DeliverWorkspace = lazy(() => import("./pages/workspaces/DeliverWorkspace"));
+const VPBWorkspace = lazy(() => import("./pages/workspaces/VPBWorkspace"));
 
 // ProjectShell — new unified workspace frame (Week 1 refactor)
 import { ProjectShell } from "@/components/project/ProjectShell";
@@ -276,6 +277,7 @@ const AnimatedRoutes = () => {
           <Route path="/projects/:id/casting-advanced" element={<ProtectedRoute><ProjectShell><ProjectCasting /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/poster" element={<ProtectedRoute><ProjectShell><PosterEngine /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/lookbook" element={<ProtectedRoute><ProjectShell><LookBookPage /></ProjectShell></ProtectedRoute>} />
+          <Route path="/projects/:id/vpb" element={<ProtectedRoute><ProjectShell><VPBWorkspace /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/images" element={<ProtectedRoute><ProjectShell><ProjectImageLibrary /></ProjectShell></ProtectedRoute>} />
           <Route path="/projects/:id/character-merge" element={<ProtectedRoute><ProjectShell><CharacterEntityMergePage /></ProjectShell></ProtectedRoute>} />
           {/* A5 workspace stubs — placeholder routes for the new workspace taxonomy */}
