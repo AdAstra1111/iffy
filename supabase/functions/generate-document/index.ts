@@ -495,16 +495,16 @@ async function resolveScenesFromFeatureScript(
       return result;
     }
 
-    // FALLBACK PATH: scene_graph is empty — parse sluglines from finalized feature_script
-    console.log(`[generate-document] resolveScenesFromFeatureScript: scene_graph empty — trying slugline fallback from feature_script`);
-    
+    // ── FALLBACK PATH 1: meta_json.fs_generated_scenes from feature_script version ──
+    console.log(`[generate-document] resolveScenesFromFeatureScript: scene_graph empty — trying meta_json.fs_generated_scenes`);
+
     const { data: fsDoc } = await supabase
       .from("project_documents")
       .select("id, latest_version_id")
       .eq("project_id", projectId)
       .eq("doc_type", "feature_script")
       .maybeSingle();
-      
+
     if (!fsDoc?.latest_version_id) {
       console.log(`[generate-document] resolveScenesFromFeatureScript: no feature_script with latest_version_id`);
       return null;
@@ -512,11 +512,45 @@ async function resolveScenesFromFeatureScript(
 
     const { data: fsVersion } = await supabase
       .from("project_document_versions")
-      .select("plaintext")
+      .select("plaintext, meta_json")
       .eq("id", fsDoc.latest_version_id)
       .single();
 
-    if (!fsVersion?.plaintext || fsVersion.plaintext.length < 1000) {
+    if (!fsVersion) {
+      console.log(`[generate-document] resolveScenesFromFeatureScript: feature_script version not found`);
+      return null;
+    }
+
+    const meta = fsVersion.meta_json;
+
+    // Primary meta source: fs_generated_scenes (generated scenes from scene-contract pipeline)
+    if (meta && typeof meta === "object") {
+      const generatedScenes = meta.fs_generated_scenes || meta.generated_scenes;
+      if (Array.isArray(generatedScenes) && generatedScenes.length > 0) {
+        const metaResult: ResolvedScene[] = generatedScenes.map((s: any, i: number) => ({
+          number: i + 1,
+          heading: s.title || s.heading || `Scene ${i + 1}`,
+        }));
+        console.log(`[generate-document] resolveScenesFromFeatureScript: resolved ${metaResult.length} scenes from meta_json.fs_generated_scenes`);
+        return metaResult;
+      }
+
+      // Secondary meta source: scene_contracts (title/location metadata when generated scenes unavailable)
+      const contracts = meta.fs_contracts || meta.scene_contracts;
+      if (Array.isArray(contracts) && contracts.length > 0) {
+        const contractResult: ResolvedScene[] = contracts.map((c: any, i: number) => ({
+          number: i + 1,
+          heading: c.title || c.heading || c.location || `Scene ${i + 1}`,
+        }));
+        console.log(`[generate-document] resolveScenesFromFeatureScript: resolved ${contractResult.length} scenes from meta_json.scene_contracts`);
+        return contractResult;
+      }
+    }
+
+    // ── FALLBACK PATH 2: slugline extraction from finalized feature_script plaintext ──
+    console.log(`[generate-document] resolveScenesFromFeatureScript: meta_json empty — trying slugline fallback from feature_script`);
+
+    if (!fsVersion.plaintext || fsVersion.plaintext.length < 1000) {
       console.log(`[generate-document] resolveScenesFromFeatureScript: feature_script too short or missing`);
       return null;
     }
@@ -531,7 +565,18 @@ async function resolveScenesFromFeatureScript(
     }
 
     if (matches.length === 0) {
-      console.log(`[generate-document] resolveScenesFromFeatureScript: no sluglines found in feature_script`);
+      // ── DIAGNOSTICS: structured failure — no scene source available ──
+      const diag = {
+        source: null,
+        feature_script_found: true,
+        plaintext_length: text.length,
+        scene_graph_count: 0,
+        generated_scene_count: Array.isArray(meta?.fs_generated_scenes) ? meta.fs_generated_scenes.length : (Array.isArray(meta?.generated_scenes) ? meta.generated_scenes.length : 0),
+        scene_contract_count: Array.isArray(meta?.fs_contracts) ? meta.fs_contracts.length : (Array.isArray(meta?.scene_contracts) ? meta.scene_contracts.length : 0),
+        slugline_count: 0,
+        selected_source: null,
+      };
+      console.error(`[generate-document] resolveScenesFromFeatureScript: production_draft_no_scene_source — ${JSON.stringify(diag)}`);
       return null;
     }
 
