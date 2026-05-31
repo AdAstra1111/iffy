@@ -110,11 +110,6 @@ async function fetchProjectData(admin: any, projectId: string, episodeNumber?: n
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "soundtrack").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale soundtrack atoms on status check");
-  }
 
   // Check for season_script (VD path)
   const { data: ssDocs } = await admin
@@ -259,11 +254,6 @@ async function handleStatus(projectId: string) {
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "soundtrack").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale soundtrack atoms on status check");
-  }
   const { count, error } = await admin
     .from("atoms")
     .update({ generation_status: "pending", updated_at: new Date().toISOString() })
@@ -276,11 +266,6 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "soundtrack").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale soundtrack atoms on status check");
-  }
   const { data: pendingAtoms, error: fetchErr } = await admin
     .from("atoms").select("id, canonical_name")
     .eq("project_id", projectId).eq("atom_type", "soundtrack").eq("generation_status", "pending");

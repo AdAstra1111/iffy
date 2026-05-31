@@ -845,7 +845,7 @@ function assessHeroWorthiness(moment, characters, canonJson) {
   };
 }
 // ── Prompt builder — SCENE-BOUND PREMIUM ─────────────────────────────────────
-function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock) {
+function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock, sceneIntelligence) {
   const lines = [];
   // ── A. CANON TRUTH ──
   lines.push(`CINEMATIC HERO STILL for "${projectTitle}"`);
@@ -953,6 +953,55 @@ function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, character
       lines.push(guidance);
       lines.push("");
     }
+  }
+  // ── SI. SCENE INTELLIGENCE BLOCKS (v1.2) ──
+  if (sceneIntelligence) {
+    // SI1: Scene Action
+    if (sceneIntelligence.scene_action) {
+      lines.push('[SCENE ACTION]');
+      lines.push(sceneIntelligence.scene_action);
+      lines.push('');
+    }
+    // SI2: Character Blocking
+    if (sceneIntelligence.blocking_map?.characters?.length) {
+      lines.push('[CHARACTER BLOCKING]');
+      for (const c of sceneIntelligence.blocking_map.characters) {
+        lines.push(c.name + ': ' + c.position_in_frame + ', ' + c.body_position + ', facing ' + c.facing);
+      }
+      lines.push('');
+    }
+    // SI3: Gaze & Attention
+    if (sceneIntelligence.gaze_map?.gazes?.length) {
+      lines.push('[GAZE & ATTENTION]');
+      for (const g of sceneIntelligence.gaze_map.gazes) {
+        lines.push(g.subject + ' → ' + g.target + ': ' + (g.expression || g.intensity || 'watching'));
+      }
+      lines.push('');
+    }
+    // SI4: Emotional Geometry
+    lines.push('[EMOTIONAL GEOMETRY]');
+    if (sceneIntelligence.dominant_character) lines.push('Dominant: ' + sceneIntelligence.dominant_character);
+    if (sceneIntelligence.vulnerable_character) lines.push('Vulnerable: ' + sceneIntelligence.vulnerable_character);
+    if (sceneIntelligence.power_dynamic) lines.push('Power dynamic: ' + sceneIntelligence.power_dynamic);
+    if (sceneIntelligence.tension_level) lines.push('Tension: ' + sceneIntelligence.tension_level + '/10');
+    if (sceneIntelligence.emotional_turn) lines.push('Emotional turn: ' + sceneIntelligence.emotional_turn);
+    if (sceneIntelligence.scene_consequence) lines.push('Scene consequence: ' + sceneIntelligence.scene_consequence);
+    lines.push('');
+    // SI5: Camera Intent
+    if (sceneIntelligence.camera_intent) {
+      lines.push('[CAMERA INTENT]');
+      lines.push((sceneIntelligence.visual_moment_type || '') + ' — ' + sceneIntelligence.camera_intent);
+      lines.push('');
+    }
+    // SI6: Fidelity Constraint
+    lines.push('[FIDELITY CONSTRAINT]');
+    lines.push('This image MUST depict exactly what is described in the scene.');
+    lines.push('Do NOT invent action, characters, or positioning outside this scene.');
+    lines.push('Do NOT change character relationships or power dynamics.');
+    lines.push('Do NOT change who is dominant and who is vulnerable.');
+    lines.push('Do NOT add characters that are not present.');
+    lines.push('Do NOT change the location or time of day.');
+    lines.push('');
   }
   // ── HERO FRAME MANDATE ──
   lines.push("[HERO FRAME MANDATE]");
@@ -1254,7 +1303,25 @@ Deno.serve(async (req)=>{
         });
         continue;
       }
-      const prompt = buildHeroFramePrompt(title, logline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock);
+      // ── SCENE INTELLIGENCE QUERY ──
+      let sceneIntelligence = null;
+      let sceneIntelligenceId = null;
+      try {
+        const { data: si } = await supabase
+          .from('scene_intelligence_packages')
+          .select('id, scene_action, blocking_map, gaze_map, dominant_character, vulnerable_character, power_dynamic, tension_level, emotional_turn, scene_consequence, camera_intent, visual_moment_type, performance_direction')
+          .eq('project_id', projectId)
+          .eq('scene_number', moment.sceneNumber)
+          .eq('is_current', true)
+          .maybeSingle();
+        sceneIntelligence = si;
+        if (si) sceneIntelligenceId = si.id;
+      } catch (e) {
+        // Non-blocking — hero frames work without scene intelligence
+        console.warn(`[SI] Query failed for scene ${moment.sceneNumber}:`, e instanceof Error ? e.message : String(e));
+      }
+
+      const prompt = buildHeroFramePrompt(title, logline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock, sceneIntelligence);
       console.log(`[HERO_SCENE_BOUND] Generating frame ${i + 1}/${effectiveCount}, scene=${moment.sceneNumber}, location=${moment.locationKey}, model=${MODEL}, worthiness=${worthiness.score}`);
       try {
         // Build content: text prompt + character reference images
@@ -1378,7 +1445,14 @@ Deno.serve(async (req)=>{
             scene_number: moment.sceneNumber,
             location_key: moment.locationKey,
             location_dataset_id: moment.locationDataset?.datasetId || null,
-            pd_bound: !!moment.locationDataset
+            pd_bound: !!moment.locationDataset,
+            scene_intelligence: sceneIntelligence ? {
+              package_loaded: true,
+              blocks_used: ["SI1","SI2","SI3","SI4","SI5","SI6"]
+            } : {
+              package_loaded: false,
+              blocks_used: []
+            }
           }
         });
         console.log(`[HERO_SCENE_BOUND] Frame ${i} quality gate:`, JSON.stringify(gateResult));
@@ -1402,6 +1476,7 @@ Deno.serve(async (req)=>{
           source_poster_id: null,
           user_id: systemUserId,
           created_by: systemUserId,
+          scene_intelligence_package_id: sceneIntelligenceId,
           provider: genConfig.provider,
           model: genConfig.model,
           style_mode: "photorealistic_cinematic",

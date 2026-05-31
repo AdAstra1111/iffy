@@ -57,11 +57,6 @@ async function fetchCharacterDialogue(admin: any, projectId: string) {
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
-  }
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
@@ -150,11 +145,6 @@ async function handleStatus(projectId: string) {
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
-  }
   const { count, error } = await admin
     .from("atoms")
     .update({ generation_status: "pending", updated_at: new Date().toISOString() })
@@ -167,11 +157,6 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
-  // P0.1: Auto-recover stale running atoms
-  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
-  if (staleRecovery.recovered > 0) {
-    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
-  }
   const { data: pendingAtoms, error: fetchErr } = await admin
     .from("atoms").select("id, entity_id, canonical_name, attributes")
     .eq("project_id", projectId).eq("atom_type", "dialogue").eq("generation_status", "pending");
