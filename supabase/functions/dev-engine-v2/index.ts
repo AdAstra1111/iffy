@@ -29,7 +29,7 @@ import { logBindingGuardWarning } from "../_shared/documentRuntimeBinding.ts";
 import { validateEpisodicChunk } from "../_shared/chunkValidator.ts";
 import { extractFingerprint, computeDeviation, buildTargetFromTeamVoice, buildTargetFromWritingVoice, buildStyleEvalMeta, STYLE_ENGINE_VERSION } from "../_shared/styleDeviation.ts";
 import { buildEffectiveProfileContextBlock } from "../_shared/effective-profile-context.ts";
-import { createVersion } from "../_shared/doc-os.ts";
+import { createVersion, persistVersion } from "../_shared/doc-os.ts";
 import { surgicalEpisodeRewrite, SURGICAL_EPISODE_DOC_TYPES, parseEpisodeBlocks } from "../_shared/surgicalEpisodeRewrite.ts";
 import { syncAllEntities, syncSceneEntityLinksForProject } from "../_shared/narrativeEntityEngine.ts";
 import { computePropagatedRisk, getDependencyPosition, computeRewritePriorityScore, computeDownstreamRiskScores, getDependencyChain, sequenceRewriteTargets, buildSceneImpactIndex, getAffectedScenesForAxes, getDownstreamAxes, getUpstreamAxes, SEVERITY_WEIGHTS } from "../_shared/narrativeDependencyGraph.ts";
@@ -5750,7 +5750,6 @@ serve(async (req)=>{
         }
       }
       const plaintext = lines.join("\n").trim();
-      const newVersionNumber = (ver.version_number || 1) + 1;
       // If no nested moments found, expand by making each entry a scene
       const hasNestedMoments = outline.entries.some((e)=>(e.moments?.length || e.scenes?.length || 0) > 0);
       const finalText = hasNestedMoments ? plaintext : (()=>{
@@ -5767,25 +5766,26 @@ serve(async (req)=>{
         }
         return flatLines.join("\n").trim();
       })();
-      const { data: newVer } = await supabase.from("project_document_versions").insert({
-        document_id: docId,
-        version_number: newVersionNumber,
+      // Route through Document OS — persistVersion handles version creation, post-write hooks, latest_version_id
+      const newVer = await persistVersion(supabase, {
+        projectId,
+        documentId: docId,
+        docType: "story_outline",
+        operation: "CONVERT_FORMAT",
         plaintext: finalText,
-        is_current: true,
-        created_by: user?.id || null,
-        meta_json: {
+        createdBy: user?.id || null,
+        parentVersionId: verId,
+        generatorId: "dev-engine-v2",
+        metaJson: {
           run_type: "CONVERTED_TO_PLAINTEXT",
           entries_count: outline.entries.length
-        }
-      }).select("id").single();
-      // Update document's latest version
-      await supabase.from("project_documents").update({
-        latest_version_id: newVer.id
-      }).eq("id", docId);
+        },
+      });
+      if (!newVer) throw new Error("Failed to create converted version");
       return new Response(JSON.stringify({
         success: true,
         newVersionId: newVer.id,
-        versionNumber: newVersionNumber,
+        versionNumber: newVer.version_number,
         entriesConverted: outline.entries.length,
         hasNestedMoments
       }), {
@@ -9059,33 +9059,26 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
             callLLM: surgLLM
           });
           if (surgResult.success) {
-            // Save as new version
-            const { data: docRow } = await supabase.from("project_documents").select("id").eq("id", documentId).maybeSingle();
-            if (docRow) {
-              const { data: maxVer } = await supabase.from("project_document_versions").select("version_number").eq("document_id", documentId).order("version_number", {
-                ascending: false
-              }).limit(1).maybeSingle();
-              const nextVer = (maxVer?.version_number || 1) + 1;
-              const { data: newVer } = await supabase.from("project_document_versions").insert({
-                document_id: documentId,
-                version_number: nextVer,
-                plaintext: surgResult.rewrittenText,
-                status: "draft",
-                is_current: true,
-                created_by: user.id,
-                parent_version_id: version.id,
-                change_summary: `Surgical rewrite: episodes [${surgResult.affectedEpisodes.join(",")}] updated`,
-                meta_json: {
-                  surgical: true,
-                  affected_episodes: surgResult.affectedEpisodes,
-                  total_episodes: surgResult.totalEpisodes,
-                  detection_method: surgResult.detectionMethod
-                }
-              }).select("id, version_number").single();
-              if (newVer) {
-                await supabase.from("project_document_versions").update({
-                  is_current: false
-                }).eq("document_id", documentId).neq("id", newVer.id);
+            // Save as new version via Document OS — persistVersion handles version creation, lineage, post-write hooks
+            const surgVersion = await persistVersion(supabase, {
+              projectId,
+              documentId,
+              docType: effectiveDeliverable,
+              operation: "REWRITE_FINAL",
+              plaintext: surgResult.rewrittenText,
+              createdBy: user.id,
+              parentVersionId: version.id,
+              generatorId: "dev-engine-v2",
+              changeSummary: `Surgical rewrite: episodes [${surgResult.affectedEpisodes.join(",")}] updated`,
+              metaJson: {
+                surgical: true,
+                affected_episodes: surgResult.affectedEpisodes,
+                total_episodes: surgResult.totalEpisodes,
+                detection_method: surgResult.detectionMethod
+              },
+              inputsUsed: { rewriteNote: rewriteNote?.slice(0, 500) },
+            });
+            if (surgVersion) {
                 console.log(`[dev-engine-v2] surgical rewrite complete: affected=${surgResult.affectedEpisodes.join(",")}`);
                 return new Response(JSON.stringify({
                   rewrite: {
@@ -9095,8 +9088,8 @@ MATERIAL:\n${version.plaintext.slice(0, 8000)}`;
                     affected_episodes: surgResult.affectedEpisodes,
                     detection_method: surgResult.detectionMethod
                   },
-                  version_id: newVer.id,
-                  version_number: newVer.version_number
+                  version_id: surgVersion.id,
+                  version_number: surgVersion.version_number
                 }), {
                   headers: {
                     ...corsHeaders,
@@ -11516,27 +11509,21 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       const effUserId1 = user?.id || effUserProj?.user_id || null;
       let newVersion = null;
       if (!isResumingProse) {
-        const newVersionNumber = (version.version_number || 1) + 1;
-        const insertRes = await supabase.from("project_document_versions").upsert({
-          document_id: documentId,
-          version_number: newVersionNumber,
-          plaintext: "",
-          is_current: false,
-          created_by: effUserId1,
-          meta_json: {
+        // Route through Document OS — persistVersion handles version creation, post-write hooks
+        const pvResult = await persistVersion(supabase, {
+          projectId,
+          documentId,
+          docType: doc.doc_type || "treatment",
+          operation: "CREATE_PLACEHOLDER",
+          createdBy: effUserId1,
+          metaJson: {
             run_type: "TREATMENT_REWRITE",
             sections_count: flatSections.length
-          }
-        }, {
-          onConflict: "document_id,version_number"
-        }).select();
-        console.log("[treatment-rewrite] insert err=" + JSON.stringify(insertRes.error));
-        if (insertRes.error) throw new Error("Version insert failed: " + insertRes.error.message);
-        newVersion = insertRes.data[0];
-        if (!newVersion?.id) throw new Error("No version returned from insert");
-        await supabase.from("project_document_versions").update({
-          is_current: false
-        }).eq("document_id", documentId).neq("id", newVersion.id);
+          },
+          isCurrent: false,
+        });
+        if (!pvResult) throw new Error("Version insert failed: no version returned");
+        newVersion = pvResult;
         const chunkInserts = flatSections.map(function(s, idx) {
           return {
             version_id: newVersion.id,
@@ -11738,16 +11725,22 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         const bsExtraMeta = {
           total_beats: JSON.parse(bsAssembledText).beats?.length || 0
         };
-        const bsUpdateResult = await supabase.from("project_document_versions").update({
+        // Route through Document OS — persistVersion handles version write, post-write hooks
+        const bsPvResult = await persistVersion(supabase, {
+          projectId,
+          documentId,
+          docType: "beat_sheet",
+          operation: "UPDATE_CONTENT",
+          versionId: newVersion.id,
           plaintext: bsAssembledText,
-          meta_json: {
+          metaJson: {
             run_type: "BEAT_SHEET_REWRITE",
             sections_count: rewrittenSections.length,
             notes_applied: approvedNotes?.length || 0,
             ...bsExtraMeta
           }
-        }).eq("id", newVersion.id);
-        if (bsUpdateResult.error) console.error("[beat-sheet-rewrite] UPDATE FAILED:", bsUpdateResult.error);
+        });
+        if (!bsPvResult) console.error("[beat-sheet-rewrite] UPDATE FAILED");
         await supabase.from("development_runs").insert({
           project_id: projectId,
           document_id: documentId,
@@ -11759,9 +11752,6 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
             notes_applied: approvedNotes?.length || 0
           }
         });
-        await supabase.from("project_documents").update({
-          latest_version_id: newVersion.id
-        }).eq("id", documentId);
         if (approvedNotes && approvedNotes.length > 0) {
           const bsNoteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
           if (bsNoteKeys.length > 0) {
@@ -12025,17 +12015,23 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           // Assemble full treatment from per-act results
           const treatmentAssembledText = priorActResults.map((a)=>a.content).join("\n\n");
           console.log("[treatment-per-act] assembled treatment: " + treatmentAssembledText.length + " chars from " + priorActResults.length + " acts");
-          const taUpdateResult = await supabase.from("project_document_versions").update({
+          // Route through Document OS — persistVersion handles version write, approval status, post-write hooks
+          const taPvResult = await persistVersion(supabase, {
+            projectId,
+            documentId,
+            docType: "treatment",
+            operation: "UPDATE_CONTENT",
+            versionId: newVersion.id,
             plaintext: treatmentAssembledText,
-            approval_status: "approved",
-            meta_json: {
+            approvalStatus: "approved",
+            metaJson: {
               run_type: "TREATMENT_REWRITE",
               pipeline: "per_act_v1",
               acts_count: priorActResults.length,
               notes_applied: approvedNotes?.length || 0
             }
-          }).eq("id", newVersion.id);
-          if (taUpdateResult.error) console.error("[treatment-per-act] UPDATE FAILED:", taUpdateResult.error);
+          });
+          if (!taPvResult) console.error("[treatment-per-act] UPDATE FAILED");
           await supabase.from("development_runs").insert({
             project_id: projectId,
             document_id: documentId,
@@ -12048,10 +12044,6 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
               notes_applied: approvedNotes?.length || 0
             }
           });
-          // FIX 1: Update latest_version_id
-          await supabase.from("project_documents").update({
-            latest_version_id: newVersion.id
-          }).eq("id", documentId);
           // FIX 2: Mark approved notes resolved
           if (approvedNotes && approvedNotes.length > 0) {
             const taApprovedNoteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
@@ -12265,16 +12257,22 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
       }).join("\n\n").replace(/\n{3,}/g, "\n\n");
       // Safety dedup: if this is a concept_brief, clean up any duplicated sections the LLM may have created
       if (doc.doc_type === "concept_brief") assembledText = deduplicateConceptBriefSections(assembledText);
-      const updateResult = await supabase.from("project_document_versions").update({
+      // Route through Document OS — persistVersion handles version write, post-write hooks
+      const secPvResult = await persistVersion(supabase, {
+        projectId,
+        documentId,
+        docType: doc.doc_type || "treatment",
+        operation: "UPDATE_CONTENT",
+        versionId: newVersion.id,
         plaintext: assembledText,
-        meta_json: {
+        metaJson: {
           run_type: "TREATMENT_REWRITE",
           sections_count: rewrittenSections.length,
           notes_applied: approvedNotes?.length || 0
         }
-      }).eq("id", newVersion.id);
-      console.log("[sectioned-rewrite] update error=" + JSON.stringify(updateResult.error));
-      if (updateResult.error) console.error("[sectioned-rewrite] UPDATE FAILED:", updateResult.error);
+      });
+      console.log("[sectioned-rewrite] version updated=" + (secPvResult ? secPvResult.id : "fail"));
+      if (!secPvResult) console.error("[sectioned-rewrite] UPDATE FAILED");
       await supabase.from("development_runs").insert({
         project_id: projectId,
         document_id: documentId,
@@ -12286,10 +12284,6 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
           notes_applied: approvedNotes?.length || 0
         }
       });
-      // FIX 1: Update latest_version_id after TREATMENT_REWRITE
-      await supabase.from("project_documents").update({
-        latest_version_id: newVersion.id
-      }).eq("id", documentId);
       // FIX 2: Mark approved notes resolved after TREATMENT_REWRITE
       if (approvedNotes && approvedNotes.length > 0) {
         const approvedNoteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);
@@ -13032,12 +13026,19 @@ Write these scenes NOW in proper screenplay format. Output ONLY screenplay text.
       if (sHardMin && sMins < sHardMin - 2) {
         sRuntimeWarning = `Script is short for feature: ~${Math.round(sMins)} mins (words=${sWords}). Hard floor is ${sHardMin} mins. Consider expanding.`;
       }
-      const { error: vErr } = await supabase.from("project_document_versions").update({
+      // Route through Document OS — persistVersion handles version write, post-write hooks
+      const updatedVersion = await persistVersion(supabase, {
+        projectId,
+        documentId: scriptDocId,
+        docType: "feature_script",
+        operation: "UPDATE_CONTENT",
+        versionId: scriptVersionId,
         plaintext: assembledText,
         label: `Feature screenplay (${pageEstimate} pages)`,
-        change_summary: `Assembled from ${planJson?.total_scenes || "?"} scenes. ${wordCount} words, ~${pageEstimate} pages.`
-      }).eq("id", scriptVersionId);
-      if (vErr) throw vErr;
+        changeSummary: `Assembled from ${planJson?.total_scenes || "?"} scenes. ${wordCount} words, ~${pageEstimate} pages.`,
+      });
+      if (!updatedVersion) throw new Error("Failed to assemble script version");
+      // Still update legacy project_documents fields
       await supabase.from("project_documents").update({
         plaintext: assembledText,
         extraction_status: "complete"
@@ -15129,29 +15130,19 @@ ${contextBlock}`;
           throw new Error("Generation failed: output did not start with expected heading. Please try again.");
         }
       }
-      // 4) Determine next version number
-      const { data: existingVersions } = await supabase.from("project_document_versions").select("version_number").eq("document_id", toplineDocId).order("version_number", {
-        ascending: false
-      }).limit(1);
-      const nextVersion = (existingVersions?.[0]?.version_number || 0) + 1;
-      // 5) Create new version
-      const { data: newVersion, error: verErr } = await supabase.from("project_document_versions").insert({
-        document_id: toplineDocId,
-        version_number: nextVersion,
+      // 4) Create new version via Document OS — persistVersion handles version creation, post-write hooks, latest_version_id
+      const newVersion = await persistVersion(supabase, {
+        projectId,
+        documentId: toplineDocId,
+        docType: "topline_narrative",
+        operation: "CREATE_FINAL",
         plaintext: generatedText,
-        created_by: user.id,
-        label: nextVersion === 1 ? "AI-generated from project context" : `Regenerated v${nextVersion}`,
-        deliverable_type: "topline_narrative",
-        source_document_ids: [
-          ...new Set(sourceDocIds)
-        ]
-      }).select("id, version_number").single();
-      if (verErr) throw verErr;
-      // 6) Update latest_version_id
-      await supabase.from("project_documents").update({
-        latest_version_id: newVersion.id,
-        plaintext: generatedText
-      }).eq("id", toplineDocId);
+        createdBy: user.id,
+        generatorId: "dev-engine-v2",
+        label: "Topline narrative generation",
+        sourceDocumentIds: [...new Set(sourceDocIds)],
+      });
+      if (!newVersion) throw new Error("Failed to create topline narrative version");
       // 7) Store development run
       await supabase.from("development_runs").insert({
         project_id: projectId,
@@ -42721,28 +42712,23 @@ Write the COMPLETE teleplay for Episode ${epIdx} NOW.`;
       const rewrittenBeat = await callAI(gw.apiKey, BALANCED_MODEL, systemPrompt, beatPrompt, 0.3, 4000);
       // 7. Simple string replacement — splice rewritten beat into original document
       const updatedDocument = fullText.slice(0, targetBeatEntry.start) + rewrittenBeat.trim() + "\n" + fullText.slice(targetBeatEntry.end);
-      const newVersionNumber = (version.version_number || 1) + 1;
-      const { data: newVersion } = await supabase.from("project_document_versions").upsert({
-        document_id: documentId,
-        version_number: newVersionNumber,
+      // Route through Document OS — persistVersion handles version creation, conflict resolution, post-write hooks
+      const newVersion = await persistVersion(supabase, {
+        projectId,
+        documentId,
+        docType: "beat_sheet",
+        operation: "UPSERT_CONTENT",
         plaintext: updatedDocument,
-        is_current: false,
-        created_by: user?.id || null,
-        meta_json: {
+        isCurrent: false,
+        createdBy: user?.id || null,
+        generatorId: "dev-engine-v2-beat-rewrite",
+        metaJson: {
           run_type: "BEAT_REWRITE",
           updated_beat_id: beatId
-        }
-      }, {
-        onConflict: "document_id,version_number"
-      }).select().single();
+        },
+      });
       if (!newVersion) throw new Error("Failed to create new document version");
       // 8. Return new versionId + metadata
-      // FIX: Update latest_version_id after beat-rewrite
-      if (newVersion?.id) {
-        await supabase.from("project_documents").update({
-          latest_version_id: newVersion.id
-        }).eq("id", documentId);
-      }
       // FIX: Mark approved notes resolved after beat-rewrite
       if (approvedNotes && approvedNotes.length > 0) {
         const noteKeys = approvedNotes.map((n)=>n.id || n.note_key).filter(Boolean);

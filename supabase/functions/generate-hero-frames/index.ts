@@ -2,8 +2,62 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { resolveImageGenerationConfig, buildImageRepositoryMeta } from "../_shared/imageGenerationResolver.ts";
 import { computeEdgeQualityGate } from "../_shared/edgeQualityGate.ts";
 import { resolveEffectiveWardrobe, resolveTemporalTruthFromCanon } from "../_shared/effectiveWardrobeNormalizer.ts";
-// ── Inline visual style resolver (no external dependency) ────────────────────
+// ── Visual Style Authority — from CPIE Visual Language Canon ──────────────────
 async function resolveVisualStyleProfile(sb, projectId) {
+  // Primary: CPIE Visual Language Canon (certified, deterministic)
+  try {
+    const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+    if (cpieUrl) {
+      // Get PCP context for CPIE call
+      const { data: pcpRow } = await sb
+        .from("project_context_profiles")
+        .select("profile")
+        .eq("project_id", projectId)
+        .maybeSingle();
+      
+      if (pcpRow?.profile) {
+        const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+        const cpieCtx = {
+          project_id: projectId,
+          genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+          period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+          climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+          technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+          culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+          production_language: pcp.visual_context?.production_language?.value || pcp.production_language || "",
+          style_influences: pcp.visual_context?.style_influences?.value || pcp.style_influences || [],
+          visual_tone: pcp.visual_context?.tone?.value || pcp.visual_tone || "",
+          profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+          pcp_resolution_timestamp: new Date().toISOString(),
+        };
+        
+        const cpieResponse = await fetch(cpieUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pcp: cpieCtx, domains: ["vl"] }),
+        });
+        
+        if (cpieResponse.ok) {
+          const cpieResult = await cpieResponse.json();
+          const vlResults = cpieResult.domains?.vl || [];
+          if (vlResults.length > 0) {
+            const inferences = vlResults[0].inferences || [];
+            if (inferences.length > 0) {
+              const parts = ['[VISUAL LANGUAGE CANON — CERTIFIED CPIE]'];
+              for (const inf of inferences) {
+                parts.push(`${inf.field}: ${inf.value} (conf: ${inf.confidence_score})`);
+              }
+              return { promptBlock: parts.join("\n") };
+            }
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[resolveVisualStyleProfile] CPIE VL fallback triggered:", e instanceof Error ? e.message : String(e));
+  }
+  
+  // Fallback: legacy project_visual_language table
   try {
     const { data } = await sb.from("project_visual_language").select("style_profile_json").eq("project_id", projectId).order("created_at", {
       ascending: false
@@ -30,6 +84,78 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version"
 };
 // ── Photoreal enforcement ────────────────────────────────────────────────────
+// ── CPIE All-Domains Canon Resolver ──────────────────────────────────────
+async function resolveCPIEAllDomains(sb, projectId) {
+  try {
+    const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+    if (!cpieUrl) return null;
+    
+    const { data: pcpRow } = await sb
+      .from("project_context_profiles")
+      .select("profile")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (!pcpRow?.profile) return null;
+    
+    const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+    const cpieCtx = {
+      project_id: projectId,
+      genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+      period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+      climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+      technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+      culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+      infrastructure: pcp.geographic_context?.infrastructure?.value || pcp.infrastructure || "",
+      geography: pcp.geographic_context?.terrain?.value || pcp.geography || "",
+      economy: pcp.economic_context?.economic_system?.value || pcp.economy || "",
+      class_structure: pcp.social_context?.class_structure?.value || pcp.class_structure || "",
+      biome: pcp.geographic_context?.biome?.value || pcp.biome || "",
+      mythology: pcp.cultural_context?.mythology?.value || pcp.mythology || "",
+      ecology: pcp.geographic_context?.ecology?.value || pcp.ecology || "",
+      production_language: pcp.visual_context?.production_language?.value || pcp.production_language || "",
+      style_influences: pcp.visual_context?.style_influences?.value || pcp.style_influences || [],
+      visual_tone: pcp.visual_context?.tone?.value || pcp.visual_tone || "",
+      spatial_function: "civic",
+      transport_function: "civilian_transport",
+      profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+      pcp_resolution_timestamp: new Date().toISOString(),
+    };
+    
+    const cpieResponse = await fetch(cpieUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pcp: cpieCtx, domains: ["wardrobe", "props", "vehicle", "creature", "vl", "location", "pd"] }),
+    });
+    
+    if (!cpieResponse.ok) return null;
+    const cpieResult = await cpieResponse.json();
+    
+    // Build a comprehensive prompt block from all domain results
+    const parts = [];
+    const domainLabels = {
+      wardrobe: "WARDROBE", props: "PROPS", vehicle: "VEHICLE", creature: "CREATURE",
+      vl: "VISUAL LANGUAGE", location: "LOCATION", pd: "PRODUCTION DESIGN"
+    };
+    
+    for (const [domain, results] of Object.entries(cpieResult.domains || {})) {
+      if (!results || results.length === 0) continue;
+      const label = domainLabels[domain] || domain.toUpperCase();
+      parts.push(`[${label} — CERTIFIED CANON]`);
+      for (const entityResult of results) {
+        for (const inf of entityResult.inferences || []) {
+          parts.push(`${inf.field}: ${inf.value} (conf: ${inf.confidence_score})`);
+        }
+      }
+      parts.push("");
+    }
+    
+    return parts.length > 0 ? parts.join("\n") : null;
+  } catch (e) {
+    console.warn("[resolveCPIEAllDomains] CPIE error:", e instanceof Error ? e.message : String(e));
+    return null;
+  }
+}
+
 const PHOTOREAL_DIRECTIVES = "Photorealistic cinematic imagery. Live-action film still. Shot on ARRI Alexa with premium anamorphic lenses (Panavision C-Series or Cooke S7). Real-world materials, textures, surfaces. Believable natural or motivated cinematic lighting. Real lens behaviour including subtle flares, bokeh, and depth of field. Premium theatrical realism. Film grain present. Imperfect real-world skin texture with pores and natural variation. No illustration, no concept art, no digital painting, no CGI render look. MUST be landscape orientation with cinematic width.";
 const PHOTOREAL_NEGATIVES = "painterly, illustrative, cartoon, anime, graphic-novel style, concept art, abstract, surreal, watercolor, oil painting, sketch, line art, cel-shaded, digital painting, CGI render, stock photo, 3D render, Unreal Engine, video game screenshot, airbrushed skin, poster layout, typography, text overlay, title card, slate, clapperboard, credits, watermark, logo, collage, grid layout, multi-panel, composite image, portrait orientation, vertical framing, square format, 1:1 aspect ratio, moodboard, contact sheet";
 async function resolveCharacterTruth(sb, projectId) {
@@ -354,38 +480,19 @@ function resolveWardrobePromptBlocks(wardrobeStateMap, canonJson) {
 function resolveWorldBlock(canonJson) {
   if (!canonJson) return "";
   const parts = [];
-  if (canonJson.era || canonJson.period) parts.push(`Era: ${canonJson.era || canonJson.period}`);
+  // Visual fields (era, architecture, costume) removed — CPIE Location/Wardrobe Canon is authoritative.
+  // Non-conflicting context fields kept for narrative framing only.
   if (canonJson.geography) parts.push(`Geography: ${canonJson.geography}`);
-  if (canonJson.architecture) parts.push(`Architecture: ${canonJson.architecture}`);
-  if (canonJson.costume_language || canonJson.wardrobe) parts.push(`Costume: ${canonJson.costume_language || canonJson.wardrobe}`);
   if (canonJson.technology_level) parts.push(`Technology: ${canonJson.technology_level}`);
   if (canonJson.cultural_markers || canonJson.culture) parts.push(`Culture: ${canonJson.cultural_markers || canonJson.culture}`);
+  if (canonJson.world_rules) {
+    const rules = Array.isArray(canonJson.world_rules) ? canonJson.world_rules : [canonJson.world_rules];
+    for (const r of rules.slice(0, 3)) parts.push(`World Rule: ${r}`);
+  }
   if (!parts.length) return "";
-  return `[WORLD FOUNDATION]\n${parts.join("\n")}`;
+  return `[WORLD CONTEXT — NON-AUTHORITATIVE, CPIE CANON OVERRIDES VISUAL DETAILS]\n${parts.join("\n")}`;
 }
 // ── Visual Canon Primitives resolution ───────────────────────────────────────
-function resolveVisualCanonBlock(canonJson) {
-  if (!canonJson) return "";
-  const vcp = canonJson.visual_canon_primitives;
-  if (!vcp || typeof vcp !== "object") return "";
-  const parts = [];
-  const addSystem = (key, label)=>{
-    const items = vcp[key];
-    if (Array.isArray(items) && items.length > 0) {
-      const descriptions = items.slice(0, 4).map((item)=>typeof item === "string" ? item : item.label || item.name || item.description || JSON.stringify(item)).filter(Boolean);
-      if (descriptions.length) parts.push(`${label}: ${descriptions.join("; ")}`);
-    }
-  };
-  addSystem("material_systems", "Material Language");
-  addSystem("ritual_systems", "Ritual Systems");
-  addSystem("communication_systems", "Communication");
-  addSystem("power_systems", "Power Dynamics");
-  addSystem("surface_condition_systems", "Surface Conditions");
-  addSystem("recurrent_symbolic_objects", "Symbolic Objects");
-  addSystem("environment_behavior_pairings", "Environment Behaviors");
-  if (!parts.length) return "";
-  return `[VISUAL CANON — PROJECT-SPECIFIC VISUAL TRUTH]\n${parts.join("\n")}`;
-}
 const NARRATIVE_FUNCTION_GUIDANCE = {
   world_setup: "NARRATIVE NOTE: This frame establishes the world. Favour environmental framing.",
   protagonist_intro: "NARRATIVE NOTE: This frame introduces the protagonist in their world.",
@@ -663,7 +770,6 @@ function assessHeroWorthiness(moment, characters, canonJson) {
   if (canonJson) {
     if (canonJson.logline) score += 3;
     if (canonJson.world_rules || canonJson.timeline) score += 3;
-    if (canonJson.visual_canon_primitives) score += 4;
     reasons.push("canon_truth_available");
   }
   // 7. Atmosphere/world slots bonus
@@ -679,13 +785,18 @@ function assessHeroWorthiness(moment, characters, canonJson) {
   };
 }
 // ── Prompt builder — SCENE-BOUND PREMIUM ─────────────────────────────────────
-function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, characters, worldBlock, visualCanonBlock, styleBlock, moment) {
+function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock) {
   const lines = [];
   // ── A. CANON TRUTH ──
   lines.push(`CINEMATIC HERO STILL for "${projectTitle}"`);
   lines.push("");
   if (projectLogline) {
     lines.push(`STORY: ${projectLogline}`);
+    lines.push("");
+  }
+  // NOTICE: CPIE Certified Canon (section E3) overrides legacy world/canon blocks
+  if (cpieCanonBlock) {
+    lines.push("[GLOBAL CONFLICT RULE] CPIE Certified Canon in section E3 is the AUTHORITATIVE truth for all covered domains. Where E3 conflicts with earlier blocks, E3 wins.");
     lines.push("");
   }
   if (canonJson?.premise) {
@@ -740,10 +851,6 @@ function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, character
     }
   }
   // ── E. VISUAL CANON ──
-  if (visualCanonBlock) {
-    lines.push(visualCanonBlock);
-    lines.push("");
-  }
   if (styleBlock) {
     lines.push("[VISUAL STYLE AUTHORITY]");
     lines.push(styleBlock);
@@ -754,7 +861,15 @@ function buildHeroFramePrompt(projectTitle, projectLogline, canonJson, character
     lines.push(moment.pdCanon.promptBlock);
     lines.push("");
   }
-  // ── F. SCENE GROUNDING ──
+    // ── E3. CPIE CERTIFIED CANON (ALL DOMAINS) — OVERRIDES CONFLICTING LEGACY BLOCKS ──
+  if (cpieCanonBlock) {
+    lines.push("[CPIE — CERTIFIED CANON FROM ALL DOMAINS — OVERRIDES ALL CONFLICTING LEGACY DATA]");
+    lines.push("CONFLICT PRECEDENCE: This CPIE Certified Canon block is the authoritative truth for all domains listed. Where CPIE values conflict with earlier world/canon/style blocks (sections A-E2), CPIE values OVERRIDE — these are the deterministic, registry-certified ground truth for wardrobe, visual language, location, production design, props, vehicles, and creatures.");
+    lines.push("");
+    lines.push(cpieCanonBlock);
+    lines.push("");
+  }
+// ── F. SCENE GROUNDING ──
   lines.push("[SCENE GROUNDING — SPECIFIC MOMENT FROM THE STORY]");
   lines.push(`Scene: ${moment.sceneNumber}`);
   if (moment.slugline) lines.push(`SCENE: ${moment.slugline}`);
@@ -929,11 +1044,12 @@ Deno.serve(async (req)=>{
       console.warn(`[governanceGate] Missing governance snapshot for hero_frames/${project_id} — allowing by default`);
     }
     // ── Resolve all canonical inputs in parallel ──
-    const [projectRow, canonRow, characters, styleRes] = await Promise.all([
+    const [projectRow, canonRow, characters, styleRes, cpieCanonBlock] = await Promise.all([
       supabase.from("projects").select("title, format, genres").eq("id", project_id).single(),
       supabase.from("project_canon").select("canon_json").eq("project_id", project_id).maybeSingle(),
       resolveCharacterTruth(supabase, project_id),
-      resolveVisualStyleProfile(supabase, project_id)
+      resolveVisualStyleProfile(supabase, project_id),
+      resolveCPIEAllDomains(supabase, project_id)
     ]);
     if (projectRow.error) {
       console.error("[hero-frames] Project query error:", projectRow.error.message);
@@ -942,7 +1058,6 @@ Deno.serve(async (req)=>{
     if (!project) throw new Error("Project not found: " + (projectRow.error?.message || "no data returned"));
     const canonJson = canonRow?.data?.canon_json ?? null;
     const worldBlock = resolveWorldBlock(canonJson);
-    const visualCanonBlock = resolveVisualCanonBlock(canonJson);
     const styleBlock = styleRes.promptBlock || null;
     const title = project.title || "Untitled Project";
     const logline = canonJson?.logline || "";
@@ -1061,8 +1176,9 @@ Deno.serve(async (req)=>{
       if (logline) canonEvidence.push("logline");
       if (canonJson?.premise) canonEvidence.push("premise");
       if (worldBlock) canonEvidence.push("world_block");
-      if (visualCanonBlock) canonEvidence.push("visual_canon_primitives");
+      
       if (styleBlock) canonEvidence.push("visual_style_profile");
+      if (cpieCanonBlock) canonEvidence.push("cpie_all_domains");
       if (canonJson?.tone_style) canonEvidence.push("tone_style");
       if (moment.locationDataset) canonEvidence.push("pd_location_dataset");
       if (moment.wardrobeBlocks.length > 0) canonEvidence.push("wardrobe_states");
@@ -1078,7 +1194,7 @@ Deno.serve(async (req)=>{
         });
         continue;
       }
-      const prompt = buildHeroFramePrompt(title, logline, canonJson, characters, worldBlock, visualCanonBlock, styleBlock, moment);
+      const prompt = buildHeroFramePrompt(title, logline, canonJson, characters, worldBlock, styleBlock, moment, cpieCanonBlock);
       console.log(`[HERO_SCENE_BOUND] Generating frame ${i + 1}/${effectiveCount}, scene=${moment.sceneNumber}, location=${moment.locationKey}, model=${MODEL}, worthiness=${worthiness.score}`);
       try {
         // Build content: text prompt + character reference images
@@ -1320,7 +1436,6 @@ Deno.serve(async (req)=>{
         identity_mode: "scene_bound_anchor_conditioned",
         reference_images_available: totalRefImages,
         style_resolved: !!styleBlock,
-        visual_canon_resolved: !!visualCanonBlock,
         model: MODEL,
         prompt_priority: "canon_truth > pd_location > character_anchors > wardrobe > visual_canon > scene_evidence > narrative_guidance"
       }

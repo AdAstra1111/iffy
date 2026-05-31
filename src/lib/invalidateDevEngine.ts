@@ -87,6 +87,10 @@ export function invalidateDevEngine(
     qc.invalidateQueries({ queryKey: ['canonical-entities', projectId] });
     qc.invalidateQueries({ queryKey: ['universe-manifest', projectId] });
     qc.invalidateQueries({ queryKey: ['all-auto-run-jobs'] });
+    // Decision/approval keys (don't follow dev-v2- or project- prefix)
+    qc.invalidateQueries({ queryKey: ['decisions', projectId] });
+    qc.invalidateQueries({ queryKey: ['decision-events', projectId] });
+    qc.invalidateQueries({ queryKey: ['approval-notes', projectId] });
     // Canon audit (Series Writer)
     if (episodeNumber != null) {
       qc.invalidateQueries({ queryKey: ['canon-audit-run', projectId, episodeNumber] });

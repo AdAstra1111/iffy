@@ -458,70 +458,76 @@ async function handleGenerate(projectId: string) {
           
 
           // ── CPIE Inference Integration ──
-          // Fetch deterministic CPIE results for this character
-          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          // Fetch deterministic CPIE results for this character (REQUIRED)
+          // HARD PATH: CPIE must return non-empty or generation fails
           const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
-          if (cpieUrl) {
-            try {
-              // Fetch project PCP and run CPIE inference
-              // First get PCP context
-              const { data: pcpRow } = await admin
-                .from("project_context_profiles")
-                .select("profile")
-                .eq("project_id", projectId)
-                .maybeSingle();
+          if (!cpieUrl) {
+            throw new Error("CPIE_ENDPOINT_URL not configured — CPIE is required for atomiser costume");
+          }
+          
+          // Get PCP context for CPIE inference
+          const { data: pcpRow } = await admin
+            .from("project_context_profiles")
+            .select("profile")
+            .eq("project_id", projectId)
+            .maybeSingle();
 
-              if (pcpRow?.profile) {
-                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
-                // Build CPIE-compatible PCP context
-                const cpieCtx = {
-                  project_id: projectId,
-                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
-                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
-                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
-                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
-                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
-                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
-                  pcp_resolution_timestamp: new Date().toISOString(),
-                };
-
-                const cpieResponse = await fetch(cpieUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ pcp: cpieCtx, domains: ["wardrobe"] }),
-                });
-
-                if (cpieResponse.ok) {
-                  const cpieResult = await cpieResponse.json();
-                  const entityResults = cpieResult.domains?.wardrobe || [];
-                  // Find inferences for this character
-                  const charEntityKey = Object.keys(cpieCtx.profession_map).find(
-                    k => cpieCtx.profession_map[k]?.character_name?.toLowerCase() === charName.toLowerCase()
-                  );
-                  if (charEntityKey) {
-                    const charResult = entityResults.find((r: any) => r.entity_key === charEntityKey);
-                    if (charResult?.inferences) {
-                      cpieInferences = charResult.inferences.map((inf: any) => ({
-                        field: inf.field, value: inf.value,
-                        confidence: inf.confidence_score, reasoning: inf.reasoning,
-                      }));
-                    }
-                  }
-                  // Fallback: use first available result
-                  if (cpieInferences.length === 0 && entityResults.length > 0) {
-                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
-                      field: inf.field, value: inf.value,
-                      confidence: inf.confidence_score, reasoning: inf.reasoning,
-                    }));
-                  }
-                }
-              }
-            } catch (cpieErr) {
-              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
-            }
+          if (!pcpRow?.profile) {
+            throw new Error("PCP profile not found — cannot run CPIE inference for costume");
           }
 
-          // Build CPIE context string for prompt injection
+          const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+          const cpieCtx = {
+            project_id: projectId,
+            genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+            period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+            climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+            technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+            culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+            profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+            pcp_resolution_timestamp: new Date().toISOString(),
+          };
+
+          const cpieResponse = await fetch(cpieUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pcp: cpieCtx, domains: ["wardrobe"] }),
+          });
+
+          if (!cpieResponse.ok) {
+            throw new Error(`CPIE endpoint returned ${cpieResponse.status}: cannot generate costume atom`);
+          }
+
+          const cpieResult = await cpieResponse.json();
+          const entityResults = cpieResult.domains?.wardrobe || [];
+          
+          // Find inferences for this entity
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          const charEntityKey = Object.keys(cpieCtx.profession_map).find(
+            k => cpieCtx.profession_map[k]?.character_name?.toLowerCase() === charName.toLowerCase()
+          );
+          if (charEntityKey) {
+            const charResult = entityResults.find((r: any) => r.entity_key === charEntityKey);
+            if (charResult?.inferences) {
+              cpieInferences = charResult.inferences.map((inf: any) => ({
+                field: inf.field, value: inf.value,
+                confidence: inf.confidence_score, reasoning: inf.reasoning,
+              }));
+            }
+          }
+          // Fallback: use first available result
+          if (cpieInferences.length === 0 && entityResults.length > 0) {
+            cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+              field: inf.field, value: inf.value,
+              confidence: inf.confidence_score, reasoning: inf.reasoning,
+            }));
+          }
+
+          // HARD REQUIREMENT: CPIE must return inferences
+          if (cpieInferences.length === 0) {
+            throw new Error(`CPIE returned no inferences for costume generation — generation blocked`);
+          }
+
           const cpieContext = cpieInferences.length > 0
             ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence}, reasoning: ${i.reasoning.join(", ")})`).join("\n")
             : "  (no CPIE data available)";

@@ -24,6 +24,14 @@ jobs:
         run: npx tsc --noEmit --skipLibCheck 2>&1 | head -50; exit 0
         continue-on-error: true
 
+      - name: Consistency Gate (frontend-backend invariants)
+        run: |
+          echo "=== Consistency Gate ==="
+          npx vitest run src/test/frontend-backend-consistency.test.ts --reporter=verbose 2>&1
+          echo ""
+          echo "Policy: I1-I8,I10 BLOCK | I9 WARN"
+          echo "Gate exit 0 = pass"
+
       - name: Run tests
         run: npm run test -- --reporter=verbose 2>&1 | tail -30
 

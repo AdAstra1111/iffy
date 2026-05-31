@@ -599,52 +599,64 @@ async function handleGenerate(projectId: string) {
 
           
 
-          // ── CPIE Inference Integration ──
-          // Fetch deterministic CPIE results for this prop's context
-          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+                    // ── CPIE Inference Integration (HARD PATH) ──
+          // CPIE must return non-empty or generation fails
           const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
-          if (cpieUrl) {
-            try {
-              const { data: pcpRow } = await admin
-                .from("project_context_profiles")
-                .select("profile")
-                .eq("project_id", projectId)
-                .maybeSingle();
-
-              if (pcpRow?.profile) {
-                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
-                const cpieCtx = {
-                  project_id: projectId,
-                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
-                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
-                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
-                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
-                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
-                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
-                  pcp_resolution_timestamp: new Date().toISOString(),
-                };
-
-                const cpieResponse = await fetch(cpieUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ pcp: cpieCtx, domains: ["props"] }),
-                });
-
-                if (cpieResponse.ok) {
-                  const cpieResult = await cpieResponse.json();
-                  const entityResults = cpieResult.domains?.props || [];
-                  if (entityResults.length > 0) {
-                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
-                      field: inf.field, value: inf.value,
-                      confidence: inf.confidence_score, reasoning: inf.reasoning,
-                    }));
-                  }
-                }
-              }
-            } catch (cpieErr) {
-              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
-            }
+          if (!cpieUrl) {
+            throw new Error("CPIE_ENDPOINT_URL not configured — CPIE required for prop atomiser");
           }
+          
+          // Get PCP context for CPIE inference
+          const { data: pcpRow } = await admin
+            .from("project_context_profiles")
+            .select("profile")
+            .eq("project_id", projectId)
+            .maybeSingle();
+
+          if (!pcpRow?.profile) {
+            throw new Error("PCP profile not found — cannot run CPIE inference for prop");
+          }
+
+          const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+          const cpieCtx = {
+            project_id: projectId,
+            genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+            period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+            climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+            technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+            culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+
+            profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+            pcp_resolution_timestamp: new Date().toISOString(),
+          };
+
+          const cpieResponse = await fetch(cpieUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pcp: cpieCtx, domains: ["props"] }),
+          });
+
+          if (!cpieResponse.ok) {
+            throw new Error(`CPIE endpoint returned ${cpieResponse.status}: cannot generate prop atom`);
+          }
+
+          const cpieResult = await cpieResponse.json();
+          const entityResults = cpieResult.domains?.props || [];
+          
+          // Use first entity's inferences
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          if (entityResults.length > 0) {
+            cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+              field: inf.field, value: inf.value,
+              confidence: inf.confidence_score, reasoning: inf.reasoning,
+            }));
+          }
+
+          // HARD REQUIREMENT: CPIE must return inferences
+          if (cpieInferences.length === 0) {
+            throw new Error(`CPIE returned no inferences for prop generation — generation blocked`);
+          }
+
 
           const cpieContext = cpieInferences.length > 0
             ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence})`).join("\n")

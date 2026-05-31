@@ -378,55 +378,75 @@ async function handleGenerate(projectId: string) {
           const occurrences = (atom.attributes as any)?.occurrences_in_script || 1;
 
 
-          // ── CPIE Inference Integration ──
-          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+                    // ── CPIE Inference Integration (HARD PATH) ──
+          // CPIE must return non-empty or generation fails
           const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
-          if (cpieUrl) {
-            try {
-              const { data: pcpRow } = await admin
-                .from("project_context_profiles")
-                .select("profile")
-                .eq("project_id", projectId)
-                .maybeSingle();
-              if (pcpRow?.profile) {
-                const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
-                const cpieCtx = {
-                  project_id: projectId,
-                  genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
-                  period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
-                  climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
-                  technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
-                  culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
-                  profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
-                  biome: pcp.geographic_context?.primary_biome?.value || "",
-                  mythology: pcp.cultural_context?.belief_systems?.value?.join(",") || "",
-                  ecology: "",
-                  threat_role: "",
-                  intelligence: "",
-                  symbolism: "",
-                  narrative_function: "",
-                  pcp_resolution_timestamp: new Date().toISOString(),
-                };
-                const cpieResponse = await fetch(cpieUrl, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ pcp: cpieCtx, domains: ["creature"] }),
-                });
-                if (cpieResponse.ok) {
-                  const cpieResult = await cpieResponse.json();
-                  const entityResults = cpieResult.domains?.creature || [];
-                  if (entityResults.length > 0) {
-                    cpieInferences = entityResults[0].inferences.map((inf: any) => ({
-                      field: inf.field, value: inf.value,
-                      confidence: inf.confidence_score, reasoning: inf.reasoning,
-                    }));
-                  }
-                }
-              }
-            } catch (cpieErr) {
-              console.warn("CPIE fetch warning (non-fatal):", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
-            }
+          if (!cpieUrl) {
+            throw new Error("CPIE_ENDPOINT_URL not configured — CPIE required for creature atomiser");
           }
+          
+          // Get PCP context for CPIE inference
+          const { data: pcpRow } = await admin
+            .from("project_context_profiles")
+            .select("profile")
+            .eq("project_id", projectId)
+            .maybeSingle();
+
+          if (!pcpRow?.profile) {
+            throw new Error("PCP profile not found — cannot run CPIE inference for creature");
+          }
+
+          const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+          const cpieCtx = {
+            project_id: projectId,
+            genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+            period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+            climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+            technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+            culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+            infrastructure: pcp.geographic_context?.infrastructure?.value || pcp.infrastructure || "",
+            geography: pcp.geographic_context?.terrain?.value || pcp.geography || "",
+            economy: pcp.economic_context?.economic_system?.value || pcp.economy || "",
+            class_structure: pcp.social_context?.class_structure?.value || pcp.class_structure || "",
+            biome: pcp.geographic_context?.biome?.value || pcp.biome || "",
+            mythology: pcp.cultural_context?.mythology?.value || pcp.mythology || "",
+            ecology: pcp.geographic_context?.ecology?.value || pcp.ecology || "",
+            threat_role: pcp.professional_context?.threat_role?.value || pcp.threat_role || "",
+            intelligence: pcp.cultural_context?.intelligence?.value || pcp.intelligence || "",
+            symbolism: pcp.cultural_context?.symbolism?.value || pcp.symbolism || "",
+            narrative_function: pcp.narrative_context?.function?.value || pcp.narrative_function || "",
+            profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+            pcp_resolution_timestamp: new Date().toISOString(),
+          };
+
+          const cpieResponse = await fetch(cpieUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ pcp: cpieCtx, domains: ["creature"] }),
+          });
+
+          if (!cpieResponse.ok) {
+            throw new Error(`CPIE endpoint returned ${cpieResponse.status}: cannot generate creature atom`);
+          }
+
+          const cpieResult = await cpieResponse.json();
+          const entityResults = cpieResult.domains?.creature || [];
+          
+          // Use first entity's inferences
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          if (entityResults.length > 0) {
+            cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+              field: inf.field, value: inf.value,
+              confidence: inf.confidence_score, reasoning: inf.reasoning,
+            }));
+          }
+
+          // HARD REQUIREMENT: CPIE must return inferences
+          if (cpieInferences.length === 0) {
+            throw new Error(`CPIE returned no inferences for creature generation — generation blocked`);
+          }
+
+
           const cpieContext = cpieInferences.length > 0
             ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence}, reasoning: ${i.reasoning.join(", ")})`).join("\n")
             : "  (no CPIE data available)";

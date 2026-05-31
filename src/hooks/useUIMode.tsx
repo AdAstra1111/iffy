@@ -32,7 +32,7 @@ export function UIModeProvider({ children }: { children: ReactNode }) {
   const { user } = useSafeAuth();
   const queryClient = useQueryClient();
 
-  // Local state always wins — read from localStorage immediately for instant toggle
+  // Bootstrap from localStorage for instant render; backend canonical after fetch
   const [localMode, setLocalMode] = useState<UIMode>(readLocalStorage);
 
   // Supabase profile query (secondary — only used when available)
@@ -48,8 +48,8 @@ export function UIModeProvider({ children }: { children: ReactNode }) {
       return data;
     },
     enabled: !!user,
-    // Don't refetch often — localStorage is source of truth
-    staleTime: Infinity,
+    // Backend is canonical truth. Use finite staleTime so tab-to-tab sync works.
+    staleTime: 30_000,
     retry: 1,
   });
 
@@ -63,6 +63,10 @@ export function UIModeProvider({ children }: { children: ReactNode }) {
           onConflict: 'user_id',
         });
       if (error) console.warn('[useUIMode] failed to persist mode to Supabase:', error.message);
+    },
+    onSuccess: () => {
+      // Invalidate profile query so canonical backend state is re-read
+      if (user) queryClient.invalidateQueries({ queryKey: ['profile-mode', user.id] });
     },
   });
 

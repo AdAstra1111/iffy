@@ -15,7 +15,7 @@ import { isCPMEnabled, buildCPRepairDirections, CPM_GENERATION_PROMPT_BLOCK, log
 import { isLargeRiskDocType } from "../_shared/largeRiskRouter.ts";
 import { isDurationEligibleDocType, isDeprecatedTargetDocType } from "../_shared/eligibilityRegistry.ts";
 import { getDefaultWritingVoiceForLane } from "../_shared/writingVoiceResolver.ts";
-import { ensureDocSlot, createVersion } from "../_shared/doc-os.ts";
+import { ensureDocSlot, createVersion, persistVersion } from "../_shared/doc-os.ts";
 import { runPendingDecisionGate, checkQualityCeiling } from "../_shared/pendingDecisionGate.ts";
 import { isAggregate, getRegressionThreshold, getExploreThreshold, getMaxFrontierAttempts, requireDocPolicy, validateLadderIntegrity, runCanonAlignmentGate, buildCanonEntitiesFromDB } from "../_shared/docPolicyRegistry.ts";
 import { isCIBlockerGateEnabled, isPlateauV2Enabled, isRewriteTargetingEnabled, parseLatestReviewForActiveVersion, evaluateCIBlockerGateFromPayload, checkPlateauV2, compileRewriteDirectives, formatDirectivesAsDirections } from "../_shared/ciBlockerGate.ts";
@@ -12453,16 +12453,30 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
                     if (rewrittenContent.length > 0) {
                       const integrity = enforceEpisodeBlockIntegrity(originalFullContent, rewrittenContent, episodicTargetEpisode);
                       if (integrity.ok && integrity.target_episode_found) {
-                        // Write the deterministically merged content
-                        await supabase.from("project_document_versions").update({
-                          plaintext: integrity.merged_content
-                        }).eq("id", candidateVersionId);
+                        // Route through Document OS — post-generation deterministic content correction
+                        await persistVersion(supabase, {
+                          projectId: job.project_id,
+                          documentId: doc1.id,
+                          docType: currentDoc,
+                          operation: "UPDATE_CONTENT",
+                          versionId: candidateVersionId,
+                          plaintext: integrity.merged_content,
+                          generatorId: "auto-run-integrity",
+                          metaJson: { integrity_enforced: true, integrity_type: "episode_block", reason: integrity.reason }
+                        });
                         console.log(`[auto-run][Phase2D-B] episode_integrity_enforced: target_ep=${episodicTargetEpisode} preserved=${integrity.episodes_preserved} corrected=${integrity.episodes_corrected} reason=${integrity.reason}`);
                       } else if (integrity.target_episode_found) {
-                        // Integrity issues but target was found — still use merged content as best effort
-                        await supabase.from("project_document_versions").update({
-                          plaintext: integrity.merged_content
-                        }).eq("id", candidateVersionId);
+                        // Route through Document OS — integrity correction with partial match
+                        await persistVersion(supabase, {
+                          projectId: job.project_id,
+                          documentId: doc1.id,
+                          docType: currentDoc,
+                          operation: "UPDATE_CONTENT",
+                          versionId: candidateVersionId,
+                          plaintext: integrity.merged_content,
+                          generatorId: "auto-run-integrity",
+                          metaJson: { integrity_enforced: true, integrity_type: "episode_block_partial", reason: integrity.reason, episodes_missing: integrity.episodes_missing }
+                        });
                         console.warn(`[auto-run][Phase2D-B] episode_integrity_partial: target_ep=${episodicTargetEpisode} missing=${integrity.episodes_missing.join(",")} reason=${integrity.reason}`);
                       } else {
                         // Target episode not found — fall back to full rewrite (don't replace)
@@ -12495,10 +12509,17 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
                     if (rewrittenContent.length > 0) {
                       const integrity = enforceSceneIntegrity(originalFullContent, rewrittenContent, sceneTargetNumber);
                       if (integrity.target_scene_found) {
-                        // Write the deterministically merged content
-                        await supabase.from("project_document_versions").update({
-                          plaintext: integrity.merged_content
-                        }).eq("id", candidateVersionId);
+                        // Route through Document OS — scene-level integrity correction
+                        await persistVersion(supabase, {
+                          projectId: job.project_id,
+                          documentId: doc1.id,
+                          docType: currentDoc,
+                          operation: "UPDATE_CONTENT",
+                          versionId: candidateVersionId,
+                          plaintext: integrity.merged_content,
+                          generatorId: "auto-run-integrity",
+                          metaJson: { integrity_enforced: true, integrity_type: "scene_level", ok: integrity.ok, scenes_preserved: integrity.scenes_preserved }
+                        });
                         console.log(`[auto-run][Phase2E] scene_integrity_enforced: target_scene=${sceneTargetNumber} preserved=${integrity.scenes_preserved} corrected=${integrity.scenes_corrected} ok=${integrity.ok} reason=${integrity.reason}`);
                       } else {
                         // Target scene not found — fall back (don't replace)
@@ -12550,9 +12571,17 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
                           }
                         }
                         if (sectionsCorrected > 0) {
-                          await supabase.from("project_document_versions").update({
-                            plaintext: mergedContent
-                          }).eq("id", candidateVersionId);
+                          // Route through Document OS — section-level integrity correction
+                          await persistVersion(supabase, {
+                            projectId: job.project_id,
+                            documentId: doc1.id,
+                            docType: currentDoc,
+                            operation: "UPDATE_CONTENT",
+                            versionId: candidateVersionId,
+                            plaintext: mergedContent,
+                            generatorId: "auto-run-integrity",
+                            metaJson: { integrity_enforced: true, integrity_type: "section_level", sections_corrected: sectionsCorrected }
+                          });
                           console.log(`[auto-run][Phase2D] section_integrity_enforced: corrected=${sectionsCorrected} preserved=${sectionsPreserved} target=${sectionTargetKey}`);
                         } else {
                           console.log(`[auto-run][Phase2D] section_integrity_clean: all_preserved=${sectionsPreserved} target=${sectionTargetKey}`);

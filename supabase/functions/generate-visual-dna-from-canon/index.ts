@@ -228,6 +228,122 @@ async function handleCharacter(
 
   const traits = extractionResult.traits || [];
   const markers = extractionResult.marker_candidates || [];
+  
+  // ── CPIE CANON ENRICHMENT ──
+  // Enrich extraction with CPIE-certified canon values
+  const cpieEnrichedTraits: Array<{
+    label: string; category: string; confidence: string;
+    evidence_source: string; evidence_excerpt: string;
+  }> = [];
+  const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+  if (cpieUrl) {
+    try {
+      const { data: pcpRow } = await sb
+        .from("project_context_profiles")
+        .select("profile")
+        .eq("project_id", projectId)
+        .maybeSingle();
+      if (pcpRow?.profile) {
+        const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+        const cpieCtx = {
+          project_id: projectId,
+          genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+          period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+          climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+          technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+          culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+          profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+          pcp_resolution_timestamp: new Date().toISOString(),
+        };
+        const cpieResponse = await fetch(cpieUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pcp: cpieCtx, domains: ["wardrobe", "props"] }),
+        });
+        if (cpieResponse.ok) {
+          const cpieResult = await cpieResponse.json();
+          const wardrobeResults = cpieResult.domains?.wardrobe || [];
+          const propsResults = cpieResult.domains?.props || [];
+          
+          // Extract CPIE wardrobe inferences
+          for (const entityResult of [...wardrobeResults, ...propsResults]) {
+            for (const inf of entityResult.inferences || []) {
+              cpieEnrichedTraits.push({
+                label: `${inf.field}: ${inf.value}`,
+                category: inf.field === "primary_outfit" || inf.field === "footwear" || inf.field === "headwear"
+                  ? "clothing" : inf.field === "primary_weapon" || inf.field === "primary_prop"
+                  ? "clothing" : "other",
+                confidence: "high",
+                evidence_source: `cpie_registry:\${inf.registry_anchor_id}`,
+                evidence_excerpt: `CPIE certified canon: \${inf.field} = \${inf.value} (conf: \${inf.confidence_score})`,
+              });
+            }
+          }
+        }
+      }
+    } catch (cpieErr) {
+      console.warn("[VisualDNA] CPIE enrichment warning:", cpieErr instanceof Error ? cpieErr.message : String(cpieErr));
+    }
+  }
+  
+  // Merge CPIE traits into traits array (CPIE wins on field overlap)
+  for (const cpieTrait of cpieEnrichedTraits) {
+    const existingIdx = traits.findIndex((t: any) =>
+      t.label?.toLowerCase().includes(cpieTrait.label.split(":")[0]?.trim().toLowerCase() || "")
+    );
+    if (existingIdx >= 0) {
+      traits[existingIdx] = {
+        ...traits[existingIdx],
+        label: cpieTrait.label,
+        confidence: "high",
+        evidence_source: cpieTrait.evidence_source,
+        evidence_excerpt: cpieTrait.evidence_excerpt,
+      };
+    } else {
+      traits.push(cpieTrait);
+    }
+  }
+  
+  // ── CPIE HARD GATE: Wardrobe + Props ──
+  // If CPIE returned wardrobe or props inferences, those domains are authoritative.
+  // LLM-extracted clothing traits are removed when CPIE is available.
+  // If CPIE failed or returned empty, LLM clothing traits are demoted.
+  const cpieWardrobePropsSucceeded = cpieEnrichedTraits.length > 0;
+  const cpieCoveredFieldPrefixes = new Set(
+    cpieEnrichedTraits.map(t => t.label.split(":")[0]?.trim().toLowerCase()).filter(Boolean)
+  );
+  
+  const gatedTraits: typeof traits = [];
+  for (const t of traits) {
+    const category = (t.category || "other").toLowerCase();
+    const label = (t.label || "").toLowerCase();
+    
+    // Detect wardrobe/prop traits: explicit "clothing" category or keyword matching
+    const isWardrobeProps = category === "clothing" || 
+      (category === "other" && /(weapon|prop|outfit|attire|footwear|headwear|suit|uniform|robe|armor|gown|garment|apparel)/.test(label));
+    
+    if (isWardrobeProps) {
+      if (cpieWardrobePropsSucceeded) {
+        // CPIE succeeded: only keep if overwritten by CPIE (CPIE is authoritative)
+        const wasOverwritten = cpieEnrichedTraits.some(ct => {
+          const ctPrefix = ct.label.split(":")[0]?.trim().toLowerCase();
+          return ctPrefix && label.includes(ctPrefix);
+        });
+        if (!wasOverwritten) {
+          continue; // Remove — CPIE covers wardrobe+props, LLM extras are discarded
+        }
+      } else {
+        // CPIE failed or empty: demote LLM wardrobe+props to low confidence
+        t.confidence = "low";
+        t.evidence_source = "llm_extraction_only_no_cpie";
+        t.evidence_excerpt = "LLM extracted — CPIE unavailable for wardrobe/props verification";
+      }
+    }
+    gatedTraits.push(t);
+  }
+  traits.length = 0;
+  traits.push(...gatedTraits);
+  
   const lowConfCount = traits.filter((t: any) => t.confidence === "low").length;
 
   // Build provenance

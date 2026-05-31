@@ -331,3 +331,6 @@ verify_jwt = false
 
 [functions.infer-pd-canon]
 verify_jwt = false
+
+[functions.finalize-screenplay]
+verify_jwt = false

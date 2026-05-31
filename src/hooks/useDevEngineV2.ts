@@ -391,6 +391,10 @@ export function useDevEngineV2(projectId: string | undefined) {
         if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-doc-runs', dId] });
         qc.invalidateQueries({ queryKey: ['dev-v2-convergence', dId, vId] });
         // Do NOT invalidate dev-v2-versions — analysis doesn't change version data
+        // Invalidate notes and decision display panels so they refresh after generation
+        qc.invalidateQueries({ queryKey: ['project-notes', projectId] });
+        qc.invalidateQueries({ queryKey: ['decisions', projectId] });
+        qc.invalidateQueries({ queryKey: ['decision-events', projectId] });
         break;
 
       case 'rewrite':
@@ -398,6 +402,10 @@ export function useDevEngineV2(projectId: string | undefined) {
         if (dId) qc.invalidateQueries({ queryKey: ['dev-v2-versions', dId] });
         if (vId) qc.invalidateQueries({ queryKey: ['dev-v2-runs', vId] });
         qc.invalidateQueries({ queryKey: ['dev-v2-convergence', dId, vId] });
+        // Rewrites can resolve notes and decisions — refresh display panels
+        qc.invalidateQueries({ queryKey: ['project-notes', projectId] });
+        qc.invalidateQueries({ queryKey: ['decisions', projectId] });
+        qc.invalidateQueries({ queryKey: ['decision-events', projectId] });
         break;
 
       case 'convert':

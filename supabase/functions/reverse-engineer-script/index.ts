@@ -670,19 +670,26 @@ async function storeDoc(sb: any, projectId: string, scriptDocId: string, userId:
 
   if (existingVersions && existingVersions.length > 0) {
     // Update the most recent version in place (replaces seed content + metadata, keeps v1)
+    // Route through Document OS — persistVersion UPDATE_CONTENT preserves version_number
     const latestId = existingVersions[0].id;
-    await sb.from("project_document_versions").update({
-      plaintext: plaintext,
+    const { persistVersion } = await import("../_shared/doc-os.ts");
+    const updated = await persistVersion(sb, {
+      projectId,
+      documentId: doc.id,
+      docType,
+      operation: "UPDATE_CONTENT",
+      versionId: latestId,
+      plaintext,
       label: "v1 (reverse-engineered)",
       status: "draft",
-      approval_status: "draft",
-      generator_id: "reverse-engineer-script",
-      is_stale: false,
-      inputs_used: { extracted_from: scriptDocId },
-      depends_on_resolver_hash: dependsOnResolverHash || null,
-      meta_json: { reverse_engineered: true, ...(extraMeta || {}) },
-    }).eq("id", latestId);
-    await sb.from("project_documents").update({ latest_version_id: latestId }).eq("id", doc.id);
+      approvalStatus: "draft",
+      generatorId: "reverse-engineer-script",
+      isStale: false,
+      inputsUsed: { extracted_from: scriptDocId },
+      dependsOnResolverHash: dependsOnResolverHash || undefined,
+      metaJson: { reverse_engineered: true, ...(extraMeta || {}) },
+    });
+    if (!updated) throw new Error("Failed to update version");
     console.log(`[storeDoc] ${docType}: updated existing v${existingVersions[0].version_number} in place (id: ${latestId})`);
   } else {
     // No existing versions — create fresh (this is a truly new doc)

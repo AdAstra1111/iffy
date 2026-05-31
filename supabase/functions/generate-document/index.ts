@@ -22,7 +22,7 @@ import { isLargeRiskDocType, isEpisodicDocType as isLargeRiskEpisodic, chunkPlan
 import { runChunkedGeneration, resumeChunkedGeneration } from "../_shared/chunkRunner.ts";
 import { validateEpisodicContent, hasBannedSummarizationLanguage } from "../_shared/chunkValidator.ts";
 import { validateCharacterCues } from "../_shared/coreDocs.ts";
-import { createVersion, ensureDocSlot } from "../_shared/doc-os.ts";
+import { createVersion, ensureDocSlot, persistVersion } from "../_shared/doc-os.ts";
 import { validateNarrativeContext } from "../_shared/ncpTypes.ts";
 import type { NarrativeContextPackage, ScenePlanEntry } from "../_shared/ncpTypes.ts";
 import type { DramaticArchitectureBlueprint } from "../_shared/ncpTypes.ts";
@@ -458,6 +458,7 @@ async function resolveScenesFromFeatureScript(
   projectId: string,
 ): Promise<ResolvedScene[] | null> {
   try {
+    // PRIMARY PATH: Query canonical scene_graph
     const { data: scenes } = await supabase
       .from("scene_graph_scenes")
       .select(`
@@ -470,17 +471,64 @@ async function resolveScenesFromFeatureScript(
       .eq("scene_graph_order.is_active", true)
       .order("scene_graph_order(order_key)", { ascending: true });
 
-    if (!scenes || scenes.length < 1) return null;
+    if (scenes && scenes.length > 0) {
+      const result: ResolvedScene[] = scenes.map((scene: any, i: number) => ({
+        number: i + 1,
+        heading: scene.scene_graph_versions?.[0]?.slugline ||
+                 scene.scene_graph_order?.[0]?.order_key?.toString() ||
+                 `Scene ${scene.key}`,
+      }));
+      console.log(`[generate-document] resolveScenesFromFeatureScript: resolved ${result.length} scenes from scene_graph`);
+      return result;
+    }
 
-    const result: ResolvedScene[] = scenes.map((scene: any, i: number) => ({
+    // FALLBACK PATH: scene_graph is empty — parse sluglines from finalized feature_script
+    console.log(`[generate-document] resolveScenesFromFeatureScript: scene_graph empty — trying slugline fallback from feature_script`);
+    
+    const { data: fsDoc } = await supabase
+      .from("project_documents")
+      .select("id, latest_version_id")
+      .eq("project_id", projectId)
+      .eq("doc_type", "feature_script")
+      .maybeSingle();
+      
+    if (!fsDoc?.latest_version_id) {
+      console.log(`[generate-document] resolveScenesFromFeatureScript: no feature_script with latest_version_id`);
+      return null;
+    }
+
+    const { data: fsVersion } = await supabase
+      .from("project_document_versions")
+      .select("plaintext")
+      .eq("id", fsDoc.latest_version_id)
+      .single();
+
+    if (!fsVersion?.plaintext || fsVersion.plaintext.length < 1000) {
+      console.log(`[generate-document] resolveScenesFromFeatureScript: feature_script too short or missing`);
+      return null;
+    }
+
+    const text = fsVersion.plaintext;
+    // Match standard screenplay headings: INT., EXT., INT./EXT., I/E.
+    const sluglineRe = /^(INT\.|EXT\.|INT\.\/EXT\.|I\/E\.)[^\n]*$/gm;
+    const matches: Array<{ heading: string; index: number }> = [];
+    let match: RegExpExecArray | null;
+    while ((match = sluglineRe.exec(text)) !== null) {
+      matches.push({ heading: match[0].trim(), index: match.index });
+    }
+
+    if (matches.length === 0) {
+      console.log(`[generate-document] resolveScenesFromFeatureScript: no sluglines found in feature_script`);
+      return null;
+    }
+
+    const fallbackScenes: ResolvedScene[] = matches.map((m, i) => ({
       number: i + 1,
-      heading: scene.scene_graph_versions?.[0]?.slugline ||
-               scene.scene_graph_order?.[0]?.order_key?.toString() ||
-               `Scene ${scene.key}`,
+      heading: m.heading,
     }));
 
-    console.log(`[generate-document] resolveScenesFromFeatureScript: resolved ${result.length} scenes for project ${projectId}`);
-    return result;
+    console.log(`[generate-document] resolveScenesFromFeatureScript: fallback resolved ${fallbackScenes.length} scenes from feature_script sluglines`);
+    return fallbackScenes;
   } catch (err) {
     console.error(`[generate-document] resolveScenesFromFeatureScript failed:`, err?.message || err);
     return null;
@@ -617,8 +665,18 @@ Deno.serve(async (req) => {
               }
               if (count >= total && total > 0) {
                 const assembled = generated.sort((a: any, b: any) => a.scene_number - b.scene_number).map((s: any) => s.scene_text).join("\n\n");
-                await sc.from("project_document_versions").update({ plaintext: assembled, status: "draft", is_current: true, meta_json: { ...m, bg_generating: false, fs_state: "complete", fs_script_length: assembled.length } }).eq("id", v.id);
-                await sc.from("project_documents").update({ latest_version_id: v.id, updated_at: new Date().toISOString() }).eq("id", docs[0].id);
+                // Route through Document OS — persistVersion handles post-write hooks
+                const filledVersion = await persistVersion(sc, {
+                  projectId,
+                  documentId: docs[0].id,
+                  docType: "feature_script",
+                  operation: "UPDATE_CONTENT",
+                  versionId: v.id,
+                  plaintext: assembled,
+                  isCurrent: true,
+                  metaJson: { ...m, bg_generating: false, fs_state: "complete", fs_script_length: assembled.length },
+                });
+                if (!filledVersion) throw new Error("Failed to fill version");
                 return jsonRes({ success: true, document_id: docs[0].id, version_id: v.id, version_number: v.version_number, generating: false, progress_state: "complete", completed_scene_count: total, total_scene_count: total, script_length: assembled.length });
               }
             }
@@ -2842,6 +2900,36 @@ ${existingCBContent.slice(0, 30000)}`;
 
             scenePlanUpstreamBlock = `\n\n=== SCENE PLAN (${scenePlan.length} scenes) ===\n${planBlocks}\n=== END SCENE PLAN ===`;
             console.log(`[generate-document] Scene Plan generated: ${scenePlan.length} scenes for feature_script — sceneCount drives chunk plan`);
+
+            // ── DERIVE SCENE CONTRACTS ──
+            // Save contracts to meta_json so early resume can pick them up on next call
+            const fsContracts = scenePlan.map((sp: any, idx: number) => ({
+              scene_number: sp.scene_number || (idx + 1),
+              title: sp.slugline || sp.title || `Scene ${idx + 1}`,
+              scene_function: sp.dramatic_purpose || sp.scene_function || "unknown",
+              source_beat: sp.source_beat_number || null,
+              required_characters: sp.characters_present || sp.character_keys || [],
+              required_location: sp.location_key || null,
+              required_events: sp.summary || null,
+              input_pressure: null,
+              output_pressure: null,
+              prior_scene_summary: idx > 0 ? (scenePlan[idx - 1]?.summary || null) : null,
+              next_scene_goal: idx < scenePlan.length - 1 ? "set up " + (scenePlan[idx + 1]?.slugline || "next scene") : "conclude",
+              target_length: "standard",
+              generated: false,
+            }));
+            await serviceClient.from("project_document_versions")
+              .update({ meta_json: {
+                ...((chunkVersion as any)?.meta_json || {}),
+                bg_generating: true,
+                fs_state: "contracts_ready",
+                fs_contracts: fsContracts,
+                fs_generated_scenes: [],
+                fs_total: fsContracts.length,
+                fs_completed: 0,
+              }})
+              .eq("id", chunkVersion!.id);
+            console.log(`[generate-document][scene-mode] ${fsContracts.length} scene contracts derived and persisted`);
           } catch (spErr: any) {
             // Scene Plan generation failure is FATAL for native feature_script
             console.error(`[generate-document] Scene Plan generation FAILED — aborting feature_script: ${spErr?.message?.slice(0, 200)}`);
@@ -2882,7 +2970,7 @@ ${existingCBContent.slice(0, 30000)}`;
 
       const plan = chunkPlanFor(docType, {
         episodeCount: resolvedQuals?.season_episode_count,
-        scenes: scenePlanForMeta, // ScenePlanEntry[] for sequence_indexed
+        scenes: docType === "production_draft" ? resolvedScenes : scenePlanForMeta, // ScenePlanEntry[] for sequence_indexed
         sceneCount: sceneCountForPlan ?? undefined,
         batchSize: isLargeRiskEpisodic(docType) ? 1 : undefined,
         beats: docType === "feature_script" ? beats : null,

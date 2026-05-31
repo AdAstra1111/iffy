@@ -408,7 +408,78 @@ async function handleGenerate(projectId: string) {
           const aliases = (atom.attributes as any)?.aliases || [];
           const sceneCount = (atom.attributes as any)?.frequencyInScript || 0;
 
-          const prompt = `You are a production designer and visual story analyst. Generate a rich, production-ready location atom for the following location.
+                    // ── CPIE Inference Integration (HARD PATH) ──
+          // CPIE provides deterministic location inferences as ground truth
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
+          if (!cpieUrl) {
+            throw new Error("CPIE_ENDPOINT_URL not configured — CPIE required for location atomiser");
+          }
+          
+          const { data: pcpRow } = await admin
+            .from("project_context_profiles")
+            .select("profile")
+            .eq("project_id", projectId)
+            .maybeSingle();
+
+          if (pcpRow?.profile) {
+            const pcp = (pcpRow.profile as any).categories || pcpRow.profile;
+            // Determine spatial_function from atom attributes or location name
+            const locationName = (atom.canonical_name || "").toLowerCase();
+            let spatialFunction = "civic";
+            if (/house|home|apartment|room|bedroom|kitchen|bathroom|inn|tavern/.test(locationName)) spatialFunction = "residential";
+            else if (/shop|market|store|bazaar|mall|restaurant|cafe|bar/.test(locationName)) spatialFunction = "commercial";
+            else if (/church|temple|cathedral|mosque|shrine|altar/.test(locationName)) spatialFunction = "religious";
+            else if (/castle|fort|fortress|barracks|guard|watchtower/.test(locationName)) spatialFunction = "military";
+            else if (/factory|mill|plant|foundry|workshop|mine|quarry/.test(locationName)) spatialFunction = "industrial";
+            else if (/road|street|bridge|port|harbor|station|airport/.test(locationName)) spatialFunction = "transportation";
+            else if (/park|garden|plaza|square|field|forest|lake|river|mountain|valley/.test(locationName)) spatialFunction = "recreational";
+            
+            const cpieCtx = {
+              project_id: projectId,
+              genre: pcp.project_identity?.genre?.value || pcp.genre || ["unknown"],
+              period: pcp.temporal_context?.period?.value || pcp.period || "contemporary",
+              climate: pcp.geographic_context?.climate?.value || pcp.climate || "temperate",
+              technology_level: pcp.technology_context?.level?.value || pcp.technology_level || "contemporary",
+              culture: pcp.cultural_context?.dominant_cultures?.value || pcp.culture || ["Western"],
+              infrastructure: pcp.geographic_context?.infrastructure?.value || pcp.infrastructure || "",
+              geography: pcp.geographic_context?.terrain?.value || pcp.geography || "",
+              economy: pcp.economic_context?.economic_system?.value || pcp.economy || "",
+              class_structure: pcp.social_context?.class_structure?.value || pcp.class_structure || "",
+              biome: pcp.geographic_context?.biome?.value || pcp.biome || "",
+              spatial_function: spatialFunction,
+              profession_map: pcp.professional_context?.profession_map?.value || pcp.profession_map || {},
+              pcp_resolution_timestamp: new Date().toISOString(),
+            };
+
+            const cpieResponse = await fetch(cpieUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pcp: cpieCtx, domains: ["location"] }),
+            });
+
+            if (cpieResponse.ok) {
+              const cpieResult = await cpieResponse.json();
+              const entityResults = cpieResult.domains?.location || [];
+              if (entityResults.length > 0) {
+                cpieInferences = entityResults[0].inferences.map((inf: any) => ({
+                  field: inf.field, value: inf.value,
+                  confidence: inf.confidence_score, reasoning: inf.reasoning,
+                }));
+              }
+            }
+          }
+
+          // CPIE may return empty for location (needs profession_map entries)
+          // Not required to be non-empty — location has fewer deterministic anchors
+          const cpieContext = cpieInferences.length > 0
+            ? cpieInferences.map(i => `  - ${i.field}: ${i.value} (confidence: ${i.confidence}, reasoning: ${i.reasoning.join(", ")})`).join("\n")
+            : "  (no CPIE data available)";
+
+const prompt = `ENHANCEMENT MODE — Core location decisions made by CPIE.
+
+DETERMINISTIC CPIE INFERENCES (must use):
+${cpieContext}
 
 LOCATION: ${atom.canonical_name}
 ALIASES: ${aliases.length > 0 ? aliases.join(", ") : "none"}
