@@ -746,16 +746,173 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── EARLY PRODUCTION_DRAFT CHUNK RESUME ──
+    // ── PRODUCTION_DRAFT DIAGNOSTICS + DIRECT ASSEMBLY + RESUME ──
     if (docType === "production_draft") {
       try {
         const sc = createClient(supabaseUrl, serviceKey);
-        const { data: pdDocs } = await sc.from("project_documents").select("id").eq("project_id", projectId).eq("doc_type", "production_draft");
-        if (pdDocs && pdDocs.length > 0) {
-          const pdDocId = pdDocs[0].id;
+
+        // ── TASK 1: STRUCTURED DIAGNOSTICS TRACE ──
+        const { data: pdDiag } = await sc.from("project_documents").select("id, char_count, latest_version_id").eq("project_id", projectId).eq("doc_type", "production_draft").maybeSingle();
+        let diag: Record<string, any> = { projectId, docType, pd_found: !!pdDiag };
+        if (pdDiag) {
+          const { data: pdVerDiag } = await sc.from("project_document_versions").select("id, version_number, meta_json, status, updated_at, plaintext").eq("id", pdDiag.latest_version_id).maybeSingle();
+          if (pdVerDiag) {
+            const pm = typeof pdVerDiag.meta_json === "object" ? pdVerDiag.meta_json : {};
+            diag.pd_version = pdVerDiag.version_number;
+            diag.pd_bg = pm?.bg_generating ?? null;
+            diag.pd_status = pdVerDiag.status;
+            diag.pd_pt_len = (pdVerDiag.plaintext || "").length;
+            diag.pd_updated_at = pdVerDiag.updated_at;
+            if (pm?.bg_generating) {
+              const ageMin = (Date.now() - new Date(pdVerDiag.updated_at || pdVerDiag.created_at).getTime()) / 60000;
+              diag.pd_stale_age_min = Math.round(ageMin * 10) / 10;
+            }
+          }
+        }
+        // Feature script diagnostics
+        const { data: fsDiag } = await sc.from("project_documents").select("id, char_count, latest_version_id").eq("project_id", projectId).eq("doc_type", "feature_script").maybeSingle();
+        if (fsDiag?.latest_version_id) {
+          const { data: fsVerDiag } = await sc.from("project_document_versions").select("meta_json, plaintext").eq("id", fsDiag.latest_version_id).maybeSingle();
+          if (fsVerDiag) {
+            const fm = typeof fsVerDiag.meta_json === "object" ? fsVerDiag.meta_json : {};
+            diag.fs_pt_len = (fsVerDiag.plaintext || "").length;
+            diag.fs_generated_scenes = Array.isArray(fm?.fs_generated_scenes) ? fm.fs_generated_scenes.length : 0;
+            diag.fs_scene_contracts = Array.isArray(fm?.fs_contracts) ? fm.fs_contracts.length : 0;
+          }
+        }
+        console.log(`[generate-document][PD-DIAG] ${JSON.stringify(diag)}`);
+
+        // ── TASK 5: FEATURE_SCRIPT READINESS CHECK ──
+        // If PD is requested but feature_script has no content or scenes, return structured diagnostic
+        if (!fsDiag?.latest_version_id || !diag.fs_pt_len || diag.fs_pt_len < 100) {
+          console.log(`[generate-document][PD-DIAG] feature_script_not_ready — fs_pt_len=${diag.fs_pt_len}, fs_scenes=${diag.fs_generated_scenes}`);
+          // Fall through — normal path will handle the empty case
+        }
+
+        // ── TASK 3: DIRECT ASSEMBLY FAST PATH ──
+        // If feature_script has generated scenes, assemble PD directly without LLM
+        if (fsDiag?.latest_version_id && diag.fs_generated_scenes && diag.fs_generated_scenes > 0) {
+          const { data: fsVerFast } = await sc.from("project_document_versions").select("meta_json").eq("id", fsDiag.latest_version_id).maybeSingle();
+          if (fsVerFast) {
+            const fm = typeof fsVerFast.meta_json === "object" ? fsVerFast.meta_json : {};
+            const scenes = fm?.fs_generated_scenes || fm?.generated_scenes || [];
+            if (Array.isArray(scenes) && scenes.length > 0) {
+              const sceneTexts = scenes.map((s: any) => s.scene_text || "").filter(Boolean);
+              if (sceneTexts.length > 0) {
+                const assembled = sceneTexts.join("\n\n=====\n\n");
+                console.log(`[generate-document] PD direct assembly: ${sceneTexts.length} scenes, ${assembled.length} chars`);
+
+                // Ensure PD doc record exists
+                let pdId = pdDiag?.id || null;
+                if (!pdId) {
+                  const { data: newPd, error: pdCreateErr } = await sc.from("project_documents").insert({
+                    project_id: projectId, doc_type: "production_draft", user_id: actorUserId,
+                    file_name: "production_draft.md", file_path: `${projectId}/production_draft.md`,
+                    extraction_status: "complete",
+                  }).select("id").single();
+                  if (!pdCreateErr && newPd) pdId = newPd.id;
+                }
+
+                if (pdId) {
+                  // Clear any stale bg_generating versions
+                  await sc.from("project_document_versions")
+                    .update({ meta_json: { bg_generating: false, bg_stale: true, pd_state: "superseded_by_direct_assembly" } })
+                    .eq("document_id", pdId)
+                    .eq("meta_json->>bg_generating", "true");
+
+                  // Get current version number
+                  const { count: verCount } = await sc.from("project_document_versions")
+                    .select("id", { count: "exact", head: true }).eq("document_id", pdId);
+                  const newVerNum = (verCount || 0) + 1;
+
+                  // Create assembled version
+                  const { data: newVer, error: verErr } = await sc.from("project_document_versions").insert({
+                    document_id: pdId, version_number: newVerNum,
+                    status: "draft", plaintext: assembled,
+                    created_by: actorUserId,
+                    is_current: true,
+                    meta_json: {
+                      bg_generating: false,
+                      pd_state: "complete",
+                      pd_assembly_source: "direct_assembly",
+                      pd_scene_count: sceneTexts.length,
+                      pd_assembled_length: assembled.length,
+                      pd_assembled_at: new Date().toISOString(),
+                    },
+                  }).select("id").single();
+
+                  if (newVer && !verErr) {
+                    // Update doc record
+                    await sc.from("project_documents")
+                      .update({ latest_version_id: newVer.id, char_count: assembled.length, updated_at: new Date().toISOString() })
+                      .eq("id", pdId);
+                    console.log(`[generate-document] PD direct assembly COMPLETE: v${newVerNum}, ${assembled.length} chars`);
+                    return jsonRes({
+                      success: true, document_id: pdId, version_id: newVer.id,
+                      version_number: newVerNum, generating: false,
+                      progress_state: "complete", script_length: assembled.length,
+                      assembly_source: "direct_assembly",
+                    });
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // ── TASK 2: STALE / IN-PROGRESS GUARD ──
+        // Check existing PD state
+        if (pdDiag?.latest_version_id) {
+          const { data: pdVer } = await sc.from("project_document_versions")
+            .select("id, version_number, meta_json, status, created_at")
+            .eq("id", pdDiag.latest_version_id)
+            .maybeSingle();
+          if (pdVer) {
+            const pm = typeof pdVer.meta_json === "object" ? pdVer.meta_json : {};
+            if (pm?.bg_generating === true) {
+              const ageMs = Date.now() - new Date(pdVer.created_at).getTime();
+              const ageMin = ageMs / 60000;
+              // Stale if >30 min (not 60 — more aggressive for PD)
+              if (ageMin > 30) {
+                console.log(`[generate-document] PD stale guard: v${pdVer.version_number} age=${Math.round(ageMin)}m — clearing`);
+                await sc.from("project_document_versions")
+                  .update({ meta_json: { ...pm, bg_generating: false, bg_stale: true, pd_state: "stale_cleared" } })
+                  .eq("id", pdVer.id);
+              } else {
+                // Check if chunks exist — if yes, resume via existing handler below
+                const { data: existChunks } = await sc.from("project_document_chunks")
+                  .select("id", { count: "exact", head: true })
+                  .eq("document_id", pdDiag.id)
+                  .eq("version_id", pdVer.id);
+                const chunkCount = typeof existChunks === "number" ? existChunks : (Array.isArray(existChunks) ? existChunks.length : 0);
+                if (chunkCount === 0) {
+                  // bg_generating=true but no chunks — stuck fresh version, clear it
+                  console.log(`[generate-document] PD stuck guard: v${pdVer.version_number} bg=true with 0 chunks — clearing`);
+                  await sc.from("project_document_versions")
+                    .update({ meta_json: { ...pm, bg_generating: false, bg_stale: true, pd_state: "stuck_cleared" } })
+                    .eq("id", pdVer.id);
+                }
+                // If chunks exist, let the resume handler below handle it
+              }
+            }
+          }
+        }
+
+        // ── EXISTING RESUME HANDLER ──
+        // Uses pdDiag.id (loaded above) — fall back to fresh lookup if PD doesn't exist yet
+        let pdResumeDocId = pdDiag?.id || null;
+        if (!pdResumeDocId) {
+          const { data: pdCreate } = await sc.from("project_documents").insert({
+            project_id: projectId, doc_type: "production_draft", user_id: actorUserId,
+            file_name: "production_draft.md", file_path: `${projectId}/production_draft.md`,
+            extraction_status: "complete",
+          }).select("id").single();
+          if (pdCreate) pdResumeDocId = pdCreate.id;
+        }
+        if (pdResumeDocId) {
           const { data: pdVers } = await sc.from("project_document_versions")
             .select("id, version_number, meta_json")
-            .eq("document_id", pdDocId)
+            .eq("document_id", pdResumeDocId)
             .eq("meta_json->>bg_generating", "true")
             .order("version_number", { ascending: false }).limit(1).maybeSingle();
           if (pdVers && pdVers.meta_json) {
@@ -763,7 +920,7 @@ Deno.serve(async (req) => {
             // Load existing chunks for this version
             const { data: existingChunks, error: chunkLoadErr } = await sc.from("project_document_chunks")
               .select("chunk_index, chunk_key, status, content")
-              .eq("document_id", pdDocId)
+              .eq("document_id", pdResumeDocId)
               .eq("version_id", pdVers.id)
               .order("chunk_index", { ascending: true });
             if (chunkLoadErr) throw new Error(`Chunk load failed: ${chunkLoadErr.message}`);
@@ -785,7 +942,7 @@ Deno.serve(async (req) => {
 
                 await sc.from("project_document_chunks")
                   .update({ status: "running" })
-                  .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+                  .eq("document_id", pdResumeDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
 
                 const prevContent = ci > 0 && chunks[ci - 1]?.status === "done" ? (chunks[ci - 1]?.content?.slice(-800) || "") : "";
                 const prompt = `Write a production draft scene: ${c.chunk_key}.\n\n${prevContent ? `PREVIOUS SCENE ENDING:\n...${prevContent}\n\n` : ""}Write a complete screenplay-formatted production draft scene. Full slugline, action, dialogue.`;
@@ -795,7 +952,7 @@ Deno.serve(async (req) => {
                   if (text) {
                     await sc.from("project_document_chunks")
                       .update({ status: "done", content: text, char_count: text.length })
-                      .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+                      .eq("document_id", pdResumeDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
 
                     await sc.from("project_document_versions")
                       .update({ meta_json: { ...m, pd_state: "scene_generation", pd_completed: doneChunks.length + 1, pd_total: total } })
@@ -803,7 +960,7 @@ Deno.serve(async (req) => {
 
                     if (!ok(20_000) && (ci + 1) < total) {
                       console.log(`[generate-document] PD resume: budget at ${ci+1}/${total}`);
-                      return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                      return jsonRes({ success: true, document_id: pdResumeDocId, version_id: pdVers.id,
                         version_number: pdVers.version_number, generating: true,
                         progress_state: "scene_generation", completed_chunks: ci + 1, total_chunks: total });
                     }
@@ -812,14 +969,14 @@ Deno.serve(async (req) => {
                   console.warn(`[generate-document] PD chunk ${c.chunk_key} failed: ${genErr?.message?.slice(0, 100)}`);
                   await sc.from("project_document_chunks")
                     .update({ status: "failed", error: genErr?.message?.slice(0, 500) })
-                    .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+                    .eq("document_id", pdResumeDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
                 }
               }
 
               // All chunks done — assemble
               const { data: finalChunks } = await sc.from("project_document_chunks")
                 .select("chunk_index, content, status")
-                .eq("document_id", pdDocId).eq("version_id", pdVers.id)
+                .eq("document_id", pdResumeDocId).eq("version_id", pdVers.id)
                 .order("chunk_index", { ascending: true });
               const allDone = (finalChunks || []).every((c: any) => c.status === "done" && c.content);
               if (allDone && finalChunks?.length > 0) {
@@ -829,8 +986,8 @@ Deno.serve(async (req) => {
                   .eq("id", pdVers.id);
                 await sc.from("project_documents")
                   .update({ latest_version_id: pdVers.id, char_count: assembled.length, updated_at: new Date().toISOString() })
-                  .eq("id", pdDocId);
-                return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                  .eq("id", pdResumeDocId);
+                return jsonRes({ success: true, document_id: pdResumeDocId, version_id: pdVers.id,
                   version_number: pdVers.version_number, generating: false,
                   progress_state: "complete", completed_chunks: finalChunks.length,
                   total_chunks: finalChunks.length, script_length: assembled.length });
@@ -843,8 +1000,8 @@ Deno.serve(async (req) => {
                 .eq("id", pdVers.id);
               await sc.from("project_documents")
                 .update({ latest_version_id: pdVers.id, char_count: assembled.length, updated_at: new Date().toISOString() })
-                .eq("id", pdDocId);
-              return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                .eq("id", pdResumeDocId);
+              return jsonRes({ success: true, document_id: pdResumeDocId, version_id: pdVers.id,
                 version_number: pdVers.version_number, generating: false,
                 progress_state: "complete", completed_chunks: chunks.length,
                 total_chunks: chunks.length, script_length: assembled.length });
