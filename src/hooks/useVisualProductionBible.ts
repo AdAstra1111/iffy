@@ -1,168 +1,251 @@
 /**
- * useVisualProductionBible — React hook for VPB loading, regeneration, and export.
+ * useVisualProductionBible — VPB data hook.
  *
- * Wraps the vpb-assembly-engine edge function and vpb_versions queries.
- * Provides loading state, error handling, and version tracking.
+ * Consumes two edge functions:
+ *   vpb-export (POST) — returns markdown + version info
+ *   vpb-assembly-engine (POST) — generates/regenerates VPB
+ *
+ * Architecture-Strict:
+ *   No LLM. No inference. Pure deterministic data from upstream.
  */
-import { useState, useCallback } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
+import { useState, useEffect, useCallback } from 'react'
+import { supabase } from '@/integrations/supabase/client'
 
-export interface VPB {
-  metadata: {
-    projectId: string;
-    version: number;
-    generatedAt: string;
-    status: string;
-    projectTitle: string;
-    projectFormat: string;
-    projectGenres: string[];
-    projectLogline: string;
-  };
-  sections: Record<string, any>;
-  provenance: {
-    generatedBy: string;
-    assemblyTimestamp: string;
-    assemblyDurationMs: number;
-    sources: string[];
-    nelStagesRun: string[];
-    assetCount: number;
-  };
+// ── Section Labels ───────────────────────────────────────────────────────
+
+export const VPB_SECTION_LABELS: Record<string, string> = {
+  projectOverview: 'Project Overview',
+  visualLanguage: 'Visual Language',
+  visualStyle: 'Visual Style',
+  productionDesign: 'Production Design',
+  characters: 'Characters',
+  cast: 'Cast',
+  locations: 'Locations',
+  wardrobe: 'Wardrobe',
+  heroFrames: 'Hero Frames',
+  posters: 'Posters',
+  lookbookSections: 'Lookbook Sections',
+  sceneBreakdown: 'Scene Breakdown',
+  governance: 'Governance',
+  assetInventory: 'Asset Inventory',
 }
 
-export interface VPBVersion {
-  id: string;
-  version_number: number;
-  is_current: boolean;
-  status: string;
-  vpb_json: VPB;
-  nel_run_at: string;
-  section_count: number;
-  asset_count: number;
-  assembly_duration_ms: number;
-  created_at: string;
-  generated_by: string;
+export const VPB_SECTION_KEYS = Object.keys(VPB_SECTION_LABELS)
+
+// ── Types ────────────────────────────────────────────────────────────────
+
+export interface VPBExportResult {
+  projectId: string
+  format: string
+  versionNumber: number
+  markdown: string
+  sectionCount: number
 }
 
-export function useVisualProductionBible(projectId: string | undefined) {
-  const [isLoading, setIsLoading] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  const [vpb, setVpb] = useState<VPB | null>(null);
-  const [version, setVersion] = useState<VPBVersion | null>(null);
-  const [versions, setVersions] = useState<VPBVersion[]>([]);
-  const [error, setError] = useState<string | null>(null);
+export interface VPBAssemblyResult {
+  projectId: string
+  versionNumber: number
+  vpbId: string | null
+  sectionCount: number
+  assetCount: number
+  assemblyDurationMs: number
+}
 
-  const loadVPB = useCallback(async () => {
-    if (!projectId) return;
-    setIsLoading(true);
-    setError(null);
-    try {
-      // Load latest version from vpb_versions table
-      const { data, error: qErr } = await supabase
-        .from('vpb_versions')
-        .select('*')
-        .eq('project_id', projectId)
-        .order('version_number', { ascending: false });
+// ── Helper: infer section status from markdown ───────────────────────────
 
-      if (qErr) throw new Error(qErr.message);
+function inferSectionStatuses(markdown: string): { section: string; status: string; label: string }[] {
+  const lines = markdown.split('\n')
+  const sectionMap = new Map<string, { hasContent: boolean; startIdx: number }>()
 
-      const rows = (data || []) as VPBVersion[];
-      if (rows.length === 0) {
-        setVpb(null);
-        setVersion(null);
-        setVersions([]);
-        setIsLoading(false);
-        return;
+  let currentSection: string | null = null
+  let currentStart = 0
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    // Match ## headings (VPB sections)
+    const headingMatch = line.match(/^## (.+)/)
+    if (headingMatch) {
+      if (currentSection) {
+        sectionMap.set(currentSection, { hasContent: false, startIdx: currentStart })
       }
-
-      const latest = rows.find(r => r.is_current) || rows[0];
-      setVpb(latest.vpb_json);
-      setVersion(latest);
-      setVersions(rows);
-    } catch (err: any) {
-      console.error('[useVPB] Load error:', err);
-      setError(err.message || 'Failed to load VPB');
-      toast.error('Failed to load VPB');
-    } finally {
-      setIsLoading(false);
+      currentSection = headingMatch[1].trim().toLowerCase().replace(/ /g, '')
+      currentStart = i
     }
-  }, [projectId]);
-
-  const regenerateVPB = useCallback(async () => {
-    if (!projectId) return;
-    setIsRegenerating(true);
-    setError(null);
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('vpb-assembly-engine', {
-        body: { projectId },
-      });
-
-      if (fnErr) throw new Error(fnErr.message || 'Regeneration failed');
-      if (data?.error) throw new Error(data.error);
-
-      toast.success(`VPB v${data.versionNumber} assembled (${data.sectionCount} sections, ${data.assemblyDurationMs}ms)`);
-      
-      // Reload to get the persisted version
-      await loadVPB();
-      return data;
-    } catch (err: any) {
-      console.error('[useVPB] Regenerate error:', err);
-      setError(err.message || 'Regeneration failed');
-      toast.error(err.message || 'VPB regeneration failed');
-      return null;
-    } finally {
-      setIsRegenerating(false);
-    }
-  }, [projectId, loadVPB]);
-
-  const exportMarkdown = useCallback(async (): Promise<string | null> => {
-    if (!projectId) return null;
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('vpb-export', {
-        body: { projectId, format: 'markdown' },
-      });
-
-      if (fnErr) throw new Error(fnErr.message);
-      if (data?.error) throw new Error(data.error);
-
-      return data.markdown;
-    } catch (err: any) {
-      console.error('[useVPB] Export error:', err);
-      toast.error('Export failed: ' + (err.message || 'Unknown error'));
-      return null;
-    }
-  }, [projectId]);
-
-  const loadVersion = useCallback(async (versionId: string) => {
-    if (!projectId) return;
-    try {
-      const { data, error: qErr } = await supabase
-        .from('vpb_versions')
-        .select('*')
-        .eq('id', versionId)
-        .single();
-
-      if (qErr) throw new Error(qErr.message);
-      if (data) {
-        const v = data as VPBVersion;
-        setVpb(v.vpb_json);
-        setVersion(v);
+    // If we're inside a section and there's non-empty, non-heading content
+    if (currentSection && line.trim() && !line.startsWith('#') && !line.startsWith('---')) {
+      const existing = sectionMap.get(currentSection)
+      if (existing) {
+        existing.hasContent = true
+      } else {
+        sectionMap.set(currentSection, { hasContent: true, startIdx: currentStart })
       }
-    } catch (err: any) {
-      console.error('[useVPB] Load version error:', err);
     }
-  }, [projectId]);
+  }
+  // Last section
+  if (currentSection) {
+    if (!sectionMap.has(currentSection)) {
+      sectionMap.set(currentSection, { hasContent: false, startIdx: currentStart })
+    }
+  }
+
+  return VPB_SECTION_KEYS.map((key) => {
+    const label = VPB_SECTION_LABELS[key] || key
+    const matchKey = key.toLowerCase()
+    const entry = sectionMap.get(matchKey) || sectionMap.get(label.toLowerCase().replace(/ /g, ''))
+    return {
+      section: key,
+      status: entry?.hasContent ? 'populated' : 'empty',
+      label,
+    }
+  })
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────
+
+interface UseVisualProductionBibleOptions {
+  projectId?: string
+  enabled?: boolean
+}
+
+interface UseVisualProductionBibleReturn {
+  exportResult: VPBExportResult | null
+  assemblyResult: VPBAssemblyResult | null
+  currentSection: string
+  sectionStatuses: { section: string; status: string; label: string }[]
+  markdown: string
+  versionNumber: number | null
+  isLoading: boolean
+  isGenerating: boolean
+  error: string | null
+  setCurrentSection: (key: string) => void
+  regenerate: () => Promise<void>
+  refresh: () => Promise<void>
+}
+
+export function useVisualProductionBible({
+  projectId,
+  enabled = true,
+}: UseVisualProductionBibleOptions): UseVisualProductionBibleReturn {
+  const [exportResult, setExportResult] = useState<VPBExportResult | null>(null)
+  const [assemblyResult, setAssemblyResult] = useState<VPBAssemblyResult | null>(null)
+  const [currentSection, setCurrentSection] = useState('projectOverview')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch VPB status
+  const fetchVPBStatus = useCallback(async () => {
+    if (!projectId || !enabled) return
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const { data: result, error: invokeError } = await supabase.functions.invoke(
+        'vpb-export',
+        { body: { projectId, format: 'sections' } }
+      )
+      if (invokeError) throw new Error(invokeError.message)
+      setExportResult(result as VPBExportResult)
+    } catch (err: any) {
+      // No VPB = acceptable
+      if (err?.message?.includes('not found') || err?.message?.includes('no rows') || err?.message?.includes('undefined')) {
+        setExportResult(null)
+        return
+      }
+      setError(err.message || 'Failed to load VPB status')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [projectId, enabled])
+
+  // Regenerate VPB
+  const regenerate = useCallback(async () => {
+    if (!projectId) return
+    setIsGenerating(true)
+    setError(null)
+
+    try {
+      const { data: result, error: invokeError } = await supabase.functions.invoke(
+        'vpb-assembly-engine',
+        { body: { projectId } }
+      )
+      if (invokeError) throw new Error(invokeError.message)
+      setAssemblyResult(result as VPBAssemblyResult)
+
+      // Refresh status after generation
+      await fetchVPBStatus()
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate VPB')
+    } finally {
+      setIsGenerating(false)
+    }
+  }, [projectId, fetchVPBStatus])
+
+  const refresh = useCallback(async () => {
+    await fetchVPBStatus()
+  }, [fetchVPBStatus])
+
+  // Auto-fetch on mount
+  useEffect(() => {
+    fetchVPBStatus()
+  }, [fetchVPBStatus])
+
+  // Compute section statuses from markdown
+  const markdown = exportResult?.markdown || ''
+  const sectionStatuses = exportResult
+    ? inferSectionStatuses(markdown)
+    : VPB_SECTION_KEYS.map((key) => ({
+        section: key,
+        status: 'not_generated' as const,
+        label: VPB_SECTION_LABELS[key] || key,
+      }))
+
+  const versionNumber = exportResult?.versionNumber || null
 
   return {
+    exportResult,
+    assemblyResult,
+    currentSection,
+    sectionStatuses,
+    markdown,
+    versionNumber,
     isLoading,
-    isRegenerating,
-    vpb,
-    version,
-    versions,
+    isGenerating,
     error,
-    loadVPB,
-    regenerateVPB,
-    exportMarkdown,
-    loadVersion,
-  };
+    setCurrentSection,
+    regenerate,
+    refresh,
+  }
+}
+
+// ── Markdown Section Extraction ──────────────────────────────────────────
+
+/**
+ * Extract a specific section's markdown content from the full VPB markdown.
+ */
+export function extractSectionMarkdown(markdown: string, sectionLabel: string): string {
+  const lines = markdown.split('\n')
+  const result: string[] = []
+  let inSection = false
+
+  for (const line of lines) {
+    // Check if this line starts the section
+    if (line.startsWith('## ') && !inSection) {
+      const headingText = line.replace('## ', '').trim().toLowerCase()
+      if (headingText === sectionLabel.toLowerCase()) {
+        inSection = true
+        result.push(line)
+      }
+      continue
+    }
+    // Check if we hit the next ## section
+    if (line.startsWith('## ') && inSection) {
+      break
+    }
+    if (inSection) {
+      result.push(line)
+    }
+  }
+
+  return result.join('\n').trim()
 }
