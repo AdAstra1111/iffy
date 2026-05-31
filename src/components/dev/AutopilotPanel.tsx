@@ -326,7 +326,7 @@ export function AutopilotPanel({ projectId, pitchIdeaId, lane, format, documents
           .from('project_canon')
           .select('canon_json')
           .eq('project_id', projectId)
-          .single();
+          .maybeSingle();
         if (stale || !mountedRef.current) return;
         const autopilotState = canonRow?.canon_json?.autopilot as AutopilotState | undefined;
         if (!autopilotState) return;
