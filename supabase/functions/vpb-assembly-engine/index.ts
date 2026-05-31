@@ -177,7 +177,7 @@ async function assembleCharacters(
     .select("id, entity_key, canonical_name, scene_count, meta_json, narrative_role")
     .eq("project_id", projectId)
     .eq("entity_type", "character")
-    .eq("active", true)
+    .eq("status", "active")
     .order("scene_count", { ascending: false });
 
   // Get visual DNA for all characters
