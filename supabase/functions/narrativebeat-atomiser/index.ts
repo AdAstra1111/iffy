@@ -34,9 +34,10 @@ async function fetchSceneData(admin: any, projectId: string) {
 
   const { data: sceneVersions } = await admin
     .from("scene_graph_versions")
-    .select("scene_id, slugline, summary, content")
+    .select("scene_id, slugline, summary, content, characters_present, tension_delta, created_at")
     .eq("project_id", projectId)
-    .limit(80);
+    .order("created_at", { ascending: true })
+    .limit(200);
 
   if (enrichments && enrichments.length > 0) {
     const versionMap = new Map((sceneVersions || []).map((s: any) => [s.scene_id, s]));
@@ -100,6 +101,23 @@ async function fetchSceneData(admin: any, projectId: string) {
     }
   }
 
+  // Fallback: use raw scene_graph_versions when enrichment is not available
+  if (sceneVersions && sceneVersions.length > 0) {
+    const scenes = sceneVersions.map((s: any, i: number) => ({
+      scene_id: s.scene_id,
+      scene_index: i + 1,
+      slugline: s.slugline || s.scene_id,
+      content: s.content || "",
+      summary: (s.summary || s.content || "").substring(0, 300),
+      characters_present: s.characters_present || [],
+      tension_delta: s.tension_delta ?? null,
+      narrative_position: `${i + 1}/${sceneVersions.length}`,
+      source: "scene_graph_versions",
+    }));
+
+    return { scenes };
+  }
+
   return { scenes: [] };
 }
 
@@ -113,36 +131,38 @@ async function handleExtract(projectId: string) {
     return { error: "no_scenes", message: "No scene enrichment data found. Run scene enrichment first." };
   }
 
-  const candidateScenes = scenes
-    .filter((s: any) => s.narrative_momentum === "high" || s.narrative_momentum === "peak" || (s.tension_level && s.tension_level >= 7))
-    .slice(0, 30);
+  // Determine if scenes are from enrichment or raw fallback
+  const hasEnrichment = scenes.length > 0 && "narrative_momentum" in scenes[0];
+  const candidateScenes = hasEnrichment
+    ? scenes
+        .filter((s: any) => s.narrative_momentum === "high" || s.narrative_momentum === "peak" || (s.tension_level && s.tension_level >= 7))
+        .slice(0, 30)
+    : (() => {
+        // Deterministic sampling: take every-N scenes across full film
+        // For >45 scenes, sample evenly to fit token limits
+        if (scenes.length <= 35) return scenes.slice();
+        // Deterministic: take step-sized samples for even coverage
+        const step = Math.max(1, Math.floor(scenes.length / 35));
+        const sampled = scenes.filter((_: any, i: number) => i % step === 0);
+        // Always include last scene
+        if (sampled[sampled.length - 1]?.scene_id !== scenes[scenes.length - 1]?.scene_id) sampled.push(scenes[scenes.length - 1]);
+        return sampled;
+      })()
 
-  if (candidateScenes.length < 3) {
-    candidateScenes.splice(0, candidateScenes.length, ...scenes.slice(0, 20));
-  }
-
-  const { data: existingAtoms } = await admin
-    .from("atoms").select("canonical_name")
-    .eq("project_id", projectId).eq("atom_type", "narrativebeat");
-
-  const existingNames = new Set((existingAtoms || []).map((a: any) => a.canonical_name.toUpperCase()));
-
+  // ── PHASE 3 — Deterministic LLM extraction ──
+  // Build scene context with narrative position and scene_number
   const sceneContexts = candidateScenes.map((s: any, i: number) => {
-    const epCtx = s.episode_number ? ` [Ep ${s.episode_number}: ${s.slugline}]` : "";
-    return `[Beat ${i + 1}]${epCtx} ${s.slugline}: tension=${s.tension_level} momentum=${s.narrative_momentum} | ${(s.summary || s.content || "").substring(0, 200)}`;
+    const idx = s.scene_index ?? (i + 1);
+    const chars = s.characters_present?.length ? ` chars=[${s.characters_present.slice(0, 4).join(",")}]` : "";
+    const tension = s.tension_delta != null ? ` tension=${s.tension_delta.toFixed(2)}` : "";
+    return `[Scene ${idx}/${candidateScenes.length}]${chars}${tension} ${s.slugline}: ${(s.summary || s.content || "").substring(0, 200)}`;
   }).join("\n\n");
 
-  const extractPrompt = `You are a story beat analyst. Identify the most important experiential beats in this film — the specific moments that deliver emotional impact, revelation, or tonal shift.
-
-These are "memorable moments" not just plot points. A good beat is something audiences remember.
-
-Return a JSON array of beat names (3-10 beats). Each beat should be a short, descriptive label (3-8 words) naming the specific moment.
-
-Example: ["The Betrayal Reveal", "Desert Chase Sequence", "Underground Interrogation", "The Dead Drop"]
-
-SCENE DATA:\n${sceneContexts}\n
-Respond with ONLY a JSON array of beat name strings. No explanation.`;
-
+  const totalScenes = candidateScenes.length;
+  const extractPrompt = `You are a story beat analyst. Return a JSON array of beat objects from these scenes (18-25 beats preferred). Example: [{"stable_key":"opening","name":"Opening","scene_start":1,"scene_end":3,"scene_ids":[],"function":"setup","summary":"desc","confidence":0.8}]
+SCENE DATA:
+${sceneContexts}
+Respond with ONLY valid JSON. No explanation.`
   const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -154,8 +174,8 @@ Respond with ONLY a JSON array of beat name strings. No explanation.`;
     body: JSON.stringify({
       model: "minimax/minimax-m2.7",
       messages: [{ role: "user", content: extractPrompt }],
-      temperature: 0.5,
-      max_tokens: 1000,
+      temperature: 0.1,
+      max_tokens: 4000,
     }),
   });
 
@@ -163,45 +183,123 @@ Respond with ONLY a JSON array of beat name strings. No explanation.`;
   const aiData = await response.json();
   const rawContent = aiData.choices?.[0]?.message?.content || "";
 
-  let beatNames: string[] = [];
+  let beats: Array<{
+    stable_key: string;
+    name: string;
+    scene_start: number;
+    scene_end: number;
+    scene_ids: string[];
+    function: string;
+    summary: string;
+    confidence: number;
+  }> = [];
   try {
-    const cleaned = rawContent.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-    beatNames = JSON.parse(cleaned);
+    const cleaned = rawContent.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+    beats = JSON.parse(cleaned);
   } catch {
-    throw new Error(`Failed to parse beat names: ${rawContent.substring(0, 200)}`);
+    throw new Error(`Failed to parse beats: ${rawContent.substring(0, 300)}`);
   }
 
-  if (!Array.isArray(beatNames) || beatNames.length === 0) throw new Error("LLM returned no beats");
+  if (!Array.isArray(beats) || beats.length === 0) throw new Error("LLM returned no beats");
 
-  const newBeats = beatNames.filter((b: string) => !existingNames.has(b.toUpperCase()));
-  if (newBeats.length === 0) return { created: 0, message: "All narrative beats already exist" };
+  // ── PHASE 4 — Semantic dedup ──
+  const existingRows = await admin
+    .from("atoms").select("id, canonical_name, attributes")
+    .eq("project_id", projectId).eq("atom_type", "narrativebeat");
+
+  const existingBeats = (existingRows.data || []) as Array<{
+    id: string;
+    canonical_name: string;
+    attributes: Record<string, any>;
+  }>;
+
+  // Normalize for exact match dedup
+  function normalize(s: string): string {
+    return s.toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\b(the|a|an|of|and|in|to|for|is|at|on)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function sceneSpanOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+    const overlap = Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+    if (overlap <= 0) return 0;
+    const aSpan = aEnd - aStart + 1;
+    const bSpan = bEnd - bStart + 1;
+    return overlap / Math.min(aSpan, bSpan);
+  }
+
+  const newBeats: typeof beats = [];
+
+  for (const beat of beats) {
+    const nKey = beat.stable_key || normalize(beat.name);
+    let isDuplicate = false;
+
+    for (const existing of existingBeats) {
+      const exAttrs = existing.attributes || {};
+      const exKey = exAttrs.stable_key || normalize(existing.canonical_name);
+      const exStart = exAttrs.scene_start ?? 0;
+      const exEnd = exAttrs.scene_end ?? 0;
+
+      // Check 1: same stable_key
+      if (exKey && nKey && exKey === nKey) {
+        isDuplicate = true;
+        break;
+      }
+
+      // Check 2: normalized name match
+      if (normalize(existing.canonical_name) === normalize(beat.name)) {
+        isDuplicate = true;
+        break;
+      }
+
+      // Check 3: scene span overlap > 0.6
+      if (beat.scene_start && beat.scene_end && exStart && exEnd) {
+        if (sceneSpanOverlap(beat.scene_start, beat.scene_end, exStart, exEnd) > 0.6) {
+          isDuplicate = true;
+          break;
+        }
+      }
+
+      // Check 4: scene_ids overlap substantially
+      if (beat.scene_ids && exAttrs.scene_ids && Array.isArray(beat.scene_ids) && Array.isArray(exAttrs.scene_ids)) {
+        const shared = beat.scene_ids.filter((id: string) => exAttrs.scene_ids.includes(id));
+        if (shared.length > 0 && shared.length >= Math.min(beat.scene_ids.length, exAttrs.scene_ids.length) * 0.5) {
+          isDuplicate = true;
+          break;
+        }
+      }
+    }
+
+    if (!isDuplicate) {
+      newBeats.push(beat);
+    }
+  }
+
+  if (newBeats.length === 0) return { created: 0, message: "All beats already exist (semantic dedup)" };
 
   const now = new Date().toISOString();
-  const toInsert = newBeats.map((name: string, i: number) => ({
+  const toInsert = newBeats.map((beat: typeof beats[0], i: number) => ({
     project_id: projectId,
     atom_type: "narrativebeat",
     entity_id: null,
-    canonical_name: name,
+    canonical_name: beat.name,
     priority: 80 - i * 5,
-    confidence: 0,
+    confidence: Math.round((beat.confidence || 0.5) * 100),
     readiness_state: "stub",
     generation_status: "pending",
     attributes: {
-      beatName: name,
-      beatType: "",
-      sceneReference: "",
-      emotionalImpact: "",
-      structuralFunction: "",
-      narrativeMomentum: "",
-      charactersInvolved: [],
-      beatSequenceOrder: i + 1,
-      precededBy: "",
-      followedBy: "",
-      setPieceRequirement: "",
-      beatTags: [],
-      marketingRelevance: false,
-      productionCriticality: "",
-      confidence: 0,
+      stable_key: beat.stable_key || beat.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, ""),
+      beatName: beat.name,
+      scene_start: beat.scene_start ?? 0,
+      scene_end: beat.scene_end ?? 0,
+      scene_ids: beat.scene_ids || [],
+      function: beat.function || "",
+      summary: beat.summary || "",
+      source: hasEnrichment ? "scene_enrichment" : "scene_graph_versions",
+      extraction_version: "deterministic_v1",
+      confidence: beat.confidence || 0.5,
       readinessBadge: "foundation",
       generationStatus: "pending",
     },
@@ -211,7 +309,7 @@ Respond with ONLY a JSON array of beat name strings. No explanation.`;
 
   const { data: inserted, error } = await admin.from("atoms").insert(toInsert).select("id");
   if (error) throw new Error(`Failed to insert narrativebeat atoms: ${error.message}`);
-  return { created: inserted?.length || 0, beats: newBeats };
+  return { created: inserted?.length || 0, beats: newBeats.map((b) => b.name), scene_coverage: `${newBeats[0]?.scene_start}-${newBeats[newBeats.length - 1]?.scene_end}` };
 }
 
 async function handleStatus(projectId: string) {
