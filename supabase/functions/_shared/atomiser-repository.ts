@@ -52,6 +52,12 @@ export interface CanonEmission {
   provenance: ProvenanceRecord;
   cdg_context: CDGContextRecord;
   ics_metadata: ICSMetadata[];
+  generated_at: string;
+  generated_by: string;
+  entity_id?: string | null;
+  priority?: number;
+  readiness_state?: string;
+  generation_status?: string;
 }
 
 export interface AtomRow {
@@ -129,6 +135,28 @@ export interface AtomiserRepository {
     projectId: string,
     entityKey: string
   ): Promise<Record<string, unknown>>;
+
+  /** Update an existing atom by ID */
+  updateAtom(
+    projectId: string,
+    atomId: string,
+    updates: Record<string, unknown>
+  ): Promise<void>;
+
+  /** Bulk update atoms by their IDs */
+  bulkUpdateAtomsByIds(
+    projectId: string,
+    atomIds: string[],
+    updates: Record<string, unknown>
+  ): Promise<number>;
+
+  /** Bulk update atoms by current generation_status */
+  bulkUpdateAtomsByStatus(
+    projectId: string,
+    atomType: string,
+    statusFilter: string[],
+    updates: Record<string, unknown>
+  ): Promise<number>;
 }
 
 // ── Provenance Write Guard ─────────────────────────────────────────────
@@ -248,11 +276,11 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
         .eq('project_id', projectId);
 
       if (filters?.entityType) {
-        query = query.eq('entity_type', filters.entityType);
+        query = query.eq('atom_type', filters.entityType);
       }
       if (filters?.domain) {
         // Domain-specific atoms use the entity_type filter
-        query = query.eq('entity_type', filters.domain);
+        query = query.eq('atom_type', filters.domain);
       }
 
       const { data, error } = await query;
@@ -316,8 +344,11 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
       for (const emission of emissions) {
         const record = {
           project_id: projectId,
-          entity_type: entityType || 'unknown',
+          atom_type: entityType || 'unknown',
           canonical_name: emission.entity_key || '',
+          priority: emission.priority ?? 50,
+          readiness_state: emission.readiness_state || 'stub',
+          generation_status: emission.generation_status || 'pending',
           attributes: {
             ...emission.canon_object,
             _provenance: emission.provenance,
@@ -361,6 +392,74 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
 
       const attrs = (data as { attributes?: Record<string, unknown> }).attributes;
       return (attrs?._user_overrides as Record<string, unknown>) || {};
+    },
+
+    async bulkUpdateAtomsByIds(projectId, atomIds, updates) {
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase
+        .from('atoms')
+        .update(updates)
+        .eq('project_id', projectId)
+        .in('id', atomIds);
+
+      if (error) {
+        throw new Error(`[AtomiserRepository] bulkUpdateAtomsByIds: ${error.message}`);
+      }
+      return atomIds.length;
+    },
+
+    async bulkUpdateAtomsByStatus(projectId, atomType, statusFilter, updates) {
+      updates.updated_at = new Date().toISOString();
+      const { error } = await supabase
+        .from('atoms')
+        .update(updates)
+        .eq('project_id', projectId)
+        .eq('atom_type', atomType)
+        .in('generation_status', statusFilter);
+
+      if (error) {
+        throw new Error(`[AtomiserRepository] bulkUpdateAtomsByStatus: ${error.message}`);
+      }
+      // Can't return count without an additional query
+      return -1;
+    },
+
+    async updateAtom(projectId, atomId, updates) {
+      // Validate the atom belongs to this project
+      const { data: existing } = await supabase
+        .from('atoms')
+        .select('project_id')
+        .eq('id', atomId)
+        .maybeSingle();
+      
+      if (!existing) {
+        throw new Error('[AtomiserRepository] updateAtom: atom not found');
+      }
+      if (existing.project_id !== projectId) {
+        throw new Error('[AtomiserRepository] updateAtom: project_id mismatch — cross-project write blocked');
+      }
+      
+      // Validate provenance if attributes are being updated
+      if (updates.attributes && !bypassGuard) {
+        const attrsUpdates = updates.attributes as Record<string, unknown>;
+        const hasProvenance = attrsUpdates._provenance || 
+          (typeof attrsUpdates._generated_by === 'string');
+        if (!hasProvenance) {
+          // Not blocking — just warn; attribute updates may include status transitions
+          console.warn('[AtomiserRepository] updateAtom: attribute update without provenance metadata');
+        }
+      }
+      
+      updates.updated_at = new Date().toISOString();
+      
+      const { error } = await supabase
+        .from('atoms')
+        .update(updates)
+        .eq('id', atomId);
+      
+      if (error) {
+        throw new Error(`[AtomiserRepository] updateAtom: ${error.message}`);
+      }
     },
   };
 }

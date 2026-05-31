@@ -14,7 +14,6 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createAtomiserRepository } from "../_shared/atomiser-repository.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,13 +28,6 @@ function makeAdminClient() {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
-}
-
-function makeRepository() {
-  return createAtomiserRepository({
-    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
-    supabaseKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-  });
 }
 
 function makeStubAttributes(name: string, sceneCount: number) {
@@ -198,42 +190,8 @@ function extractCapitalizedNounPhrases(text: string): string[] {
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
-
-
-/**
- * Convert a flat atom row to CanonEmission format for repository upsert.
- * Domain mapping: D2 (prop) / C2 (upstream)
- */
-function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomiser-repository.ts").CanonEmission {
-  const attrs = (row.attributes as Record<string, unknown>) || {};
-  return {
-    entity_key: (row.canonical_name as string) || "",
-    canon_object: attrs,
-    provenance: {
-      source_type: "extracted",
-      confidence_score: (row.confidence as number) || 0.5,
-      reasoning: ["extracted_from_script_reference"],
-      pcp_dependencies: ["profession_map", "period", "technology_level"],
-    },
-    cdg_context: {
-      node_id: "D2",
-      staleness: "FRESH",
-      upstream_node: "C2",
-      regeneration_count: 0,
-    },
-    ics_metadata: [],
-    generated_at: (row.created_at as string) || new Date().toISOString(),
-    generated_by: "prop_atomiser_extract",
-    entity_id: (row.entity_id as string) || null,
-    priority: (row.priority as number) || 50,
-    readiness_state: (row.readiness_state as string) || "stub",
-    generation_status: (row.generation_status as string) || "pending",
-  };
-}
-
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
-  const repo = makeRepository();
 
   // 1. Load all scene_graph_versions for the project (feature film)
   const { data: sceneVersions, error: svErr } = await admin
@@ -506,13 +464,16 @@ async function handleExtract(projectId: string) {
   let totalCreated = 0;
   for (let i = 0; i < toInsert.length; i += 50) {
     const batch = toInsert.slice(i, i + 50);
-    const batchEmissions = batch.map(toCanonEmission);
-    const result = await repo.upsertAtoms(projectId, batchEmissions, "prop");
-    if (!result.success) {
-      console.error("Insert batch error:", result.errors.join(", "));
-      throw new Error(`Failed to insert prop atoms batch: ${result.errors.join(", ")}`);
+    const { error: insertErr, data: inserted } = await admin
+      .from("atoms")
+      .insert(batch)
+      .select("id");
+
+    if (insertErr) {
+      console.error("Insert batch error:", insertErr);
+      throw new Error(`Failed to insert prop atoms batch: ${insertErr.message}`);
     }
-    totalCreated += result.inserted_count;
+    totalCreated += inserted?.length || 0;
   }
 
   console.log(`Created ${totalCreated} prop atom stubs`);
@@ -528,7 +489,6 @@ async function handleExtract(projectId: string) {
 
 async function handleStatus(projectId: string) {
   const admin = makeAdminClient();
-  const repo = makeRepository();
 
   const { data: atoms, error } = await admin
     .from("atoms")
@@ -544,16 +504,22 @@ async function handleStatus(projectId: string) {
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
-  const repo = makeRepository();
 
-  const count = await repo.bulkUpdateAtomsByStatus(projectId, "prop", ["failed", "running"], { generation_status: "pending" });
+  const { count, error } = await admin
+    .from("atoms")
+    .update({ generation_status: "pending", updated_at: new Date().toISOString() })
+    .in("generation_status", ["failed", "running"])
+    .eq("project_id", projectId)
+    .eq("atom_type", "prop")
+    .select("id", { count: "exact", head: true });
+
+  if (error) throw new Error(`Failed to reset prop atoms: ${error.message}`);
 
   return { reset: count || 0 };
 }
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
-  const repo = makeRepository();
 
   // Get pending prop atoms
   const { data: pendingAtoms, error: fetchErr } = await admin
@@ -573,7 +539,10 @@ async function handleGenerate(projectId: string) {
 
   // Mark all as running immediately
   const atomIds = pendingAtoms.map((a) => a.id);
-  await repo.bulkUpdateAtomsByIds(projectId, atomIds, { generation_status: "running" });
+  await admin
+    .from("atoms")
+    .update({ generation_status: "running", updated_at: new Date().toISOString() })
+    .in("id", atomIds);
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
@@ -773,10 +742,13 @@ confidence should reflect how much scene context was available. readinessBadge s
           if (!response.ok) {
             const errText = await response.text();
             console.error(`OpenRouter error for ${propName}:`, response.status, errText);
-            await repo.updateAtom(projectId, atom.id, {
+            await admin
+              .from("atoms")
+              .update({
                 generation_status: "failed",
                 updated_at: new Date().toISOString(),
-              });
+              })
+              .eq("id", atom.id);
             continue;
           }
 
@@ -794,10 +766,13 @@ confidence should reflect how much scene context was available. readinessBadge s
             generatedAttrs = JSON.parse(cleaned);
           } catch (parseErr) {
             console.error(`Failed to parse JSON for ${propName}:`, parseErr, "Raw:", rawContent.substring(0, 200));
-            await repo.updateAtom(projectId, atom.id, {
+            await admin
+              .from("atoms")
+              .update({
                 generation_status: "failed",
                 updated_at: new Date().toISOString(),
-              });
+              })
+              .eq("id", atom.id);
             continue;
           }
 
@@ -822,13 +797,16 @@ confidence should reflect how much scene context was available. readinessBadge s
             }));
           }
           finalAttributes.generated_from_cpie = true;
-const updateErr = await repo.updateAtom(projectId, atom.id, {
+const { error: updateErr } = await admin
+            .from("atoms")
+            .update({
               generation_status: "complete",
               readiness_state: "generated",
               confidence: Math.round((generatedAttrs.confidence || 0.5) * 100),
               attributes: finalAttributes,
               updated_at: new Date().toISOString(),
-            });
+            })
+            .eq("id", atom.id);
 
           if (updateErr) {
             console.error(`Failed to update atom ${atom.id}:`, updateErr);
@@ -837,10 +815,13 @@ const updateErr = await repo.updateAtom(projectId, atom.id, {
           }
         } catch (atomErr) {
           console.error(`Error processing prop atom ${atom.id} (${atom.canonical_name}):`, atomErr);
-          await repo.updateAtom(projectId, atom.id, {
+          await admin
+            .from("atoms")
+            .update({
               generation_status: "failed",
               updated_at: new Date().toISOString(),
-            });
+            })
+            .eq("id", atom.id);
         }
       }
 

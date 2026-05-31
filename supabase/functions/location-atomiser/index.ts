@@ -14,6 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createAtomiserRepository } from "../_shared/atomiser-repository.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +30,13 @@ function makeAdminClient() {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 }
+function makeRepository() {
+  return createAtomiserRepository({
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    supabaseKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  });
+}
+
 
 function makeStubAttributes(
   name: string,
@@ -69,8 +77,41 @@ function makeStubAttributes(
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+
+/**
+ * Convert a flat atom row to CanonEmission format for repository upsert.
+ * Routes all atom persistence through the AtomiserRepository provenance guard.
+ */
+function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomiser-repository.ts").CanonEmission {
+  const attrs = (row.attributes as Record<string, unknown>) || {};
+  return {
+    entity_key: (row.canonical_name as string) || "",
+    canon_object: attrs,
+    provenance: {
+      source_type: "extracted",
+      confidence_score: (row.confidence as number) || 0.5,
+      reasoning: ["extracted_from_script_reference"],
+      pcp_dependencies: ["genre", "geographic_context", "spatial_function"],
+    },
+    cdg_context: {
+      node_id: "D5",
+      staleness: "FRESH",
+      upstream_node: "C5",
+      regeneration_count: 0,
+    },
+    ics_metadata: [],
+    generated_at: (row.created_at as string) || new Date().toISOString(),
+    generated_by: "location_atomiser_extract",
+    entity_id: (row.entity_id as string) || null,
+    priority: (row.priority as number) || 50,
+    readiness_state: (row.readiness_state as string) || "stub",
+    generation_status: (row.generation_status as string) || "pending",
+  };
+}
+
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   // 1. Load all location entities for this project
   const { data: locationEntities, error: entErr } = await admin
@@ -163,12 +204,12 @@ async function handleExtract(projectId: string) {
             }));
 
           if (toInsert.length > 0) {
-            const { data: inserted, error: insertErr } = await admin
-              .from("atoms")
-              .insert(toInsert)
-              .select("id");
-            if (insertErr) throw new Error(`Failed to insert location atoms: ${insertErr.message}`);
-            return { created: inserted?.length || 0, source: "season_script_sluglines" };
+            const emissions = toInsert.map(toCanonEmission);
+            const result = await repo.upsertAtoms(projectId, emissions, "location");
+            if (!result.success) {
+              throw new Error(`Failed to insert location atoms: ${result.errors.join(", ")}`);
+            }
+            return { created: result.inserted_count, source: "season_script_sluglines" };
           }
           return { created: 0, message: "All slugline locations already have atoms" };
         }
@@ -282,22 +323,22 @@ async function handleExtract(projectId: string) {
     const batch = toInsert.slice(i, i + 50);
     const { error: insertErr, data: inserted } = await admin
       .from("atoms")
-      .insert(batch)
-      .select("id");
-
-    if (insertErr) {
-      console.error("Insert batch error:", insertErr);
-      throw new Error(`Failed to insert atoms batch: ${insertErr.message}`);
+      const batchEmissions = batch.map(toCanonEmission);
+      const result = await repo.upsertAtoms(projectId, batchEmissions, "location");
+      if (!result.success) {
+        console.error("Insert batch error:", result.errors.join(", "));
+        throw new Error(`Failed to insert atoms batch: ${result.errors.join(", ")}`);
+      }
+      totalCreated += result.inserted_count;
     }
-    totalCreated += inserted?.length || 0;
-  }
 
-  console.log(`Created ${totalCreated} location atom stubs`);
-  return { created: totalCreated };
+    console.log(`Created ${totalCreated} location atom stubs`);
+    return { created: totalCreated };
 }
 
 async function handleStatus(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   const { data: atoms, error } = await admin
     .from("atoms")
@@ -313,22 +354,16 @@ async function handleStatus(projectId: string) {
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
-  const { count, error } = await admin
-    .from("atoms")
-    .update({ generation_status: "pending", updated_at: new Date().toISOString() })
-    .in("generation_status", ["failed", "running"])
-    .eq("project_id", projectId)
-    .eq("atom_type", "location")
-    .select("id", { count: "exact", head: true });
-
-  if (error) throw new Error(`Failed to reset atoms: ${error.message}`);
+  const count = await repo.bulkUpdateAtomsByStatus(projectId, "location", ["failed", "running"], { generation_status: "pending" });
 
   return { reset: count || 0 };
 }
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   // Get pending location atoms
   const { data: pendingAtoms, error: fetchErr } = await admin
@@ -348,10 +383,7 @@ async function handleGenerate(projectId: string) {
 
   // Mark all as running immediately
   const atomIds = pendingAtoms.map((a) => a.id);
-  await admin
-    .from("atoms")
-    .update({ generation_status: "running", updated_at: new Date().toISOString() })
-    .in("id", atomIds);
+  await repo.bulkUpdateAtomsByIds(projectId, atomIds, { generation_status: "running" });
 
   // Get entity IDs to look up scene context
   const entityIds = pendingAtoms.map((a) => a.entity_id).filter(Boolean);
@@ -550,13 +582,10 @@ confidence should reflect how much visual/narrative information was available.`;
           if (!response.ok) {
             const errText = await response.text();
             console.error(`OpenRouter error for ${atom.canonical_name}:`, response.status, errText);
-            await admin
-              .from("atoms")
-              .update({
+            await repo.updateAtom(projectId, atom.id, {
                 generation_status: "failed",
                 updated_at: new Date().toISOString(),
-              })
-              .eq("id", atom.id);
+              });
             continue;
           }
 
@@ -575,13 +604,10 @@ confidence should reflect how much visual/narrative information was available.`;
             generatedAttrs = JSON.parse(cleaned);
           } catch (parseErr) {
             console.error(`Failed to parse JSON for ${atom.canonical_name}:`, parseErr, "Raw:", rawContent.substring(0, 200));
-            await admin
-              .from("atoms")
-              .update({
+            await repo.updateAtom(projectId, atom.id, {
                 generation_status: "failed",
                 updated_at: new Date().toISOString(),
-              })
-              .eq("id", atom.id);
+              });
             continue;
           }
 
@@ -595,16 +621,13 @@ confidence should reflect how much visual/narrative information was available.`;
           };
 
           // Update atom
-          const { error: updateErr } = await admin
-            .from("atoms")
-            .update({
+          const updateErr = await repo.updateAtom(projectId, atom.id, {
               generation_status: "complete",
               readiness_state: "generated",
               confidence: Math.round((generatedAttrs.confidence || 0.5) * 100),
               attributes: finalAttributes,
               updated_at: new Date().toISOString(),
-            })
-            .eq("id", atom.id);
+            });
 
           if (updateErr) {
             console.error(`Failed to update atom ${atom.id}:`, updateErr);
@@ -613,13 +636,10 @@ confidence should reflect how much visual/narrative information was available.`;
           }
         } catch (atomErr) {
           console.error(`Error processing atom ${atom.id} (${atom.canonical_name}):`, atomErr);
-          await admin
-            .from("atoms")
-            .update({
+          await repo.updateAtom(projectId, atom.id, {
               generation_status: "failed",
               updated_at: new Date().toISOString(),
-            })
-            .eq("id", atom.id);
+            });
         }
       }
 

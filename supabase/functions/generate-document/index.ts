@@ -2621,6 +2621,21 @@ ${existingCBContent.slice(0, 30000)}`;
                   is_current: false,
                 })
                 .eq("id", resumeVersionId);
+
+              // ── PERSIST PARTIAL CONTENT ──
+              // Even when chunks fail, resumeChunkedGeneration assembles all available content.
+              // Store it so the user has something to work with instead of an empty version.
+              if (resumeResult.assembledContent && resumeResult.assembledContent.length > 100) {
+                await serviceClient.from("project_document_versions").update({
+                  plaintext: resumeResult.assembledContent,
+                  is_current: true,
+                  status: "draft",
+                }).eq("id", resumeVersionId);
+                await serviceClient.from("project_documents")
+                  .update({ latest_version_id: resumeVersionId, updated_at: new Date().toISOString() })
+                  .eq("id", resumeDocId);
+                console.log(`[generate-document] Resume partial content persisted: ${resumeResult.assembledContent.length} chars`);
+              }
             }
           } catch (bgErr: any) {
           console.error(`[generate-document] Resume FAILED: ${docType} — ${bgErr?.message}`);

@@ -1902,6 +1902,8 @@ const NON_HUMAN_MARKERS = [
   // body creates a block scope that the outer closure can't reach.
   let traitConfidence: string;
   let evidenceSource: string = '';
+  let category: string;
+  let label: string;
   const updateField = (fieldName: string, fieldValue: string | string[]) => {
     if (!fieldValue || (Array.isArray(fieldValue) && fieldValue.length === 0)) return;
     const confScore = traitConfidence === "high" ? 3 : traitConfidence === "medium" ? 2 : 1;
@@ -1915,9 +1917,9 @@ const NON_HUMAN_MARKERS = [
   };
 
   for (const trait of traits) {
-    const category = (trait.category || "").toLowerCase().trim();
+    category = (trait.category || "").toLowerCase().trim();
     const rawLabel = (trait.label || "").trim();
-    const label = rawLabel.toLowerCase().trim();
+    label = rawLabel.toLowerCase().trim();
     const value = (trait.value || trait.label || "").trim();
     traitConfidence = (trait.confidence || "low").toLowerCase().trim();
     evidenceSource = trait.evidence_source || trait.source || `extract-visual-dna`;

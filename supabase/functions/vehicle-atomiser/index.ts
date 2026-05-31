@@ -14,6 +14,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createAtomiserRepository } from "../_shared/atomiser-repository.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -141,6 +142,13 @@ function makeAdminClient() {
   );
 }
 
+function makeRepository() {
+  return createAtomiserRepository({
+    supabaseUrl: Deno.env.get("SUPABASE_URL") ?? "",
+    supabaseKey: Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+  });
+}
+
 function makeStubAttributes(name: string, sceneCount: number, sourceType: 'entity' | 'extracted'): Record<string, any> {
   return {
     vehicle_type: name,
@@ -173,8 +181,42 @@ function makeStubAttributes(name: string, sceneCount: number, sourceType: 'entit
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
+
+
+/**
+ * Convert a flat atom row to CanonEmission format for repository upsert.
+ * Domain mapping: D3 (vehicle) / C3 (upstream)
+ */
+function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomiser-repository.ts").CanonEmission {
+  const attrs = (row.attributes as Record<string, unknown>) || {};
+  return {
+    entity_key: (row.canonical_name as string) || "",
+    canon_object: attrs,
+    provenance: {
+      source_type: "extracted",
+      confidence_score: (row.confidence as number) || 0.5,
+      reasoning: ["extracted_from_script_reference"],
+      pcp_dependencies: ["profession_map", "period", "technology_level", "transport_function"],
+    },
+    cdg_context: {
+      node_id: "D3",
+      staleness: "FRESH",
+      upstream_node: "C3",
+      regeneration_count: 0,
+    },
+    ics_metadata: [],
+    generated_at: (row.created_at as string) || new Date().toISOString(),
+    generated_by: "vehicle_atomiser_extract",
+    entity_id: (row.entity_id as string) || null,
+    priority: (row.priority as number) || 50,
+    readiness_state: (row.readiness_state as string) || "stub",
+    generation_status: (row.generation_status as string) || "pending",
+  };
+}
+
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
   const now = new Date().toISOString();
 
   // 1. Try primary source: narrative_entities.entity_type = 'vehicle'
@@ -359,16 +401,13 @@ async function handleExtract(projectId: string) {
   let totalCreated = 0;
   for (let i = 0; i < toInsert.length; i += 50) {
     const batch = toInsert.slice(i, i + 50);
-    const { error: insertErr, data: inserted } = await admin
-      .from("atoms")
-      .insert(batch)
-      .select("id");
-
-    if (insertErr) {
-      console.error("Insert batch error:", insertErr);
-      throw new Error(`Failed to insert atoms batch: ${insertErr.message}`);
+    const batchEmissions = batch.map(toCanonEmission);
+    const result = await repo.upsertAtoms(projectId, batchEmissions, "vehicle");
+    if (!result.success) {
+      console.error("Insert batch error:", result.errors.join(", "));
+      throw new Error(`Failed to insert atoms batch: ${result.errors.join(", ")}`);
     }
-    totalCreated += inserted?.length || 0;
+    totalCreated += result.inserted_count;
   }
 
   const vehicleNames = toInsert.map((t) => t.canonical_name);
@@ -383,6 +422,7 @@ async function handleExtract(projectId: string) {
 
 async function handleStatus(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   const { data: atoms, error } = await admin
     .from("atoms")
@@ -398,22 +438,16 @@ async function handleStatus(projectId: string) {
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
-  const { count, error } = await admin
-    .from("atoms")
-    .update({ generation_status: "pending", updated_at: new Date().toISOString() })
-    .in("generation_status", ["failed", "running"])
-    .eq("project_id", projectId)
-    .eq("atom_type", "vehicle")
-    .select("id", { count: "exact", head: true });
-
-  if (error) throw new Error(`Failed to reset atoms: ${error.message}`);
+  const count = await repo.bulkUpdateAtomsByStatus(projectId, "vehicle", ["failed", "running"], { generation_status: "pending" });
 
   return { reset: count || 0 };
 }
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   // Get pending vehicle atoms
   const { data: pendingAtoms, error: fetchErr } = await admin
@@ -433,10 +467,7 @@ async function handleGenerate(projectId: string) {
 
   // Mark all as running immediately
   const atomIds = pendingAtoms.map((a) => a.id);
-  await admin
-    .from("atoms")
-    .update({ generation_status: "running", updated_at: new Date().toISOString() })
-    .in("id", atomIds);
+  await repo.bulkUpdateAtomsByIds(projectId, atomIds, { generation_status: "running" });
 
   // Get all scene content for context assembly
   const { data: sceneVersions } = await admin
@@ -663,10 +694,10 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
           if (!response.ok) {
             const errText = await response.text();
             console.error(`OpenRouter error for ${atom.canonical_name}:`, response.status, errText);
-            await admin
-              .from("atoms")
-              .update({ generation_status: "failed", updated_at: new Date().toISOString() })
-              .eq("id", atom.id);
+            await repo.updateAtom(projectId, atom.id, {
+                generation_status: "failed",
+                updated_at: new Date().toISOString(),
+              });
             continue;
           }
 
@@ -683,10 +714,10 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
             generatedAttrs = JSON.parse(cleaned);
           } catch (parseErr) {
             console.error(`Failed to parse JSON for ${atom.canonical_name}:`, parseErr, "Raw:", rawContent.substring(0, 200));
-            await admin
-              .from("atoms")
-              .update({ generation_status: "failed", updated_at: new Date().toISOString() })
-              .eq("id", atom.id);
+            await repo.updateAtom(projectId, atom.id, {
+                generation_status: "failed",
+                updated_at: new Date().toISOString(),
+              });
             continue;
           }
 
@@ -709,16 +740,13 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
             generationStatus: "completed",
           };
 
-          const { error: updateErr } = await admin
-            .from("atoms")
-            .update({
+          const updateErr = await repo.updateAtom(projectId, atom.id, {
               generation_status: "complete",
               readiness_state: "generated",
               confidence: Math.round((generatedAttrs.confidence || 0.5) * 100),
               attributes: finalAttributes,
               updated_at: new Date().toISOString(),
-            })
-            .eq("id", atom.id);
+            });
 
           if (updateErr) {
             console.error(`Failed to update atom ${atom.id}:`, updateErr);
@@ -727,10 +755,10 @@ Output ONLY a valid JSON object (no markdown, no commentary) with ALL of the fol
           }
         } catch (atomErr) {
           console.error(`Error processing atom ${atom.id} (${atom.canonical_name}):`, atomErr);
-          await admin
-            .from("atoms")
-            .update({ generation_status: "failed", updated_at: new Date().toISOString() })
-            .eq("id", atom.id);
+          await repo.updateAtom(projectId, atom.id, {
+              generation_status: "failed",
+              updated_at: new Date().toISOString(),
+            });
         }
       }
 
