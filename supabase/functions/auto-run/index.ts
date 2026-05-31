@@ -13231,7 +13231,7 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
             // ── SELF-CHAIN: if job is still running and not awaiting approval,
             // fire the next step immediately instead of relying on client polling.
             try {
-              const { data: postJob } = await supabase.from("auto_run_jobs").select("status, awaiting_approval, is_processing, step_count, max_total_steps").eq("id", jobId).maybeSingle();
+              const { data: postJob } = await supabase.from("auto_run_jobs").select("status, awaiting_approval, is_processing, step_count, max_total_steps, project_id, user_id").eq("id", jobId).maybeSingle();
               if (postJob && postJob.status === "running" && !postJob.awaiting_approval && !postJob.is_processing) {
                 // Guard: don't chain if step budget exhausted
                 if (postJob.step_count < postJob.max_total_steps) {
@@ -13276,21 +13276,50 @@ SCOPE: Episode Grid is a structural overview — NOT a beat breakdown. Do NOT in
                     }
                   }
                   if (shouldContinue) {
-                    console.log("[auto-run] persistent_step_complete — setting waiting_for_next", {
+                    console.log("[auto-run] persistent_step_complete — self-chaining to run-next", {
                       jobId,
                       step: postJob.step_count,
                       max: postJob.max_total_steps
                     });
-                    // Update job state to waiting instead of firing an unreliable self-chain fetch.
-                    // The frontend's polling loop (runLoop) will pick up the waiting state
-                    // and fire the next explicit processNextStep invocation.
-                    // This avoids the self-chain freeze caused by EdgeRuntime.waitUntil
-                    // not reliably keeping the Deno isolate alive for the HTTP fetch to complete.
-                    delay(updateJobStatus, 100)(supabase, jobId, {
-                      status: "waiting_for_next",
-                      is_processing: false,
-                      updated_at: new Date().toISOString()
-                    });
+                    // Release lock first so next run-next can acquire it
+                    await releaseProcessingLock(supabase, jobId);
+                    // Synchronous self-chain: call run-next directly instead of relying on
+                    // EdgeRuntime.waitUntil (unreliable for HTTP fetch) or frontend polling.
+                    // Uses a short timeout so a failure doesn't crash the isolate.
+                    try {
+                      const chainUrl = Deno.env.get("SUPABASE_URL") + "/functions/v1/auto-run";
+                      const chainKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+                      const chainPayload = {
+                        action: "run-next",
+                        jobId: jobId,
+                        projectId: postJob.project_id || null,
+                        userId: postJob.user_id || null
+                      };
+                      const chainRes = await fetch(chainUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + chainKey },
+                        body: JSON.stringify(chainPayload),
+                        signal: AbortSignal.timeout(60_000)
+                      });
+                      if (chainRes.ok) {
+                        console.log("[auto-run] self-chain succeeded", { jobId, step: postJob.step_count });
+                      } else {
+                        const chainText = await chainRes.text();
+                        console.warn("[auto-run] self-chain returned non-ok", { jobId, status: chainRes.status, body: chainText?.slice(0,200) });
+                      }
+                    } catch (chainFetchErr) {
+                      console.warn("[auto-run] self-chain fetch failed (non-fatal, job will wait)", {
+                        jobId,
+                        error: chainFetchErr?.message || String(chainFetchErr)
+                      });
+                      // Fallback: set waiting state so polling can recover
+                      try {
+                        await supabase.from("auto_run_jobs").update({
+                          is_processing: false,
+                          updated_at: new Date().toISOString()
+                        }).eq("id", jobId);
+                      } catch {}
+                    }
                   }
                 } else {
                   console.log("[auto-run] self-chain skipped: step budget exhausted", {
