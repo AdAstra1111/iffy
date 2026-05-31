@@ -109,10 +109,41 @@ export interface ReviewData {
   review_summary: ReviewSummary;
 }
 
+/**
+ * ─── NEL (Narrative Extraction Layer) Types ─────────────────────────────
+ * NEL is the canonical extraction bridge. Story Ingestion is legacy adapter.
+ */
+
+export interface NelStageResult {
+  status: 'complete' | 'failed' | 'skipped';
+  [key: string]: any;
+}
+
+export interface NelRunResult {
+  projectId: string;
+  pipelineMode: string;
+  stagesRun: string[];
+  results: Record<string, NelStageResult>;
+  errors: string[] | null;
+  fatal: boolean;
+  startedAt: string;
+  completedAt: string;
+}
+
+/**
+ * ─── HOOK ───────────────────────────────────────────────────────────────
+ *
+ * Exposes BOTH legacy (story-ingestion) and canonical (NEL) extraction paths.
+ * NEL is the default canonical pipeline. Story Ingestion is a legacy adapter.
+ */
+
 export function useStoryIngestion(projectId: string | undefined) {
   const [isRunning, setIsRunning] = useState(false);
   const [latestRun, setLatestRun] = useState<IngestionRun | null>(null);
+  const [isNelRunning, setIsNelRunning] = useState(false);
+  const [latestNelRun, setLatestNelRun] = useState<NelRunResult | null>(null);
 
+  // ── LEGACY: Story Ingestion Engine (deprecated adapter) ───────────────
   const runIngestion = useCallback(async (opts?: { force?: boolean; sourceKind?: string }) => {
     if (!projectId) return null;
     setIsRunning(true);
@@ -127,7 +158,6 @@ export function useStoryIngestion(projectId: string | undefined) {
       });
 
       if (error) {
-        // FunctionsHttpError — extract actual error message from response body
         const actualMessage = (error as any)?.context?.data?.error
           || (error as any)?.context?.data
           || error.message
@@ -143,7 +173,7 @@ export function useStoryIngestion(projectId: string | undefined) {
       const pendingParticipation = manifest.review_required?.participation || 0;
       const autoResolved = manifest.auto_resolved?.participation || 0;
 
-      let msg = `Ingestion complete: ${manifest.scenes_parsed} scenes, ${manifest.characters} characters, ${manifest.locations} locations`;
+      let msg = `[LEGACY] Ingestion complete: ${manifest.scenes_parsed} scenes, ${manifest.characters} characters, ${manifest.locations} locations`;
       if (decisionCount > 0) msg += ` · ${decisionCount} decisions need review`;
       if (autoResolved > 0) msg += ` · ${autoResolved} participation auto-resolved`;
       if (pendingParticipation > 0) msg += ` · ${pendingParticipation} participation need review`;
@@ -166,25 +196,22 @@ export function useStoryIngestion(projectId: string | undefined) {
       });
       return data;
     } catch (err: any) {
-      // Log full error context for diagnosis
       const errorContext: Record<string, any> = {
         message: err.message,
         name: err.name,
       };
-      // FunctionsHttpError carries response body in .context
       if (err.context) {
         errorContext.status = err.context.status;
         errorContext.responseBody = err.context.data;
       }
-      // Log request shape for contract validation
       errorContext.requestPayload = {
         action: 'ingest',
         projectId,
         force: opts?.force ?? true,
         sourceKind: opts?.sourceKind ?? 'feature_script',
       };
-      console.error('[useStoryIngestion] Error:', JSON.stringify(errorContext, null, 2), err);
-      toast.error(err.message || 'Ingestion failed');
+      console.error('[useStoryIngestion] LEGACY ingestion error:', JSON.stringify(errorContext, null, 2), err);
+      toast.error(`[LEGACY] ${err.message || 'Ingestion failed'}`);
       return null;
     } finally {
       setIsRunning(false);
@@ -245,5 +272,89 @@ export function useStoryIngestion(projectId: string | undefined) {
     }
   }, [projectId]);
 
-  return { isRunning, latestRun, runIngestion, fetchStatus, fetchReview, reviewAction };
+  // ── CANONICAL: NEL Extraction Pipeline ───────────────────────────────
+  /**
+   * Run the canonical Narrative Extraction Layer (NEL) pipeline.
+   * This is the single constitutional bridge between the Approved Narrative
+   * Corpus and Visual Production OS. Story Ingestion is a legacy adapter.
+   *
+   * @param stages Optional subset of stages to run (default: all)
+   * @param mode Pipeline mode: "full" (default), "extract_only", "dna_only"
+   */
+  const runNelExtraction = useCallback(async (
+    stages?: string[],
+    mode?: 'full' | 'extract_only' | 'dna_only'
+  ): Promise<NelRunResult | null> => {
+    if (!projectId) return null;
+    setIsNelRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('nel-orchestrator', {
+        body: {
+          projectId,
+          stages: stages ?? [
+            'corpus', 'scenes', 'entities', 'atoms',
+            'vehicle', 'creature', 'costume', 'relationships',
+            'dna', 'pd_canon', 'governance',
+          ],
+          mode: mode ?? 'full',
+        },
+      });
+
+      if (error) {
+        const actualMessage = (error as any)?.context?.data?.error
+          || (error as any)?.context?.data
+          || error.message
+          || 'Unknown error';
+        throw new Error(actualMessage);
+      }
+      if (data?.error) throw new Error(data.error);
+
+      const result = data as NelRunResult;
+      setLatestNelRun(result);
+
+      // Summarize results
+      const stageSummary = result.stagesRun
+        .map(s => `${s}:${result.results[s]?.status || 'unknown'}`)
+        .join(', ');
+      const errors = result.errors?.length || 0;
+
+      let msg = `NEL extraction complete: ${result.stagesRun.length} stages [${stageSummary}]`;
+      if (errors > 0) msg += ` · ${errors} error(s) — see console`;
+      toast.success(msg);
+
+      if (errors > 0) {
+        console.warn('[useStoryIngestion] NEL errors:', result.errors);
+      }
+
+      return result;
+    } catch (err: any) {
+      const errorContext: Record<string, any> = {
+        message: err.message,
+        name: err.name,
+      };
+      if (err.context) {
+        errorContext.status = err.context.status;
+        errorContext.responseBody = err.context.data;
+      }
+      console.error('[useStoryIngestion] NEL error:', JSON.stringify(errorContext, null, 2), err);
+      toast.error(`NEL extraction failed: ${err.message || 'Unknown error'}`);
+      return null;
+    } finally {
+      setIsNelRunning(false);
+    }
+  }, [projectId]);
+
+  return {
+    // Legacy story-ingestion (deprecated adapter)
+    isRunning,
+    latestRun,
+    runIngestion,
+    fetchStatus,
+    fetchReview,
+    reviewAction,
+    // Canonical NEL pipeline
+    isNelRunning,
+    latestNelRun,
+    runNelExtraction,
+  };
 }

@@ -160,6 +160,15 @@ async function handleExtract(sb: any, projectId: string) {
         entity_key: e.entity_key,
         scene_count: sceneCountByEntity.get(e.id) || 0,
         meta_json: (e as any).meta_json || {},
+        _provenance: {
+          source_type: "extracted",
+          confidence_score: 0.9,
+          reasoning: ["Extracted from narrative_entities via character-atomiser extract"],
+          nel_stage: "character_atom_extraction",
+          generated_by: "character-atomiser",
+        },
+        _generated_by: "character-atomiser",
+        _generated_at: new Date().toISOString(),
       },
     }));
 
@@ -291,7 +300,19 @@ Respond with ONLY valid JSON. No markdown, no commentary.`;
 
       const attrKeys = Object.keys(attrs).filter(k => k !== "casting_type_tags" && k !== "meta_json");
       const confidence = Math.min(100, 50 + attrKeys.length * 5);
-      const mergedAttrs = { ...((atom.attributes as object) || {}), ...attrs };
+      const mergedAttrs = {
+        ...((atom.attributes as object) || {}),
+        ...attrs,
+        _provenance: {
+          source_type: "inferred",
+          confidence_score: confidence / 100,
+          reasoning: ["Generated via LLM (minimax/minimax-m2.7) from narrative_entities + scene context"],
+          nel_stage: "character_atom_generation",
+          generated_by: "character-atomiser",
+        },
+        _generated_by: "character-atomiser",
+        _generated_at: new Date().toISOString(),
+      };
 
       await sb
         .from("atoms")
