@@ -1394,7 +1394,15 @@ serve(async (req) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err: any) {
-    return new Response(JSON.stringify({ ok: false, error: err.message }), {
+    console.error("[entity-links-engine] Error:", err.message, err.stack);
+    // Structured error detail for diagnostics (use projectId from outer scope if available)
+    const errorDetail: Record<string, unknown> = {
+      message: err.message,
+      name: err.name,
+      stack: err.stack?.split("\n").slice(0, 5).join("\n"),
+    };
+    try { errorDetail.attempted_projectId = projectId; } catch {}
+    return new Response(JSON.stringify({ ok: false, error: err.message, detail: errorDetail }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

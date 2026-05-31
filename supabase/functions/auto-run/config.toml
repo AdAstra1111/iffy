@@ -3,6 +3,3 @@ verify_jwt = false
 
 [functions]
 timeout = 600
-
-[functions.dev-engine-v2]
-verify_jwt = false

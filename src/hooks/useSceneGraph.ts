@@ -71,9 +71,9 @@ export function useSceneGraph(projectId: string | undefined) {
         .from('project_script_scene_state')
         .select('*')
         .eq('project_id', projectId)
-        .single();
+        .maybeSingle();
       if (error) throw error;
-      return data as ProjectSceneState;
+      return (data ?? null) as ProjectSceneState | null;
     },
     enabled: !!projectId,
   });

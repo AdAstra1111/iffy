@@ -185,13 +185,14 @@ export function SpineConfirmationPanel({ projectId, userId, className = '' }: Pr
         .eq('id', projectId);
       if (projErr) throw projErr;
 
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from('decision_ledger')
         .select('id')
         .eq('project_id', projectId)
         .eq('decision_key', 'narrative_spine')
         .eq('status', 'pending_lock')
-        .single();
+        .maybeSingle();
+      if (existingError) throw existingError;
 
       if (existing?.id) {
         await supabase.from('decision_ledger').update({

@@ -74,7 +74,7 @@ export function ScriptToBudgetPanel({ projectId, scriptText, format, genres, bud
         .eq('project_id', projectId)
         .not('extracted_text', 'is', null)
         .limit(1)
-        .single();
+        .maybeSingle();
       if (cancelled) return;
       if (data?.extracted_text) {
         setResolvedText(data.extracted_text);
