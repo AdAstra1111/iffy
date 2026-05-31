@@ -1797,18 +1797,23 @@ export default function ProjectDevelopmentEngine() {
 
           try {
             // eslint-disable-next-line no-await-in-loop
-            const result = await callEngineV2('rewrite', {
-              projectId,
-              documentId: selectedDocId,
-              versionId: currentVersionId,
-              approvedNotes: enrichedNotes,
-              protectItems,
-              deliverableType: selectedDeliverableType,
-              developmentBehavior: projectBehavior,
-              format: projectFormat,
-              selectedOptions: charSelectedOptions,
-              globalDirections: globalDirections || [],
-            });
+            const result = await Promise.race([
+              callEngineV2('rewrite', {
+                projectId,
+                documentId: selectedDocId,
+                versionId: currentVersionId,
+                approvedNotes: enrichedNotes,
+                protectItems,
+                deliverableType: selectedDeliverableType,
+                developmentBehavior: projectBehavior,
+                format: projectFormat,
+                selectedOptions: charSelectedOptions,
+                globalDirections: globalDirections || [],
+              }),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error(`Character rewrite timed out after 120s`)), 120_000)
+              ),
+            ]);
 
             if (result?.newVersion?.id) {
               currentVersionId = result.newVersion.id;
