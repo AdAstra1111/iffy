@@ -239,7 +239,21 @@ Deno.serve(async (req: Request) => {
     const body = await req.json();
     const { projectId, format } = body;
     if (!projectId) {
-      return new Response(JSON.stringify({ error: "projectId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({
+        exists: false,
+        error: "projectId is required",
+        message: "Provide a valid UUID projectId in the request body.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    // Validate UUID format
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(projectId)) {
+      return new Response(JSON.stringify({
+        exists: false,
+        error: "Invalid projectId format",
+        message: "projectId must be a valid UUID.",
+      }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -256,8 +270,15 @@ Deno.serve(async (req: Request) => {
 
     if (verErr) throw new Error(`Failed to load VPB: ${verErr.message}`);
     if (!versions || versions.length === 0) {
-      return new Response(JSON.stringify({ error: "No VPB version found for this project. Run vpb-assembly-engine first." }), {
-        status: 404,
+      return new Response(JSON.stringify({
+        exists: false,
+        projectId,
+        versionNumber: null,
+        sectionCount: 0,
+        markdown: "",
+        message: "No VPB version found for this project. Run vpb-assembly-engine first.",
+      }), {
+        status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -326,7 +347,11 @@ Deno.serve(async (req: Request) => {
 
   } catch (e: any) {
     console.error("[vpb-export] Error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({
+      exists: false,
+      error: e.message || "Internal error",
+      message: "An unexpected error occurred during VPB export.",
+    }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

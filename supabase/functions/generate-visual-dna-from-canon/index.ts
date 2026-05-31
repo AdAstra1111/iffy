@@ -38,7 +38,7 @@ const corsHeaders = {
 interface GenerateVisualDNAInput {
   project_id: string;
   target: "character" | "all_characters" | "project_style" | "location" | "entity" | "all";
-  mode: "preview_only" | "generate_missing" | "refresh_stale";
+  mode: "preview_only" | "generate_missing" | "refresh_stale" | "generate_from_atoms";
   entity_name?: string;
   entity_type?: "character" | "location" | "object";
 }
@@ -107,7 +107,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const validModes = ["preview_only", "generate_missing", "refresh_stale"];
+    const validModes = ["preview_only", "generate_missing", "refresh_stale", "generate_from_atoms"];
     if (!validModes.includes(mode)) {
       return respond(
         { error: `Invalid mode: ${mode}. Must be one of: ${validModes.join(", ")}` },
@@ -193,7 +193,7 @@ async function handleCharacter(
     return respond(report);
   }
 
-  if (isApprovedOrStrong && mode !== "refresh_stale") {
+  if (isApprovedOrStrong && mode !== "refresh_stale" && mode !== "generate_from_atoms") {
     report.blocked++;
     report.errors.push(`${characterName}: existing approved/strong DNA blocked (mode=${mode})`);
     return respond(report);
@@ -593,6 +593,55 @@ async function handleCharacter(
   return respond(report);
 }
 
+async function processCharacterList(
+  sb: any,
+  functionBase: string,
+  projectId: string,
+  charNames: string[],
+  mode: string,
+  report: DNAReport,
+  suppressGovernance: boolean = false,
+): Promise<Response> {
+  for (const charName of charNames) {
+    try {
+      const result = await handleCharacter(sb, functionBase, projectId, charName, mode);
+      const data = await result.json();
+      report.created += data.created || 0;
+      report.skipped += data.skipped || 0;
+      report.updated += data.updated || 0;
+      report.blocked += data.blocked || 0;
+      report.low_confidence += data.low_confidence || 0;
+      if (data.errors) {
+        report.errors.push(...data.errors.map((e: string) => `${charName}: ${e}`));
+      }
+    } catch (e: any) {
+      report.errors.push(`${charName}: ${e.message}`);
+    }
+  }
+
+  if (!suppressGovernance && mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
+    try {
+      const govResponse = await fetch(`${functionBase}/evaluate-visual-governance`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
+        },
+        body: JSON.stringify({ projectId }),
+      });
+      if (govResponse.ok) {
+        report.governance_result = await govResponse.json();
+      } else {
+        report.errors.push(`evaluate-visual-governance returned ${govResponse.status}`);
+      }
+    } catch (e: any) {
+      report.errors.push(`evaluate-visual-governance call failed: ${e.message}`);
+    }
+  }
+
+  return respond(report);
+}
+
 async function handleAllCharacters(
   sb: any,
   functionBase: string,
@@ -619,7 +668,25 @@ async function handleAllCharacters(
     .eq("project_id", projectId)
     .maybeSingle();
 
-  if (!canon?.canon_json) {
+  if (!canon?.canon_json || mode === "generate_from_atoms") {
+    // generate_from_atoms mode: use narrative_entities first, then fall back to atoms
+    if (mode === "generate_from_atoms") {
+      // Query narrative_entities for reliable character names
+      const { data: entities } = await sb
+        .from("narrative_entities")
+        .select("entity_key, canonical_name")
+        .eq("project_id", projectId)
+        .eq("entity_type", "character")
+        .eq("status", "active")
+        .order("scene_count", { ascending: false });
+
+      if (entities && entities.length > 0) {
+        const charNames = [...new Set(entities.map((e: any) => e.canonical_name || e.entity_key))];
+        console.log(`[generate-visual-dna] generate_from_atoms: ${charNames.length} characters from narrative_entities`);
+        return await processCharacterList(sb, functionBase, projectId, charNames, mode, report);
+      }
+    }
+
     // Fallback: read characters from atoms table
     const { data: atomChars } = await sb
       .from("atoms")
@@ -641,48 +708,7 @@ async function handleAllCharacters(
 
     const charNames = Array.from(allCharNames);
     console.log(`[generate-visual-dna] Fallback: ${charNames.length} characters from atoms table`);
-
-    // Process each character
-    for (const charName of charNames) {
-      try {
-        const result = await handleCharacter(sb, functionBase, projectId, charName, mode);
-        const data = await result.json();
-        report.created += data.created || 0;
-        report.skipped += data.skipped || 0;
-        report.updated += data.updated || 0;
-        report.blocked += data.blocked || 0;
-        report.low_confidence += data.low_confidence || 0;
-        if (data.errors) {
-          report.errors.push(...data.errors.map((e: string) => `${charName}: ${e}`));
-        }
-      } catch (e: any) {
-        report.errors.push(`${charName}: ${e.message}`);
-      }
-    }
-
-    if (!suppressGovernance && mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
-      // Same governance call as below
-      try {
-        const governanceUrl = `${functionBase}/evaluate-visual-governance`;
-        const govResponse = await fetch(governanceUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
-          },
-          body: JSON.stringify({ projectId }),
-        });
-        if (govResponse.ok) {
-          report.governance_result = await govResponse.json();
-        } else {
-          report.errors.push(`evaluate-visual-governance returned ${govResponse.status}`);
-        }
-      } catch (e: any) {
-        report.errors.push(`evaluate-visual-governance call failed: ${e.message}`);
-      }
-    }
-
-    return respond(report);
+    return await processCharacterList(sb, functionBase, projectId, charNames, mode, report);
   }
 
   const canonJson = canon.canon_json as Record<string, any>;
@@ -713,48 +739,7 @@ async function handleAllCharacters(
 
   const charNames = Array.from(allCharNames);
 
-  // Process each character
-  for (const charName of charNames) {
-    try {
-      const result = await handleCharacter(sb, functionBase, projectId, charName, mode);
-      const data = await result.json();
-      report.created += data.created || 0;
-      report.skipped += data.skipped || 0;
-      report.updated += data.updated || 0;
-      report.blocked += data.blocked || 0;
-      report.low_confidence += data.low_confidence || 0;
-      if (data.errors) {
-        report.errors.push(...data.errors.map((e: string) => `${charName}: ${e}`));
-      }
-    } catch (e: any) {
-      report.errors.push(`${charName}: ${e.message}`);
-    }
-  }
-
-  // ── Phase 2: Call evaluate-visual-governance after successful generation ──
-  if (!suppressGovernance && mode !== "preview_only" && (report.created > 0 || report.updated > 0)) {
-    try {
-      const governanceUrl = `${functionBase}/evaluate-visual-governance`;
-      const govResponse = await fetch(governanceUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!}`,
-        },
-        body: JSON.stringify({ projectId }),
-      });
-
-      if (govResponse.ok) {
-        report.governance_result = await govResponse.json();
-      } else {
-        report.errors.push(`evaluate-visual-governance returned ${govResponse.status}`);
-      }
-    } catch (e: any) {
-      report.errors.push(`evaluate-visual-governance call failed: ${e.message}`);
-    }
-  }
-
-  return respond(report);
+  return await processCharacterList(sb, functionBase, projectId, charNames, mode, report, suppressGovernance);
 }
 
 // ─── Project Style Handler ───

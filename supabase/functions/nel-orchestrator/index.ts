@@ -282,63 +282,65 @@ Deno.serve(async (req: Request) => {
       try {
         console.log(`[nel] Extracting scenes for ${projectId}`);
         if (!corpus) {
-          throw new Error("Corpus not available — run corpus stage first");
+          results.scenes = { status: "skipped", reason: "Corpus not available", stage: "scenes" };
+          errors.push("scenes: skipped — corpus not available");
+        } else {
+          // Get screenplay plaintext — prefer production_draft, fall back to feature_script/script
+          const screenplay = corpus.screenplay;
+          const screenplayText = screenplay?.plaintext;
+          if (!screenplayText || screenplayText.length < 200) {
+            results.scenes = { status: "skipped", reason: "No screenplay plaintext available", stage: "scenes" };
+            errors.push("scenes: skipped — no screenplay plaintext");
+          } else {
+            // Parse scenes deterministically
+            const scenes = parseScenesFromText(screenplayText);
+            console.log(`[nel] Parsed ${scenes.length} scenes from screenplay`);
+
+            // Write to scene_index — idempotent upsert on (project_id, scene_number)
+            // Clear existing entries for this project first, then insert fresh
+            const { error: delErr } = await sb
+              .from("scene_index")
+              .delete()
+              .eq("project_id", projectId);
+            if (delErr) {
+              console.warn(`[nel] scene_index delete warning: ${delErr.message}`);
+            }
+
+            const sceneRows = scenes.map((s, i) => ({
+              project_id: projectId,
+              scene_number: s.sceneNumber,
+              title: s.slugline.substring(0, 200),
+              source_doc_type: screenplay.docType || "production_draft",
+              source_ref: {
+                versionId: screenplay.versionId,
+                docId: screenplay.docId,
+                docType: screenplay.docType,
+                nel_stage: "scene_extraction",
+                nel_run_at: startTime,
+              },
+              location_key: s.locationKey,
+              character_keys: s.charactersMentioned.map(c => normalizeEntityKey(c)),
+              wardrobe_state_map: {},
+            }));
+
+            if (sceneRows.length > 0) {
+              const { error: insErr } = await sb
+                .from("scene_index")
+                .insert(sceneRows);
+              if (insErr) throw new Error(`scene_index insert failed: ${insErr.message}`);
+            }
+
+            results.scenes = {
+              status: "complete",
+              parsedCount: scenes.length,
+              writtenCount: sceneRows.length,
+              screenplayDocType: screenplay.docType,
+              screenplayLength: screenplayText.length,
+              sourceVersionId: screenplay.versionId,
+            };
+            console.log(`[nel] Scene extraction complete: ${scenes.length} scenes written`);
+          }
         }
-
-        // Get screenplay plaintext — prefer production_draft, fall back to feature_script/script
-        const screenplay = corpus.screenplay;
-        const screenplayText = screenplay?.plaintext;
-        if (!screenplayText || screenplayText.length < 200) {
-          throw new Error(`No screenplay plaintext available (length: ${screenplayText?.length || 0})`);
-        }
-
-        // Parse scenes deterministically
-        const scenes = parseScenesFromText(screenplayText);
-        console.log(`[nel] Parsed ${scenes.length} scenes from screenplay`);
-
-        // Write to scene_index — idempotent upsert on (project_id, scene_number)
-        // Clear existing entries for this project first, then insert fresh
-        const { error: delErr } = await sb
-          .from("scene_index")
-          .delete()
-          .eq("project_id", projectId);
-        if (delErr) {
-          console.warn(`[nel] scene_index delete warning: ${delErr.message}`);
-        }
-
-        const sceneRows = scenes.map((s, i) => ({
-          project_id: projectId,
-          scene_number: s.sceneNumber,
-          title: s.slugline.substring(0, 200),
-          source_doc_type: screenplay.docType || "production_draft",
-          source_ref: {
-            versionId: screenplay.versionId,
-            docId: screenplay.docId,
-            docType: screenplay.docType,
-            nel_stage: "scene_extraction",
-            nel_run_at: startTime,
-          },
-          location_key: s.locationKey,
-          character_keys: s.charactersMentioned.map(c => normalizeEntityKey(c)),
-          wardrobe_state_map: {},
-        }));
-
-        if (sceneRows.length > 0) {
-          const { error: insErr } = await sb
-            .from("scene_index")
-            .insert(sceneRows);
-          if (insErr) throw new Error(`scene_index insert failed: ${insErr.message}`);
-        }
-
-        results.scenes = {
-          status: "complete",
-          parsedCount: scenes.length,
-          writtenCount: sceneRows.length,
-          screenplayDocType: screenplay.docType,
-          screenplayLength: screenplayText.length,
-          sourceVersionId: screenplay.versionId,
-        };
-        console.log(`[nel] Scene extraction complete: ${scenes.length} scenes written`);
       } catch (e: any) {
         results.scenes = { status: "failed", error: e.message };
         errors.push(`scenes: ${e.message}`);
@@ -350,72 +352,74 @@ Deno.serve(async (req: Request) => {
       try {
         console.log(`[nel] Extracting narrative entities for ${projectId}`);
         if (!corpus) {
-          throw new Error("Corpus not available — run corpus stage first");
-        }
+          results.entities = { status: "skipped", reason: "Corpus not available", stage: "entities" };
+          errors.push("entities: skipped — corpus not available");
+        } else {
+          // Get screenplay text for scene parsing
+          const screenplay = corpus.screenplay;
+          const screenplayText = screenplay?.plaintext;
+          const characterBibleText = corpus.characterBible?.plaintext;
 
-        // Get screenplay text for scene parsing
-        const screenplay = corpus.screenplay;
-        const screenplayText = screenplay?.plaintext;
-        const characterBibleText = corpus.characterBible?.plaintext;
-
-        if (!screenplayText || screenplayText.length < 200) {
-          throw new Error("No screenplay plaintext for entity extraction");
-        }
-
-        // Parse scenes to extract entities
-        const scenes = parseScenesFromText(screenplayText);
-        const entities = extractEntitiesFromScenes(scenes, characterBibleText);
-
-        // Re-extract characters from character bible more precisely if available
-        // Also extract props from scene body if they're mentioned with props patterns
-        // For MVP: characters + locations are the primary entity types
-
-        // Write to narrative_entities — idempotent by upsert on (project_id, entity_key)
-        let writtenChars = 0;
-        let writtenLocs = 0;
-
-        for (const entity of entities) {
-          const { error: upsertErr } = await sb
-            .from("narrative_entities")
-            .upsert({
-              project_id: projectId,
-              entity_key: entity.entityKey,
-              canonical_name: entity.canonicalName,
-              entity_type: entity.entityType,
-              scene_count: entity.sceneCount,
-              active: true,
-              status: "active",
-              meta_json: {
-                confidence: entity.confidence,
-                evidence: entity.evidence,
-                nel_stage: "entity_extraction",
-                nel_run_at: startTime,
-                source: screenplay.docType || "production_draft",
-              },
-            }, {
-              onConflict: "project_id,entity_key",
-              ignoreDuplicates: false,
-            });
-
-          if (upsertErr) {
-            console.warn(`[nel] entity upsert error for ${entity.entityKey}: ${upsertErr.message}`);
-          } else if (entity.entityType === "character") {
-            writtenChars++;
+          if (!screenplayText || screenplayText.length < 200) {
+            results.entities = { status: "skipped", reason: "No screenplay plaintext for entity extraction", stage: "entities" };
+            errors.push("entities: skipped — no screenplay");
           } else {
-            writtenLocs++;
+            // Parse scenes to extract entities
+            const scenes = parseScenesFromText(screenplayText);
+            const entities = extractEntitiesFromScenes(scenes, characterBibleText);
+
+            // Re-extract characters from character bible more precisely if available
+            // Also extract props from scene body if they're mentioned with props patterns
+            // For MVP: characters + locations are the primary entity types
+
+            // Write to narrative_entities — idempotent by upsert on (project_id, entity_key)
+            let writtenChars = 0;
+            let writtenLocs = 0;
+
+            for (const entity of entities) {
+              const { error: upsertErr } = await sb
+                .from("narrative_entities")
+                .upsert({
+                  project_id: projectId,
+                  entity_key: entity.entityKey,
+                  canonical_name: entity.canonicalName,
+                  entity_type: entity.entityType,
+                  scene_count: entity.sceneCount,
+                  active: true,
+                  status: "active",
+                  meta_json: {
+                    confidence: entity.confidence,
+                    evidence: entity.evidence,
+                    nel_stage: "entity_extraction",
+                    nel_run_at: startTime,
+                    source: screenplay.docType || "production_draft",
+                  },
+                }, {
+                  onConflict: "project_id,entity_key",
+                  ignoreDuplicates: false,
+                });
+
+              if (upsertErr) {
+                console.warn(`[nel] entity upsert error for ${entity.entityKey}: ${upsertErr.message}`);
+              } else if (entity.entityType === "character") {
+                writtenChars++;
+              } else {
+                writtenLocs++;
+              }
+            }
+
+            results.entities = {
+              status: "complete",
+              totalExtracted: entities.length,
+              characters: writtenChars,
+              locations: writtenLocs,
+              source: "deterministic parsing from screenplay + character bible",
+              entityKeys: entities.map(e => `${e.entityType}:${e.entityKey}`),
+            };
+            console.log(`[nel] Entity extraction complete: ${writtenChars} chars, ${writtenLocs} locs of ${entities.length} total`);
+            console.log(`[nel] Entity keys: ${entities.map(e => `${e.entityType}:${e.entityKey}`).join(", ")}`);
           }
         }
-
-        results.entities = {
-          status: "complete",
-          totalExtracted: entities.length,
-          characters: writtenChars,
-          locations: writtenLocs,
-          source: "deterministic parsing from screenplay + character bible",
-          entityKeys: entities.map(e => `${e.entityType}:${e.entityKey}`),
-        };
-        console.log(`[nel] Entity extraction complete: ${writtenChars} chars, ${writtenLocs} locs of ${entities.length} total`);
-        console.log(`[nel] Entity keys: ${entities.map(e => `${e.entityType}:${e.entityKey}`).join(", ")}`);
       } catch (e: any) {
         results.entities = { status: "failed", error: e.message };
         errors.push(`entities: ${e.message}`);
@@ -560,7 +564,7 @@ Deno.serve(async (req: Request) => {
         const dnaResp = await fetch(`${functionBase}/generate-visual-dna-from-canon`, {
           method: "POST",
           headers: { Authorization: bearerToken, "Content-Type": "application/json" },
-          body: JSON.stringify({ project_id: projectId, target: "all_characters", mode: "generate_missing" }),
+          body: JSON.stringify({ project_id: projectId, target: "all_characters", mode: "generate_from_atoms" }),
         });
         if (!dnaResp.ok) {
           const dnaErr = await dnaResp.text();
