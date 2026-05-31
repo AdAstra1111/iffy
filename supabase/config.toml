@@ -340,3 +340,6 @@ verify_jwt = false
 
 [functions.nel-orchestrator]
 verify_jwt = false
+
+[functions.vpb-assembly-engine]
+verify_jwt = false
