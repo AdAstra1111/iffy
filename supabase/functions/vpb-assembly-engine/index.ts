@@ -52,7 +52,8 @@ interface VPBCharacter {
   name: string;
   entityKey: string;
   role: string;
-  visualDna: Record<string, any> | null;
+  visualIdentity: Record<string, any> | null;
+  identitySource: string;
   actorBinding: string | null;
   actorName: string | null;
   sceneCount: number;
@@ -199,6 +200,19 @@ async function assembleCharacters(
     dnaByName.set(d.character_name?.toLowerCase(), d);
   }
 
+  // Get Character Identity Packages (preferred over raw visual DNA)
+  const { data: cipRecords } = await sb
+    .from("character_identity_packages")
+    .select("character_name, face_traits, age_range, ethnicity, body_traits, silhouette, visual_descriptors, wardrobe_signals, appearance_constraints, style_guidance, evidence")
+    .eq("project_id", projectId)
+    .eq("is_current", true)
+    .eq("enabled", true);
+
+  const cipByName = new Map<string, any>();
+  for (const c of cipRecords || []) {
+    cipByName.set(c.character_name?.toLowerCase(), c);
+  }
+
   // Get cast bindings
   const { data: cast } = await sb
     .from("project_ai_cast")
@@ -225,13 +239,30 @@ async function assembleCharacters(
 
   const characters: VPBCharacter[] = (entities || []).map(e => {
     const dna = dnaByName.get((e.canonical_name || e.entity_key).toLowerCase());
+    const cip = cipByName.get((e.canonical_name || e.entity_key).toLowerCase());
     const binding = castByCharKey.get(e.entity_key);
     const actorName = binding?.ai_actor_id ? actorMap.get(binding.ai_actor_id) : null;
+    // Prefer CIP over raw DNA for visual identity
+    const identitySource = cip ? 'cip' : 'dna';
+    const visualIdentity = cip
+      ? {
+          faceTraits: cip.face_traits || [],
+          ageRange: cip.age_range || '',
+          ethnicity: cip.ethnicity || [],
+          bodyTraits: cip.body_traits || [],
+          silhouette: cip.silhouette || '',
+          visualDescriptors: cip.visual_descriptors || [],
+          wardrobeSignals: cip.wardrobe_signals || [],
+          appearanceConstraints: cip.appearance_constraints || [],
+          styleGuidance: cip.style_guidance || [],
+        }
+      : dna?.identity_signature || dna?.locked_invariants || null;
     return {
       name: e.canonical_name || e.entity_key,
       entityKey: e.entity_key,
       role: e.narrative_role || "unknown",
-      visualDna: dna?.identity_signature || dna?.locked_invariants || null,
+      visualIdentity,
+      identitySource,
       actorBinding: binding?.ai_actor_id || null,
       actorName,
       sceneCount: e.scene_count || 0,
@@ -241,7 +272,7 @@ async function assembleCharacters(
 
   return {
     characters,
-    provenance: `narrative_entities (${entities?.length || 0} characters) + character_visual_dna + project_ai_cast`,
+    provenance: `narrative_entities (${entities?.length || 0} characters) + character_identity_packages (cip) + character_visual_dna (fallback) + project_ai_cast`,
   };
 }
 

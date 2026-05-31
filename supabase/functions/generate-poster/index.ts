@@ -431,10 +431,10 @@ const APPROVED_STATUSES = [
     const { data: dna } = await sb.from("character_visual_dna").select("id, character_name").eq("project_id", projectId).eq("is_current", true).in("character_name", result.characterLabels);
     if (dna?.length) result.dnaVersionIds = dna.map((d)=>d.id);
   }
-  // Resolve cast bindings for matched characters
+  // Resolve CIP bindings for matched characters (preferred over visual_sets)
   if (result.characterLabels.length > 0) {
-    const { data: casts } = await sb.from("visual_sets").select("id").eq("project_id", projectId).eq("domain", "character_identity").in("status", APPROVED_STATUSES).in("subject_ref", result.characterLabels);
-    if (casts?.length) result.castBindingIds = casts.map((c)=>c.id);
+    const { data: cips } = await sb.from("character_identity_packages").select("id, character_name, asset_class").eq("project_id", projectId).eq("is_current", true).eq("enabled", true).in("character_name", result.characterLabels);
+    if (cips?.length) result.castBindingIds = cips.map((c)=>c.id);
   }
   // Resolve visual states scoped to matched entity IDs only
   if (result.entityIds.length > 0) {
@@ -465,8 +465,8 @@ const APPROVED_STATUSES = [
   queries.push(subjects.stateIds.length > 0 ? sb.from("entity_visual_states").select("id, state_label, entity_id, updated_at").in("id", subjects.stateIds) : Promise.resolve({
     data: []
   }));
-  // Cast bindings — by resolved IDs, approved only
-  queries.push(subjects.castBindingIds.length > 0 ? sb.from("visual_sets").select("id, subject_ref, status, current_dna_version_id, updated_at").in("id", subjects.castBindingIds).in("status", APPROVED_STATUSES) : Promise.resolve({
+  // CIP bindings — by resolved IDs only
+  queries.push(subjects.castBindingIds.length > 0 ? sb.from("character_identity_packages").select("id, character_name, asset_class, version_number, updated_at").in("id", subjects.castBindingIds).eq("is_current", true).eq("enabled", true) : Promise.resolve({
     data: []
   }));
   const [charRes, locRes, dnaRes, stateRes, castRes] = await Promise.all(queries);
@@ -491,10 +491,11 @@ const APPROVED_STATUSES = [
       name: s.state_label || "unnamed",
       updated_at: s.updated_at
     }));
-  const cast_bindings = (castRes.data || []).map((cb)=>({
+  const cip_bindings = (castRes.data || []).map((cb)=>({
       id: cb.id,
-      name: cb.subject_ref || "unknown",
-      version_id: cb.current_dna_version_id || undefined,
+      name: cb.character_name || "unknown",
+      version_id: cb.version_number || undefined,
+      asset_class: cb.asset_class || "character_production",
       updated_at: cb.updated_at
     }));
   const parts = [
@@ -502,7 +503,7 @@ const APPROVED_STATUSES = [
     ...locations.map((l)=>`loc:${l.id}`),
     ...dna_versions.map((d)=>`dna:${d.id}:${d.version_id || ""}`),
     ...visual_states.map((s)=>`state:${s.id}`),
-    ...cast_bindings.map((cb)=>`cast:${cb.id}:${cb.version_id || ""}`)
+    ...cip_bindings.map((cb)=>`cip:${cb.id}:${cb.version_id || ""}`)
   ].sort().join("|");
   let hash = 0;
   for(let i = 0; i < parts.length; i++){
@@ -515,7 +516,7 @@ const APPROVED_STATUSES = [
     locations,
     visual_states,
     dna_versions,
-    cast_bindings,
+    cip_bindings,
     costume_looks: [],
     canon_hash,
     captured_at: new Date().toISOString(),

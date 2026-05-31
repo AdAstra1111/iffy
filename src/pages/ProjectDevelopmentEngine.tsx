@@ -1757,13 +1757,14 @@ export default function ProjectDevelopmentEngine() {
         let currentSection: { name: string; content: string; startLine: number; endLine: number } | null = null;
         for (let li = 0; li < lines.length; li++) {
           const line = lines[li];
-          if (/^###\s+\d+\.\s+/.test(line.trim())) {
+          if (/^###\s+/i.test(line.trim())) {
             if (currentSection) {
               currentSection.content = lines.slice(currentSection.startLine, li).join('\n');
               charSections.push(currentSection);
             }
-            const nameMatch = line.match(/^###\s+\d+\.\s+(.+?)(?:\s*\(|$)/);
-            const name = nameMatch ? nameMatch[1].trim() : line.replace(/^###\s+\d+\.\s+/, '').trim();
+            // Extract name: handle both "### 1. Marcus Cole (Protagonist)" and "### Marcus Cole & Sarah Chen"
+            const nameMatch = line.match(/^###\s+(?:\d+\.\s+)?(.+?)(?:\s*\(|$)/);
+            const name = nameMatch ? nameMatch[1].trim() : line.replace(/^###\s+/, '').trim();
             currentSection = { name, content: '', startLine: li, endLine: li };
           }
         }

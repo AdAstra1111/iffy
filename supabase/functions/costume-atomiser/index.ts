@@ -163,6 +163,7 @@ function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomi
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
   
   // 1. Get script content — try scene_graph_versions first, then season_script
   let allText = "";
@@ -324,6 +325,7 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  const repo = makeRepository();
 
   // Get pending costume atoms
   const { data: pendingAtoms, error: fetchErr } = await admin
@@ -347,7 +349,7 @@ async function handleGenerate(projectId: string) {
 
   // Background generation
   // @ts-ignore — EdgeRuntime is Deno Deploy global
-  EdgeRuntime.waitUntil(
+  if (typeof EdgeRuntime !== "undefined") EdgeRuntime.waitUntil(
     (async () => {
       for (const atom of pendingAtoms) {
         try {

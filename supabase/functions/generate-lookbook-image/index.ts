@@ -438,6 +438,20 @@ async function resolveCharacterBindings(sb, projectId, sectionKey, explicitChara
   if (!SECTION_BINDING_RELEVANCE[sectionKey]?.characters) return [];
   const { data: dnaRows } = await sb.from("character_visual_dna").select("id, character_name, locked_invariants, identity_signature, version_number").eq("project_id", projectId).eq("is_current", true).order("character_name").limit(10);
   if (!dnaRows?.length) return [];
+  
+  // Prefer Character Identity Packages over raw visual DNA
+  const { data: cipRows } = await sb
+    .from("character_identity_packages")
+    .select("character_name, face_traits, age_range, ethnicity, body_traits, silhouette, visual_descriptors, wardrobe_signals, appearance_constraints, style_guidance, evidence")
+    .eq("project_id", projectId)
+    .eq("is_current", true)
+    .eq("enabled", true);
+  
+  const cipByName = new Map<string, any>();
+  for (const c of cipRows || []) {
+    cipByName.set(c.character_name?.toLowerCase(), c);
+  }
+  
   // Build exact target set from explicit params
   const exactTargets = new Set();
   if (explicitCharacterName) exactTargets.add(explicitCharacterName.toLowerCase());
@@ -449,27 +463,53 @@ async function resolveCharacterBindings(sb, projectId, sectionKey, explicitChara
     const nameLC = dna.character_name?.toLowerCase() || '';
     // If exact targets specified, only bind those exact characters
     if (exactTargets.size > 0 && !exactTargets.has(nameLC)) continue;
+    
+    // Prefer CIP data over raw DNA
+    const cip = cipByName.get(nameLC);
     const sig = dna.identity_signature;
     const locked = dna.locked_invariants;
     const traitParts = [];
-    if (sig) {
-      for (const k of [
-        'face',
-        'body',
-        'silhouette',
-        'wardrobe'
-      ]){
-        if (sig[k]) traitParts.push(`${k}: ${typeof sig[k] === 'string' ? sig[k] : JSON.stringify(sig[k])}`);
+    
+    if (cip) {
+      // Use CIP data for structured character descriptors
+      if (cip.face_traits?.length) traitParts.push(`face: ${cip.face_traits.map((t: any) => t.trait || t).join(', ')}`);
+      if (cip.age_range) traitParts.push(`age: ${cip.age_range}`);
+      if (cip.visual_descriptors?.length) traitParts.push(`appearance: ${cip.visual_descriptors.map((d: any) => d.trait || d).join(', ')}`);
+      if (cip.wardrobe_signals?.length) traitParts.push(`wardrobe: ${cip.wardrobe_signals.map((w: any) => w.trait || w).join(', ')}`);
+      if (cip.appearance_constraints?.length) traitParts.push(`constraints: ${cip.appearance_constraints.map((a: any) => a.trait || a).join(', ')}`);
+      if (cip.body_traits?.length) traitParts.push(`body: ${cip.body_traits.map((b: any) => b.trait || b).join(', ')}`);
+      if (cip.ethnicity?.length) traitParts.push(`ethnicity: ${cip.ethnicity.join(', ')}`);
+    } else {
+      // Fallback to raw DNA identity_signature
+      if (sig) {
+        for (const k of [
+          'face',
+          'body',
+          'silhouette',
+          'wardrobe'
+        ]){
+          if (sig[k]) traitParts.push(`${k}: ${typeof sig[k] === 'string' ? sig[k] : JSON.stringify(sig[k])}`);
+        }
       }
-    }
-    if (locked) {
-      const entries = Object.entries(locked).filter(([_, v])=>v);
-      if (entries.length) traitParts.push(`Locked: ${entries.map(([k, v])=>`${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('; ')}`);
+      if (locked) {
+        const entries = Object.entries(locked).filter(([_, v])=>v);
+        if (entries.length) traitParts.push(`Locked: ${entries.map(([k, v])=>`${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`).join('; ')}`);
+      }
     }
     bindings.push({
       character_name: dna.character_name,
       dna_version_id: dna.id,
-      identity_signature: sig,
+      cip_id: cip?.id || null,
+      identity_source: cip ? 'cip' : 'dna',
+      identity_signature: cip ? {
+        face_traits: cip.face_traits || [],
+        age_range: cip.age_range || '',
+        visual_descriptors: cip.visual_descriptors || [],
+        wardrobe_signals: cip.wardrobe_signals || [],
+        body_traits: cip.body_traits || [],
+        silhouette: cip.silhouette || '',
+        appearance_constraints: cip.appearance_constraints || [],
+      } : sig,
       locked_invariants: locked,
       traits_summary: traitParts.join('. ') || `${dna.character_name}`
     });
