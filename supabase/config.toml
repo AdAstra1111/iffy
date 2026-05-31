@@ -366,3 +366,19 @@ verify_jwt = false
 verify_jwt = false
 [functions.run-pd-single]
 verify_jwt = false
+[functions.run-costume]
+verify_jwt = false
+[functions.run-costume-check]
+verify_jwt = false
+[functions.run-costume-debug]
+verify_jwt = false
+[functions.run-costume-debug2]
+verify_jwt = false
+[functions.run-costume-debug3]
+verify_jwt = false
+[functions.run-pcp-check]
+verify_jwt = false
+[functions.run-pcp]
+verify_jwt = false
+[functions.run-pcp-verify]
+verify_jwt = false
