@@ -2287,6 +2287,7 @@ const VisualStageRail = memo(function VisualStageRail({
 
 export default function VisualProductionPipeline() {
   const { id: projectId } = useParams<{ id: string }>();
+  const qc = useQueryClient();
   const inputs = usePipelineInputs(projectId);
   const { result: vcsResult, loading: vcsLoading, diagnostics: vcsDiagnostics } = useVisualCoherence(projectId, inputs);
   const {
@@ -2306,6 +2307,46 @@ export default function VisualProductionPipeline() {
       setActiveStage(suggestedStage);
     }
   }, [suggestedStage, activeStage]);
+
+  // Compute next stage for navigation
+  const nextStage = useMemo(() => {
+    const currentIndex = PIPELINE_STAGES.indexOf(activeStage);
+    if (currentIndex === -1) return null;
+    for (let i = currentIndex + 1; i < PIPELINE_STAGES.length; i++) {
+      const next = stages.find(s => s.stage === PIPELINE_STAGES[i]);
+      if (next) return next;
+    }
+    return null;
+  }, [activeStage, stages]);
+
+  // Force governance re-evaluation + invalidate pipeline caches on mount
+  const governanceMounted = useRef(false);
+  useEffect(() => {
+    if (projectId && !governanceMounted.current) {
+      governanceMounted.current = true;
+      // Invalidate pipeline state queries so live-computed stages reflect latest DB state
+      qc.invalidateQueries({ queryKey: ['pipeline-pd-state', projectId] });
+      qc.invalidateQueries({ queryKey: ['pipeline-cast-state', projectId] });
+      qc.invalidateQueries({ queryKey: ['pipeline-hero-frames-state', projectId] });
+      // Then re-evaluate governance
+      refreshGovernance();
+    }
+  }, [projectId, refreshGovernance, qc]);
+
+  // Auto-advance to suggested stage after governance resolves, even if current stage is locked
+  useEffect(() => {
+    if (suggestedStage && suggestedStage !== activeStage) {
+      setActiveStage(suggestedStage);
+    }
+  }, [suggestedStage, activeStage]);
+
+  // If the current stage is locked/approved and there's a next stage, auto-advance to it
+  useEffect(() => {
+    const activeS = stages.find(s => s.stage === activeStage);
+    if (activeS && (activeS.status === 'locked' || activeS.status === 'approved') && suggestedStage && suggestedStage !== activeStage) {
+      setActiveStage(suggestedStage);
+    }
+  }, [stages, activeStage, suggestedStage]);
 
   const activeState = stages.find(s => s.stage === activeStage) || stages[0];
 
@@ -2469,6 +2510,29 @@ export default function VisualProductionPipeline() {
                   <StaleRiskDisplay staleRisk={activeState.staleRisk} recommendedAction={action} />
                 );
               })()}
+              {/* Next Stage banner — shown when current stage is locked/approved and next stage exists */}
+              {(activeState.status === 'locked' || activeState.status === 'approved') && nextStage && (
+                <div className="p-4 md:p-6 pb-0">
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-500" />
+                      <span className="text-xs text-muted-foreground">
+                        <strong className="text-foreground">{activeState.label}</strong> is {activeState.status} — 
+                        <span className="text-primary ml-1">next: {nextStage.label}</span>
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-1 text-xs h-7"
+                      onClick={() => setActiveStage(nextStage.stage)}
+                    >
+                      {nextStage.label}
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              )}
               {activeState.status === 'blocked' && activeStage !== 'cast' && activeStage !== 'hero_frames' && activeStage !== 'production_design' && activeStage !== 'lookbook' ? (
                 <div className="p-4 md:p-6">
                   <BlockedPanel state={activeState} />

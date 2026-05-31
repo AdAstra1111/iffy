@@ -1014,12 +1014,23 @@ export default function ProductionDesign() {
 
       {/* Next stage gate */}
       {progressSummary.allLocked && (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-center space-y-2">
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-center space-y-3">
           <Lock className="h-6 w-6 mx-auto text-primary" />
           <p className="text-sm font-medium text-foreground">Production Design Locked</p>
           <p className="text-xs text-muted-foreground">
             All design families are locked. Your visual world is ready for downstream stages.
           </p>
+          <div className="flex items-center justify-center gap-2 pt-1">
+            <Button
+              variant="default"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => window.location.href = `/projects/${projectId}/visual-production`}
+            >
+              <ArrowLeft className="h-3.5 w-3.5 rotate-180" />
+              Continue to Pipeline
+            </Button>
+          </div>
         </div>
       )}
 

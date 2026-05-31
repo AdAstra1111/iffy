@@ -2746,6 +2746,13 @@ function textSimilarity(a, b) {
 function detectDrift(currentCore, inheritedCore) {
   const items = [];
   let hasIdentityChange = false;
+
+  // Check if inheritedCore is effectively empty (first canon write)
+  const hasAnyInherited = CORE_FIELDS.some((f) => (inheritedCore[f] || "").trim().length > 0);
+  if (!hasAnyInherited) {
+    return { level: "none", items: [] };
+  }
+
   for (const field of CORE_FIELDS){
     const inherited = inheritedCore[field] || "";
     const current = currentCore[field] || "";
