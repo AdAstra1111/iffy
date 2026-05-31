@@ -180,10 +180,16 @@ async function handleCharacter(
     .maybeSingle();
 
   const hasExisting = !!existingDNA;
-  const isApprovedOrStrong = existingDNA?.identity_strength === "strong";
+  const isContentValid = existingDNA ? isUsableVisualDNA(existingDNA) : false;
+  const isApprovedOrStrong = existingDNA?.identity_strength === "strong" && isContentValid;
+
+  // Detect strong-but-empty — content-weak records must not block regeneration
+  if (existingDNA && existingDNA.identity_strength === "strong" && !isContentValid) {
+    console.log(`[generate-visual-dna] strong_but_empty: ${characterName} — identity_strength is strong but content is empty, treating as regeneration-eligible`);
+  }
 
   // 2. Mode-specific skip/block logic
-  if (mode === "generate_missing" && hasExisting) {
+  if (mode === "generate_missing" && hasExisting && isContentValid) {
     report.skipped++;
     return respond(report);
   }
@@ -1604,6 +1610,43 @@ async function callExtractDNA(
   } catch (e: any) {
     return { error: `extract-visual-dna fetch failed: ${e.message}`, traits: [], marker_candidates: [], evidence_sources: [] };
   }
+}
+
+/**
+ * Check if a Visual DNA record has actual usable content.
+ * A record is "usable" only if it carries non-empty identity data.
+ * This prevents strong_but_empty records from blocking regeneration.
+ */
+function isUsableVisualDNA(dna: any): boolean {
+  // Non-empty inferred_guidance — primary trait data
+  if (dna.inferred_guidance && Array.isArray(dna.inferred_guidance) && dna.inferred_guidance.length > 0) return true;
+  
+  // Non-empty identity_signature with actual signature content
+  if (dna.identity_signature && typeof dna.identity_signature === 'object') {
+    const sig = dna.identity_signature as Record<string, any>;
+    if (sig.signature && Object.keys(sig.signature).length > 0) return true;
+    if (sig.binding_markers && Array.isArray(sig.binding_markers) && sig.binding_markers.length > 0) return true;
+  }
+  
+  // Structured identity fields (populated by generate-visual-dna-from-canon)
+  if (dna.age_range && typeof dna.age_range === 'string' && dna.age_range.trim().length > 0) return true;
+  if (dna.biological_sex && typeof dna.biological_sex === 'string' && dna.biological_sex.trim().length > 0) return true;
+  
+  // Non-empty ethnicity array
+  if (dna.ethnicity && Array.isArray(dna.ethnicity) && dna.ethnicity.length > 0) return true;
+  if (dna.body_type && typeof dna.body_type === 'string' && dna.body_type.trim().length > 0) return true;
+  if (dna.facial_archetype && typeof dna.facial_archetype === 'string' && dna.facial_archetype.trim().length > 0) return true;
+  
+  // Non-empty locked_invariants
+  if (dna.locked_invariants && Array.isArray(dna.locked_invariants) && dna.locked_invariants.length > 0) return true;
+  
+  // Non-empty flexible_axes
+  if (dna.flexible_axes && Array.isArray(dna.flexible_axes) && dna.flexible_axes.length > 0) return true;
+  
+  // Non-empty wardrobe_signals object
+  if (dna.wardrobe_signals && typeof dna.wardrobe_signals === 'object' && Object.keys(dna.wardrobe_signals).length > 0) return true;
+  
+  return false;
 }
 
 /**
