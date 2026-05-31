@@ -120,10 +120,11 @@ export async function callEngineV2(action: string, extra: Record<string, any> = 
   const flightKey = makeFlightKey(action, extra);
   const existing = inFlightCalls.get(flightKey);
   if (existing) {
+    const stack = new Error().stack?.split('\n').slice(2, 6).join(' → ') || 'no stack';
     console.warn(
       `[dev-engine-v2][IEL] dev_engine_v2_mutation_blocked_duplicate { action: "${action}", flight_key: "${flightKey}" }`,
     );
-    console.log(`[FINALIZE] duplicate_mutation_blocked action="${action}" — returning existing promise`);
+    console.log(`[FINALIZE] duplicate_mutation_blocked action="${action}" — stack: ${stack}`);
     return existing;
   }
 

@@ -59,7 +59,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
   // ── INSTRUMENTATION: Log viewer version binding ──
   console.log(`[FINALIZE] SectionedDocViewer rendering versionId="${versionId?.slice(0,12)}"`);
 
-  const { data: chunks = [], isLoading } = useQuery<ChunkRow[]>({
+  const { data: chunks = [], isLoading, isFetching, status: queryStatus } = useQuery<ChunkRow[]>({
     queryKey: ['sectioned-doc-viewer-chunks', versionId],
     queryFn: async () => {
       if (!versionId) return [];
@@ -74,6 +74,12 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
     enabled: !!versionId,
     staleTime: 60_000,
   });
+  console.log(
+    `[VIEWER_QUERY] versionId="${versionId?.slice(0,12)}" ` +
+    `status="${queryStatus}" isFetching=${isFetching} isLoading=${isLoading} ` +
+    `chunks=${(Array.isArray(chunks) ? chunks.length : 'not_array')} ` +
+    `done_chunks=${(Array.isArray(chunks) ? chunks.filter(c => c.status === 'done').length : '?')}`
+  );
 
   const safeChunks = Array.isArray(chunks) ? chunks : [];
   const doneChunks = safeChunks.filter((c) => c.status === 'done' && c.content);
@@ -207,7 +213,7 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
  * Used by the parent to decide whether to show structured view toggle.
  */
 export function useHasChunks(versionId: string | undefined, docType?: string) {
-  return useQuery({
+  const result = useQuery({
     queryKey: ['has-chunks', versionId, docType],
     queryFn: async () => {
       if (!versionId) return false;
@@ -248,4 +254,6 @@ export function useHasChunks(versionId: string | undefined, docType?: string) {
     enabled: !!versionId,
     staleTime: 30_000,
   });
+  console.log(`[VIEWER_QUERY] useHasChunks versionId="${versionId?.slice(0,12)}" docType="${docType}" hasChunks=${result.data} isFetching=${result.isFetching}`);
+  return result;
 }
