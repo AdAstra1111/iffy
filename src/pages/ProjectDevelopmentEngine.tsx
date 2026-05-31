@@ -1783,39 +1783,58 @@ export default function ProjectDevelopmentEngine() {
 
         // Rewrite each character sequentially, chaining versions
         let currentVersionId = selectedVersionId;
+        let hasError = false;
         for (let ci = 0; ci < charSections.length; ci++) {
           const section = charSections[ci];
           console.log(`[CHAR_BIBLE_REWRITE] character_start index=${ci} name="${section.name}" versionId="${currentVersionId?.slice(0,12)}"`);
 
-          // eslint-disable-next-line no-await-in-loop
-          const result = await callEngineV2('rewrite', {
-            projectId,
-            documentId: selectedDocId,
-            versionId: currentVersionId,
-            approvedNotes: enrichedNotes,
-            protectItems,
-            deliverableType: selectedDeliverableType,
-            developmentBehavior: projectBehavior,
-            format: projectFormat,
-            selectedOptions: charSelectedOptions,
-            globalDirections: globalDirections || [],
-          });
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const result = await callEngineV2('rewrite', {
+              projectId,
+              documentId: selectedDocId,
+              versionId: currentVersionId,
+              approvedNotes: enrichedNotes,
+              protectItems,
+              deliverableType: selectedDeliverableType,
+              developmentBehavior: projectBehavior,
+              format: projectFormat,
+              selectedOptions: charSelectedOptions,
+              globalDirections: globalDirections || [],
+            });
 
-          if (result?.newVersion?.id) {
-            currentVersionId = result.newVersion.id;
-            console.log(`[CHAR_BIBLE_REWRITE] character_complete index=${ci} name="${section.name}" newVersionId="${currentVersionId?.slice(0,12)}"`);
-          } else {
-            console.error(`[CHAR_BIBLE_REWRITE] character_failed index=${ci} name="${section.name}" — no version returned`);
-            throw new Error(`Rewrite failed for character: ${section.name}`);
+            if (result?.newVersion?.id) {
+              currentVersionId = result.newVersion.id;
+              console.log(`[CHAR_BIBLE_REWRITE] character_complete index=${ci} name="${section.name}" newVersionId="${currentVersionId?.slice(0,12)}"`);
+            } else {
+              console.error(`[CHAR_BIBLE_REWRITE] character_failed index=${ci} name="${section.name}" — no version returned`);
+              toast.error(`Rewrite failed for ${section.name}: no version returned from engine`);
+              hasError = true;
+              break;
+            }
+          } catch (err: any) {
+            const msg = err?.message || 'Unknown error';
+            console.error(`[CHAR_BIBLE_REWRITE] character_error index=${ci} name="${section.name}" error="${msg}"`);
+            toast.error(`Rewrite failed for ${section.name}: ${msg}`);
+            hasError = true;
+            break;
           }
         }
 
-        // All characters done — select the final version
-        console.log(`[CHAR_BIBLE_REWRITE] all_complete finalVersionId="${currentVersionId?.slice(0,12)}"`);
-        postOperationVersionId.current = currentVersionId;
-        pendingOptionsTriggerRef.current = currentVersionId;
-        setSelectedVersionId(currentVersionId);
-        afterRewrite();
+        if (hasError) {
+          console.log(`[CHAR_BIBLE_REWRITE] aborted — errors occurred, last versionId="${currentVersionId?.slice(0,12)}"`);
+          if (currentVersionId && currentVersionId !== selectedVersionId) {
+            // Version was created for at least one character — use it
+            setSelectedVersionId(currentVersionId);
+          }
+        } else {
+          // All characters done — select the final version
+          console.log(`[CHAR_BIBLE_REWRITE] all_complete finalVersionId="${currentVersionId?.slice(0,12)}"`);
+          postOperationVersionId.current = currentVersionId;
+          pendingOptionsTriggerRef.current = currentVersionId;
+          setSelectedVersionId(currentVersionId);
+          afterRewrite();
+        }
         return;
       }
       // NOTE: beat_sheet intentionally removed from SECTIONED_REWRITE_TYPES (Fix 2).
