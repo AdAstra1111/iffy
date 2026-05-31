@@ -106,7 +106,7 @@ export function CharacterBibleSectionProgress({
   }
 
   const progressLabel = isPipelineComplete ? 'Complete'
-    : sectionStatus === 'writing' ? `Writing — ${currentChunk} of ${totalChunks} chunks`
+    : sectionStatus === 'writing' ? `Writing — ${currentChunk} of ${totalChunks} characters`
     : sectionStatus === 'planning' ? 'Planning rewrite…'
     : sectionStatus === 'error' ? 'Error'
     : 'Pending';
