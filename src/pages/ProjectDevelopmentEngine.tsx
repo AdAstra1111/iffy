@@ -1741,10 +1741,14 @@ export default function ProjectDevelopmentEngine() {
         }
       }
 
-      // Character bibles: route to per-character single-pass rewrite via dev-engine-v2
-      // This shows the CharacterBibleProgress UI and uses the rewrite.mutate path.
-      // Do NOT route through the chunk-based sectioned rewrite pipeline below.
-      if ((selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
+      // Character bibles: route to the sectioned chunk-based rewrite pipeline
+      // (rather than single-pass per-character rewrite which hits 150s timeout)
+      // The pipeline splits by ## headers and rewrites each section independently.
+      // Skip the per-character path — falls through to SECTIONED_REWRITE_TYPES below.
+      if (false && (selectedDoc?.doc_type === 'character_bible' || selectedDoc?.doc_type === 'long_character_bible') && selectedDocId && selectedVersionId) {
+        // This block is disabled — character_bible routes through the sectioned rewrite pipeline
+        // which provides real progress tracking and avoids the 150s edge function timeout
+        // that the per-character rewrite (backend line 9355) repeatedly hits.
         const charSelectedOptions = decisions
           ? Object.entries(decisions)
               .filter(([, v]) => !!v)
