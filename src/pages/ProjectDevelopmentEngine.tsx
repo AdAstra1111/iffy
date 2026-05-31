@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom';
 import { isValidUUID } from '@/lib/validation/uuid';
 import { supabase } from '@/integrations/supabase/client';
-import { useDevEngineV2, callEngineV2 } from '@/hooks/useDevEngineV2';
+import { useDevEngineV2, callEngineV2, resumeEngineV2Polling } from '@/hooks/useDevEngineV2';
 import { useScriptPipeline } from '@/hooks/useScriptPipeline';
 import { useRewritePipeline } from '@/hooks/useRewritePipeline';
 import { useSceneRewritePipeline } from '@/hooks/useSceneRewritePipeline';
@@ -369,6 +369,11 @@ export default function ProjectDevelopmentEngine() {
     approvedVersionMap,
   } = useDevEngineV2(projectId);
 
+  // ── Options idempotency key ──
+  // Prevents both trigger sites from firing options for the same (docId, versionId)
+  const optionsTriggerKeyRef = useRef<string | null>(null);
+  // Caller should clear when documentId or versionId actually changes (not just on every render)
+
   // Auto-trigger Generate Options after notes land — fires via flag + useEffect
   // instead of inline setTimeout. Placed AFTER useDevEngineV2 so that
   // selectedDocId/selectedVersionId are not in the Temporal Dead Zone
@@ -379,6 +384,14 @@ export default function ProjectDevelopmentEngine() {
       setPendingAutoTrigger(false);
       return;
     }
+    // ── PATCH 3: Options idempotency guard ──
+    const optKey = `${selectedDocId}:${selectedVersionId}`;
+    if (optionsTriggerKeyRef.current === optKey) {
+      setPendingAutoTrigger(false);
+      console.log(`[FINALIZE] options_trigger skipped_duplicate key="${optKey}" — already triggered`);
+      return;
+    }
+    optionsTriggerKeyRef.current = optKey;
     // ── INSTRUMENTATION: options trigger site A (pendingAutoTrigger) ──
     if (pendingOptionsTriggerRef.current) {
       console.log(`[FINALIZE] options_trigger pendingAutoTrigger=true pendingOptionsTriggerRef=true — CONFLICT`);
@@ -406,6 +419,14 @@ export default function ProjectDevelopmentEngine() {
     if (!selectedDocId || !selectedVersionId || typeof generateOptionsMutation?.mutate !== 'function') return;
     // Wait until version data resolves and bg_generating is done
     if (isBgGenerating) return; // Don't clear ref — retry on next render
+    // ── PATCH 3: Options idempotency guard (site B) ──
+    const optKey = `${selectedDocId}:${selectedVersionId}`;
+    if (optionsTriggerKeyRef.current === optKey) {
+      pendingOptionsTriggerRef.current = null;
+      console.log(`[FINALIZE] options_trigger skipped_duplicate key="${optKey}" — already triggered, clearing ref`);
+      return;
+    }
+    optionsTriggerKeyRef.current = optKey;
     pendingOptionsTriggerRef.current = null;
     // ── INSTRUMENTATION: options trigger site B (pendingOptionsTriggerRef) ──
     console.log(`[FINALIZE] options_trigger action="options" source="ProjectDevelopmentEngine" line=403 ` +
@@ -674,9 +695,20 @@ export default function ProjectDevelopmentEngine() {
   // After large rewrite pipeline completes → mark new version as post-operation
   useEffect(() => {
     if (rewritePipeline.status === 'complete' && rewritePipeline.newVersionId) {
-      postOperationVersionId.current = rewritePipeline.newVersionId;
-      pendingOptionsTriggerRef.current = rewritePipeline.newVersionId;
-      setSelectedVersionId(rewritePipeline.newVersionId);
+      const nvId = rewritePipeline.newVersionId;
+      console.log(`[FINALIZE] pipeline_complete newVersionId="${nvId.slice(0,12)}" documentId="${selectedDocId?.slice(0,12)}"`);
+      // ── PATCH 1: Resume polling and force authoritative refetch ──
+      resumeEngineV2Polling();
+      postOperationVersionId.current = nvId;
+      pendingOptionsTriggerRef.current = nvId;
+      setSelectedVersionId(nvId);
+      qc.refetchQueries({ queryKey: ['dev-v2-versions', selectedDocId] }).then(() => {
+        console.log(`[FINALIZE] refetch_versions complete docId="${selectedDocId?.slice(0,12)}"`);
+      });
+      qc.refetchQueries({ queryKey: ['sectioned-doc-viewer-chunks', nvId] }).then(() => {
+        console.log(`[FINALIZE] refetch_chunks complete versionId="${nvId.slice(0,12)}"`);
+      });
+      qc.refetchQueries({ queryKey: ['has-chunks', nvId, selectedDoc?.doc_type] });
       qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       rewritePipeline.reset();
     }

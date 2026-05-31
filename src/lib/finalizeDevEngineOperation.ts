@@ -8,6 +8,7 @@
  */
 import type { QueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { resumeEngineV2Polling } from '@/hooks/useDevEngineV2';
 
 export interface FinalizeResult {
   success: boolean;
@@ -138,7 +139,11 @@ export function finalizeDevEngineOperation(options: FinalizeOptions) {
     invalidationKeys.push(['dev-engine-project', projectId]);
   }
 
-  // ── Step 4: Invalidate then refetch ──
+  // ── Step 4: Resume polling (in case it was paused by ERR_INSUFFICIENT_RESOURCES) ──
+  resumeEngineV2Polling();
+  console.log(`[FINALIZE] resume_polling operationType="${result.operationType}"`);
+
+  // ── Step 5: Invalidate then refetch ──
   // Invalidate all at once (triggers refetch in active queries)
   for (const key of invalidationKeys) {
     qc.invalidateQueries({ queryKey: key });
@@ -187,6 +192,7 @@ export function finalizeDevEngineOperation(options: FinalizeOptions) {
   // Wait for ALL refetches to complete (or timeout), then call onComplete
   Promise.race([Promise.all(refetchPromises), timeoutPromise])
     .then(() => {
+      console.log(`[FINALIZE] completion_verified operationType="${result.operationType}" versionId="${result.versionId?.slice(0,12)}"`);
       onComplete?.();
       if (toastMessage !== null) {
         const msg = toastMessage ?? OPERATION_TOASTS[result.operationType] ?? FALLBACK_TOAST;
