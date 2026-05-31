@@ -3780,6 +3780,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={narrativebeatAtoms.atoms}
                       isLoading={narrativebeatAtoms.isLoading}
                       isRefreshing={narrativebeatAtoms.isRefreshing}
+                      isExtracting={narrativebeatAtoms.isExtracting}
+                      isGenerating={narrativebeatAtoms.isGenerating}
                       lastUpdated={narrativebeatAtoms.lastUpdated}
                       error={narrativebeatAtoms.error}
                       onExtract={narrativebeatAtoms.extract}

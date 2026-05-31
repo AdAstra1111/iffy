@@ -33,30 +33,33 @@ export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, isExtrac
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;
   const completedCount = atoms.filter(a => a.generation_status === 'completed' || a.generation_status === 'complete').length;
+  const pendingCount = atoms.filter(a => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running').length;
   const failedCount = atoms.filter(a => a.generation_status === 'failed').length;
+  const generationProgress = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+  const generateBusy = isExtracting || isGenerating || pendingCount > 0;
   const handleExtract = async () => { const result = await onExtract(); if (result?.created != null) await onGenerate(); };
 
   return (
     <div className="space-y-4">
       {/* Progress bar during extraction/generation */}
-      {(isExtracting || isGenerating) && (
+      {generateBusy && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3 space-y-2">
           <div className="flex items-center gap-2">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-400" />
             <span className="text-xs font-medium text-blue-300">
               {isExtracting
                 ? 'Extracting narrative beat atoms from script...'
-                : isGenerating
-                ? `Generating narrative beat atoms ({completedCount}/{totalCount})...`
+                : isGenerating || pendingCount > 0
+                ? `Generating narrative beat atoms (${completedCount}/${totalCount})...`
                 : ''}
             </span>
           </div>
           <Progress value={isExtracting ? 25 : generationProgress} className="h-1.5" />
           <div className="text-[10px] text-blue-300/70">
             {isExtracting
-              ? `Found {totalCount} narrative beat atoms in script — building atoms...`
-              : isGenerating
-              ? `{completedCount} of {totalCount} atoms complete`
+              ? `Found scenes in script — building atoms...`
+              : isGenerating || pendingCount > 0
+              ? `${completedCount} of ${totalCount} atoms complete`
               : ''}
           </div>
         </div>
@@ -67,7 +70,7 @@ export function NarrativebeatAtomGrid({ atoms, isLoading, isRefreshing, isExtrac
         <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-muted-foreground" /><span className="text-sm font-medium">Narrative Beats</span>{isLoading && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}</div>
         <div className="flex items-center gap-2 flex-wrap">
           {lastUpdated && !isLoading && <div className="flex items-center gap-1 text-xs text-muted-foreground">{isRefreshing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Clock className="h-3 w-3" />}<TimeAgo date={lastUpdated} /></div>}
-          {totalCount > 0 && <div className="flex items-center gap-1.5 text-xs text-muted-foreground">{completedCount > 0 && <span className="text-emerald-400">{completedCount} done</span>}{failedCount > 0 && <><span className="text-muted-foreground">·</span><span className="text-red-400">{failedCount} failed</span></>}</div>}
+          {totalCount > 0 && <div className="flex items-center gap-1.5 text-xs text-muted-foreground">{completedCount > 0 && <span className="text-emerald-400">{completedCount} done</span>}{pendingCount > 0 && <><span className="text-muted-foreground">·</span><span className="text-blue-400">{pendingCount} generating</span></>}{failedCount > 0 && <><span className="text-muted-foreground">·</span><span className="text-red-400">{failedCount} failed</span></>}</div>}
           <Button size="sm" variant="ghost" onClick={onRefresh} disabled={isLoading || isRefreshing} className="h-8 text-xs text-muted-foreground shrink-0"><RefreshCw className={`h-3 w-3 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />Refresh</Button>
           <Button size="sm" variant="outline" onClick={handleExtract} disabled={isLoading || isRefreshing} className="h-8 text-xs shrink-0"><Sparkles className="h-3 w-3 mr-1" />{totalCount === 0 ? 'Atomise Beats' : 'Regenerate'}</Button>
           {failedCount > 0 && <Button size="sm" variant="ghost" onClick={onResetFailed} className="h-8 text-xs text-amber-400 shrink-0"><RefreshCw className="h-3 w-3 mr-1" />Reset Failed</Button>}
@@ -124,7 +127,7 @@ export function NarrativebeatAtomDetailDrawer({ atom, open, onOpenChange }: { at
           <div className="flex items-center justify-between"><DrawerTitle className="flex items-center gap-2"><Zap className="h-4 w-4" />{atom?.canonical_name || 'Narrative Beat'}</DrawerTitle><DrawerClose className="p-1 rounded hover:bg-muted"><X className="h-4 w-4" /></DrawerClose></div>
           {atom && <DrawerDescription><StatusBadge status={atom.generation_status} /></DrawerDescription>}
         </DrawerHeader>
-        <div class="overflow-y-auto max-h-[70vh] px-6 py-4" className="overflow-y-auto max-h-[70vh] px-6">
+        <div className="overflow-y-auto max-h-[70vh] px-6">
           {a ? (
             <dl className="text-sm">
               <AttrRow label="Beat Type" value={a.beatType} />
@@ -143,7 +146,7 @@ export function NarrativebeatAtomDetailDrawer({ atom, open, onOpenChange }: { at
             </dl>
           ) : <p className="text-sm text-muted-foreground text-center py-8">Select a beat to view details</p>}
         </div>
-        <div class="px-6 pb-4 pt-2 border-t shrink-0">{a?.confidence != null && <div className="flex items-center gap-2 text-xs"><span>Confidence: {Math.round(a.confidence)}%</span><Progress value={a.confidence} className="flex-1 h-1.5" /></div>}</div>
+        <div className="px-6 pb-4 pt-2 border-t shrink-0">{a?.confidence != null && <div className="flex items-center gap-2 text-xs"><span>Confidence: {Math.round(a.confidence * 100)}%</span><Progress value={Math.round(a.confidence * 100)} className="flex-1 h-1.5" /></div>}</div>
       </DrawerContent>
     </Drawer>
   );
