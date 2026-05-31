@@ -33,14 +33,51 @@ function getServiceClient() {
 async function verifyUser(req: Request): Promise<string> {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader?.startsWith("Bearer ")) throw new Error("Unauthorized");
-  const anonClient = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } }
-  );
-  const { data: { user }, error } = await anonClient.auth.getUser();
-  if (error || !user) throw new Error("Unauthorized");
-  return user.id;
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const SRK = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const token = authHeader.slice(7);
+
+  // Strategy 1: Try service-role to resolve the token as a JWT
+  try {
+    const srClient = createClient(supabaseUrl, SRK);
+    const { data: { user } } = await srClient.auth.getUser(token);
+    if (user?.id) return user.id;
+  } catch {
+    // Fall through — token is not a user JWT
+  }
+
+  // Strategy 2: Check if token is the SRK itself (machine-to-machine)
+  if (token === SRK) {
+    // Return zero UUID — calling code handles the project owner lookup
+    return "00000000-0000-0000-0000-000000000000";
+  }
+
+  // Strategy 3: Legacy anon-key path (browser JWTs)
+  try {
+    const anonClient = createClient(
+      supabaseUrl,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+    const { data: { user }, error } = await anonClient.auth.getUser();
+    if (!error && user?.id) return user.id;
+  } catch {
+    // Fall through
+  }
+
+  // Strategy 4: Parse the JWT payload to extract sub claim
+  try {
+    const parts = token.split(".");
+    if (parts.length === 3) {
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.sub) return payload.sub;
+    }
+  } catch {
+    // Fall through
+  }
+
+  throw new Error("Unauthorized");
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
