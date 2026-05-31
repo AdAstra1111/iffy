@@ -19,6 +19,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { recoverStaleRunning } from "../_shared/stale-running-recovery.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -665,16 +666,17 @@ async function handleExtract(projectId: string) {
 }
 
 async function handleStatus(projectId: string) {
-  const admin = makeAdminClient();
-  const { data: atoms, error } = await admin
-    .from("atoms").select("*").eq("project_id", projectId).eq("atom_type", "narrativebeat")
-    .order("priority", { ascending: false });
-  if (error) throw new Error(`Failed to load narrativebeat atoms: ${error.message}`);
-  return { atoms: atoms || [], count: atoms?.length || 0 };
-}
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale narrativebeat atoms on status check");
+  }
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "narrativebeat").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale narrativebeat atoms on status check");
+  }
+
   const { count, error } = await admin
     .from("atoms")
     .update({ generation_status: "pending", updated_at: new Date().toISOString() })
@@ -782,7 +784,10 @@ serve(async (req) => {
       case "extract": result = await handleExtract(projectId); break;
       case "generate": result = await handleGenerate(projectId); break;
       case "status": result = await handleStatus(projectId); break;
-      case "reset_failed": result = await handleResetFailed(projectId); break;
+            case "reset-failed":
+        result = await handleResetFailed(projectId);
+        break;
+case "reset_failed": result = await handleResetFailed(projectId); break;
       default: return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

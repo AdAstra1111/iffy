@@ -31,6 +31,9 @@ export function ToneAtomGrid({ atoms, isLoading, isRefreshing, isExtracting, isG
   const [selected, setSelected] = useState<ToneAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;
+const completedCount = atoms.filter(
+    (a) => a.generation_status === 'completed' || a.generation_status === 'complete',
+  ).length;
   const handleExtract = async () => { const result = await onExtract(); if (result?.created != null) await onGenerate(); };
 
   return (

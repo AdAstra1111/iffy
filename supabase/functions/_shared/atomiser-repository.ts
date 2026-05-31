@@ -340,7 +340,7 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
         }
       }
 
-      // 2. Write each emission
+      // 2. Write each emission with lookup-before-insert dedup
       for (const emission of emissions) {
         const record = {
           project_id: projectId,
@@ -359,17 +359,44 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
           },
         };
 
-        const { data, error } = await supabase
+        // P0.2: Lookup existing atom by (project_id, atom_type, canonical_name)
+        // to avoid duplicates when NO unique DB constraint exists.
+        const { data: existing } = await supabase
           .from('atoms')
-          .upsert(record)
           .select('id')
+          .eq('project_id', projectId)
+          .eq('atom_type', entityType || 'unknown')
+          .eq('canonical_name', emission.entity_key || '')
           .maybeSingle();
 
-        if (error) {
-          result.errors.push(`upsert ${emission.entity_key}: ${error.message}`);
-        } else if (data) {
-          result.atoms.push(data as { id: string });
-          result.inserted_count++;
+        if (existing) {
+          // Update existing atom with new data (preserving id)
+          record.updated_at = new Date().toISOString();
+          const { error: updateErr } = await supabase
+            .from('atoms')
+            .update(record)
+            .eq('id', existing.id);
+
+          if (updateErr) {
+            result.errors.push(`update ${emission.entity_key}: ${updateErr.message}`);
+          } else {
+            result.atoms.push({ id: existing.id });
+            result.updated_count++;
+          }
+        } else {
+          // Insert new atom
+          const { data, error } = await supabase
+            .from('atoms')
+            .insert(record)
+            .select('id')
+            .maybeSingle();
+
+          if (error) {
+            result.errors.push(`insert ${emission.entity_key}: ${error.message}`);
+          } else if (data) {
+            result.atoms.push(data as { id: string });
+            result.inserted_count++;
+          }
         }
       }
 

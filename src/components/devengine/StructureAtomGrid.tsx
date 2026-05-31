@@ -31,6 +31,9 @@ export function StructureAtomGrid({ atoms, isLoading, isRefreshing, isExtracting
   const [selected, setSelected] = useState<StructureAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const totalCount = atoms.length;
+const completedCount = atoms.filter(
+    (a) => a.generation_status === 'completed' || a.generation_status === 'complete',
+  ).length;
   const handleExtract = async () => { const result = await onExtract(); if (result?.created != null) await onGenerate(); };
 
   return (

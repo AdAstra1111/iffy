@@ -205,7 +205,7 @@ export function LocationAtomGrid({
   const [selected, setSelected] = useState<LocationAtom | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const completedCount = atoms.filter((a) => a.generation_status === 'completed').length;
+  const completedCount = atoms.filter((a) => a.generation_status === 'completed' || a.generation_status === 'complete').length;
   const failedCount = atoms.filter((a) => a.generation_status === 'failed').length;
   const totalCount = atoms.length;
   const pendingCount = atoms.filter((a) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running').length;

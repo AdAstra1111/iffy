@@ -15,6 +15,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createAtomiserRepository } from "../_shared/atomiser-repository.ts";
+import { recoverStaleRunning } from "../_shared/stale-running-recovery.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -333,23 +334,17 @@ async function handleExtract(projectId: string) {
 }
 
 async function handleStatus(projectId: string) {
-  const admin = makeAdminClient();
-  const repo = makeRepository();
-
-  const { data: atoms, error } = await admin
-    .from("atoms")
-    .select("*")
-    .eq("project_id", projectId)
-    .eq("atom_type", "creature")
-    .order("priority", { ascending: false });
-
-  if (error) throw new Error(`Failed to load creature atoms: ${error.message}`);
-
-  return { atoms: atoms || [], count: atoms?.length || 0 };
-}
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale creature atoms on status check");
+  }
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "creature").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale creature atoms on status check");
+  }
+
   const repo = makeRepository();
 
   const count = await repo.bulkUpdateAtomsByStatus(projectId, "creature", ["failed", "running"], { generation_status: "pending" });
@@ -699,7 +694,10 @@ serve(async (req) => {
       case "status":
         result = await handleStatus(projectId);
         break;
-      case "reset_failed":
+            case "reset-failed":
+        result = await handleResetFailed(projectId);
+        break;
+case "reset_failed":
         result = await handleResetFailed(projectId);
         break;
       default:

@@ -96,7 +96,7 @@ export function useThemeAtoms({ projectId, enabled = true }: UseThemeAtomsOption
       setIsRefreshing(true);
       const current = await fetchStatus();
       setIsRefreshing(false);
-      if (current.some((a: ThemeAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) {
+      if (current.some((a: ThemeAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running')) {
         pollTimer.current = setTimeout(tick, delayMs);
       }
     };
@@ -108,7 +108,7 @@ export function useThemeAtoms({ projectId, enabled = true }: UseThemeAtomsOption
     setIsLoading(true);
     fetchStatus().then(current => {
       setIsLoading(false);
-      if (current.some((a: ThemeAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) startPoll(5000);
+      if (current.some((a: ThemeAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running')) startPoll(5000);
     });
     return () => stopPoll();
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
