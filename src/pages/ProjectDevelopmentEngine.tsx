@@ -375,6 +375,9 @@ export default function ProjectDevelopmentEngine() {
   const optionsTriggerKeyRef = useRef<string | null>(null);
   // Caller should clear when documentId or versionId actually changes (not just on every render)
 
+  // ── Per-character rewrite progress tracking ──
+  const [perCharStatus, setPerCharStatus] = useState<{name: string; status: 'queued' | 'writing' | 'complete' | 'failed'}[]>([]);
+
   // Auto-trigger Generate Options after notes land — fires via flag + useEffect
   // instead of inline setTimeout. Placed AFTER useDevEngineV2 so that
   // selectedDocId/selectedVersionId are not in the Temporal Dead Zone
@@ -1771,6 +1774,9 @@ export default function ProjectDevelopmentEngine() {
 
         console.log(`[CHAR_BIBLE_REWRITE] per_character_start characters=${charSections.map(s => s.name).join(', ')} total=${charSections.length}`);
 
+        // Initialize progress tracking
+        setPerCharStatus(charSections.map(s => ({ name: s.name, status: 'queued' as const })));
+
         const charSelectedOptions = decisions
           ? Object.entries(decisions)
               .filter(([, v]) => !!v)
@@ -1787,6 +1793,7 @@ export default function ProjectDevelopmentEngine() {
         for (let ci = 0; ci < charSections.length; ci++) {
           const section = charSections[ci];
           console.log(`[CHAR_BIBLE_REWRITE] character_start index=${ci} name="${section.name}" versionId="${currentVersionId?.slice(0,12)}"`);
+          setPerCharStatus(prev => prev.map((p, i) => i === ci ? { ...p, status: 'writing' } : p));
 
           try {
             // eslint-disable-next-line no-await-in-loop
@@ -1805,8 +1812,10 @@ export default function ProjectDevelopmentEngine() {
 
             if (result?.newVersion?.id) {
               currentVersionId = result.newVersion.id;
+              setPerCharStatus(prev => prev.map((p, i) => i === ci ? { ...p, status: 'complete' } : p));
               console.log(`[CHAR_BIBLE_REWRITE] character_complete index=${ci} name="${section.name}" newVersionId="${currentVersionId?.slice(0,12)}"`);
             } else {
+              setPerCharStatus(prev => prev.map((p, i) => i === ci ? { ...p, status: 'failed' } : p));
               console.error(`[CHAR_BIBLE_REWRITE] character_failed index=${ci} name="${section.name}" — no version returned`);
               toast.error(`Rewrite failed for ${section.name}: no version returned from engine`);
               hasError = true;
@@ -2746,6 +2755,16 @@ export default function ProjectDevelopmentEngine() {
                 <TreatmentActsProgress versionId={selectedVersionId} docType={selectedDoc.doc_type} documentId={selectedDocId} />
               ) : (
                 <OperationProgress isActive={rewrite.isPending || treatmentRewritePending} stages={DEV_REWRITE_STAGES} onStop={() => { if (treatmentRewritePending) { setTreatmentRewritePending(false); } else { rewrite.reset(); } }} onRestart={() => handleRewrite()} />
+              )}
+                  {/* Per-character rewrite progress — shown when handleRewrite runs sequential per-character calls */}
+              {selectedDoc?.doc_type === 'character_bible' && perCharStatus.length > 0 && (
+                <CharacterBibleSectionProgress
+                  versionText={versionText}
+                  pipelineStatus={perCharStatus.every(p => p.status === 'complete') ? 'complete' : perCharStatus.some(p => p.status === 'writing') ? 'writing' : 'planning'}
+                  currentChunk={perCharStatus.filter(p => p.status === 'complete' || p.status === 'failed').length}
+                  totalChunks={perCharStatus.length}
+                  smoothedPercent={perCharStatus.length > 0 ? Math.round((perCharStatus.filter(p => p.status === 'complete').length / perCharStatus.length) * 100) : 0}
+                />
               )}
                   <OperationProgress isActive={isBgGenerating || isGeneratingDocument} stages={DEV_GENERATE_STAGES} stallTimeoutMs={300_000} />
                   <OperationProgress isActive={convert.isPending} stages={DEV_CONVERT_STAGES} onStop={() => convert.reset()} onRestart={() => {
