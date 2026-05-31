@@ -24,6 +24,7 @@ import { ActivityTimeline } from '@/components/devengine/ActivityTimeline';
 import { isTreatmentDocType, SectionedDocProgress } from '@/components/devengine/SectionedDocProgress';
 import { SceneIndexedProgress } from '@/components/devengine/SceneIndexedProgress';
 import { CharacterBibleProgress } from '@/components/devengine/CharacterBibleProgress';
+import { CharacterBibleSectionProgress } from '@/components/devengine/CharacterBibleSectionProgress';
 import { TreatmentActsProgress } from '@/components/devengine/SectionedDocProgress';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2748,6 +2749,16 @@ export default function ProjectDevelopmentEngine() {
                         )}
                       </div>
                     )
+                  )}
+                  {/* Character bible section progress — shows ## section cards from frontend text split */}
+                  {selectedDoc?.doc_type === 'character_bible' && rewritePipeline.status !== 'idle' && rewritePipeline.status !== 'complete' && versionText && (
+                    <CharacterBibleSectionProgress
+                      versionText={versionText}
+                      pipelineStatus={rewritePipeline.status}
+                      currentChunk={rewritePipeline.currentChunk}
+                      totalChunks={rewritePipeline.totalChunks}
+                      smoothedPercent={rewritePipeline.smoothedPercent}
+                    />
                   )}
                   {/* Act-level rewrite workspace — rendered when sectioned pipeline is active (e.g. beat_sheet) */}
                   {rewritePipeline.status === 'writing' && rewritePipeline.strategy === 'sectioned' && rewritePipeline.actUnits?.length > 0 && (
