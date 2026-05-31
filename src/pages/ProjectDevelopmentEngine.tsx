@@ -3812,6 +3812,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={toneAtoms.atoms}
                       isLoading={toneAtoms.isLoading}
                       isRefreshing={toneAtoms.isRefreshing}
+                      isExtracting={toneAtoms.isExtracting}
+                      isGenerating={toneAtoms.isGenerating}
                       lastUpdated={toneAtoms.lastUpdated}
                       error={toneAtoms.error}
                       onExtract={toneAtoms.extract}
@@ -3826,6 +3828,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={structureAtoms.atoms}
                       isLoading={structureAtoms.isLoading}
                       isRefreshing={structureAtoms.isRefreshing}
+                      isExtracting={structureAtoms.isExtracting}
+                      isGenerating={structureAtoms.isGenerating}
                       lastUpdated={structureAtoms.lastUpdated}
                       error={structureAtoms.error}
                       onExtract={structureAtoms.extract}
@@ -3840,6 +3844,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={soundtrackAtoms.atoms}
                       isLoading={soundtrackAtoms.isLoading}
                       isRefreshing={soundtrackAtoms.isRefreshing}
+                      isExtracting={soundtrackAtoms.isExtracting}
+                      isGenerating={soundtrackAtoms.isGenerating}
                       lastUpdated={soundtrackAtoms.lastUpdated}
                       error={soundtrackAtoms.error}
                       onExtract={soundtrackAtoms.extract}
@@ -3854,6 +3860,8 @@ export default function ProjectDevelopmentEngine() {
                       atoms={dialogueAtoms.atoms}
                       isLoading={dialogueAtoms.isLoading}
                       isRefreshing={dialogueAtoms.isRefreshing}
+                      isExtracting={dialogueAtoms.isExtracting}
+                      isGenerating={dialogueAtoms.isGenerating}
                       lastUpdated={dialogueAtoms.lastUpdated}
                       error={dialogueAtoms.error}
                       onExtract={dialogueAtoms.extract}

@@ -210,10 +210,23 @@ async function resolveBeatsFromBeatSheet(
     if (!beatVersion?.plaintext) return null;
 
     const beats: ResolvedBeat[] = [];
+    // Try primary format: ### N. Beat Name (numbered headers)
     const beatRe = /^###\s+(\d+)\.\s+(.+)$/gm;
     let match: RegExpExecArray | null;
     while ((match = beatRe.exec(beatVersion.plaintext)) !== null) {
       beats.push({ number: parseInt(match[1], 10), title: match[2].trim() });
+    }
+    // Fallback: **Beat Name** (bold format, numbered sequentially)
+    if (beats.length === 0) {
+      const boldRe = /^\*\*(.+?)\*\*$/gm;
+      let boldMatch: RegExpExecArray | null;
+      let seqNum = 1;
+      while ((boldMatch = boldRe.exec(beatVersion.plaintext)) !== null) {
+        const title = boldMatch[1].trim();
+        // Skip if it looks like a section header (e.g. BEAT_SHEET, all-caps)
+        if (title === title.toUpperCase() && title.length > 3) continue;
+        beats.push({ number: seqNum++, title });
+      }
     }
     return beats.length > 0 ? beats : null;
   } catch (err) {
@@ -2977,8 +2990,15 @@ ${existingCBContent.slice(0, 30000)}`;
             .eq("id", chunkVersion!.id);
           return new Response(JSON.stringify({
             success: false,
-            error: "scene_plan_no_beat_sheet",
-            message: "Cannot generate feature_script: beat sheet is required for Scene Plan generation",
+            error: "scene_plan_not_generated",
+            message: "Cannot generate feature_script: beat sheet resolved but Scene Plan generation failed. Check beat_sheet format — expected numbered or bold headers.",
+            diagnostics: {
+              beat_sheet_found: !!beatSheetText,
+              beat_sheet_length: beatSheetText?.length || 0,
+              beats_parsed: (beats || []).length,
+              scene_plan_found: false,
+              expected_next_step: "generate_scene_plan"
+            }
           }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
       }

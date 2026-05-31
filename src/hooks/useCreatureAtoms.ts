@@ -16,7 +16,7 @@ export interface CreatureAtom {
   atom_type: 'creature';
   entity_id: string | null;
   canonical_name: string;
-  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed';
+  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed' | 'running';
   readiness_state: string;
   priority: number;
   confidence: number | null;
@@ -117,18 +117,17 @@ export function useCreatureAtoms({
   }, []);
 
   const startPoll = useCallback(
-    (delayMs = 4000) => {
+    (delayMs = 5000) => {
       stopPoll();
       const tick = async () => {
         setIsRefreshing(true);
         const current = await fetchStatus();
         setIsRefreshing(false);
         const hasRunning = current.some(
-          (a: CreatureAtom) => a.generation_status === 'pending' || a.generation_status === 'generating',
+          (a: CreatureAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running',
         );
         if (hasRunning) {
-          pollTimer.current = setTimeout(tick, delayMs);
-        }
+          pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); }
       };
       pollTimer.current = setTimeout(tick, delayMs);
     },
@@ -141,9 +140,9 @@ export function useCreatureAtoms({
     fetchStatus().then((current) => {
       setIsLoading(false);
       const hasRunning = current.some(
-        (a: CreatureAtom) => a.generation_status === 'pending' || a.generation_status === 'generating',
+        (a: CreatureAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running',
       );
-      if (hasRunning) startPoll(4000);
+      if (hasRunning) startPoll(5000);
     });
     return () => stopPoll();
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
@@ -168,7 +167,7 @@ export function useCreatureAtoms({
     setError(null);
     try {
       const data = await callAtomiserAction('generate', projectId);
-      startPoll(4000);      return data;
+      startPoll(5000);      return data;
     } catch (err: any) {
       setError(err.message);
       setIsGenerating(false);

@@ -401,13 +401,35 @@ export function useScriptDropProject() {
         });
       }
 
-      // Update project title and document title with AI-detected title
-      if (titleGuess !== placeholderTitle) {
-        await supabase.from('projects').update({ title: titleGuess }).eq('id', pid);
-        // Update the script document title to match the detected script title
+      // ── Title resolution: prefer filename, then AI guess ──────────────────
+      // Title priority: filename → cover page → AI inference
+      // Never replace a good filename-derived title with a low-confidence AI guess
+      let resolvedTitle = placeholderTitle;
+      const aiGuess = titleGuess?.trim();
+      if (aiGuess && aiGuess !== placeholderTitle) {
+        // Only accept AI guess if filename is clearly generic/uninformative
+        const isGenericFilename = /^(untitled|script|screenplay|new.?project|draft|export|new.?script|project|title|document|final|v[0-9])$/i.test(placeholderTitle);
+        const isGenericAiGuess = /^(untitled|script|screenplay|new.?project|draft|export|new.?script|project|title|document|final)$/i.test(aiGuess);
+        const aiGuessIsSingleShortWord = aiGuess.split(/\s+/).length <= 2 && aiGuess.length <= 15;
+        const looksLikeFormatting = /^(FADE IN|OPENING|SCENE\s+\d|PAGE|CONTINUED|THE END|TITLE|LOGO|CREDITS)/i.test(aiGuess);
+        if (isGenericFilename && !isGenericAiGuess && !looksLikeFormatting) {
+          // Filename is generic but AI guess is specific — prefer AI
+          resolvedTitle = aiGuess;
+        } else if (!isGenericFilename) {
+          // Filename is descriptive (e.g. "oppenheimer-2023.pdf" → "Oppenheimer") — keep it
+          resolvedTitle = placeholderTitle;
+        } else {
+          // Both are generic or ambiguous — keep filename
+          resolvedTitle = placeholderTitle;
+        }
+      }
+
+      // Update project title and document title with resolved title
+      if (resolvedTitle !== placeholderTitle) {
+        await supabase.from('projects').update({ title: resolvedTitle }).eq('id', pid);
         await (supabase as any)
           .from('project_documents')
-          .update({ title: titleGuess })
+          .update({ title: resolvedTitle })
           .eq('id', doc.id);
       }
 

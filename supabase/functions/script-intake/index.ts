@@ -318,6 +318,23 @@ async function ingestPdf(
 
   // Store full plaintext on the version
   const plaintextFull = pages.map(p => p.text).join("\n\n--- PAGE BREAK ---\n\n");
+
+  // ── FAIL-CLOSED: Validate extracted text before marking success ──
+  const usableText = plaintextFull.replace(/[\s\n\r\t]+/g, " ").trim();
+  if (usableText.length < 100) {
+    console.error(`[script-intake] FAIL-CLOSED: extracted ${usableText.length} usable chars — PDF appears image-based or unreadable`);
+    // Write empty plaintext so downstream knows extraction failed (not silent)
+    await supabase
+      .from("project_document_versions")
+      .update({ plaintext: "" })
+      .eq("id", versionId);
+    await supabase
+      .from("project_documents")
+      .update({ extraction_status: "failed" })
+      .eq("id", documentId);
+    throw new Error("This PDF appears to be image-based or scanned. No readable screenplay text could be extracted.");
+  }
+
   await supabase
     .from("project_document_versions")
     .update({ plaintext: plaintextFull })

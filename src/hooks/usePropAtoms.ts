@@ -127,7 +127,7 @@ export function usePropAtoms({
   }, []);
 
   const startPoll = useCallback(
-    (delayMs = 4000) => {
+    (delayMs = 5000) => {
       stopPoll();
       const tick = async () => {
         setIsRefreshing(true);
@@ -140,8 +140,7 @@ export function usePropAtoms({
             a.generation_status === 'running',
         );
         if (hasRunning) {
-          pollTimer.current = setTimeout(tick, delayMs);
-        }
+          pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); }
       };
       pollTimer.current = setTimeout(tick, delayMs);
     },
@@ -159,18 +158,17 @@ export function usePropAtoms({
           a.generation_status === 'generating' ||
           a.generation_status === 'running',
       );
-      if (hasRunning) startPoll(4000);
+      if (hasRunning) startPoll(5000);
     });
     return () => stopPoll();
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
 
   const extract = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(true); setIsExtracting(true);
     setError(null);
     try {
       const data = await callPropAtomiserAction('extract', projectId);
-      await fetchStatus();
-      return data;
+      await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data;
     } catch (err: any) {
       setError(err.message);
       setIsExtracting(false);
@@ -179,11 +177,11 @@ export function usePropAtoms({
   }, [projectId, fetchStatus]);
 
   const generate = useCallback(async () => {
-    setIsLoading(true);
+    setIsGenerating(true);
     setError(null);
     try {
       const data = await callPropAtomiserAction('generate', projectId);
-      startPoll(4000);
+      startPoll(5000);
       return data;
     } catch (err: any) {
       setError(err.message);
@@ -196,8 +194,7 @@ export function usePropAtoms({
     setError(null);
     try {
       const data = await callPropAtomiserAction('reset_failed', projectId);
-      await fetchStatus();
-      return data;
+      await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data;
     } catch (err: any) {
       setError(err.message);
       return null;

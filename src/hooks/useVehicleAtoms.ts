@@ -121,7 +121,7 @@ export function useVehicleAtoms({
   }, []);
 
   const startPoll = useCallback(
-    (delayMs = 4000) => {
+    (delayMs = 5000) => {
       stopPoll();
       const tick = async () => {
         setIsRefreshing(true);
@@ -134,8 +134,7 @@ export function useVehicleAtoms({
             a.generation_status === 'running',
         );
         if (hasRunning) {
-          pollTimer.current = setTimeout(tick, delayMs);
-        }
+          pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); }
       };
       pollTimer.current = setTimeout(tick, delayMs);
     },
@@ -153,7 +152,7 @@ export function useVehicleAtoms({
           a.generation_status === 'generating' ||
           a.generation_status === 'running',
       );
-      if (hasRunning) startPoll(4000);
+      if (hasRunning) startPoll(5000);
     });
     return () => stopPoll();
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
@@ -178,7 +177,7 @@ export function useVehicleAtoms({
     setError(null);
     try {
       const data = await callAtomiserAction('generate', projectId);
-      startPoll(4000);      return data;
+      startPoll(5000);      return data;
     } catch (err: any) {
       setError(err.message);
       setIsGenerating(false);

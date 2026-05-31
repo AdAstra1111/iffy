@@ -16,7 +16,7 @@ export interface ThemeAtom {
   atom_type: 'theme';
   entity_id: string | null;
   canonical_name: string;
-  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed';
+  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed' | 'running';
   readiness_state: string;
   priority: number;
   confidence: number | null;
@@ -114,15 +114,15 @@ export function useThemeAtoms({ projectId, enabled = true }: UseThemeAtomsOption
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
 
   const extract = useCallback(async () => {
-    setIsLoading(true); setError(null);
-    try { const data = await call('extract', projectId); await fetchStatus(); return data; }
-    catch (err: any) { setError(err.message); setIsLoading(false); return null; }
+    setIsLoading(true); setIsExtracting(true); setError(null);
+    try { const data = await call('extract', projectId); await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data; }
+    catch (err: any) { setError(err.message); setIsLoading(false); setIsExtracting(false); return null; }
   }, [projectId, fetchStatus]);
 
   const generate = useCallback(async () => {
-    setIsLoading(true); setError(null);
+    setIsGenerating(true); setError(null);
     try { const data = await call('generate', projectId); startPoll(5000); return data; }
-    catch (err: any) { setError(err.message); setIsLoading(false); return null; }
+    catch (err: any) { setError(err.message); setIsGenerating(false); return null; }
   }, [projectId, startPoll]);
 
   const resetFailed = useCallback(async () => {

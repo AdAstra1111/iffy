@@ -8,7 +8,7 @@ const FUNC_BASE = `/api/supabase-proxy/functions/v1/genre-atomiser`;
 export interface GenreAtom {
   id: string; project_id: string; atom_type: 'genre'; entity_id: string | null;
   canonical_name: string;
-  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed';
+  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed' | 'running';
   readiness_state: string; priority: number; confidence: number | null;
   attributes: GenreAtomAttributes | null; created_at: string; updated_at: string;
 }
@@ -51,12 +51,12 @@ export function useGenreAtoms({ projectId, enabled = true }: UseGenreAtomsOption
   const stopPoll = useCallback(() => { if (pollTimer.current) { clearTimeout(pollTimer.current); pollTimer.current = null; } }, []);
   const startPoll = useCallback((delayMs = 5000) => {
     stopPoll();
-    const tick = async () => { setIsRefreshing(true); const current = await fetchStatus(); setIsRefreshing(false); if (current.some((a: GenreAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) pollTimer.current = setTimeout(tick, delayMs); };
+    const tick = async () => { setIsRefreshing(true); const current = await fetchStatus(); setIsRefreshing(false); if (current.some((a: GenreAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running')) { pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); } };
     pollTimer.current = setTimeout(tick, delayMs);
   }, [fetchStatus, stopPoll]);
-  useEffect(() => { if (!enabled || !projectId) return; setIsLoading(true); fetchStatus().then(current => { setIsLoading(false); if (current.some((a: GenreAtom) => a.generation_status === 'pending' || a.generation_status === 'generating')) startPoll(5000); }); return () => stopPoll(); }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
-  const extract = useCallback(async () => { setIsLoading(true); setError(null); try { const data = await call('extract', projectId); await fetchStatus(); return data; } catch (err: any) { setError(err.message); setIsLoading(false); return null; } }, [projectId, fetchStatus]);
-  const generate = useCallback(async () => { setIsLoading(true); setError(null); try { const data = await call('generate', projectId); startPoll(5000); return data; } catch (err: any) { setError(err.message); setIsLoading(false); return null; } }, [projectId, startPoll]);
+  useEffect(() => { if (!enabled || !projectId) return; setIsLoading(true); fetchStatus().then(current => { setIsLoading(false); if (current.some((a: GenreAtom) => a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running')) startPoll(5000); }); return () => stopPoll(); }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
+  const extract = useCallback(async () => { setIsLoading(true); setIsExtracting(true); setError(null); try { const data = await call('extract', projectId); await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data; } catch (err: any) { setError(err.message); setIsLoading(false); setIsExtracting(false); return null; } }, [projectId, fetchStatus]);
+  const generate = useCallback(async () => { setIsGenerating(true); setError(null); try { const data = await call('generate', projectId); startPoll(5000); return data; } catch (err: any) { setError(err.message); setIsGenerating(false); return null; } }, [projectId, startPoll]);
   const resetFailed = useCallback(async () => { setError(null); try { const data = await call('reset_failed', projectId); await fetchStatus(); return data; } catch (err: any) { setError(err.message); return null; } }, [projectId, fetchStatus]);
   const refetch = useCallback(async () => { setIsRefreshing(true); await fetchStatus(); setIsRefreshing(false); }, [fetchStatus]);
   return { atoms, isLoading, isRefreshing, isExtracting, isGenerating, lastUpdated, error, extract, generate, resetFailed, refetch };

@@ -16,7 +16,7 @@ export interface CostumeAtom {
   atom_type: 'costume';
   entity_id: string;
   canonical_name: string;
-  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed';
+  generation_status: 'pending' | 'generating' | 'completed' | 'complete' | 'failed' | 'running';
   readiness_state: string;
   priority: number;
   confidence: number | null;
@@ -145,7 +145,7 @@ export function useCostumeAtoms({
   }, []);
 
   const startPoll = useCallback(
-    (delayMs = 3000) => {
+    (delayMs = 5000) => {
       stopPoll();
       const tick = async () => {
         setIsRefreshing(true);
@@ -153,11 +153,10 @@ export function useCostumeAtoms({
         setIsRefreshing(false);
         const hasRunning = current.some(
           (a: CostumeAtom) =>
-            a.generation_status === 'pending' || a.generation_status === 'generating',
+            a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running',
         );
         if (hasRunning) {
-          pollTimer.current = setTimeout(tick, delayMs);
-        }
+          pollTimer.current = setTimeout(tick, delayMs); } else { setIsGenerating(false); }
       };
       pollTimer.current = setTimeout(tick, delayMs);
     },
@@ -171,20 +170,19 @@ export function useCostumeAtoms({
       setIsLoading(false);
       const hasRunning = current.some(
         (a: CostumeAtom) =>
-          a.generation_status === 'pending' || a.generation_status === 'generating',
+          a.generation_status === 'pending' || a.generation_status === 'generating' || a.generation_status === 'running',
       );
-      if (hasRunning) startPoll(3000);
+      if (hasRunning) startPoll(5000);
     });
     return () => stopPoll();
   }, [enabled, projectId, fetchStatus, startPoll, stopPoll]);
 
   const extract = useCallback(async () => {
-    setIsLoading(true);
+    setIsLoading(true); setIsExtracting(true);
     setError(null);
     try {
       const data = await callCostumeAtomiser('extract', projectId);
-      await fetchStatus();
-      return data;
+      await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data;
     } catch (err: any) {
       setError(err.message);
       setIsExtracting(false);
@@ -193,11 +191,11 @@ export function useCostumeAtoms({
   }, [projectId, fetchStatus]);
 
   const generate = useCallback(async () => {
-    setIsLoading(true);
+    setIsGenerating(true);
     setError(null);
     try {
       const data = await callCostumeAtomiser('generate', projectId);
-      startPoll(4000);
+      startPoll(5000);
       return data;
     } catch (err: any) {
       setError(err.message);
@@ -210,8 +208,7 @@ export function useCostumeAtoms({
     setError(null);
     try {
       const data = await callCostumeAtomiser('reset_failed', projectId);
-      await fetchStatus();
-      return data;
+      await fetchStatus(); setIsLoading(false); setIsExtracting(false); return data;
     } catch (err: any) {
       setError(err.message);
       return null;
@@ -228,6 +225,8 @@ export function useCostumeAtoms({
     atoms,
     isLoading,
     isRefreshing,
+    isExtracting,
+    isGenerating,
     lastUpdated,
     error,
     extract,
