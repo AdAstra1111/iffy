@@ -1458,11 +1458,22 @@ export function useCostumeOnActor(projectId: string | undefined) {
       return;
     }
     if (gap.display_status === 'blocked') {
+      // Determine WHAT is blocking
+      if (!char.profile) {
+        toast.error(`${char.characterName} is blocked — no wardrobe profile. Run "Extract Wardrobe Profiles" first.`);
+        return;
+      }
       toast.error(`${char.characterName} is blocked — cannot complete`);
       return;
     }
     if (gap.blocking_slots.length === 0 && gap.blocking_states.length === 0) {
       toast.info('No actionable blockers found');
+      return;
+    }
+
+    // ── PREREQUISITE CHECK: actor anchors must exist ──
+    if (!char.actorVersionId) {
+      toast.error(`${char.characterName} has no actor version. Generate actor identity images first.`);
       return;
     }
 
