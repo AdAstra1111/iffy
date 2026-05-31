@@ -379,6 +379,13 @@ export default function ProjectDevelopmentEngine() {
       setPendingAutoTrigger(false);
       return;
     }
+    // ── INSTRUMENTATION: options trigger site A (pendingAutoTrigger) ──
+    if (pendingOptionsTriggerRef.current) {
+      console.log(`[FINALIZE] options_trigger pendingAutoTrigger=true pendingOptionsTriggerRef=true — CONFLICT`);
+    }
+    console.log(`[FINALIZE] options_trigger action="options" source="ProjectDevelopmentEngine" line=382 ` +
+      `pendingAutoTrigger=true pendingOptionsTriggerRef=${!!pendingOptionsTriggerRef.current} ` +
+      `selectedVersionId="${selectedVersionId?.slice(0,12)}"`);
     generateOptionsMutation.mutate(undefined, {
       onSettled: () => setPendingAutoTrigger(false),
     });
@@ -400,6 +407,10 @@ export default function ProjectDevelopmentEngine() {
     // Wait until version data resolves and bg_generating is done
     if (isBgGenerating) return; // Don't clear ref — retry on next render
     pendingOptionsTriggerRef.current = null;
+    // ── INSTRUMENTATION: options trigger site B (pendingOptionsTriggerRef) ──
+    console.log(`[FINALIZE] options_trigger action="options" source="ProjectDevelopmentEngine" line=403 ` +
+      `pendingAutoTrigger=${pendingAutoTrigger} pendingOptionsTriggerRef=false ` +
+      `selectedVersionId="${selectedVersionId?.slice(0,12)}" isBgGenerating=${isBgGenerating}`);
     generateOptionsMutation.mutate(undefined, {
       onSettled: () => {},
     });

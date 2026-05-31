@@ -78,8 +78,11 @@ export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: S
     `[VIEWER_QUERY] versionId="${versionId?.slice(0,12)}" ` +
     `status="${queryStatus}" isFetching=${isFetching} isLoading=${isLoading} ` +
     `chunks=${(Array.isArray(chunks) ? chunks.length : 'not_array')} ` +
-    `done_chunks=${(Array.isArray(chunks) ? chunks.filter(c => c.status === 'done').length : '?')}`
+    `done_chunks=${(Array.isArray(chunks) ? chunks.filter(c => c.status === 'done' && c.content).length : '?')}`
   );
+
+  // ── INSTRUMENTATION: Compare viewer versionId with effective version from log ──
+  console.log(`[VIEWER_QUERY] comparison viewerVersionId="${versionId?.slice(0,12)}" chunkCount=${(Array.isArray(chunks) ? chunks.length : 0)}`);
 
   const safeChunks = Array.isArray(chunks) ? chunks : [];
   const doneChunks = safeChunks.filter((c) => c.status === 'done' && c.content);
