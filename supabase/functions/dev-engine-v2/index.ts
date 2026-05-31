@@ -33248,18 +33248,21 @@ CRITICAL:
         if (!Array.isArray(soJSON.entries) || soJSON.entries.length === 0)
           throw new Error("Story outline has no entries");
         const totalEntries = soJSON.entries.length;
-        const newVerNum = (soVer.version_number || 1) + 1;
         const { data: pRec } = await supabase.from("projects")
           .select("title, user_id").eq("id", projectId).maybeSingle();
         const eUid = user?.id || pRec?.user_id || null;
-        const { data: newVer } = await supabase.from("project_document_versions").upsert({
-          document_id: sourceDocId, version_number: newVerNum,
-          plaintext: "", is_current: false, created_by: eUid,
-          meta_json: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries }
-        }, { onConflict: "document_id,version_number" }).select().single();
-        if (!newVer?.id) throw new Error("Failed to create output version");
-        await supabase.from("project_document_versions").update({ is_current: false })
-          .eq("document_id", sourceDocId).neq("id", newVer.id);
+        // Route through Document OS — persistVersion handles version creation, post-write hooks
+        const pvResult = await persistVersion(supabase, {
+          projectId,
+          documentId: sourceDocId,
+          docType: "story_outline",
+          operation: "CREATE_PLACEHOLDER",
+          createdBy: eUid,
+          metaJson: { run_type: "STORY_OUTLINE_REWRITE", entries_count: totalEntries },
+          isCurrent: false,
+        });
+        if (!pvResult?.id) throw new Error("Failed to create output version");
+        const newVer = pvResult;
         await supabase.from("project_document_chunks").insert(
           soJSON.entries.map((e, idx) => ({
             document_id: sourceDocId, version_id: newVer.id,
