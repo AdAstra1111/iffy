@@ -112,6 +112,11 @@ function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomi
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "location").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale location atoms on status check");
+  }
   const repo = makeRepository();
 
   // 1. Load all location entities for this project
@@ -338,8 +343,25 @@ async function handleExtract(projectId: string) {
 }
 
 async function handleStatus(projectId: string) {
+  const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "location").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale location atoms on status check");
   }
+  const repo = makeRepository();
+
+  const { data: atoms, error } = await admin
+    .from("atoms")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("atom_type", "location")
+    .order("priority", { ascending: false });
+
+  if (error) throw new Error(`Failed to load location atoms: ${error.message}`);
+
+  return { atoms: atoms || [], count: atoms?.length || 0 };
+}
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
@@ -348,7 +370,6 @@ async function handleResetFailed(projectId: string) {
   if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale location atoms on status check");
   }
-
   const repo = makeRepository();
 
   const count = await repo.bulkUpdateAtomsByStatus(projectId, "location", ["failed", "running"], { generation_status: "pending" });
@@ -358,6 +379,11 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "location").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale location atoms on status check");
+  }
   const repo = makeRepository();
 
   // Get pending location atoms
@@ -715,10 +741,11 @@ serve(async (req) => {
       case "status":
         result = await handleStatus(projectId);
         break;
-            case "reset-failed":
+      case "reset-failed":
         result = await handleResetFailed(projectId);
         break;
-case "reset_failed":
+
+      case "reset_failed":
         result = await handleResetFailed(projectId);
         break;
       default:

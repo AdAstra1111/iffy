@@ -58,12 +58,10 @@ function parseJSONResponse(raw: string): any {
 // ─── Action Handlers ─────────────────────────────────────────────────────────
 
 async function handleStatus(sb: any, projectId: string, atomType = "character") {
-  // P0.1: Auto-recover stale running atoms
   const staleRecovery = await recoverStaleRunning(sb, projectId, atomType).catch(() => ({ recovered: 0 }));
   if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale " + atomType + " atoms on status check");
   }
-
   const { data, error } = await sb
     .from("atoms")
     .select("*")
@@ -412,8 +410,8 @@ Deno.serve(async (req) => {
           result = { error: e.message };
         }
       }
-  } else if (action === "reset-failed") {
-    action = "reset_failed";
+    } else if (action === "reset-failed") {
+      action = "reset_failed";
     } else if (action === "reset_failed") {
       // Reset failed and running atoms (stuck from interrupted requests)
       const { data, error } = await sb

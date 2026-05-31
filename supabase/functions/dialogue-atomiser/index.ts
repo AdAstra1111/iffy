@@ -14,8 +14,8 @@
  */
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { recoverStaleRunning } from "../_shared/stale-running-recovery.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +57,11 @@ async function fetchCharacterDialogue(admin: any, projectId: string) {
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
+  }
   const openrouterKey = Deno.env.get("OPENROUTER_API_KEY");
   if (!openrouterKey) throw new Error("OPENROUTER_API_KEY not configured");
 
@@ -130,8 +135,18 @@ async function handleExtract(projectId: string) {
 }
 
 async function handleStatus(projectId: string) {
+  const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
   }
+  const { data: atoms, error } = await admin
+    .from("atoms").select("*").eq("project_id", projectId).eq("atom_type", "dialogue")
+    .order("priority", { ascending: false });
+  if (error) throw new Error(`Failed to load dialogue atoms: ${error.message}`);
+  return { atoms: atoms || [], count: atoms?.length || 0 };
+}
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
@@ -140,7 +155,6 @@ async function handleResetFailed(projectId: string) {
   if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
   }
-
   const { count, error } = await admin
     .from("atoms")
     .update({ generation_status: "pending", updated_at: new Date().toISOString() })
@@ -153,6 +167,11 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "dialogue").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale dialogue atoms on status check");
+  }
   const { data: pendingAtoms, error: fetchErr } = await admin
     .from("atoms").select("id, entity_id, canonical_name, attributes")
     .eq("project_id", projectId).eq("atom_type", "dialogue").eq("generation_status", "pending");
@@ -277,10 +296,11 @@ serve(async (req) => {
       case "extract": result = await handleExtract(projectId); break;
       case "generate": result = await handleGenerate(projectId); break;
       case "status": result = await handleStatus(projectId); break;
-            case "reset-failed":
+      case "reset-failed":
         result = await handleResetFailed(projectId);
         break;
-case "reset_failed": result = await handleResetFailed(projectId); break;
+
+      case "reset_failed": result = await handleResetFailed(projectId); break;
       default: return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });

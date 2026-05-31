@@ -164,6 +164,11 @@ function toCanonEmission(row: Record<string, unknown>): import("../_shared/atomi
 
 async function handleExtract(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "costume").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale costume atoms on status check");
+  }
   const repo = makeRepository();
   
   // 1. Get script content — try scene_graph_versions first, then season_script
@@ -300,8 +305,25 @@ async function handleExtract(projectId: string) {
 }
 
 async function handleStatus(projectId: string) {
+  const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "costume").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale costume atoms on status check");
   }
+  const repo = makeRepository();
+
+  const { data: atoms, error } = await admin
+    .from("atoms")
+    .select("*")
+    .eq("project_id", projectId)
+    .eq("atom_type", "costume")
+    .order("canonical_name", { ascending: true });
+
+  if (error) throw new Error(`Failed to load costume atoms: ${error.message}`);
+
+  return { atoms: atoms || [], count: atoms?.length || 0 };
+}
 
 async function handleResetFailed(projectId: string) {
   const admin = makeAdminClient();
@@ -310,7 +332,6 @@ async function handleResetFailed(projectId: string) {
   if (staleRecovery.recovered > 0) {
     console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale costume atoms on status check");
   }
-
   const repo = makeRepository();
 
   const count = await repo.bulkUpdateAtomsByStatus(projectId, "costume", ["failed", "running"], { generation_status: "pending" });
@@ -320,6 +341,11 @@ async function handleResetFailed(projectId: string) {
 
 async function handleGenerate(projectId: string) {
   const admin = makeAdminClient();
+  // P0.1: Auto-recover stale running atoms
+  const staleRecovery = await recoverStaleRunning(admin, projectId, "costume").catch(() => ({ recovered: 0 }));
+  if (staleRecovery.recovered > 0) {
+    console.log("[StaleRecovery] Recovered " + staleRecovery.recovered + " stale costume atoms on status check");
+  }
   const repo = makeRepository();
 
   // Get pending costume atoms
@@ -833,10 +859,11 @@ serve(async (req) => {
       case "status":
         result = await handleStatus(projectId);
         break;
-            case "reset-failed":
+      case "reset-failed":
         result = await handleResetFailed(projectId);
         break;
-case "reset_failed":
+
+      case "reset_failed":
         result = await handleResetFailed(projectId);
         break;
       default:
