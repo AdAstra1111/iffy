@@ -154,8 +154,14 @@ export function finalizeDevEngineOperation(options: FinalizeOptions) {
     qc.refetchQueries({ queryKey: ['dev-v2-docs', projectId] }).then(() => {}),
   );
 
-  // Wait for ALL refetches to complete, then call onComplete + toast
-  Promise.all(refetchPromises)
+  // ── Timeout guard — prevent isRefreshing staying true forever ──
+  const REFETCH_TIMEOUT_MS = 15_000;
+  const timeoutPromise = new Promise<void>((_, reject) =>
+    setTimeout(() => reject(new Error(`Refetch timed out after ${REFETCH_TIMEOUT_MS}ms`)), REFETCH_TIMEOUT_MS)
+  );
+
+  // Wait for ALL refetches to complete (or timeout), then call onComplete
+  Promise.race([Promise.all(refetchPromises), timeoutPromise])
     .then(() => {
       onComplete?.();
       if (toastMessage !== null) {

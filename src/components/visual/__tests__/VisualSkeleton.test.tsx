@@ -41,7 +41,19 @@ describe('VisualSkeleton', () => {
 
   it('renders image-grid variant', () => {
     const { container } = render(<VisualSkeleton variant="image-grid" />);
+<<<<<<< Updated upstream
     expect(container.querySelector('.animate-pulse')).toBeTruthy();
+=======
+
+    // Image grid defaults to count=3 from VisualSkeleton props (passed to ImageGridSkeleton)
+    expect(container.querySelectorAll('.aspect-square').length).toBe(3);
+  });
+
+  it('renders image-grid variant with custom count', () => {
+    const { container } = render(<VisualSkeleton variant="image-grid" count={3} />);
+
+    expect(container.querySelectorAll('.aspect-square').length).toBe(3);
+>>>>>>> Stashed changes
   });
 
   it('renders form variant', () => {
