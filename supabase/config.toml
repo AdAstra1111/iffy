@@ -343,3 +343,6 @@ verify_jwt = false
 
 [functions.vpb-assembly-engine]
 verify_jwt = false
+
+[functions.vpb-export]
+verify_jwt = false
