@@ -29,3 +29,5 @@ dist-ssr
 supabase/functions/deno.lock
 .env*.local
 .env.vercel
+tmp_*
+\-
