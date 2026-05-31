@@ -172,13 +172,17 @@ async function assembleCharacters(
   sb: any, projectId: string
 ): Promise<{ characters: VPBCharacter[]; provenance: string }> {
   // Get narrative entities of type character
-  const { data: entities } = await sb
+  const { data: entities, error: entErr } = await sb
     .from("narrative_entities")
-    .select("id, entity_key, canonical_name, scene_count, meta_json, narrative_role")
+    .select("id, entity_key, canonical_name, scene_count, meta_json")
     .eq("project_id", projectId)
     .eq("entity_type", "character")
     .eq("status", "active")
     .order("scene_count", { ascending: false });
+
+  if (entErr) {
+    console.error(`[vpb] character query error: ${entErr.message}`);
+  }
 
   // Get visual DNA for all characters
   const { data: dnaRecords } = await sb
