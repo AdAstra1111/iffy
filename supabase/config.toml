@@ -358,3 +358,9 @@ verify_jwt = false
 
 [functions.auto-run-start-brain]
 verify_jwt = false
+[functions.run-casting]
+verify_jwt = false
+[functions.run-casting-cleanup]
+verify_jwt = false
+[functions.run-test-approval]
+verify_jwt = false

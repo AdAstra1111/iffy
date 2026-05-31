@@ -140,10 +140,13 @@ Deno.serve(async (req: Request) => {
 
       const visualDnaId = dna?.[0]?.id || null;
 
-      // Create cast suggestion record (uses actual project_ai_cast columns: no status, no character_id)
+      // Create cast suggestion record
+      // ai_actor_id is NOT NULL — use sentinel UUID (00000000-0000-0000-0000-000000000000)
+      // for suggested records. Real actor assignment happens in approve-cast-suggestion.
       const castRecord: any = {
         project_id,
         character_key: char.character_name,
+        ai_actor_id: "00000000-0000-0000-0000-000000000000",
       };
 
       const { data: inserted, error: insertError } = await sb
