@@ -709,7 +709,6 @@ export default function ProjectDevelopmentEngine() {
         console.log(`[FINALIZE] refetch_chunks complete versionId="${nvId.slice(0,12)}"`);
       });
       qc.refetchQueries({ queryKey: ['has-chunks', nvId, selectedDoc?.doc_type] });
-      qc.invalidateQueries({ queryKey: ['dev-v2-versions', selectedDocId] });
       rewritePipeline.reset();
     }
   }, [rewritePipeline.status, rewritePipeline.newVersionId]);
