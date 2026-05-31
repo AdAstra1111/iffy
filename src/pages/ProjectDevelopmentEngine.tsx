@@ -1796,6 +1796,7 @@ export default function ProjectDevelopmentEngine() {
       }
 
       if (SECTIONED_REWRITE_TYPES.has(selectedDoc?.doc_type) && selectedDocId && selectedVersionId) {
+        console.log(`[CHAR_BIBLE_REWRITE] pipeline_start docType="${selectedDoc.doc_type}" versionId="${selectedVersionId?.slice(0,12)}" chunks=${rewritePipeline.totalChunks}`);
         const provenance = {
           rewriteModeSelected: 'auto',
           rewriteModeEffective: 'chunk',
