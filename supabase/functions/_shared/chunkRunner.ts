@@ -662,7 +662,7 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
   // Remaining chunks stay "pending" in DB and get picked up on next resume.
   // We cap by filtering the plan's chunks array so runChunkedGeneration
   // only sees the capped set.
-  const MAX_CHUNKS_PER_INVOCATION = docType === "production_draft" ? 3 : 999;
+  const MAX_CHUNKS_PER_INVOCATION = docType === "production_draft" ? 1 : 999;
   if (pendingChunks.length > MAX_CHUNKS_PER_INVOCATION) {
     const cappedKeys = new Set(
       pendingChunks.slice(0, MAX_CHUNKS_PER_INVOCATION).map((c) => c.chunkKey)

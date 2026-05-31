@@ -364,3 +364,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.run-test-approval]
 verify_jwt = false
+[functions.run-pd-single]
+verify_jwt = false

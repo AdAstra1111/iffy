@@ -447,6 +447,24 @@ function isRoleNoise(name: string): boolean {
   return words.some(w => w.length > 2 && ROLE_NOISE.has(w));
 }
 
+/**
+ * Check if name is a slugline-derived artifact (location, prepositional phrase, timing, etc.)
+ * These appear in ALL-CAPS scene content but are NOT character names.
+ */
+function isSluglineArtifact(name: string): boolean {
+  const upper = name.toUpperCase().trim();
+  // Prepositional location phrases: "AT THE TABLE", "BY THE STEREO", etc.
+  const PREP_PATTERNS = /^(AT|BY|IN|ON|TO|FROM|OUTSIDE|INSIDE|BESIDE|BEHIND|ABOVE|BELOW|ACROSS|NEAR|THROUGH|UNDER|OVER|BETWEEN) (THE|A|AN) /i;
+  if (PREP_PATTERNS.test(upper)) return true;
+  // Pure location phrases: "THE BATHROOM", "THE KITCHEN", etc.
+  const LOCATION_PATTERNS = /^THE (BATHROOM|KITCHEN|LIVING ROOM|DINING ROOM|BEDROOM|OFFICE|CLASSROOM|HALLWAY|CORRIDOR|STAIRCASE|ELEVATOR|LOBBY|GARAGE|BASEMENT|DOORWAY|ENTRANCE|EXIT|TABLE|DESK|COUNTER|MANOR|MANSION|HOUSE|APARTMENT|CABIN|COTTAGE|BARN|SHED|CAR|TRUCK|VAN|BUS|TAXI|VEHICLE|STREET|ALLEY|DRIVEWAY|SIDEWALK|ROOFTOP|BALCONY|PATIO|RIVER|LAKE|OCEAN|BEACH|FOREST|WOODS|MOUNTAIN|VALLEY|FIELD)/i;
+  if (LOCATION_PATTERNS.test(upper)) return true;
+  // Timing/event phrases: "NIGHT OF THE PARTY", "DAY OF THE WEDDING", etc.
+  const TIMING_PATTERNS = /^(DAY|NIGHT|MORNING|AFTERNOON|EVENING|DAWN|DUSK|MIDNIGHT|NOON|SUNRISE|SUNSET) OF THE /i;
+  if (TIMING_PATTERNS.test(upper)) return true;
+  return false;
+}
+
 /** Strip screenplay voice-convention suffixes before entity name matching (Gap D follow-on) */
 function stripScreenplaySuffix(name: string): string {
   // Strip screenplay voice-convention suffixes before entity name matching
@@ -507,6 +525,7 @@ function extractRawFromScenes(
       if (/^\d+$/.test(name)) continue;
       if (isNoiseName(name)) continue;
       if (isRoleNoise(name)) continue;  // Filter role/rank words (SOLDIER, COP, etc.)
+      if (isSluglineArtifact(name)) continue;  // Filter slugline-derived location/timing phrases
       const key = makeEntityKey(name, "char");
       if (!charMap.has(name)) charMap.set(name, key);
     }
