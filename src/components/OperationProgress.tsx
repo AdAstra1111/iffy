@@ -65,7 +65,7 @@ export function OperationProgress({ isActive, stages = DEFAULT_STAGES, className
           current = 96;
           if (!atCapSince) atCapSince = Date.now();
           if (Date.now() - atCapSince > stallTimeoutMs / 2) {
-            setLabel('Still working — this may take a minute or two…');
+            setLabel('Still working…');
           }
         }
         setProgress(current);
@@ -200,14 +200,14 @@ export const GENERATE_PITCH_STAGES: Stage[] = [
 ];
 
 export const DEV_GENERATE_STAGES: Stage[] = [
-  { at: 2, label: 'Starting generation…' },
-  { at: 8, label: 'Loading project context…' },
-  { at: 18, label: 'Building creative framework…' },
-  { at: 32, label: 'Generating content…' },
-  { at: 52, label: 'Writing — large documents take a few minutes…' },
-  { at: 72, label: 'Applying narrative constraints…' },
+  { at: 2, label: 'Starting…' },
+  { at: 12, label: 'Loading project context…' },
+  { at: 25, label: 'Building creative framework…' },
+  { at: 42, label: 'Generating content…' },
+  { at: 58, label: 'Working…' },
+  { at: 72, label: 'Applying constraints…' },
   { at: 86, label: 'Reviewing output…' },
-  { at: 93, label: 'Saving new version…' },
+  { at: 95, label: 'Finishing up…' },
 ];
 
 export const DEV_ANALYZE_STAGES: Stage[] = [
@@ -228,12 +228,12 @@ export const DEV_NOTES_STAGES: Stage[] = [
 ];
 
 export const DEV_REWRITE_STAGES: Stage[] = [
-  { at: 5, label: 'Loading approved notes…' },
-  { at: 20, label: 'Protecting core elements…' },
-  { at: 40, label: 'Rewriting content…' },
+  { at: 5, label: 'Starting…' },
+  { at: 20, label: 'Analysing content…' },
+  { at: 40, label: 'Rewriting…' },
   { at: 65, label: 'Validating changes…' },
   { at: 85, label: 'Creating new version…' },
-  { at: 95, label: 'Almost done…' },
+  { at: 95, label: 'Finishing up…' },
 ];
 
 export const DEV_CONVERT_STAGES: Stage[] = [

@@ -5784,6 +5784,13 @@ serve(async (req)=>{
       if (!newVer) throw new Error("Failed to create converted version");
       return new Response(JSON.stringify({
         success: true,
+        projectId,
+        documentId: docId,
+        documentType: 'story_outline',
+        versionId: newVer.id,
+        status: 'completed',
+        operationType: 'convert',
+        updatedAt: newVer.created_at || new Date().toISOString(),
         newVersionId: newVer.id,
         versionNumber: newVer.version_number,
         entriesConverted: outline.entries.length,
@@ -7429,6 +7436,14 @@ ${docTextForScoring}`;
         }
       }
       return new Response(JSON.stringify({
+        success: true,
+        projectId,
+        documentId: documentId,
+        documentType: effectiveDeliverable,
+        versionId: versionId,
+        status: 'completed',
+        operationType: 'analyze',
+        updatedAt: run?.created_at || new Date().toISOString(),
         run,
         analysis: parsed
       }), {
@@ -10091,6 +10106,14 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         }
       }
       return new Response(JSON.stringify({
+        success: true,
+        projectId,
+        documentId: documentId,
+        documentType: effectiveDeliverable,
+        versionId: newVersion.id,
+        status: 'completed',
+        operationType: 'rewrite',
+        updatedAt: newVersion.created_at || new Date().toISOString(),
         run,
         rewrite: {
           ...parsed,
@@ -12856,6 +12879,14 @@ MATERIAL:\n${version.plaintext}${convertTemplateBlock}`;
         }
       });
       return new Response(JSON.stringify({
+        success: true,
+        projectId,
+        documentId: doc.id,
+        documentType: docType1 || 'other',
+        versionId: ver.id,
+        status: 'completed',
+        operationType: 'create-paste',
+        updatedAt: ver.created_at || new Date().toISOString(),
         document: doc,
         version: ver
       }), {
@@ -14728,6 +14759,14 @@ Previous attempt problems: ${validation.reasons.join("; ")}`;
       });
       console.log(`[dev-engine-v2] beat-sheet-to-script: EP${epNum} scope=${scopeResult.scope} slice=${sliceMethod} format_passed=${formatPassed} scenes=${sceneHeadingCount} dialogue=${dialogueBlockCount}`);
       return new Response(JSON.stringify({
+        success: true,
+        projectId,
+        documentId: newDoc?.id || documentId,
+        documentType: 'episode_script',
+        versionId: newVersion?.id,
+        status: 'completed',
+        operationType: 'beat-sheet-to-script',
+        updatedAt: newVersion?.created_at || new Date().toISOString(),
         newDoc,
         newVersion,
         episode_number: epNum,

@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import type { DeliverableType, DevelopmentBehavior, ConvergenceStatus } from '@/lib/dev-os-config';
 import { computeConvergenceStatus } from '@/lib/dev-os-config';
 import { invalidateDevEngine } from '@/lib/invalidateDevEngine';
+import { finalizeDevEngineOperation } from '@/lib/finalizeDevEngineOperation';
 import { useDocumentRuntimeBinding } from '@/lib/versionBinding/useDocumentRuntimeBinding';
 import type { ResolverVersion } from '@/lib/versionBinding/documentRuntimeBindingResolver';
 
@@ -513,7 +514,26 @@ export function useDevEngineV2(projectId: string | undefined) {
       if (!vid) throw new Error('No version found — please select a document first');
       return callEngineV2('analyze', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
-    onSuccess: () => { toast.success('Analysis complete'); invalidateAll('analyze'); },
+    onSuccess: (data) => {
+      setIsRefreshing(true);
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: selectedDocId!,
+          documentType: selectedDocType!,
+          versionId: selectedVersionId,
+          status: 'completed',
+          operationType: 'analyze',
+          updatedAt: data?.run?.created_at || new Date().toISOString(),
+        },
+      });
+    },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
@@ -523,7 +543,27 @@ export function useDevEngineV2(projectId: string | undefined) {
       const vid = await resolveVersionId();
       return callEngineV2('notes', { projectId, documentId: selectedDocId, versionId: vid, analysisJson });
     },
-    onSuccess: () => { toast.success('Notes generated'); invalidateAll('notes'); },
+    onSuccess: (data) => {
+      setIsRefreshing(true);
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: selectedDocId!,
+          documentType: selectedDocType!,
+          versionId: selectedVersionId,
+          status: 'completed',
+          operationType: 'notes',
+          updatedAt: data?.run?.created_at || new Date().toISOString(),
+        },
+        toastMessage: 'Notes generated',
+      });
+    },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
 
@@ -534,7 +574,8 @@ export function useDevEngineV2(projectId: string | undefined) {
       return callEngineV2('rewrite', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
     onSuccess: (data) => {
-      toast.success('Rewrite complete — new version created');
+      setIsRefreshing(true);
+      // Optimistic cache update for immediate version list freshness
       if (data.newVersion) {
         qc.setQueryData(['dev-v2-versions', selectedDocId], (old: any) => {
           if (!Array.isArray(old)) return old;
@@ -542,9 +583,24 @@ export function useDevEngineV2(projectId: string | undefined) {
           if (exists) return old;
           return [...old, data.newVersion];
         });
-        setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll('rewrite', selectedDocId, data.newVersion?.id);
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: selectedDocId!,
+          documentType: selectedDocType!,
+          versionId: data.newVersion?.id,
+          status: 'completed',
+          operationType: 'rewrite',
+          updatedAt: data.newVersion?.created_at || new Date().toISOString(),
+        },
+      });
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -556,12 +612,28 @@ export function useDevEngineV2(projectId: string | undefined) {
       return callEngineV2('convert', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
     onSuccess: (data) => {
-      toast.success(`Converted to ${data.newDoc?.doc_type || 'new format'}`);
+      setIsRefreshing(true);
       if (data.newDoc) {
         selectDocument(data.newDoc.id);
-        if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll('convert', data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: data.newDoc?.id ?? selectedDocId!,
+          documentType: data.newDoc?.doc_type ?? selectedDocType!,
+          versionId: data.newVersion?.id,
+          status: 'completed',
+          operationType: 'convert',
+          updatedAt: data.newVersion?.created_at || new Date().toISOString(),
+        },
+        toastMessage: `Converted to ${data.newDoc?.doc_type || 'new format'}`,
+      });
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -574,22 +646,40 @@ export function useDevEngineV2(projectId: string | undefined) {
       return callEngineV2('beat-sheet-to-script', { projectId, documentId: selectedDocId, versionId: vid, ...params });
     },
     onSuccess: (data) => {
+      setIsRefreshing(true);
       const status = data.script_format_validation?.status;
       const regenAttempted = data.script_format_validation?.regen_attempted;
+      let toastMsg: string | null = null;
       if (status === 'SCRIPT_FORMAT_INVALID' && regenAttempted) {
-        toast.warning(`Episode ${data.episode_number} script generated — auto-regen attempted but format still needs review`);
+        toastMsg = `Episode ${data.episode_number} script generated — auto-regen attempted but format still needs review`;
       } else if (status === 'SCRIPT_FORMAT_INVALID') {
-        toast.warning(`Episode ${data.episode_number} generated but needs rewrite — format validation failed`);
+        toastMsg = `Episode ${data.episode_number} generated but needs rewrite — format validation failed`;
       } else if (regenAttempted) {
-        toast.success(`Episode ${data.episode_number} script created (auto-corrected on first pass)`);
+        toastMsg = `Episode ${data.episode_number} script created (auto-corrected on first pass)`;
       } else {
-        toast.success(`Episode ${data.episode_number} script created`);
+        toastMsg = `Episode ${data.episode_number} script created`;
       }
       if (data.newDoc) {
         selectDocument(data.newDoc.id);
-        if (data.newVersion) setSelectedVersionId(data.newVersion.id);
       }
-      invalidateAll('beat-sheet-to-script', data.newDoc?.id ?? selectedDocId, data.newVersion?.id);
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: data.newDoc?.id ?? selectedDocId!,
+          documentType: selectedDocType!,
+          versionId: data.newVersion?.id,
+          status: 'completed',
+          operationType: 'beat-sheet-to-script',
+          updatedAt: data.newVersion?.created_at || new Date().toISOString(),
+        },
+        toastMessage: toastMsg,
+      });
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -599,12 +689,28 @@ export function useDevEngineV2(projectId: string | undefined) {
     mutationFn: (params: { title: string; docType: string; text: string }) =>
       callEngineV2('create-paste', { projectId, ...params }),
     onSuccess: (data) => {
-      toast.success('Document created');
+      setIsRefreshing(true);
       if (data.document) {
         selectDocument(data.document.id);
-        if (data.version) setSelectedVersionId(data.version.id);
       }
-      invalidateAll('create-paste');
+      finalizeDevEngineOperation({
+        qc, projectId,
+        currentDocId: selectedDocId,
+        setSelectedDocId: selectDocument,
+        setSelectedVersionId,
+        onComplete: () => setIsRefreshing(false),
+        result: {
+          success: true,
+          projectId: projectId!,
+          documentId: data.document?.id,
+          documentType: data.document?.doc_type || 'other',
+          versionId: data.version?.id,
+          status: 'completed',
+          operationType: 'create-paste',
+          updatedAt: data.version?.created_at || new Date().toISOString(),
+        },
+        toastMessage: 'Document created',
+      });
     },
     onError: (e: any) => toast.error(typeof e?.message === 'string' ? e.message : 'Operation failed'),
   });
@@ -715,6 +821,8 @@ export function useDevEngineV2(projectId: string | undefined) {
   // Derive the "current" version from render binding (prefers authoritative, fallback to selected, fallback to latest)
   const currentVersion = render?.versionId || null;
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
   // Auto-select version when versions load (uses render binding for consistent selection)
   useEffect(() => {
     if (selectedDocId && !selectedVersionId && render?.versionId) {
@@ -730,7 +838,7 @@ export function useDevEngineV2(projectId: string | undefined) {
     r.run_type === 'NOTES' && r.version_id === selectedVersionId
   ).pop()?.output_json || null;
 
-  const isLoading = analyze.isPending || generateNotes.isPending || rewrite.isPending || convert.isPending || createPaste.isPending || beatSheetToScript.isPending;
+  const isLoading = analyze.isPending || generateNotes.isPending || rewrite.isPending || convert.isPending || createPaste.isPending || beatSheetToScript.isPending || isRefreshing;
 
   // Behavior-aware convergence
   const rewriteCount = (allDocRuns ?? []).filter(r => r.run_type === 'REWRITE').length;

@@ -1076,7 +1076,18 @@ ${(() => {
         throw runErr;
       }
 
-      return new Response(JSON.stringify({ run, notes: parsed }), {
+      return new Response(JSON.stringify({
+        success: true,
+        projectId,
+        documentId,
+        documentType: deliverableType,
+        versionId,
+        status: 'completed',
+        operationType: 'notes',
+        updatedAt: run?.created_at || new Date().toISOString(),
+        run,
+        notes: parsed,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
