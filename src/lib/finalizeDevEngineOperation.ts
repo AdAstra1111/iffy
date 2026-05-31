@@ -153,10 +153,24 @@ export function finalizeDevEngineOperation(options: FinalizeOptions) {
       qc.refetchQueries({ queryKey: ['sectioned-doc-viewer-chunks', result.versionId] })
         .then(() => {}),
     );
+    // Runs contain analyze/notes results — must refetch before declaring done
+    refetchPromises.push(
+      qc.refetchQueries({ queryKey: ['dev-v2-runs', result.versionId] })
+        .then(() => {}),
+    );
+    refetchPromises.push(
+      qc.refetchQueries({ queryKey: ['dev-v2-sr-convergence', result.versionId] })
+        .then(() => {}),
+    );
   }
   if (result.documentId) {
     refetchPromises.push(
       qc.refetchQueries({ queryKey: ['dev-v2-versions', result.documentId] })
+        .then(() => {}),
+    );
+    // doc-runs feeds latestNotes/latestAnalysis derivation
+    refetchPromises.push(
+      qc.refetchQueries({ queryKey: ['dev-v2-doc-runs', result.documentId] })
         .then(() => {}),
     );
   }
