@@ -56,6 +56,9 @@ function cleanContent(raw: string, chunkKey: string): string {
 export function SectionedDocViewer({ versionId, versionLabel, onSwitchToRaw }: SectionedDocViewerProps) {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
+  // ── INSTRUMENTATION: Log viewer version binding ──
+  console.log(`[FINALIZE] SectionedDocViewer rendering versionId="${versionId?.slice(0,12)}"`);
+
   const { data: chunks = [], isLoading } = useQuery<ChunkRow[]>({
     queryKey: ['sectioned-doc-viewer-chunks', versionId],
     queryFn: async () => {

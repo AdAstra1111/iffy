@@ -123,6 +123,7 @@ export async function callEngineV2(action: string, extra: Record<string, any> = 
     console.warn(
       `[dev-engine-v2][IEL] dev_engine_v2_mutation_blocked_duplicate { action: "${action}", flight_key: "${flightKey}" }`,
     );
+    console.log(`[FINALIZE] duplicate_mutation_blocked action="${action}" — returning existing promise`);
     return existing;
   }
 
@@ -857,6 +858,14 @@ export function useDevEngineV2(projectId: string | undefined) {
   );
 
   const isConverged = convergenceStatus === 'Converged';
+
+  // ── INSTRUMENTATION: Log version state on every render ──
+  console.log(
+    `[FINALIZE] hook render selectedVersionId="${selectedVersionId?.slice(0,12)||"null"}" ` +
+    `authoritativeVersionId="${authoritativeVersionId?.slice(0,12)||"null"}" ` +
+    `effectiveVersionId="${bindingEffectiveVersionId?.slice(0,12)||"null"}" ` +
+    `selectedDocId="${selectedDocId?.slice(0,12)||"null"}"`
+  );
 
   // ── UNIVERSAL NULL GUARDS ──
   // Defensive wrapping: ensure all returned arrays/objects are NEVER undefined.

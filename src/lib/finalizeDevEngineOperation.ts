@@ -58,6 +58,13 @@ const FALLBACK_TOAST = 'Operation complete';
 export function finalizeDevEngineOperation(options: FinalizeOptions) {
   const { qc, projectId, currentDocId, setSelectedDocId, setSelectedVersionId, result, onComplete, toastMessage } = options;
 
+  // ── INSTRUMENTATION: Log version state before finalization ──
+  console.log(
+    `[FINALIZE] start operationType="${result.operationType}" projectId="${result.projectId?.slice(0,12)}" ` +
+    `documentId="${result.documentId?.slice(0,12)}" versionId="${result.versionId?.slice(0,12)}" ` +
+    `currentDocId="${currentDocId?.slice(0,12)}"`
+  );
+
   if (!result.success) {
     console.warn('[finalizeDevEngine] FinalizeResult.success is false — skipping finalization', { operationType: result.operationType });
     return;
@@ -70,7 +77,10 @@ export function finalizeDevEngineOperation(options: FinalizeOptions) {
 
   // ── Step 2: Select the new version if returned ──
   if (result.versionId) {
+    console.log(`[FINALIZE] setSelectedVersionId "${result.versionId.slice(0,12)}" (operation="${result.operationType}")`);
     setSelectedVersionId(result.versionId);
+  } else {
+    console.log(`[FINALIZE] no versionId returned — skipping setSelectedVersionId (operation="${result.operationType}")`);
   }
 
   // ── Step 3: Build invalidation key set ──
