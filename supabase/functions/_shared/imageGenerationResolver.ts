@@ -79,16 +79,16 @@ const FALLBACK_API_KEY_ENV = 'OPENAI_API_KEY';
 
 /** Default quality target per role when not explicitly specified */
 const ROLE_QUALITY_DEFAULTS: Record<ImageRole, QualityTarget> = {
-  poster_primary: 'premium',
+  poster_primary: 'standard',
   poster_variant: 'standard',
-  character_primary: 'premium',
+  character_primary: 'standard',
   world_establishing: 'standard',
-  visual_reference: 'fast',
-  lookbook_cover: 'premium',
+  visual_reference: 'standard',
+  lookbook_cover: 'standard',
   marketing_variant: 'standard',
-  storyboard_frame: 'fast',
-  motion_still: 'fast',
-  trailer_frame: 'fast',
+  storyboard_frame: 'standard',
+  motion_still: 'standard',
+  trailer_frame: 'standard',
 };
 
 // ── Quality → Model mapping ─────────────────────────────────────────────────

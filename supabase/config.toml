@@ -355,3 +355,6 @@ verify_jwt = false
 
 [functions.vpb-export]
 verify_jwt = false
+
+[functions.auto-run-start-brain]
+verify_jwt = false

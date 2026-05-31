@@ -2333,17 +2333,11 @@ export default function VisualProductionPipeline() {
     }
   }, [projectId, refreshGovernance, qc]);
 
-  // Auto-advance to suggested stage after governance resolves, even if current stage is locked
+  // Auto-advance to suggested stage only when the current stage is locked/approved
+  // NEVER override a user's manual click to a different stage
   useEffect(() => {
-    if (suggestedStage && suggestedStage !== activeStage) {
-      setActiveStage(suggestedStage);
-    }
-  }, [suggestedStage, activeStage]);
-
-  // If the current stage is locked/approved and there's a next stage, auto-advance to it
-  useEffect(() => {
-    const activeS = stages.find(s => s.stage === activeStage);
-    if (activeS && (activeS.status === 'locked' || activeS.status === 'approved') && suggestedStage && suggestedStage !== activeStage) {
+    const currentIsDone = activeStage === 'poster' || stages.some(s => s.stage === activeStage && (s.status === 'locked' || s.status === 'approved'));
+    if (currentIsDone && suggestedStage && suggestedStage !== activeStage) {
       setActiveStage(suggestedStage);
     }
   }, [stages, activeStage, suggestedStage]);

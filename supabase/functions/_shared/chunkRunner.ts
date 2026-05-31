@@ -657,6 +657,23 @@ export async function resumeChunkedGeneration(opts: ChunkRunnerOptions): Promise
   // Check if any chunks need generation
   const pendingChunks = chunksNeedingGeneration(plan, chunkMap);
 
+  // ── PD RESUME CAP: limit chunks per invocation to avoid gateway timeout ──
+  // For production_draft, process only a small batch per call.
+  // Remaining chunks stay "pending" in DB and get picked up on next resume.
+  // We cap by filtering the plan's chunks array so runChunkedGeneration
+  // only sees the capped set.
+  const MAX_CHUNKS_PER_INVOCATION = docType === "production_draft" ? 3 : 999;
+  if (pendingChunks.length > MAX_CHUNKS_PER_INVOCATION) {
+    const cappedKeys = new Set(
+      pendingChunks.slice(0, MAX_CHUNKS_PER_INVOCATION).map((c) => c.chunkKey)
+    );
+    // Filter plan.chunks to only include capped + already-done chunks
+    plan.chunks = plan.chunks.filter((c) => cappedKeys.has(c.chunkKey) || chunkMap.has(c.chunkIndex));
+    console.log(
+      `[chunkRunner] Resume cap: ${pendingChunks.length} pending, processing ${MAX_CHUNKS_PER_INVOCATION} this invocation (docType=${docType}). ${pendingChunks.length - MAX_CHUNKS_PER_INVOCATION} remain in DB for next resume.`
+    );
+  }
+
   if (pendingChunks.length === 0) {
     // All chunks done — just reassemble
     let assembled: string;

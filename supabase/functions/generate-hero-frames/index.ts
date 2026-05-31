@@ -1154,7 +1154,7 @@ Deno.serve(async (req)=>{
     const resolverInput = {
       role: "poster_primary",
       styleMode: "photorealistic_cinematic",
-      qualityTarget: "premium"
+      qualityTarget: "standard"
     };
     const genConfig = resolveImageGenerationConfig(resolverInput);
     if (!genConfig.providerApiKey) throw new Error("No AI gateway API key configured");
