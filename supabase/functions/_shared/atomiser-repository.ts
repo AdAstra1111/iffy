@@ -90,7 +90,7 @@ export interface AtomUpsertResult {
   inserted_count: number;
   updated_count: number;
   errors: string[];
-  atoms: Array<{ id: string; status: string }>;
+  atoms: Array<{ id: string }>;
 }
 
 // ── Interface — the ONLY API surface atomisers can use ─────────────────

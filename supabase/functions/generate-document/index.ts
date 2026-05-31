@@ -746,6 +746,116 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ── EARLY PRODUCTION_DRAFT CHUNK RESUME ──
+    if (docType === "production_draft") {
+      try {
+        const sc = createClient(supabaseUrl, serviceKey);
+        const { data: pdDocs } = await sc.from("project_documents").select("id").eq("project_id", projectId).eq("doc_type", "production_draft");
+        if (pdDocs && pdDocs.length > 0) {
+          const pdDocId = pdDocs[0].id;
+          const { data: pdVers } = await sc.from("project_document_versions")
+            .select("id, version_number, meta_json")
+            .eq("document_id", pdDocId)
+            .eq("meta_json->>bg_generating", "true")
+            .order("version_number", { ascending: false }).limit(1).maybeSingle();
+          if (pdVers && pdVers.meta_json) {
+            const m = pdVers.meta_json as any;
+            // Load existing chunks for this version
+            const { data: existingChunks, error: chunkLoadErr } = await sc.from("project_document_chunks")
+              .select("chunk_index, chunk_key, status, content")
+              .eq("document_id", pdDocId)
+              .eq("version_id", pdVers.id)
+              .order("chunk_index", { ascending: true });
+            if (chunkLoadErr) throw new Error(`Chunk load failed: ${chunkLoadErr.message}`);
+            const chunks = existingChunks || [];
+            const doneChunks = chunks.filter((c: any) => c.status === "done" && c.content);
+            const pendingChunks = chunks.filter((c: any) => c.status !== "done" || !c.content);
+            const total = chunks.length;
+
+            if (total > 0 && pendingChunks.length > 0) {
+              console.log(`[generate-document] Production draft resume: ${doneChunks.length}/${total} done, ${pendingChunks.length} pending`);
+              await sc.from("project_document_versions").update({ created_at: new Date().toISOString() }).eq("id", pdVers.id);
+
+              const START = Date.now();
+              const ok = (margin = 15_000) => (Date.now() - START) < (120_000 - margin);
+
+              for (let ci = 0; ci < chunks.length && ok(); ci++) {
+                const c = chunks[ci];
+                if (c.status === "done" && c.content) continue;
+
+                await sc.from("project_document_chunks")
+                  .update({ status: "running" })
+                  .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+
+                const prevContent = ci > 0 && chunks[ci - 1]?.status === "done" ? (chunks[ci - 1]?.content?.slice(-800) || "") : "";
+                const prompt = `Write a production draft scene: ${c.chunk_key}.\n\n${prevContent ? `PREVIOUS SCENE ENDING:\n...${prevContent}\n\n` : ""}Write a complete screenplay-formatted production draft scene. Full slugline, action, dialogue.`;
+
+                try {
+                  const text = await callLLM(apiKey, "You are a screenwriter generating a production draft. Output ONLY the screenplay content.", prompt);
+                  if (text) {
+                    await sc.from("project_document_chunks")
+                      .update({ status: "done", content: text, char_count: text.length })
+                      .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+
+                    await sc.from("project_document_versions")
+                      .update({ meta_json: { ...m, pd_state: "scene_generation", pd_completed: doneChunks.length + 1, pd_total: total } })
+                      .eq("id", pdVers.id);
+
+                    if (!ok(20_000) && (ci + 1) < total) {
+                      console.log(`[generate-document] PD resume: budget at ${ci+1}/${total}`);
+                      return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                        version_number: pdVers.version_number, generating: true,
+                        progress_state: "scene_generation", completed_chunks: ci + 1, total_chunks: total });
+                    }
+                  }
+                } catch (genErr: any) {
+                  console.warn(`[generate-document] PD chunk ${c.chunk_key} failed: ${genErr?.message?.slice(0, 100)}`);
+                  await sc.from("project_document_chunks")
+                    .update({ status: "failed", error: genErr?.message?.slice(0, 500) })
+                    .eq("document_id", pdDocId).eq("version_id", pdVers.id).eq("chunk_index", c.chunk_index);
+                }
+              }
+
+              // All chunks done — assemble
+              const { data: finalChunks } = await sc.from("project_document_chunks")
+                .select("chunk_index, content, status")
+                .eq("document_id", pdDocId).eq("version_id", pdVers.id)
+                .order("chunk_index", { ascending: true });
+              const allDone = (finalChunks || []).every((c: any) => c.status === "done" && c.content);
+              if (allDone && finalChunks?.length > 0) {
+                const assembled = finalChunks.map((c: any) => c.content).join("\n\n=====\n\n");
+                await sc.from("project_document_versions")
+                  .update({ plaintext: assembled, meta_json: { ...m, bg_generating: false, pd_state: "complete", pd_assembled_length: assembled.length } })
+                  .eq("id", pdVers.id);
+                await sc.from("project_documents")
+                  .update({ latest_version_id: pdVers.id, char_count: assembled.length, updated_at: new Date().toISOString() })
+                  .eq("id", pdDocId);
+                return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                  version_number: pdVers.version_number, generating: false,
+                  progress_state: "complete", completed_chunks: finalChunks.length,
+                  total_chunks: finalChunks.length, script_length: assembled.length });
+              }
+            } else if (total > 0 && pendingChunks.length === 0) {
+              // All done — reassemble
+              const assembled = chunks.map((c: any) => c.content).join("\n\n=====\n\n");
+              await sc.from("project_document_versions")
+                .update({ plaintext: assembled, meta_json: { ...m, bg_generating: false, pd_state: "complete", pd_assembled_length: assembled.length } })
+                .eq("id", pdVers.id);
+              await sc.from("project_documents")
+                .update({ latest_version_id: pdVers.id, char_count: assembled.length, updated_at: new Date().toISOString() })
+                .eq("id", pdDocId);
+              return jsonRes({ success: true, document_id: pdDocId, version_id: pdVers.id,
+                version_number: pdVers.version_number, generating: false,
+                progress_state: "complete", completed_chunks: chunks.length,
+                total_chunks: chunks.length, script_length: assembled.length });
+            }
+          }
+        }
+      } catch (e: any) {
+        console.log(`[generate-document] Early production_draft resume check failed: ${e?.message?.slice(0, 100)}`);
+      }
+    }
+
     // Extract nuance parameters (with defaults)
     const nuanceParams: NuanceParams = {
       restraint: body.nuance?.restraint ?? 70,
