@@ -412,8 +412,10 @@ Deno.serve(async (req: Request) => {
           characters: writtenChars,
           locations: writtenLocs,
           source: "deterministic parsing from screenplay + character bible",
+          entityKeys: entities.map(e => `${e.entityType}:${e.entityKey}`),
         };
-        console.log(`[nel] Entity extraction complete: ${writtenChars} chars, ${writtenLocs} locs`);
+        console.log(`[nel] Entity extraction complete: ${writtenChars} chars, ${writtenLocs} locs of ${entities.length} total`);
+        console.log(`[nel] Entity keys: ${entities.map(e => `${e.entityType}:${e.entityKey}`).join(", ")}`);
       } catch (e: any) {
         results.entities = { status: "failed", error: e.message };
         errors.push(`entities: ${e.message}`);
