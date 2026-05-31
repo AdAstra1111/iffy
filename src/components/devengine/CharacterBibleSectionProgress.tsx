@@ -49,7 +49,10 @@ export function CharacterBibleSectionProgress({
     let current: { title: string; content: string } | null = null;
 
     for (const line of lines) {
-      const isHeader = /^##\s+(?!\#)/i.test(line.trim());
+      // Split on ### headers for character sections (e.g. "### 1. Marcus Cole (Protagonist)")
+      // or "### Marcus Cole & Sarah Chen" for relationship entries
+      // Skip ## headers — they're top-level containers (CHARACTER BIBLE, PRINCIPAL CHARACTERS)
+      const isHeader = /^###\s+/i.test(line.trim());
       if (isHeader && line.trim()) {
         if (current && current.content.trim()) {
           result.push(current);
