@@ -10198,8 +10198,8 @@ INSTRUCTIONS — OVERRIDE THE FULL-BIBLE RULES ABOVE:
         long_treatment: /^##\s+Act\s+/i,
         beat_sheet: /^##\s+Act\s+/i,
         story_outline: /^##\s+(Act\s+|Scene\s+)/i,
-        character_bible: /^##\s+(?:\d+\.\s+.*?\(|RELATIONSHIP DYNAMICS|ENSEMBLE NOTES)/i,
-        long_character_bible: /^##\s+(?:\d+\.\s+.*?\(|RELATIONSHIP DYNAMICS|ENSEMBLE NOTES)/i,
+        character_bible: /^##\s+/i,
+        long_character_bible: /^##\s+/i,
         concept_brief: /^##\s+/
       };
       const buildSectionHeaderChunks = (text, docType1)=>{

@@ -13,6 +13,7 @@
 export type PipelineStage =
   | 'source_truth'
   | 'visual_canon'
+  | 'identity_packages'
   | 'cast'
   | 'hero_frames'
   | 'production_design'
@@ -87,16 +88,21 @@ export interface PipelineInputs {
   hasVisualStyle: boolean;
   visualStyleComplete: boolean;
 
-  /** Cast state */
+  /** Cast state — Performance Readiness dimension */
   totalCharacters: number;
   lockedCharacters: number;
-  castComplete: boolean; // character identity readiness: atoms complete + visual DNA present
+  castComplete: boolean; // Performance Readiness: cast approved + AI actors bound
+  castSuggested: boolean; // Visual Readiness: cast suggestions exist from visual DNA
 
-  /** Visual DNA identity readiness (separate from actor anchor readiness) */
+  /** Visual DNA identity readiness */
   hasVisualDNA: boolean;
   boundActorCount: number;
   hasActorBindings: boolean;
-  actorAnchorsComplete: boolean; // actor anchor coverage/coherence (separate from castComplete)
+  actorAnchorsComplete: boolean;
+
+  /** Character Identity Package readiness — Visual Readiness dimension */
+  identityPackagesComplete: boolean; // CIP exists for all main characters
+  identityPackageCount: number;
 
   /** Non-character entity readiness (creature, vehicle, prop visual state bindings) */
   creaturesReady: boolean;
@@ -160,6 +166,7 @@ export interface StageGovernance {
 export const VISUAL_STAGE_ORDER: readonly PipelineStage[] = [
   'source_truth',
   'visual_canon',
+  'identity_packages',
   'cast',
   'hero_frames',
   'production_design',
@@ -173,8 +180,9 @@ export const VISUAL_STAGE_ORDER: readonly PipelineStage[] = [
 export const VISUAL_STAGE_PREREQUISITES: Record<PipelineStage, PipelineStage[]> = {
   source_truth: [],
   visual_canon: ['source_truth'],
+  identity_packages: ['source_truth', 'visual_canon'],
   cast: ['source_truth', 'visual_canon'],
-  hero_frames: ['source_truth', 'visual_canon', 'cast'],
+  hero_frames: ['source_truth', 'visual_canon', 'identity_packages'],
   production_design: ['source_truth', 'visual_canon', 'cast'],
   visual_language: ['source_truth', 'visual_canon', 'cast', 'hero_frames'],
   poster: ['source_truth', 'visual_canon', 'cast', 'hero_frames'],
@@ -185,6 +193,7 @@ export const VISUAL_STAGE_PREREQUISITES: Record<PipelineStage, PipelineStage[]> 
 const STAGE_META: Record<PipelineStage, { label: string; description: string }> = {
   source_truth: { label: 'Source Truth', description: 'Narrative, world rules, and story canon' },
   visual_canon: { label: 'Visual Canon', description: 'Visual style, tone, and design language' },
+  identity_packages: { label: 'Character Identity Packages', description: 'Character Identity Packages — structured character identity from Visual DNA + Wardrobe + PD' },
   cast: { label: 'Cast', description: 'Character casting and identity anchoring' },
   hero_frames: { label: 'Hero Frames', description: 'Cinematic anchor stills — downstream of Production Design' },
   production_design: { label: 'Production Design', description: 'Environment, atmosphere, and surface language — upstream of Hero Frames' },
@@ -874,6 +883,31 @@ export async function resolveStageGovernance(
     provenance_json: null,
   });
 
+  // ── 3B. CHARACTER IDENTITY PACKAGES — Visual Readiness dimension ──
+  let cipStatus: StageStatus;
+  const cipBlockers: string[] = [];
+  if (!inputs.hasCanon) {
+    cipStatus = 'blocked';
+    cipBlockers.push('Requires source truth');
+  } else if (inputs.identityPackagesComplete) {
+    cipStatus = 'locked';
+  } else if (inputs.identityPackageCount > 0) {
+    cipStatus = 'in_progress';
+  } else if (inputs.hasVisualDNA) {
+    cipStatus = 'not_started';
+  } else {
+    cipStatus = 'blocked';
+    cipBlockers.push('Requires Visual DNA');
+  }
+  stages.push({
+    stage_id: 'identity_packages',
+    computed_status: cipStatus,
+    eligibility_state: { eligible: false, reason: undefined, completed_prereqs: [], blocked_prereqs: [] },
+    stale_risk: null,
+    blocker_codes: cipBlockers.length > 0 ? cipBlockers : null,
+    provenance_json: null,
+  });
+
   // ── 4. PRODUCTION DESIGN — gated on cast ──
   let pdStatus: StageStatus;
   const pdBlockers: string[] = [];
@@ -896,12 +930,12 @@ export async function resolveStageGovernance(
     provenance_json: null,
   });
 
-  // ── 5. HERO FRAMES — gated on Production Design locked ──
+  // ── 5. HERO FRAMES — gated on Identity Packages Complete (Visual Readiness) ──
   let hfStatus: StageStatus;
   const hfBlockers: string[] = [];
-  if (!inputs.castComplete) {
+  if (!inputs.identityPackagesComplete) {
     hfStatus = 'blocked';
-    hfBlockers.push('Requires cast locked with complete datasets');
+    hfBlockers.push('Requires Character Identity Packages (Visual Readiness)');
   } else if (!inputs.pdAllLocked) {
     hfStatus = 'blocked';
     hfBlockers.push('Requires Production Design locked');

@@ -675,12 +675,21 @@ async function handleGenerate(projectId: string) {
           const entityResults = cpieResult.domains?.props || [];
           
           // Use first entity's inferences
-          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]; registry_anchor_id: string; pcp_dependencies: string[]; generated_at: string; generated_by: string}> = [];
           if (entityResults.length > 0) {
             cpieInferences = entityResults[0].inferences.map((inf: any) => ({
               field: inf.field, value: inf.value,
               confidence: inf.confidence_score, reasoning: inf.reasoning,
-            }));
+
+              registry_anchor_id: inf.registry_anchor_id,
+
+              pcp_dependencies: inf.pcp_dependencies,
+
+              generated_at: inf.generated_at,
+
+              generated_by: inf.generated_by,
+
+              }));
           }
 
           // HARD REQUIREMENT: CPIE must return inferences
@@ -814,12 +823,20 @@ confidence should reflect how much scene context was available. readinessBadge s
           // Merge CPIE provenance
           if (cpieInferences.length > 0) {
             finalAttributes.cpie_inferences_used = cpieInferences.length;
-            finalAttributes.cpie_provenance = cpieInferences.map(i => ({
-              field: i.field, value: i.value,
+            finalAttributes._provenance = {
               source_type: "inferred",
-              confidence_score: i.confidence,
-              reasoning: i.reasoning,
+              confidence_score: Math.min(...cpieInferences.map(i => i.confidence)),
+              reasoning: cpieInferences.map(i => `field=${i.field} value="${i.value}" anchor=${i.registry_anchor_id} confidence=${i.confidence}`),
+              pcp_dependencies: [...new Set(cpieInferences.flatMap(i => i.pcp_dependencies))],
+            };
+            finalAttributes._ics_metadata = cpieInferences.map(i => ({
+              field_name: i.field,
+              filled_by: "inferred",
+              confidence_at_creation: i.confidence,
+              registry_anchor_id: i.registry_anchor_id,
             }));
+            finalAttributes._generated_by = cpieInferences[0].generated_by;
+            finalAttributes._generated_at = cpieInferences[0].generated_at;
           }
           finalAttributes.generated_from_cpie = true;
 const updateErr = await repo.updateAtom(projectId, atom.id, {

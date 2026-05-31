@@ -302,6 +302,15 @@ verify_jwt = false
 [functions.generate-hero-frames]
 verify_jwt = false
 
+[functions.build-character-identity-package]
+verify_jwt = false
+
+[functions.suggest-cast-from-dna]
+verify_jwt = false
+
+[functions.approve-cast-suggestion]
+verify_jwt = false
+
 [functions.generate-poster]
 verify_jwt = false
 

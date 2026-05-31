@@ -162,6 +162,21 @@ async function resolveCharacterTruth(sb, projectId) {
   const { data: dnaRows } = await sb.from("character_visual_dna").select("id, character_name, locked_invariants, identity_signature, biological_sex, gender_presentation, age_range, ethnicity, body_type, height_class, facial_archetype, voice_quality, wardrobe_signals, social_class, role_archetype").eq("project_id", projectId).eq("is_current", true).order("character_name").limit(10);
   if (!dnaRows?.length) return [];
   const characterNames = dnaRows.map((d)=>d.character_name.toLowerCase().trim().replace(/\s+/g, " "));
+  
+  // ── CIP RESOLUTION: Prefer Character Identity Package over raw visual DNA ──
+  const cipMap = new Map();
+  const { data: cipRows } = await sb
+    .from("character_identity_packages")
+    .select("id, character_name, face_traits, age_range, ethnicity, body_traits, silhouette, visual_descriptors, wardrobe_signals, appearance_constraints, style_guidance, evidence, version_number")
+    .eq("project_id", projectId)
+    .eq("is_current", true)
+    .eq("enabled", true);
+  if (cipRows?.length) {
+    for (const cip of cipRows) {
+      cipMap.set(cip.character_name.toLowerCase().trim().replace(/\s+/g, " "), cip);
+    }
+  }
+  
   const { data: castBindings } = await sb.from("project_ai_cast").select("character_key, ai_actor_id, ai_actor_version_id").eq("project_id", projectId).in("character_key", characterNames);
   const bindMap = new Map();
   for (const b of castBindings || []){
@@ -229,17 +244,60 @@ async function resolveCharacterTruth(sb, projectId) {
     }
   }
   return dnaRows.map((dna)=>{
+    const normKey = dna.character_name.toLowerCase().trim().replace(/\s+/g, " ");
+    const cip = cipMap.get(normKey);
     const sig = dna.identity_signature;
     const locked = dna.locked_invariants;
     const parts = [];
-    if (sig) {
-      for (const k of [
-        "face",
-        "body",
-        "silhouette",
-        "wardrobe"
-      ]){
-        if (sig[k]) parts.push(`${k}: ${typeof sig[k] === "string" ? sig[k] : JSON.stringify(sig[k])}`);
+    
+    // ── CIP-PREFERRED TRAIT RESOLUTION ──
+    // When CIP exists, use its structured data as PRIMARY character description.
+    // CIP represents THE CHARACTER, not THE ACTOR (Constitutional Rule).
+    // When CIP doesn't exist, fall back to visual DNA identity_signature.
+    if (cip) {
+      // Face traits
+      if (cip.face_traits?.length) {
+        const faceParts = cip.face_traits.map(t => t.trait || t.label || "").filter(Boolean);
+        if (faceParts.length) parts.push(`Face: ${faceParts.join(", ")}`);
+      }
+      // Age
+      if (cip.age_range) parts.push(`Age: ${cip.age_range}`);
+      // Ethnicity
+      if (cip.ethnicity?.length) {
+        const ethParts = cip.ethnicity.map(e => e.trait || e.label || e.descriptor || "").filter(Boolean);
+        if (ethParts.length) parts.push(`Ethnicity: ${ethParts.join(", ")}`);
+      }
+      // Body
+      if (cip.body_traits?.length) {
+        const bodyParts = cip.body_traits.map(t => t.trait || t.label || "").filter(Boolean);
+        if (bodyParts.length) parts.push(`Body: ${bodyParts.join(", ")}`);
+      }
+      // Silhouette
+      if (cip.silhouette) parts.push(`Silhouette: ${cip.silhouette}`);
+      // Visual descriptors
+      if (cip.visual_descriptors?.length) {
+        const descParts = cip.visual_descriptors.map(d => d.trait || d.label || (typeof d === "string" ? d : "")).filter(Boolean);
+        if (descParts.length) parts.push(`Descriptors: ${descParts.join(", ")}`);
+      }
+      // Wardrobe signals
+      if (cip.wardrobe_signals?.length) {
+        const wardrobeParts = cip.wardrobe_signals
+          .filter(w => w.primary)
+          .map(w => `${w.garment}${w.color ? ` (${w.color})` : ""}`)
+          .filter(Boolean);
+        if (wardrobeParts.length) parts.push(`Wardrobe: ${wardrobeParts.join(", ")}`);
+      }
+      // Appearance constraints
+      if (cip.appearance_constraints?.length) {
+        const constraintParts = cip.appearance_constraints.map(c => typeof c === "string" ? c : c.constraint || c.trait || "").filter(Boolean);
+        if (constraintParts.length) parts.push(`Constraints: ${constraintParts.join("; ")}`);
+      }
+    } else {
+      // Fallback: use legacy identity_signature
+      if (sig) {
+        for (const k of ["face", "body", "silhouette", "wardrobe"]){
+          if (sig[k]) parts.push(`${k}: ${typeof sig[k] === "string" ? sig[k] : JSON.stringify(sig[k])}`);
+        }
       }
     }
     // ── G4: Include structured identity columns from character_visual_dna ──
@@ -271,13 +329,15 @@ async function resolveCharacterTruth(sb, projectId) {
       const entries = Object.entries(locked).filter(([_, v])=>v);
       if (entries.length) parts.push(`Locked: ${entries.map(([k, v])=>`${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`).join("; ")}`);
     }
-    const normKey = dna.character_name.toLowerCase().trim().replace(/\s+/g, " ");
+    // normKey is already defined at function top
     const binding = bindMap.get(normKey);
     const refUrls = binding ? refUrlMap.get(binding.versionId) || [] : identityAnchorMap.get(normKey) || [];
     return {
       name: dna.character_name,
       traits: parts.join(". ") || dna.character_name,
       dnaVersionId: dna.id,
+      cipVersion: cip ? cip.version_number : null,
+      cipId: cip ? cip.id : null,
       actorBound: !!binding,
       actorName: binding ? actorNameMap.get(binding.actorId) || null : null,
       actorVersionId: binding ? binding.versionId : null,

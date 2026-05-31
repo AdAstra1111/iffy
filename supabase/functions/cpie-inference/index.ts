@@ -4386,6 +4386,57 @@ const VL_ANCHORS: RegistryAnchor = [
   {"id":"vl_catchall_lighting","domain":"vl","triggers":[["genre","any",""]],"output_field":"lighting_philosophy","output_value":"standard_three_point","confidence":0.25,"priority":0,"reasoning":["registry_rule: vl_catchall_lighting","low_confidence"]},
 ];
 
+const PD_ANCHORS: RegistryAnchor = [
+  // Production Design Philosophy — genre-driven
+  {"id":"pd_noir_phil","domain":"pd","triggers":[["genre","in","noir,crime,mystery"]],"output_field":"production_design_philosophy","output_value":"shadowy_urban_dystopian","confidence":0.88,"priority":100,"reasoning":["registry_rule: pd_noir_phil"]},
+  {"id":"pd_fantasy_phil","domain":"pd","triggers":[["genre","in","fantasy,epic,mythic"]],"output_field":"production_design_philosophy","output_value":"handcrafted_organic_worldbuilding","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_fantasy_phil"]},
+  {"id":"pd_scifi_phil","domain":"pd","triggers":[["genre","in","sci_fi,cyberpunk,space_opera"]],"output_field":"production_design_philosophy","output_value":"futuristic_sleek_functional","confidence":0.86,"priority":100,"reasoning":["registry_rule: pd_scifi_phil"]},
+  {"id":"pd_horror_phil","domain":"pd","triggers":[["genre","in","horror,thriller,suspense"]],"output_field":"production_design_philosophy","output_value":"decaying_oppressive_claustrophobic","confidence":0.85,"priority":100,"reasoning":["registry_rule: pd_horror_phil"]},
+  {"id":"pd_drama_phil","domain":"pd","triggers":[["genre","in","drama,romance,contemporary"]],"output_field":"production_design_philosophy","output_value":"naturalistic_invisible_design","confidence":0.78,"priority":100,"reasoning":["registry_rule: pd_drama_phil"]},
+  {"id":"pd_comedy_phil","domain":"pd","triggers":[["genre","in","comedy,light,animation"]],"output_field":"production_design_philosophy","output_value":"bright_exaggerated_whimsical","confidence":0.76,"priority":100,"reasoning":["registry_rule: pd_comedy_phil"]},
+  {"id":"pd_historical_phil","domain":"pd","triggers":[["genre","in","historical,period"]],"output_field":"production_design_philosophy","output_value":"period_accurate_authentic","confidence":0.88,"priority":100,"reasoning":["registry_rule: pd_historical_phil"]},
+  // Material Palette — genre+period driven
+  {"id":"pd_noir_mat","domain":"pd","triggers":[["genre","in","noir,crime"]],"output_field":"material_palette","output_value":"concrete,steel,glass,leather","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_noir_mat"]},
+  {"id":"pd_fantasy_mat","domain":"pd","triggers":[["genre","in","fantasy,epic,mythic"]],"output_field":"material_palette","output_value":"natural wood,stone,iron,fabric","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_fantasy_mat"]},
+  {"id":"pd_scifi_mat","domain":"pd","triggers":[["genre","in","sci_fi,cyberpunk,space_opera"]],"output_field":"material_palette","output_value":"composite_metal,glass,neon,polished_plastic","confidence":0.86,"priority":100,"reasoning":["registry_rule: pd_scifi_mat"]},
+  {"id":"pd_horror_mat","domain":"pd","triggers":[["genre","in","horror,thriller"]],"output_field":"material_palette","output_value":"rotting_wood,rusting_metal,cracked_stone,grime","confidence":0.83,"priority":100,"reasoning":["registry_rule: pd_horror_mat"]},
+  {"id":"pd_drama_mat","domain":"pd","triggers":[["genre","in","drama,romance,contemporary"]],"output_field":"material_palette","output_value":"drywall,concrete,glass,hardwood","confidence":0.76,"priority":100,"reasoning":["registry_rule: pd_drama_mat"]},
+  {"id":"pd_historical_mat","domain":"pd","triggers":[["genre","in","historical,period"]],"output_field":"material_palette","output_value":"stone,wood,brick,wrought_iron","confidence":0.85,"priority":100,"reasoning":["registry_rule: pd_historical_mat"]},
+  {"id":"pd_comedy_mat","domain":"pd","triggers":[["genre","in","comedy,light"]],"output_field":"material_palette","output_value":"painted_wood,plastic,bright_fabric","confidence":0.74,"priority":100,"reasoning":["registry_rule: pd_comedy_mat"]},
+  // Architecture Style — genre+class_structure driven
+  {"id":"pd_noir_arch","domain":"pd","triggers":[["genre","in","noir,crime"]],"output_field":"architecture_style","output_value":"art_deco_industrial_urban","confidence":0.86,"priority":100,"reasoning":["registry_rule: pd_noir_arch"]},
+  {"id":"pd_fantasy_arch","domain":"pd","triggers":[["genre","in","fantasy,epic,mythic"]],"output_field":"architecture_style","output_value":"medieval_gothic_fantastical","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_fantasy_arch"]},
+  {"id":"pd_scifi_arch","domain":"pd","triggers":[["genre","in","sci_fi,cyberpunk,space_opera"]],"output_field":"architecture_style","output_value":"brutalist_neon_megastructure","confidence":0.86,"priority":100,"reasoning":["registry_rule: pd_scifi_arch"]},
+  {"id":"pd_horror_arch","domain":"pd","triggers":[["genre","in","horror,thriller,suspense"]],"output_field":"architecture_style","output_value":"gothic_victorian_dilapidated","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_horror_arch"]},
+  {"id":"pd_drama_arch","domain":"pd","triggers":[["genre","in","drama,romance,contemporary"]],"output_field":"architecture_style","output_value":"contemporary_residential_urban","confidence":0.76,"priority":100,"reasoning":["registry_rule: pd_drama_arch"]},
+  {"id":"pd_historical_arch","domain":"pd","triggers":[["genre","in","historical,period"]],"output_field":"architecture_style","output_value":"period_authentic_architectural","confidence":0.88,"priority":100,"reasoning":["registry_rule: pd_historical_arch"]},
+  {"id":"pd_comedy_arch","domain":"pd","triggers":[["genre","in","comedy,light"]],"output_field":"architecture_style","output_value":"bright_colorful_exaggerated","confidence":0.74,"priority":100,"reasoning":["registry_rule: pd_comedy_arch"]},
+  // Environment Rules — genre driven constraints
+  {"id":"pd_noir_env","domain":"pd","triggers":[["genre","in","noir,crime,mystery"]],"output_field":"environment_rules","output_value":"wet_reflective_surfaces,steam_rising,shadow_heavy","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_noir_env"]},
+  {"id":"pd_fantasy_env","domain":"pd","triggers":[["genre","in","fantasy,epic,mythic"]],"output_field":"environment_rules","output_value":"organic_growth_in_architecture,natural_light_filtered,magical_mist","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_fantasy_env"]},
+  {"id":"pd_scifi_env","domain":"pd","triggers":[["genre","in","sci_fi,cyberpunk,space_opera"]],"output_field":"environment_rules","output_value":"clean_lines_everywhere,holographic_screens,ambient_hum","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_scifi_env"]},
+  {"id":"pd_horror_env","domain":"pd","triggers":[["genre","in","horror,thriller,suspense"]],"output_field":"environment_rules","output_value":"decaying_organic_overgrowth,cramped_spaces,creaking_sounds","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_horror_env"]},
+  {"id":"pd_drama_env","domain":"pd","triggers":[["genre","in","drama,romance,contemporary"]],"output_field":"environment_rules","output_value":"clean_organized_lived_in","confidence":0.74,"priority":100,"reasoning":["registry_rule: pd_drama_env"]},
+  {"id":"pd_historical_env","domain":"pd","triggers":[["genre","in","historical,period"]],"output_field":"environment_rules","output_value":"period_authentic_details,crowded_organic_textures","confidence":0.84,"priority":100,"reasoning":["registry_rule: pd_historical_env"]},
+  // Set Dressing / Density — economy+class_structure driven
+  {"id":"pd_dressing_high","domain":"pd","triggers":[["class_structure","eq","upper_class"]],"output_field":"dressing_density","output_value":"rich_ornate_overstuffed","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_dressing_high"]},
+  {"id":"pd_dressing_mid","domain":"pd","triggers":[["class_structure","eq","middle_class"]],"output_field":"dressing_density","output_value":"comfortable_functional_organized","confidence":0.78,"priority":100,"reasoning":["registry_rule: pd_dressing_mid"]},
+  {"id":"pd_dressing_low","domain":"pd","triggers":[["class_structure","eq","lower_class"]],"output_field":"dressing_density","output_value":"sparse_worn_functional","confidence":0.80,"priority":100,"reasoning":["registry_rule: pd_dressing_low"]},
+  {"id":"pd_dressing_oppressed","domain":"pd","triggers":[["class_structure","eq","oppressed"]],"output_field":"dressing_density","output_value":"bare_minimum_decayed","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_dressing_oppressed"]},
+  {"id":"pd_dressing_ruling","domain":"pd","triggers":[["class_structure","eq","ruling_class"]],"output_field":"dressing_density","output_value":"lavish_opulent_excessive","confidence":0.86,"priority":100,"reasoning":["registry_rule: pd_dressing_ruling"]},
+  // Set Scale — economy+technology_level driven
+  {"id":"pd_scale_sparse","domain":"pd","triggers":[["economy","eq","subsistence"]],"output_field":"set_scale","output_value":"small_intimate_handcrafted","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_scale_sparse"]},
+  {"id":"pd_scale_moderate","domain":"pd","triggers":[["economy","eq","developing"]],"output_field":"set_scale","output_value":"moderate_practical","confidence":0.78,"priority":100,"reasoning":["registry_rule: pd_scale_moderate"]},
+  {"id":"pd_scale_large","domain":"pd","triggers":[["economy","eq","industrial"]],"output_field":"set_scale","output_value":"large_scale_industrial","confidence":0.80,"priority":100,"reasoning":["registry_rule: pd_scale_large"]},
+  {"id":"pd_scale_sprawling","domain":"pd","triggers":[["economy","eq","advanced"]],"output_field":"set_scale","output_value":"sprawling_monumental","confidence":0.82,"priority":100,"reasoning":["registry_rule: pd_scale_sprawling"]},
+  // Catch-all with low confidence
+  {"id":"pd_catchall_phil","domain":"pd","triggers":[["genre","any",""]],"output_field":"production_design_philosophy","output_value":"functional_story_driven_design","confidence":0.30,"priority":0,"reasoning":["registry_rule: pd_catchall_phil","low_confidence"]},
+  {"id":"pd_catchall_mat","domain":"pd","triggers":[["genre","any",""]],"output_field":"material_palette","output_value":"mixed_contemporary","confidence":0.28,"priority":0,"reasoning":["registry_rule: pd_catchall_mat","low_confidence"]},
+  {"id":"pd_catchall_arch","domain":"pd","triggers":[["genre","any",""]],"output_field":"architecture_style","output_value":"contemporary_vernacular","confidence":0.28,"priority":0,"reasoning":["registry_rule: pd_catchall_arch","low_confidence"]},
+  {"id":"pd_catchall_env","domain":"pd","triggers":[["genre","any",""]],"output_field":"environment_rules","output_value":"functional_practical","confidence":0.25,"priority":0,"reasoning":["registry_rule: pd_catchall_env","low_confidence"]},
+  {"id":"pd_catchall_dressing","domain":"pd","triggers":[["genre","any",""]],"output_field":"dressing_density","output_value":"functional_moderate","confidence":0.25,"priority":0,"reasoning":["registry_rule: pd_catchall_dressing","low_confidence"]},
+];
+
 const LOCATION_ANCHORS: RegistryAnchor = [
   {"id": "lc_pre_industrial_residential_arch", "domain": "location", "triggers": [["period", "regex", "ancient|medieval|fantasy_medieval|bronze_age"], ["spatial_function", "eq", "residential"]], "output_field": "architecture_style", "output_value": "pre_industrial_residential", "confidence": 0.88, "priority": 100, "reasoning": ["registry_rule: lc_pre_industrial_residential_arch"]},
   {"id": "lc_pre_industrial_residential_era", "domain": "location", "triggers": [["period", "regex", "ancient|medieval|fantasy_medieval|bronze_age"], ["spatial_function", "eq", "residential"]], "output_field": "construction_era", "output_value": "pre_industrial", "confidence": 0.87, "priority": 100, "reasoning": ["registry_rule: lc_pre_industrial_residential_era"]},
@@ -4621,7 +4672,8 @@ const LOCATION_ANCHORS: RegistryAnchor = [
 ];
 
 const DOMAIN_FIELD_COUNTS: Record<string, number> = {
-  wardrobe: 10, prop: 8, vehicle: 8, creature: 10, vl: 8, location: 10,
+  wardrobe: 10, prop: 8, vehicle: 8, creature: 10, vl: 8, pd: 8,
+  location: 10,
 };
 
 // ── Domain Dispatch ──────────────────────────────────────────────────
@@ -4633,6 +4685,7 @@ function getDomainAnchorsAndDeps(domain: string): { anchors: RegistryAnchor[]; d
   if (domain === "creature") return { anchors: CREATURE_ANCHORS, deps: ["genre", "period", "mythology", "ecology", "biome", "threat_role", "intelligence", "symbolism", "narrative_function"] };
   if (domain === "vl") return { anchors: VL_ANCHORS, deps: ["genre", "period", "visual_tone", "style_influences", "production_language"] };
   if (domain === "location" || domain === "loc") return { anchors: LOCATION_ANCHORS, deps: ["period", "spatial_function", "infrastructure", "geography", "economy", "class_structure", "biome", "culture"] };
+  if (domain === "pd" || domain === "production_design" || domain === "production-design") return { anchors: PD_ANCHORS, deps: ["genre", "period", "class_structure", "economy", "technology_level"] };
     return null;
 }
 

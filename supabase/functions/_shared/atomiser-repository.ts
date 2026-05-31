@@ -463,3 +463,47 @@ export function createAtomiserRepository(options: CreateRepositoryOptions = {}):
     },
   };
 }
+
+// ── Authoritative Provenance Builder ───────────────────────────────────
+// Contract: builds _provenance + _ics_metadata from CPIE inference records.
+// Use: atomisers call this instead of constructing ad-hoc cpie_provenance.
+
+export interface CPIEParsedInference {
+  field: string;
+  value: string;
+  confidence: number;
+  reasoning: string[];
+  registry_anchor_id: string;
+  pcp_dependencies: string[];
+  generated_at: string;
+  generated_by: string;
+}
+
+export function buildAuthoritativeProvenance(
+  inferences: CPIEParsedInference[],
+): { provenance: ProvenanceRecord; ics_metadata: ICSMetadata[] } | null {
+  if (!inferences || inferences.length === 0) return null;
+
+  const hasRealAnchor = inferences.some(i => i.registry_anchor_id && i.registry_anchor_id !== '');
+  const allDeps = new Set<string>();
+  for (const i of inferences) {
+    for (const d of (i.pcp_dependencies || [])) allDeps.add(d);
+  }
+
+  const provenance: ProvenanceRecord = {
+    source_type: hasRealAnchor ? 'inferred' : 'extracted',
+    confidence_score: Math.min(...inferences.map(i => i.confidence)),
+    reasoning: inferences.map(i =>
+      `field=${i.field} value="${i.value}"${i.registry_anchor_id ? ` anchor=${i.registry_anchor_id}` : ''} confidence=${i.confidence}`
+    ),
+    pcp_dependencies: Array.from(allDeps),
+  };
+
+  const ics_metadata: ICSMetadata[] = inferences.map(i => ({
+    field_name: i.field,
+    filled_by: (hasRealAnchor ? 'inferred' : 'extracted') as CanonFilledBy,
+    confidence_at_creation: i.confidence,
+  }));
+
+  return { provenance, ics_metadata };
+}

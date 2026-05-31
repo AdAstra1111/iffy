@@ -263,6 +263,19 @@ serve(async (req) => {
     const visualDnaCount = (dnaRows as any[])?.length ?? 0;
     const hasVisualDNA = visualDnaCount > 0;
 
+    // ── Character Identity Package readiness (Visual Readiness dimension) ──
+    const { data: cipRows } = await supabase
+      .from("character_identity_packages")
+      .select("id")
+      .eq("project_id", projectId)
+      .eq("is_current", true)
+      .eq("enabled", true);
+    const identityPackageCount = (cipRows as any[])?.length ?? 0;
+    const identityPackagesComplete = hasVisualDNA && identityPackageCount >= Math.max(totalCharacters, 1);
+
+    // ── Cast suggestion readiness ──
+    const castSuggested = castList.length > 0 && castList.some((c: any) => c.status === "suggested" || c.character_status === "suggested");
+
     // ── Non-character entity readiness (creature, vehicle, prop) from PD canon ──
     const pdCreatureCount = pdCreatureDesignCount ?? 0;
     const pdPropCount = pdLocationPropCount ?? 0;
@@ -369,10 +382,13 @@ serve(async (req) => {
       totalCharacters,
       lockedCharacters,
       castComplete,
+      castSuggested,
       hasVisualDNA,
       boundActorCount,
       hasActorBindings,
       actorAnchorsComplete,
+      identityPackagesComplete,
+      identityPackageCount,
       creaturesReady,
       vehiclesReady,
       propsReady,

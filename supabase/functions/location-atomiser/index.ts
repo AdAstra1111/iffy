@@ -442,7 +442,7 @@ async function handleGenerate(projectId: string) {
 
                     // ── CPIE Inference Integration (HARD PATH) ──
           // CPIE provides deterministic location inferences as ground truth
-          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]}> = [];
+          let cpieInferences: Array<{field: string; value: string; confidence: number; reasoning: string[]; registry_anchor_id: string; pcp_dependencies: string[]; generated_at: string; generated_by: string}> = [];
           const cpieUrl = Deno.env.get("CPIE_ENDPOINT_URL");
           if (!cpieUrl) {
             throw new Error("CPIE_ENDPOINT_URL not configured — CPIE required for location atomiser");
@@ -497,7 +497,16 @@ async function handleGenerate(projectId: string) {
                 cpieInferences = entityResults[0].inferences.map((inf: any) => ({
                   field: inf.field, value: inf.value,
                   confidence: inf.confidence_score, reasoning: inf.reasoning,
-                }));
+
+                  registry_anchor_id: inf.registry_anchor_id,
+
+                  pcp_dependencies: inf.pcp_dependencies,
+
+                  generated_at: inf.generated_at,
+
+                  generated_by: inf.generated_by,
+
+                  }));
               }
             }
           }
@@ -609,6 +618,26 @@ confidence should reflect how much visual/narrative information was available.`;
                 updated_at: new Date().toISOString(),
               });
             continue;
+          }
+
+          // Merge CPIE provenance into atom attributes
+          if (cpieInferences.length > 0) {
+            generatedAttrs.cpie_inferences_used = cpieInferences.length;
+            generatedAttrs._provenance = {
+              source_type: "inferred",
+              confidence_score: Math.min(...cpieInferences.map(i => i.confidence)),
+              reasoning: cpieInferences.map(i => `field=${i.field} value="${i.value}" anchor=${i.registry_anchor_id || "unknown"} confidence=${i.confidence}`),
+              pcp_dependencies: [...new Set(cpieInferences.flatMap(i => i.pcp_dependencies || []))],
+            };
+            generatedAttrs._ics_metadata = cpieInferences.map(i => ({
+              field_name: i.field,
+              filled_by: "inferred",
+              confidence_at_creation: i.confidence,
+              registry_anchor_id: i.registry_anchor_id || "",
+            }));
+            generatedAttrs._generated_by = "cpie_registry";
+            generatedAttrs._generated_at = new Date().toISOString();
+            generatedAttrs.generated_from_cpie = true;
           }
 
           // Merge with canonical name and aliases from extract

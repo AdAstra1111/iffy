@@ -78,11 +78,14 @@ interface VPBLocation {
 interface VPBHeroFrame {
   id: string;
   entityId: string;
+  cipId: string | null;
   imageUrl: string | null;
   role: string;
   isPrimary: boolean;
   isActive: boolean;
   promptUsed: string;
+  generationType: string;
+  metadata: any;
   createdAt: string;
 }
 
@@ -400,7 +403,17 @@ async function assembleProductionDesign(
 async function assembleHeroFrames(
   sb: any, projectId: string
 ): Promise<{ heroFrames: VPBHeroFrame[]; provenance: string }> {
-  const { data: images } = await sb
+  // Primary: new hero_frames table (Character Production Images)
+  const { data: newFrames } = await sb
+    .from("hero_frames")
+    .select("id, character_id, actor_id, character_identity_package_id, image_url, prompt_text, frame_type, generation_type, status, metadata, created_at")
+    .eq("project_id", projectId)
+    .in("generation_type", ["character_production_image", null]  as any)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  // Fallback: legacy project_images (hero_primary, hero_variant)
+  const { data: legacyImages } = await sb
     .from("project_images")
     .select("id, role, entity_id, storage_path, storage_bucket, is_primary, is_active, prompt_used, created_at, image_url")
     .eq("project_id", projectId)
@@ -408,18 +421,43 @@ async function assembleHeroFrames(
     .order("created_at", { ascending: false })
     .limit(200);
 
-  const heroFrames = (images || []).map(img => ({
-    id: img.id,
-    entityId: img.entity_id || "",
-    imageUrl: img.image_url || null,
-    role: img.role,
-    isPrimary: img.is_primary || false,
-    isActive: img.is_active ?? true,
-    promptUsed: img.prompt_used || "",
-    createdAt: img.created_at || "",
-  }));
+  // Prefer new hero_frames when available
+  let heroFrames: VPBHeroFrame[];
+  let provenance: string;
 
-  return { heroFrames, provenance: `project_images (${heroFrames.length} hero frames)` };
+  if (newFrames && newFrames.length > 0) {
+    heroFrames = newFrames.map((f: any) => ({
+      id: f.id,
+      entityId: f.character_id || "",
+      cipId: f.character_identity_package_id || null,
+      imageUrl: f.image_url || null,
+      role: f.frame_type || "character_production",
+      isPrimary: f.frame_type === "hero",
+      isActive: f.status === "generated" || f.status === "approved",
+      promptUsed: f.prompt_text || "",
+      generationType: f.generation_type || "character_production_image",
+      metadata: f.metadata || null,
+      createdAt: f.created_at || "",
+    }));
+    provenance = `hero_frames (${heroFrames.length} character production images)`;
+  } else {
+    heroFrames = (legacyImages || []).map((img: any) => ({
+      id: img.id,
+      entityId: img.entity_id || "",
+      cipId: null,
+      imageUrl: img.image_url || null,
+      role: img.role,
+      isPrimary: img.is_primary || false,
+      isActive: img.is_active ?? true,
+      promptUsed: img.prompt_used || "",
+      generationType: "legacy_project_images",
+      metadata: null,
+      createdAt: img.created_at || "",
+    }));
+    provenance = `project_images (${heroFrames.length} legacy hero frames)`;
+  }
+
+  return { heroFrames, provenance };
 }
 
 async function assemblePosters(
