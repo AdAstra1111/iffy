@@ -397,6 +397,88 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// ── Canon Data Fetching Fallback ──────────────────────────────────────
+
+async function fetchCanonData(client: any, projectId: string): Promise<{
+  canon_json: PCPResolverInput['canon_json'];
+  project_metadata: PCPResolverInput['project_metadata'];
+}> {
+  try {
+    // Fetch project_canon
+    const { data: canonRow } = await client
+      .from("project_canon")
+      .select("canon_json")
+      .eq("project_id", projectId)
+      .maybeSingle();
+
+    // Fetch project metadata
+    const { data: projectRow } = await client
+      .from("projects")
+      .select("title, format")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    let canonJson: PCPResolverInput['canon_json'] = {};
+    const meta: PCPResolverInput['project_metadata'] = {};
+
+    if (canonRow?.canon_json) {
+      const cj = canonRow.canon_json as Record<string, unknown>;
+
+      // Map canon_json fields to PCP input format
+      // Concrete Angels stores period at top level, not under setting
+      const setting: Record<string, string> = {};
+      if (cj.setting && typeof cj.setting === 'object' && !Array.isArray(cj.setting)) {
+        const s = cj.setting as Record<string, unknown>;
+        if (s.period) setting.period = String(s.period);
+        if (s.era) setting.era = String(s.era);
+        if (s.geography) setting.geography = String(s.geography);
+        if (s.climate) setting.climate = String(s.climate);
+      }
+      // Top-level period fallback (Concrete Angels pattern)
+      if (!setting.period && cj.period) setting.period = String(cj.period);
+
+      canonJson = {
+        genre: cj.genre as string | string[] | undefined,
+        tone: cj.tone as string | undefined,
+        characters: Array.isArray(cj.characters)
+          ? (cj.characters as Array<Record<string, unknown>>).map((ch: Record<string, unknown>) => ({
+              name: String(ch.name || ''),
+              role: String(ch.role || ch.category || ''),
+              archetype: String(ch.archetype || ch.role || ''),
+              affiliation: String(ch.affiliation || ''),
+            }))
+          : undefined,
+        world_rules: Array.isArray(cj.world_rules) ? cj.world_rules as string[] : undefined,
+        locations: Array.isArray(cj.locations)
+          ? (cj.locations as Array<Record<string, unknown>>).map((loc: Record<string, unknown>) => ({
+              name: String(loc.name || ''),
+              type: String(loc.type || ''),
+              region: String(loc.region || ''),
+              climate: String(loc.climate || ''),
+            }))
+          : undefined,
+        setting: Object.keys(setting).length > 0 ? setting : undefined,
+        timeline: cj.timeline as string | undefined,
+      };
+    }
+
+    if (projectRow) {
+      meta.format = projectRow.format || undefined;
+    }
+
+    // Populate genre_tags from genre if we have it
+    if (canonJson.genre && !meta.genre_tags) {
+      const g = canonJson.genre;
+      meta.genre_tags = Array.isArray(g) ? g : [g];
+    }
+
+    return { canon_json: canonJson, project_metadata: meta };
+  } catch (fetchErr) {
+    console.error("PCP canon fetch error:", fetchErr);
+    return { canon_json: {}, project_metadata: {} };
+  }
+}
+
 // ── HTTP Handler ──────────────────────────────────────────────────────
 
 serve(async (req) => {
@@ -405,12 +487,26 @@ serve(async (req) => {
     const body: PCPResolverInput = await req.json();
     if (!body.project_id) return new Response(JSON.stringify({ error: "Missing project_id" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
-    const profile = resolvePCP(body);
-
-    // Persist PCP to database
+    // Auto-fetch canon data if not provided in input
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    let enrichedBody = body;
+    if ((!body.canon_json || Object.keys(body.canon_json).length === 0) && supabaseUrl && supabaseKey) {
+      const client = createClient(supabaseUrl, supabaseKey);
+      const fetched = await fetchCanonData(client, body.project_id);
+      enrichedBody = {
+        ...body,
+        canon_json: fetched.canon_json,
+        project_metadata: { ...(body.project_metadata || {}), ...fetched.project_metadata },
+      };
+    }
+
+    const profile = resolvePCP(enrichedBody);
+
+    // Persist PCP to database
     let persisted = false;
+    let persistError: string | null = null;
     if (supabaseUrl && supabaseKey) {
       const client = createClient(supabaseUrl, supabaseKey);
       const { error } = await client
@@ -422,17 +518,36 @@ serve(async (req) => {
           version_number: profile.version_number,
           status: profile.status,
         }, { onConflict: "project_id" });
-      if (error) console.error("PCP persist error:", error.message);
-      else persisted = true;
+      if (error) {
+        persistError = error.message;
+        console.error("PCP persist error:", error.message);
+      } else {
+        persisted = true;
+      }
     }
 
-    return new Response(JSON.stringify({
-      status: "ok",
+    const responseBody: Record<string, unknown> = {
+      status: persisted ? "ok" : "error",
       persisted,
       profile,
       version: profile.version_number,
       resolved_fields: countResolvedFields(profile),
-    }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    };
+
+    if (persistError) {
+      responseBody.persist_error = persistError;
+      responseBody.status = "persist_failed";
+    }
+
+    // If canon was auto-fetched, note it
+    if (enrichedBody !== body) {
+      responseBody.canon_source = "auto_fetched_from_db";
+    }
+
+    return new Response(JSON.stringify(responseBody), {
+      status: persisted ? 200 : 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   } catch (e) {
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
